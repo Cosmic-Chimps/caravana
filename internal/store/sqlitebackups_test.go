@@ -38,7 +38,7 @@ func TestSQLiteRunRecords(t *testing.T) {
 		t.Errorf("restores = %+v, %v; want %+v", list, err, r)
 	}
 
-	if err := s.SaveBackup(ctx, BackupRecord{AppID: "notes", ID: "db-2", Service: "db", Engine: "mysql",
+	if err := s.SaveBackup(ctx, BackupRecord{AppID: "notes", ID: "db-2", Service: "db", Engine: "redis",
 		Status: BackupRunning, StartedAt: t0}); err == nil {
 		t.Error("an engine the table doesn't know was saved")
 	}

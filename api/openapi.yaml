@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.50.0
+  version: 0.51.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -2173,7 +2173,8 @@ paths:
       operationId: stopApp
       summary: Stop every copy of the app, keeping everything else.
       description: |
-        Stops the app's Nomad job and its scheduled Postgres backup jobs without deleting them.
+        Stops the app's Nomad job and its scheduled database backup jobs (`postgres`, `mysql`,
+        `mongodb`) without deleting them.
         The app's definition, secrets, volumes, backups, webhook token and history stay. Until
         `startApp`, every deploy of the app (a deploy, the webhook, a promotion into it, a
         redeploy of a version, an edit) is 409 `app_stopped`, its backups and restores too,
@@ -5043,9 +5044,9 @@ paths:
         Only a succeeded backup still in the destination can be pinned (else 404 `not_found`,
         and the message says which). 409 `backup_running` while a backup or restore of the
         service runs, and 409 `app_busy` while a deploy or a volume run holds the app: so that
-        no retention runs with a pin list older than the stored one. For a `postgres`
-        service the list is also written to its backup job's variable; when Nomad refuses it,
-        502 and nothing changed.
+        no retention runs with a pin list older than the stored one. For a `postgres`,
+        `mysql` or `mongodb` service the list is also written to its backup job's variable;
+        when Nomad refuses it, 502 and nothing changed.
       tags: [backups]
       requestBody:
         required: true
@@ -6985,8 +6986,33 @@ components:
       description: |
         Makes Caravana back the service up to the backup destination.
 
-        `postgres`: the service is a database. It needs ports and `POSTGRES_PASSWORD` in its
-        env or secrets.
+        `postgres`: the service is a PostgreSQL database. It needs ports and `POSTGRES_PASSWORD`
+        in its env or secrets. `pg_dump` runs beside the service with its own image, never
+        stopping it, and uploads `<ts>.dump`.
+
+        `mysql`: the service is a MySQL or MariaDB database. It needs ports and the login its
+        image reads, in its env or secrets: `MARIADB_ROOT_PASSWORD` or `MYSQL_ROOT_PASSWORD`
+        (user `root`), else `MARIADB_USER` with `MARIADB_PASSWORD`, else `MYSQL_USER` with
+        `MYSQL_PASSWORD`; without one the deploy is refused with 400 `invalid_field` on
+        `services[i].backup`. Each run dumps every database the login sees but `information_schema`,
+        `performance_schema`, `mysql` and `sys` with the image's own `mariadb-dump` or `mysqldump`
+        (`--single-transaction --routines --events --triggers`), never stopping the service, and
+        uploads it gzipped as `<ts>.sql.gz`. A restore loads the dump into the running server
+        (each table in it is dropped and made again; tables made since stay), and MySQL's DDL
+        commits as it goes, so a restore that fails partway is not rolled back. An image with
+        neither dump tool fails each run saying so, since Caravana doesn't look inside an image
+        before it runs.
+
+        `mongodb`: the service is a MongoDB server. It needs ports and
+        `MONGO_INITDB_ROOT_USERNAME` and `MONGO_INITDB_ROOT_PASSWORD` in its env or secrets.
+        Each run dumps every database with `mongodump --archive --gzip`, never stopping the
+        service, and uploads `<ts>.archive.gz`. A restore is `mongorestore --drop`: each
+        collection in the archive is replaced, and the `admin` and `config` databases are left
+        alone. An image without `mongodump` fails each run saying so.
+
+        For these three engines the passwords never appear in the job: they are written to the
+        job's own Nomad Variable, and a password set as a plain env var (not a secret) is a
+        deploy warning, since it shows in the app's definition.
 
         `volume`: the service's volumes are archived while the service is stopped, for a few
         seconds. The service must mount a volume (else the deploy is refused with 400
@@ -7007,7 +7033,7 @@ components:
       properties:
         engine:
           type: string
-          enum: [postgres, volume, sqlite]
+          enum: [postgres, mysql, mongodb, volume, sqlite]
         file:
           type: string
           maxLength: 1024
@@ -7467,7 +7493,7 @@ components:
         service: {type: string}
         engine:
           type: string
-          enum: [postgres, volume, sqlite]
+          enum: [postgres, mysql, mongodb, volume, sqlite]
         status:
           type: string
           enum: [running, succeeded, failed]
@@ -7552,7 +7578,8 @@ components:
           type: boolean
           description: |
             True when the service that mounts the volume has a `volume` backup. A volume of a
-            `postgres`-backed service is not backed up in this sense.
+            service backed up by a database dump (`postgres`, `mysql`, `mongodb`) is not backed
+            up in this sense.
         lastBackup:
           $ref: "#/components/schemas/AppVolumeBackup"
 
@@ -7605,7 +7632,7 @@ components:
             pinned under the label); `message` says why.
         engine:
           type: string
-          enum: [postgres, volume, sqlite]
+          enum: [postgres, mysql, mongodb, volume, sqlite]
         status:
           type: string
           enum: [running, succeeded, failed, skipped]

@@ -28,12 +28,13 @@ var (
 	ErrBackupRunning       = errors.New("a backup or restore of this service is running")
 )
 
-// Two kinds of backup, two ways to run (feature 016). A Postgres backup is a
-// Nomad job, which this file starts and whose runs the watcher records. A
-// volume backup runs inside the service's own copy, and the run itself
-// records it (volumebackup.go), so the Nomad-job code skips those services.
-func postgresBackup(svc app.Service) bool {
-	return svc.Backup != nil && svc.Backup.Engine == app.BackupPostgres
+// Two kinds of backup, two ways to run (feature 016). A dump engine's backup
+// (Postgres, MySQL, MongoDB: feature 046) is a Nomad job, which this file starts
+// and whose runs the watcher records. A volume backup runs inside the service's
+// own copy, and the run itself records it (volumebackup.go), so the Nomad-job
+// code skips those services.
+func dumpBackup(svc app.Service) bool {
+	return svc.Backup != nil && svc.Backup.Dumps()
 }
 
 // restoreTimeout is how long a restore may stay unfinished before it is
@@ -128,7 +129,7 @@ func (s *Service) backupDestination(ctx context.Context) (deploy.BackupDestinati
 
 // checkBackups refuses backups the installation can't run: none without a
 // destination. That is all a volume backup needs: no port and no credentials
-// (app.Validate checks a Postgres service's own).
+// (app.Validate checks a dump engine's own).
 func (s *Service) checkBackups(ctx context.Context, a app.App) error {
 	for i, svc := range a.Services {
 		if svc.Backup == nil {
@@ -145,36 +146,34 @@ func (s *Service) checkBackups(ctx context.Context, a app.App) error {
 }
 
 // syncBackups makes the app's backup jobs match a, with the credentials the
-// official postgres image reads, from the service's env or its secrets
-// (sets). Only Postgres backups are jobs; volume backups have none, and a
-// service that changed to one loses its old job. It answers a warning when it
-// couldn't: the app itself is deployed by then.
+// database's official image reads (app.FindDumpLogin), from the service's env or
+// its secrets (sets). Only the dump engines' backups are jobs; volume backups
+// have none, and a service that changed to one loses its old job. It answers a
+// warning when it couldn't: the app itself is deployed by then.
 func (s *Service) syncBackups(ctx context.Context, a app.App, digests map[string]string, sets secrets.Sets) []app.Warning {
 	dest, _, err := s.backupDestination(ctx)
 	if err == nil {
 		creds := map[string]deploy.BackupCredentials{}
 		for _, svc := range a.Services {
-			if !postgresBackup(svc) {
+			if !dumpBackup(svc) {
 				continue
 			}
-			value := func(name, def string) string {
+			// The service's env first, then its secrets: the same lookup for every engine.
+			login, _ := app.FindDumpLogin(svc.Backup.Engine, func(name string) (string, bool) {
 				for _, e := range svc.Env {
 					if e.Name == name {
-						return e.Value
+						return e.Value, true
 					}
 				}
-				if v, ok := sets[svc.Name][name]; ok {
-					return v
-				}
-				return def
-			}
-			user := value("POSTGRES_USER", "postgres")
-			creds[svc.Name] = deploy.BackupCredentials{User: user, Password: value("POSTGRES_PASSWORD", ""), Database: value("POSTGRES_DB", user)}
+				v, ok := sets[svc.Name][name]
+				return v, ok
+			})
+			creds[svc.Name] = deploy.BackupCredentials{User: login.User, Password: login.Password, Database: login.Database}
 		}
 		var private map[string]bool
 		var pins map[string][]string
 		if private, err = s.privateRegistries(ctx); err == nil {
-			// The pinned backups' timestamps go into each Postgres job's variable
+			// The pinned backups' timestamps go into each dump job's variable
 			// for its retention (feature 036).
 			if pins, err = s.pinStampsByService(ctx, a.ID); err == nil {
 				err = s.deployer.SyncBackups(ctx, a, digests, creds, dest, private, pins)
@@ -229,7 +228,7 @@ func (s *Service) backedUpService(ctx context.Context, appID, service string) (a
 // the service already running is ErrBackupRunning: two runs started within
 // the same second would be one run in Nomad.
 //
-// A Postgres backup is a Nomad job. A volume backup restarts the service's
+// A dump engine's backup (Postgres, MySQL, MongoDB) is a Nomad job. A volume backup restarts the service's
 // own copy and stops the service while it runs (see startVolumeBackup), which
 // can also be ErrNoRunningCopy.
 func (s *Service) BackUpNow(ctx context.Context, appID, service string) (store.BackupRecord, error) {
@@ -269,7 +268,7 @@ func (s *Service) backUpNow(ctx context.Context, appID, service, trigger string)
 	if err != nil {
 		return store.BackupRecord{}, err
 	}
-	rec := runRecord(appID, service, deploy.BackupRun{JobID: jobID, Status: deploy.RunRunning, Started: runTime(jobID)})
+	rec := runRecord(appID, service, svc.Backup.Engine, deploy.BackupRun{JobID: jobID, Status: deploy.RunRunning, Started: runTime(jobID)})
 	rec.Trigger = trigger
 	if err := s.store.SaveBackup(ctx, rec); err != nil {
 		return store.BackupRecord{}, err
@@ -279,12 +278,12 @@ func (s *Service) backUpNow(ctx context.Context, appID, service, trigger string)
 }
 
 // backupBusy reports whether a backup or restore of the service is running.
-// For a Postgres service that is Nomad's word for its backup jobs, and the
+// For a service with a dump engine that is Nomad's word for its backup jobs, and the
 // store's for restores. A volume run is no Nomad job, so for a volume service
 // it is the store's word for both: the run records itself as running before
 // it starts, and settles the record when it ends.
 func (s *Service) backupBusy(ctx context.Context, appID string, svc app.Service) (bool, error) {
-	if postgresBackup(svc) {
+	if dumpBackup(svc) {
 		runs, err := s.deployer.BackupRuns(ctx, appID, svc.Name)
 		if err != nil {
 			return false, err
@@ -316,7 +315,7 @@ func (s *Service) backupBusy(ctx context.Context, appID string, svc app.Service)
 // still in the destination can be restored, one backup or restore per service
 // at a time. It is the owner's restore: the record says so.
 //
-// A Postgres restore is a Nomad job that loads the dump into the running
+// A dump engine's restore is a Nomad job that loads the dump into the running
 // database. A volume restore restarts the service's own copy and stops the
 // service while its volumes are replaced with the archives' files (see
 // startVolumeRestore), which can also be ErrNoRunningCopy.
@@ -378,7 +377,7 @@ func (s *Service) restoreBackup(ctx context.Context, appID string, b store.Backu
 		return store.RestoreRecord{}, err
 	}
 	r := store.RestoreRecord{ID: strings.ToLower(rand.Text()), AppID: appID, Service: b.Service, BackupID: b.ID,
-		Status: store.BackupRunning, CreatedAt: time.Now().UTC(), Trigger: trigger, Pin: label}
+		Engine: svc.Backup.Engine, Status: store.BackupRunning, CreatedAt: time.Now().UTC(), Trigger: trigger, Pin: label}
 	if err := s.store.SaveRestore(ctx, r); err != nil {
 		return store.RestoreRecord{}, err
 	}
@@ -402,10 +401,10 @@ func runTime(jobID string) time.Time {
 	return time.Unix(ts, 0).UTC()
 }
 
-// runRecord is the store's record of one run.
-func runRecord(appID, service string, r deploy.BackupRun) store.BackupRecord {
+// runRecord is the store's record of one run of a dump engine's backup job.
+func runRecord(appID, service, engine string, r deploy.BackupRun) store.BackupRecord {
 	rec := store.BackupRecord{AppID: appID, ID: fmt.Sprintf("%s-%d", service, r.Started.Unix()), Service: service,
-		JobID: r.JobID, Status: r.Status, Object: r.Object, Bytes: r.Bytes, Message: r.Message, StartedAt: r.Started}
+		JobID: r.JobID, Engine: engine, Status: r.Status, Object: r.Object, Bytes: r.Bytes, Message: r.Message, StartedAt: r.Started}
 	if r.Status != deploy.RunRunning {
 		now := time.Now().UTC()
 		rec.FinishedAt = &now
@@ -447,13 +446,22 @@ func (s *Service) recordBackups(ctx context.Context) {
 	s.recordRestores(ctx)
 }
 
-// recordApp records the runs of a's Postgres-backed services that Nomad knows
-// and the store doesn't have as final yet. A volume backup isn't a Nomad job:
-// its run records itself.
+// expiredRecordID is the ID of the record of the backup file that retention
+// deleted: "<service>-<unix seconds>". The file is named <unix seconds> and the
+// engine's extension (".dump", ".sql.gz", ".archive.gz"), and the digits end at
+// the first dot.
+func expiredRecordID(service, file string) string {
+	stamp, _, _ := strings.Cut(file, ".")
+	return service + "-" + stamp
+}
+
+// recordApp records the runs of a's dump-backed services that Nomad knows and
+// the store doesn't have as final yet. A volume backup isn't a Nomad job: its
+// run records itself.
 func (s *Service) recordApp(ctx context.Context, a app.App) {
 	changed := false
 	for _, svc := range a.Services {
-		if !postgresBackup(svc) {
+		if !dumpBackup(svc) {
 			continue
 		}
 		runs, err := s.deployer.BackupRuns(ctx, a.ID, svc.Name)
@@ -471,7 +479,7 @@ func (s *Service) recordApp(ctx context.Context, a app.App) {
 			final[k.ID] = k.Status != store.BackupRunning
 		}
 		for _, run := range runs {
-			r := runRecord(a.ID, svc.Name, run)
+			r := runRecord(a.ID, svc.Name, svc.Backup.Engine, run)
 			if final[r.ID] {
 				continue
 			}
@@ -482,7 +490,7 @@ func (s *Service) recordApp(ctx context.Context, a app.App) {
 			changed = true
 			var expired []string
 			for _, f := range run.Expired {
-				expired = append(expired, svc.Name+"-"+strings.TrimSuffix(f, ".dump"))
+				expired = append(expired, expiredRecordID(svc.Name, f))
 			}
 			if err := s.store.ExpireBackups(ctx, a.ID, expired); err != nil {
 				s.log.Warn("record backups: expire", "app", a.ID, "error", err)
@@ -502,8 +510,8 @@ func (s *Service) recordRestores(ctx context.Context) {
 		return
 	}
 	for _, r := range running {
-		if r.Engine != app.BackupPostgres {
-			continue // a volume restore has no Nomad job: its run settles it
+		if !app.DumpEngine(r.Engine) {
+			continue // a volume or sqlite restore has no Nomad job: its run settles it
 		}
 		status, msg, err := s.deployer.RestoreStatus(ctx, r.AppID, r.Service)
 		if err != nil {

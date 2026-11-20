@@ -2,6 +2,7 @@ package templates
 
 import (
 	"embed"
+	"slices"
 	"strings"
 	"sync"
 
@@ -70,12 +71,14 @@ func Check(t Template, settings nomadjob.Settings) error {
 		digests[svc.Name] = ref.Name + checkDigest
 	}
 	for _, svc := range a.Services {
-		if svc.Backup == nil || svc.Backup.Engine != app.BackupPostgres {
+		if svc.Backup == nil {
 			continue
 		}
+		// Each dump engine reads its own password names (postgres, mysql, mongodb).
+		names := app.BackupPasswordNames(svc.Backup.Engine)
 		for _, e := range svc.Env {
-			if e.Name == "POSTGRES_PASSWORD" {
-				return fail("services."+svc.Name+".environment.POSTGRES_PASSWORD",
+			if slices.Contains(names, e.Name) {
+				return fail("services."+svc.Name+".environment."+e.Name,
 					"the backed-up database's password is a plain environment variable; make it a secret")
 			}
 		}

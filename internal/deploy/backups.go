@@ -19,9 +19,20 @@ import (
 // Backups (feature 010). The job shapes are in nomadjob; this file registers
 // them, writes the variables they read, and reads what their runs did.
 
-// BackupCredentials are what a dump logs in with.
+// BackupCredentials are what a dump logs in with. Database is Postgres's only:
+// the MySQL and MongoDB dumps take every database the login sees.
 type BackupCredentials struct {
 	User, Password, Database string
+}
+
+// items are the variable items that carry the credentials into the backup and
+// restore jobs: Postgres' own PG* names, DB_USER and DB_PASSWORD for the others
+// (the engines' scripts read them, feature 046).
+func (c BackupCredentials) items(engine string) map[string]string {
+	if engine == app.BackupPostgres {
+		return map[string]string{"PGUSER": c.User, "PGPASSWORD": c.Password, "PGDATABASE": c.Database}
+	}
+	return map[string]string{"DB_USER": c.User, "DB_PASSWORD": c.Password}
 }
 
 // BackupDestination is where backups go: an S3-compatible bucket.
@@ -43,7 +54,7 @@ type BackupRun struct {
 	Status  string    // RunRunning, RunSucceeded or RunFailed
 	Object  string    // bucket path of the dump, on success
 	Bytes   int64
-	Expired []string // dump files retention deleted, by name ("<ts>.dump")
+	Expired []string // dump files retention deleted, by name ("<ts>.dump", "<ts>.sql.gz", "<ts>.archive.gz")
 	Message string   // why it failed
 }
 
@@ -106,7 +117,7 @@ func destinationItems(appID, service string, dest BackupDestination) map[string]
 }
 
 // SyncBackups makes a's backup jobs match its definition: for every service
-// with a backup policy, its job's variable (credentials and destination)
+// with a dump engine's backup policy, its job's variable (credentials and destination)
 // and its periodic job, dumping with the service's pinned image from
 // digests; every other backup job of the app is purged with its runs and its
 // variable. creds are by service name. private is the set of registry hosts
@@ -120,17 +131,16 @@ func (d *Deployer) SyncBackups(ctx context.Context, a app.App, digests map[strin
 	creds map[string]BackupCredentials, dest BackupDestination, private map[string]bool, pins map[string][]string) error {
 	want := map[string]bool{}
 	for _, svc := range a.Services {
-		// Only Postgres backups are Nomad jobs. A volume backup runs inside
-		// the service's own copy (volumerun.go), so a service whose engine
-		// became "volume" falls through to the purge below.
-		if svc.Backup == nil || svc.Backup.Engine != app.BackupPostgres {
+		// Only the dump engines' backups are Nomad jobs. A volume backup runs
+		// inside the service's own copy (volumerun.go), so a service whose
+		// engine became "volume" falls through to the purge below.
+		if svc.Backup == nil || !svc.Backup.Dumps() {
 			continue
 		}
 		id := nomadjob.BackupJobID(a.ID, svc.Name)
 		want[id] = true
-		c := creds[svc.Name]
 		items := destinationItems(a.ID, svc.Name, dest)
-		items["PGUSER"], items["PGPASSWORD"], items["PGDATABASE"] = c.User, c.Password, c.Database
+		maps.Copy(items, creds[svc.Name].items(svc.Backup.Engine))
 		if len(pins[svc.Name]) > 0 {
 			items[backupPinnedItem] = pinList(pins[svc.Name])
 		}
@@ -170,11 +180,11 @@ func (d *Deployer) SyncBackups(ctx context.Context, a app.App, digests map[strin
 	return nil
 }
 
-// backupPinnedItem is the item of a Postgres backup job's variable that lists
-// its pinned backups' timestamps.
+// backupPinnedItem is the item of a dump engine's backup job's variable that
+// lists its pinned backups' timestamps.
 const backupPinnedItem = "BACKUP_PINNED"
 
-// SetBackupPins rewrites the pin list of service's Postgres backup job, keeping
+// SetBackupPins rewrites the pin list of service's dump backup job, keeping
 // every other item of its variable: stamps are the timestamps of the pinned
 // backups, none removes the item. A service with no backup variable has no job
 // yet (its first deploy writes the list), so there is nothing to do.

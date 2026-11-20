@@ -17,6 +17,10 @@ import (
 // Both read their credentials from their own Nomad Variable,
 // nomad/jobs/<job>, which only their tasks (and Caravana) can read.
 //
+// Postgres, MySQL (and MariaDB) and MongoDB share this shape (feature 046): they
+// differ in the dump and restore commands, the object's extension and whether
+// the upload task compresses, which dumps.go holds as one recipe per engine.
+//
 // Like Translate, these functions are pure.
 
 // BackupJobID is the periodic backup job of a service. App IDs and service
@@ -53,6 +57,13 @@ const dumpPath = "/alloc/data/backup.dump"
 // schedule. It uses $VAR and $(...) only: Nomad interpolates ${...} in task
 // config before the shell sees it.
 //
+// BACKUP_EXT is the object's extension (".dump", ".sql.gz", ".archive.gz"): the
+// object is <ts><ext>, and retention looks only at the files that end in it.
+// With BACKUP_GZIP=1 the dump is compressed first (a MySQL dump is plain SQL);
+// a dump that compresses itself leaves it 0. The compressed copy is made in a
+// file, not a pipe, because not every image's sh has pipefail and a failed gzip
+// must fail the run.
+//
 // BACKUP_PINNED, an item of the job's variable, lists the timestamps of the
 // pinned dumps (digits separated by spaces, or unset for none). A pinned dump
 // is never deleted and doesn't count against BACKUP_KEEP: BACKUP_KEEP is how
@@ -62,27 +73,36 @@ const dumpPath = "/alloc/data/backup.dump"
 // run's own dump is never deleted.
 const uploadScript = `set -eu
 ts=$(echo "$NOMAD_JOB_ID" | sed 's/.*periodic-//')
-key="$BACKUP_PATH/$ts.dump"
-rclone copyto ` + dumpPath + ` "dest:$key"
-echo "` + BackupDoneMarker + ` key=$key bytes=$(stat -c %s ` + dumpPath + `)"
+key="$BACKUP_PATH/$ts$BACKUP_EXT"
+src=` + dumpPath + `
+if [ "$BACKUP_GZIP" = 1 ]; then
+  gzip -c "$src" > "$src.gz"
+  src="$src.gz"
+fi
+rclone copyto "$src" "dest:$key"
+echo "` + BackupDoneMarker + ` key=$key bytes=$(stat -c %s "$src")"
 pinned=$(printenv BACKUP_PINNED || true)
 if printf '%s' "$pinned" | grep -q '[^0-9 ]'; then
   echo "old backups were not removed: the list of pinned backups is not valid" >&2
   exit 1
 fi
-files=$(rclone lsf --files-only "dest:$BACKUP_PATH/" | grep '\.dump$' | sort)
+files=$(rclone lsf --files-only "dest:$BACKUP_PATH/" | sort)
 candidates=
 for f in $files; do
+  case "$f" in
+    *"$BACKUP_EXT") ;;
+    *) continue ;;
+  esac
   is_pinned=
   for p in $pinned; do
-    [ "$f" != "$p.dump" ] || is_pinned=1
+    [ "$f" != "$p$BACKUP_EXT" ] || is_pinned=1
   done
   [ -n "$is_pinned" ] || candidates="$candidates $f"
 done
 n=$(echo $candidates | wc -w)
 if [ "$n" -gt "$BACKUP_KEEP" ]; then
   echo $candidates | tr ' ' '\n' | head -n $((n - BACKUP_KEEP)) | while read -r f; do
-    [ "$f" != "$ts.dump" ] || continue
+    [ "$f" != "$ts$BACKUP_EXT" ] || continue
     rclone deletefile "dest:$BACKUP_PATH/$f"
     echo "` + BackupExpiredMarker + ` $f"
   done
@@ -109,12 +129,13 @@ func withPullAuth(config map[string]any, image string, private map[string]bool) 
 const neverSpec = "0 0 30 2 *"
 
 // BackupJob is the periodic job that backs up svc of appID, dumping with
-// image (the service's pinned image). private is as for Translate: when image
-// comes from one of those registries, the dump task pulls it with the
-// credentials in the job's variable.
+// image (the service's pinned image) the way its engine does (dumps.go).
+// private is as for Translate: when image comes from one of those registries,
+// the dump task pulls it with the credentials in the job's variable.
 func BackupJob(appID string, svc app.Service, image string, s Settings, private map[string]bool) *api.Job {
 	id := BackupJobID(appID, svc.Name)
 	b := *svc.Backup
+	r := recipeFor(b.Engine)
 	j := batchJob(id, appID, svc.Name)
 	spec := b.ScheduleOrDefault()
 	if !b.Automatic() {
@@ -132,15 +153,16 @@ func BackupJob(appID string, svc app.Service, image string, s Settings, private 
 			Name:      "dump",
 			Driver:    "docker",
 			Lifecycle: &api.TaskLifecycle{Hook: "prestart"},
-			Config:    withPullAuth(map[string]any{"image": image, "command": "pg_dump", "args": []string{"-Fc", "-f", dumpPath}}, image, private),
-			Templates: []*api.Template{variableTemplate(id), databaseTemplate(appID, svc.Name)},
+			Config:    withPullAuth(r.dumpConfig(image), image, private),
+			Templates: []*api.Template{variableTemplate(id), databaseTemplate(appID, svc.Name, r)},
 			Resources: smallResources(),
 		},
 		&api.Task{
-			Name:      "upload",
-			Driver:    "docker",
-			Config:    map[string]any{"image": s.backupImage(), "entrypoint": []string{"/bin/sh", "-c"}, "args": []string{uploadScript}},
-			Env:       map[string]string{"BACKUP_KEEP": strconv.Itoa(b.KeepOrDefault())},
+			Name:   "upload",
+			Driver: "docker",
+			Config: map[string]any{"image": s.backupImage(), "entrypoint": []string{"/bin/sh", "-c"}, "args": []string{uploadScript}},
+			Env: map[string]string{"BACKUP_KEEP": strconv.Itoa(b.KeepOrDefault()), "BACKUP_EXT": r.ext,
+				"BACKUP_GZIP": r.gzipFlag()},
 			Templates: []*api.Template{variableTemplate(id)},
 			Resources: smallResources(),
 		},
@@ -153,6 +175,10 @@ func BackupJob(appID string, svc app.Service, image string, s Settings, private 
 // image (the service's current pinned image). private is as for BackupJob.
 func RestoreJob(appID string, svc app.Service, image, object string, s Settings, private map[string]bool) *api.Job {
 	id := RestoreJobID(appID, svc.Name)
+	r := recipeFor("") // Postgres: a service without a policy has nothing else to go by
+	if svc.Backup != nil {
+		r = recipeFor(svc.Backup.Engine)
+	}
 	j := batchJob(id, appID, svc.Name)
 	j.Meta["backup_key"] = object
 	j.TaskGroups = []*api.TaskGroup{batchGroup("restore",
@@ -160,20 +186,15 @@ func RestoreJob(appID string, svc app.Service, image, object string, s Settings,
 			Name:      "download",
 			Driver:    "docker",
 			Lifecycle: &api.TaskLifecycle{Hook: "prestart"},
-			// Here Nomad's interpolation is wanted: it puts the job's meta in.
-			Config:    map[string]any{"image": s.backupImage(), "args": []string{"copyto", "dest:${NOMAD_META_backup_key}", dumpPath}},
+			Config:    r.downloadConfig(s.backupImage()),
 			Templates: []*api.Template{variableTemplate(id)},
 			Resources: smallResources(),
 		},
-		// One transaction: a restore that fails partway (a scheduled one
-		// included, feature 036) leaves the database as it was, not half
-		// cleaned.
 		&api.Task{
-			Name:   "restore",
-			Driver: "docker",
-			Config: withPullAuth(map[string]any{"image": image, "entrypoint": []string{"/bin/sh", "-c"},
-				"args": []string{`pg_restore --clean --if-exists --no-owner --single-transaction -d "$PGDATABASE" ` + dumpPath}}, image, private),
-			Templates: []*api.Template{variableTemplate(id), databaseTemplate(appID, svc.Name)},
+			Name:      "restore",
+			Driver:    "docker",
+			Config:    withPullAuth(r.restoreConfig(image), image, private),
+			Templates: []*api.Template{variableTemplate(id), databaseTemplate(appID, svc.Name, r)},
 			Resources: smallResources(),
 		},
 	)}
@@ -217,13 +238,14 @@ func variableTemplate(jobID string) *api.Template {
 	}
 }
 
-// databaseTemplate renders PGHOST and PGPORT from the service's main
+// databaseTemplate renders the engine's host and port variables (r.host and
+// r.port: PGHOST and PGPORT, DB_HOST and DB_PORT) from the service's main
 // registration (the node's address and the host port, which every service
 // with ports has), skipping canaries.
-func databaseTemplate(appID, service string) *api.Template {
+func databaseTemplate(appID, service string, r dumpRecipe) *api.Template {
 	return &api.Template{
-		EmbeddedTmpl: new(fmt.Sprintf(`{{ range nomadService %q }}{{ if not (.Tags | contains %q) }}PGHOST={{ .Address }}`+"\n"+`PGPORT={{ .Port }}`+"\n"+`{{ end }}{{ end }}`,
-			appID+"-"+service, canaryTag)),
+		EmbeddedTmpl: new(fmt.Sprintf(`{{ range nomadService %q }}{{ if not (.Tags | contains %q) }}%s={{ .Address }}`+"\n"+`%s={{ .Port }}`+"\n"+`{{ end }}{{ end }}`,
+			appID+"-"+service, canaryTag, r.host, r.port)),
 		DestPath:   new("local/database.env"),
 		Envvars:    new(true),
 		ChangeMode: new("noop"),

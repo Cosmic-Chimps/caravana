@@ -340,10 +340,70 @@ func TestValidate(t *testing.T) {
 			a.Services[0].Secrets = []Secret{{Name: "POSTGRES_PASSWORD"}}
 			a.Services[0].Backup = &Backup{Engine: BackupPostgres}
 		}, ""},
-		{"backup engine mysql", func(a *App, d *Deployment) {
+		{"backup engine redis", func(a *App, d *Deployment) {
 			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
-			a.Services[0].Backup = &Backup{Engine: "mysql"}
+			a.Services[0].Backup = &Backup{Engine: "redis"}
 		}, "services[0].backup.engine"},
+
+		// The mysql and mongodb dump engines (feature 046): port and login by name.
+		{"valid mysql backup with a root password", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "MARIADB_ROOT_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupMySQL, Schedule: "*/15 * * * *", Keep: 3}
+		}, ""},
+		{"valid mysql backup with MYSQL_ROOT_PASSWORD as a secret", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "MYSQL_ROOT_PASSWORD"}}
+			a.Services[0].Backup = &Backup{Engine: BackupMySQL}
+		}, ""},
+		{"valid mysql backup with a user and password", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "MYSQL_USER", Value: "app"}}
+			a.Services[0].Secrets = []Secret{{Name: "MYSQL_PASSWORD"}}
+			a.Services[0].Backup = &Backup{Engine: BackupMySQL}
+		}, ""},
+		{"mysql backup with a user and no password", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "MYSQL_USER", Value: "app"}}
+			a.Services[0].Backup = &Backup{Engine: BackupMySQL}
+		}, "services[0].backup"},
+		{"mysql backup with a password and no user", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "MARIADB_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupMySQL}
+		}, "services[0].backup"},
+		{"mysql backup with only a postgres password", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupMySQL}
+		}, "services[0].backup"},
+		{"mysql backup without ports", func(a *App, d *Deployment) {
+			a.Services[1].Env = []EnvVar{{Name: "MYSQL_ROOT_PASSWORD", Value: "pw"}}
+			a.Services[1].Backup = &Backup{Engine: BackupMySQL}
+		}, "services[1].backup"},
+		{"mysql backup keep too many", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "MYSQL_ROOT_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupMySQL, Keep: 101}
+		}, "services[0].backup.keep"},
+		{"mysql backup naming a file", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "MYSQL_ROOT_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupMySQL, File: "/data/x.db"}
+		}, "services[0].backup.file"},
+		{"valid mongodb backup", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "MONGO_INITDB_ROOT_USERNAME", Value: "root"}}
+			a.Services[0].Secrets = []Secret{{Name: "MONGO_INITDB_ROOT_PASSWORD"}}
+			a.Services[0].Backup = &Backup{Engine: BackupMongoDB, Schedule: BackupScheduleNever}
+		}, ""},
+		{"mongodb backup without a user", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "MONGO_INITDB_ROOT_PASSWORD"}}
+			a.Services[0].Backup = &Backup{Engine: BackupMongoDB}
+		}, "services[0].backup"},
+		{"mongodb backup without a password", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "MONGO_INITDB_ROOT_USERNAME", Value: "root"}}
+			a.Services[0].Backup = &Backup{Engine: BackupMongoDB}
+		}, "services[0].backup"},
+		{"mongodb backup without ports", func(a *App, d *Deployment) {
+			a.Services[1].Env = []EnvVar{{Name: "MONGO_INITDB_ROOT_USERNAME", Value: "root"}, {Name: "MONGO_INITDB_ROOT_PASSWORD", Value: "pw"}}
+			a.Services[1].Backup = &Backup{Engine: BackupMongoDB}
+		}, "services[1].backup"},
+		{"mongodb backup with a restore schedule", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "MONGO_INITDB_ROOT_USERNAME", Value: "root"}, {Name: "MONGO_INITDB_ROOT_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupMongoDB, Restore: &RestoreSchedule{Schedule: "0 4 * * *", From: "golden"}}
+		}, ""},
 		{"backup keep too many", func(a *App, d *Deployment) {
 			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
 			a.Services[0].Backup = &Backup{Engine: BackupPostgres, Keep: 101}

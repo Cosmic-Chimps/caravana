@@ -270,23 +270,25 @@ func unmountedVolumes(old, next app.App, servers map[string]string) []app.Warnin
 	return out
 }
 
-// PlainBackupPasswords warns about each service backed up with the postgres
-// engine whose POSTGRES_PASSWORD is a plain environment variable (feature 010,
-// QA #36): the backup works, but a plain value is part of the app's
-// definition, so it shows in the API's answers, the Nomad job and an export.
-// A secret of the same name keeps it out of all three.
+// PlainBackupPasswords warns about each service backed up with a dump engine
+// (postgres, mysql, mongodb) whose password is a plain environment variable
+// (feature 010, QA #36; app.BackupPasswordNames lists the names per engine): the
+// backup works, but a plain value is part of the app's definition, so it shows
+// in the API's answers, the Nomad job and an export. A secret of the same name
+// keeps it out of all three.
 func PlainBackupPasswords(a app.App) []app.Warning {
 	var out []app.Warning
 	for i, svc := range a.Services {
-		if svc.Backup == nil || svc.Backup.Engine != app.BackupPostgres {
+		if svc.Backup == nil {
 			continue
 		}
+		names := app.BackupPasswordNames(svc.Backup.Engine)
 		for j, e := range svc.Env {
-			if e.Name == "POSTGRES_PASSWORD" {
+			if slices.Contains(names, e.Name) {
 				out = append(out, app.Warning{
 					Field: fmt.Sprintf("services[%d].env[%d]", i, j),
-					Message: fmt.Sprintf("service %q is backed up with POSTGRES_PASSWORD from its environment, "+
-						"so the password shows in the app's definition, its Nomad job and exports; make it a secret instead", svc.Name),
+					Message: fmt.Sprintf("service %q is backed up with %s from its environment, "+
+						"so the password shows in the app's definition, its Nomad job and exports; make it a secret instead", svc.Name, e.Name),
 				})
 			}
 		}

@@ -15,7 +15,7 @@ import (
 // deletes a pinned backup and counts only the unpinned ones against keep, and a
 // service's restore schedule names the label of the backup it restores. The
 // store holds the labels; each engine's retention is told the pinned
-// timestamps when it runs (a Postgres job reads them from its variable, a
+// timestamps when it runs (a dump job reads them from its variable, a
 // volume run from its request, a sqlite upload from its arguments), so they
 // must never be older than the store's. That is what the app's deploy lock is
 // for here: a pin change takes it without waiting and is refused while a deploy
@@ -166,9 +166,9 @@ func (s *Service) refuseIfBackupBusy(ctx context.Context, appID, service string)
 }
 
 // publishPins tells the service's engine about the pins the store holds now.
-// Only a Postgres backup keeps a copy of them in Nomad (its job's variable);
-// the other engines are given the list with each run, so there is nothing to
-// publish.
+// Only a dump engine's backup keeps a copy of them in Nomad (its job's
+// variable); the other engines are given the list with each run, so there is
+// nothing to publish.
 func (s *Service) publishPins(ctx context.Context, appID, service string) error {
 	_, svc, err := s.backedUpService(ctx, appID, service)
 	if errors.Is(err, store.ErrNotFound) {
@@ -177,7 +177,7 @@ func (s *Service) publishPins(ctx context.Context, appID, service string) error 
 	if err != nil {
 		return err
 	}
-	if !postgresBackup(svc) {
+	if !dumpBackup(svc) {
 		return nil
 	}
 	stamps, err := s.pinStamps(ctx, appID, service)

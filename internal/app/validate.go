@@ -112,8 +112,9 @@ func validateBackup(field string, svc Service) error {
 	if b == nil {
 		return nil
 	}
-	if b.Engine != BackupPostgres && b.Engine != BackupVolume && b.Engine != BackupSQLite {
-		return NewFieldError(field+".engine", "%q is not supported; it is %q, %q or %q", b.Engine, BackupPostgres, BackupVolume, BackupSQLite)
+	if !b.Dumps() && b.Engine != BackupVolume && b.Engine != BackupSQLite {
+		return NewFieldError(field+".engine", "%q is not supported; it is %q, %q, %q, %q or %q",
+			b.Engine, BackupPostgres, BackupMySQL, BackupMongoDB, BackupVolume, BackupSQLite)
 	}
 	if b.File != "" && b.Engine != BackupSQLite {
 		return NewFieldError(field+".file", "only the %q engine names a file", BackupSQLite)
@@ -138,10 +139,8 @@ func validateBackup(field string, svc Service) error {
 	if len(svc.Ports) == 0 {
 		return NewFieldError(field, "the backup reaches the database over its port, and the service has none")
 	}
-	has := slices.ContainsFunc(svc.Env, func(e EnvVar) bool { return e.Name == "POSTGRES_PASSWORD" }) ||
-		slices.ContainsFunc(svc.Secrets, func(s Secret) bool { return s.Name == "POSTGRES_PASSWORD" })
-	if !has {
-		return NewFieldError(field, "the backup logs in with POSTGRES_PASSWORD; set it in the service's environment or secrets")
+	if !hasDumpLogin(b.Engine, svc) {
+		return NewFieldError(field, "the backup %s; set it in the service's environment or secrets", DumpLoginHint(b.Engine))
 	}
 	return nil
 }

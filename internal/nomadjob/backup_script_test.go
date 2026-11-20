@@ -2,144 +2,126 @@ package nomadjob
 
 import (
 	"bytes"
+	"compress/gzip"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
-	"sync"
 	"testing"
 )
 
-// The upload task of the Postgres backup job, under a real sh with a fake
-// rclone and stat. The script is the only one of the three engines that had no
+// The upload task of the backup jobs under a real sh with fake tools (see
+// dumps_script_test.go). It was the only one of the engines' scripts without a
 // test of its own before feature 036.
 
-// postgresFakeRclone knows the three calls uploadScript makes: copyto of the
-// dump (the bucket gets a file named for the destination), lsf --files-only of
-// the backup path, and deletefile.
-const postgresFakeRclone = `#!/bin/sh
-echo "rclone $*" >> "$FAKE_LOG"
-cmd=$1
-shift
-local_path() { echo "$FAKE_BUCKET/${1#dest:}"; }
-case "$cmd" in
-  copyto)
-    p=$(local_path "$2")
-    mkdir -p "$(dirname "$p")" && echo dump > "$p" ;;
-  lsf)
-    shift # --files-only
-    p=$(local_path "$1")
-    [ -d "$p" ] || { echo "directory not found" >&2; exit 3; }
-    for f in "$p"/*; do [ -f "$f" ] && basename "$f"; done
-    exit 0 ;;
-  deletefile)
-    rm -f "$(local_path "$1")" ;;
-  *) echo "fake rclone: unknown command $cmd" >&2; exit 2 ;;
-esac
-`
-
-// postgresFakeStat answers "stat -c %s <file>", which is GNU's: BusyBox has it,
-// macOS' stat doesn't. The dump isn't on this machine, so the size is fixed.
-const postgresFakeStat = `#!/bin/sh
-echo 1234
-`
-
-var (
-	postgresTools     sync.Once
-	postgresToolsPath string
-	postgresToolsErr  error
-)
-
-// postgresToolsDir writes the fakes once for the whole test run, as
-// fakeToolsDir does (macOS scans every new executable). TestMain removes
-// the folder when the tests are done.
-func postgresToolsDir(t *testing.T) string {
-	t.Helper()
-	postgresTools.Do(func() {
-		postgresToolsPath, postgresToolsErr = os.MkdirTemp("", "caravana-postgres-tools-")
-		if postgresToolsErr != nil {
-			return
-		}
-		for name, text := range map[string]string{"rclone": postgresFakeRclone, "stat": postgresFakeStat} {
-			if postgresToolsErr = os.WriteFile(filepath.Join(postgresToolsPath, name), []byte(text), 0o755); postgresToolsErr != nil {
-				return
-			}
-		}
-	})
-	if postgresToolsErr != nil {
-		t.Fatalf("fake tools: %v", postgresToolsErr)
-	}
-	return postgresToolsPath
+// uploadCase is one run of uploadScript.
+type uploadCase struct {
+	ext      string   // the engine's object extension
+	gzip     bool     // BACKUP_GZIP
+	dump     string   // what the dump task left in the dump file
+	existing []string // stamps of the backups already in the destination, each as <stamp><ext>
+	others   []string // other files under the path, which retention must leave
+	keep     string
+	ts       string
+	pinned   *string // nil for "BACKUP_PINNED is not an item at all"
 }
 
-// uploadRun runs uploadScript as the upload task does: the job's variable is its
-// environment. pinned is nil for "BACKUP_PINNED is not an item at all".
-func uploadRun(t *testing.T, existing []string, keep string, ts string, pinned *string) (stdout, stderr string, code int, left []string) {
-	t.Helper()
-	for _, tool := range []string{"sh", "sed", "grep", "sort", "tr", "head", "wc", "printenv", "basename", "mkdir", "rm"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s not found: %v", tool, err)
-		}
-	}
-	dir := t.TempDir()
-	bucket := filepath.Join(dir, "bucket")
-	for _, stamp := range existing {
-		p := filepath.Join(bucket, "b/notes/db", stamp+".dump")
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte("old "+stamp), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// Other things under the path are not dumps, and stay.
-	for _, other := range []string{"b/notes/db/readme", "b/notes/db/1500.sqlite.gz"} {
-		p := filepath.Join(bucket, other)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte("keep me"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+// uploadResult is what uploadScript did.
+type uploadResult struct {
+	stdout, stderr string
+	code           int
+	files          map[string][]byte // the destination's files under the path, by name
+}
 
-	cmd := exec.Command("sh", "-c", uploadScript)
-	cmd.Dir = dir
-	// A pinned item left in the test process's own environment must not leak in.
-	var env []string
-	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "BACKUP_") && !strings.HasPrefix(e, "NOMAD_") {
-			env = append(env, e)
-		}
+// runUpload runs uploadScript as the upload task does: the job's variable and
+// the task's env are its environment.
+func runUpload(t *testing.T, c uploadCase) uploadResult {
+	t.Helper()
+	r := newDumpRun(t, "rclone", "stat")
+	for _, stamp := range c.existing {
+		r.putObject("b/notes/db/"+stamp+c.ext, "old "+stamp)
 	}
-	cmd.Env = append(env, "PATH="+postgresToolsDir(t)+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"FAKE_BUCKET="+bucket, "FAKE_LOG="+filepath.Join(dir, "calls.log"),
-		"NOMAD_JOB_ID=notes_db_backup/periodic-"+ts, "BACKUP_PATH=b/notes/db", "BACKUP_KEEP="+keep)
-	if pinned != nil {
-		cmd.Env = append(cmd.Env, "BACKUP_PINNED="+*pinned)
+	for _, other := range c.others {
+		r.putObject("b/notes/db/"+other, "keep me")
 	}
-	var out, errOut bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errOut
-	if err := cmd.Run(); err != nil {
-		ee, ok := err.(*exec.ExitError)
-		if !ok {
-			t.Fatalf("run: %v", err)
-		}
-		code = ee.ExitCode()
+	if err := os.WriteFile(r.dump, []byte(c.dump), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "PWNED")); err == nil {
+	env := []string{"NOMAD_JOB_ID=notes_db_backup/periodic-" + c.ts, "BACKUP_PATH=b/notes/db", "BACKUP_KEEP=" + c.keep,
+		"BACKUP_EXT=" + c.ext, "BACKUP_GZIP=0"}
+	if c.gzip {
+		env[len(env)-1] = "BACKUP_GZIP=1"
+	}
+	if c.pinned != nil {
+		env = append(env, "BACKUP_PINNED="+*c.pinned)
+	}
+	stdout, stderr, code := r.run(uploadScript, env...)
+	if _, err := os.Stat(filepath.Join(r.dir, "PWNED")); err == nil {
 		t.Error("a value was run as a shell command")
 	}
-	files, err := os.ReadDir(filepath.Join(bucket, "b/notes/db"))
+	res := uploadResult{stdout: stdout, stderr: stderr, code: code, files: map[string][]byte{}}
+	entries, err := os.ReadDir(filepath.Join(r.bucket, "b/notes/db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range files {
-		left = append(left, f.Name())
+	for _, f := range entries {
+		b, err := os.ReadFile(filepath.Join(r.bucket, "b/notes/db", f.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.files[f.Name()] = b
 	}
-	slices.Sort(left)
-	return out.String(), errOut.String(), code, left
+	return res
+}
+
+// names are the file names, sorted.
+func (u uploadResult) names() []string {
+	var out []string
+	for n := range u.files {
+		out = append(out, n)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// expired are the files the run said retention deleted.
+func (u uploadResult) expired() []string {
+	var out []string
+	for line := range strings.Lines(u.stdout) {
+		if f, ok := strings.CutPrefix(line, BackupExpiredMarker+" "); ok {
+			out = append(out, strings.TrimSpace(f))
+		}
+	}
+	return out
+}
+
+func gunzipString(t *testing.T, b []byte) string {
+	t.Helper()
+	zr, err := gzip.NewReader(bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("not gzip: %v", err)
+	}
+	out, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+// exitCode is the exit code of a finished command, whatever its error.
+func exitCode(t *testing.T, err error) int {
+	t.Helper()
+	if err == nil {
+		return 0
+	}
+	ee, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("run: %v", err)
+	}
+	return ee.ExitCode()
 }
 
 func TestPostgresUploadScript(t *testing.T) {
@@ -179,25 +161,27 @@ func TestPostgresUploadScript(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stdout, stderr, code, files := uploadRun(t, tt.existing, tt.keep, tt.ts, tt.pinned)
-			if code != tt.wantCode || stderr != tt.wantStderr {
-				t.Fatalf("exit %d, stderr %q; want %d and %q", code, stderr, tt.wantCode, tt.wantStderr)
+			res := runUpload(t, uploadCase{ext: ".dump", dump: "pg dump\n", existing: tt.existing,
+				others: []string{"readme", "1500.sqlite.gz"}, keep: tt.keep, ts: tt.ts, pinned: tt.pinned})
+			if res.code != tt.wantCode || res.stderr != tt.wantStderr {
+				t.Fatalf("exit %d, stderr %q; want %d and %q", res.code, res.stderr, tt.wantCode, tt.wantStderr)
 			}
-			// The upload happened before retention either way.
-			if !strings.Contains(stdout, BackupDoneMarker+" key=b/notes/db/"+tt.ts+".dump bytes=1234\n") {
-				t.Errorf("stdout = %q, want the done marker for the new dump", stdout)
+			// The upload happened before retention either way, as the plain file.
+			if !strings.Contains(res.stdout, BackupDoneMarker+" key=b/notes/db/"+tt.ts+".dump bytes=8\n") {
+				t.Errorf("stdout = %q, want the done marker for the new dump", res.stdout)
+			}
+			if got := string(res.files[tt.ts+".dump"]); got != "pg dump\n" {
+				t.Errorf("uploaded %q, want the dump as it was", got)
 			}
 			var expired []string
-			for line := range strings.Lines(stdout) {
-				if f, ok := strings.CutPrefix(line, BackupExpiredMarker+" "); ok {
-					expired = append(expired, strings.TrimSuffix(strings.TrimSpace(f), ".dump"))
-				}
+			for _, f := range res.expired() {
+				expired = append(expired, strings.TrimSuffix(f, ".dump"))
 			}
 			if !slices.Equal(expired, tt.wantExpired) {
 				t.Errorf("expired = %v, want %v", expired, tt.wantExpired)
 			}
 			var left []string
-			for _, f := range files {
+			for _, f := range res.names() {
 				if stamp, ok := strings.CutSuffix(f, ".dump"); ok {
 					left = append(left, stamp)
 				}
@@ -206,10 +190,68 @@ func TestPostgresUploadScript(t *testing.T) {
 				t.Errorf("dumps left = %v, want %v", left, tt.wantLeft)
 			}
 			for _, other := range []string{"readme", "1500.sqlite.gz"} {
-				if !slices.Contains(files, other) {
+				if _, ok := res.files[other]; !ok {
 					t.Errorf("retention deleted %s, which isn't a dump", other)
 				}
 			}
 		})
 	}
+}
+
+// The MySQL and MongoDB objects (feature 046) go through the same script: it
+// lists only the files that end in the engine's extension and a pin matches
+// <stamp><ext>, so the engines' backups in one folder never touch each other's.
+func TestUploadScriptExtensions(t *testing.T) {
+	t.Run("a mysql dump is compressed and keeps its pins", func(t *testing.T) {
+		res := runUpload(t, uploadCase{ext: ".sql.gz", gzip: true, dump: "CREATE TABLE t (id int);\n",
+			existing: []string{"1700", "1701", "1702", "1703"}, others: []string{"1500.dump", "1600.archive.gz", "readme", "1650.sql"},
+			keep: "2", ts: "1791", pinned: new("1700")})
+		if res.code != 0 || res.stderr != "" {
+			t.Fatalf("exit %d, stderr %q", res.code, res.stderr)
+		}
+		obj, ok := res.files["1791.sql.gz"]
+		if !ok {
+			t.Fatalf("no object, files %v", res.names())
+		}
+		if got := gunzipString(t, obj); got != "CREATE TABLE t (id int);\n" {
+			t.Errorf("the object holds %q", got)
+		}
+		if want := BackupDoneMarker + " key=b/notes/db/1791.sql.gz bytes=" + strconv.Itoa(len(obj)) + "\n"; !strings.Contains(res.stdout, want) {
+			t.Errorf("stdout = %q, want the compressed size in %q", res.stdout, want)
+		}
+		wantNames := []string{"1500.dump", "1600.archive.gz", "1650.sql", "1700.sql.gz", "1703.sql.gz", "1791.sql.gz", "readme"}
+		if got := res.names(); !slices.Equal(got, wantNames) {
+			t.Errorf("files = %v, want %v", got, wantNames)
+		}
+		if want := []string{"1701.sql.gz", "1702.sql.gz"}; !slices.Equal(res.expired(), want) {
+			t.Errorf("expired = %v, want %v", res.expired(), want)
+		}
+	})
+	t.Run("a mongodb archive is uploaded as it is", func(t *testing.T) {
+		res := runUpload(t, uploadCase{ext: ".archive.gz", dump: "already compressed",
+			existing: []string{"1700", "1701"}, others: []string{"1500.sql.gz", "1600.dump"}, keep: "1", ts: "1791"})
+		if res.code != 0 || res.stderr != "" {
+			t.Fatalf("exit %d, stderr %q", res.code, res.stderr)
+		}
+		if got := string(res.files["1791.archive.gz"]); got != "already compressed" {
+			t.Errorf("the object holds %q", got)
+		}
+		// KEEP counts the new archive: of three, one stays.
+		wantNames := []string{"1500.sql.gz", "1600.dump", "1791.archive.gz"}
+		if got := res.names(); !slices.Equal(got, wantNames) {
+			t.Errorf("files = %v, want %v", got, wantNames)
+		}
+	})
+	t.Run("a failed gzip fails the run before anything is uploaded", func(t *testing.T) {
+		r := newDumpRun(t, "rclone", "stat")
+		// No dump file: gzip can't read it.
+		stdout, _, code := r.run(uploadScript, "NOMAD_JOB_ID=notes_db_backup/periodic-1791", "BACKUP_PATH=b/notes/db",
+			"BACKUP_KEEP=3", "BACKUP_EXT=.sql.gz", "BACKUP_GZIP=1")
+		if code == 0 || strings.Contains(stdout, BackupDoneMarker) {
+			t.Errorf("exit %d, stdout %q: a missing dump must fail the run", code, stdout)
+		}
+		if _, err := os.Stat(filepath.Join(r.bucket, "b/notes/db/1791.sql.gz")); err == nil {
+			t.Error("something was uploaded")
+		}
+	})
 }

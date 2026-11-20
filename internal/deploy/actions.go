@@ -293,12 +293,12 @@ func (d *Deployer) checksPass(ctx context.Context, copyID string) (bool, error) 
 }
 
 // BackupJobIDs are the Nomad jobs StopApp and StartApp take along with the app:
-// the periodic backup job of each service with a Postgres backup. (A volume
+// the periodic backup job of each service with a dump engine's backup. (A volume
 // backup is no job, and restore jobs aren't periodic.)
 func BackupJobIDs(a app.App) []string {
 	var ids []string
 	for _, svc := range a.Services {
-		if svc.Backup != nil && svc.Backup.Engine == app.BackupPostgres {
+		if svc.Backup != nil && svc.Backup.Dumps() {
 			ids = append(ids, nomadjob.BackupJobID(a.ID, svc.Name))
 		}
 	}

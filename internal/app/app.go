@@ -223,13 +223,33 @@ const (
 	// BackupSQLite is a consistent copy of one SQLite file on a volume, made
 	// while the service runs (feature 029).
 	BackupSQLite = "sqlite"
+	// BackupMySQL is mariadb-dump or mysqldump (whichever the service's image
+	// has) and the same client to restore, for MySQL and MariaDB. The service
+	// keeps running (feature 046).
+	BackupMySQL = "mysql"
+	// BackupMongoDB is mongodump and mongorestore, with the service running
+	// (feature 046).
+	BackupMongoDB = "mongodb"
 )
+
+// DumpEngine reports whether engine is one that runs as Nomad jobs and reaches
+// the database over its port: Postgres, MySQL and MongoDB. The volume and
+// sqlite engines run inside the service's own copy instead. Every place that
+// has to know "is this backup a Nomad job" asks here, so a new dump engine is
+// one more case in one place.
+func DumpEngine(engine string) bool {
+	return engine == BackupPostgres || engine == BackupMySQL || engine == BackupMongoDB
+}
+
+// Dumps reports whether the backup is a dump engine's (see DumpEngine).
+func (b Backup) Dumps() bool { return DumpEngine(b.Engine) }
 
 // Backup is a service's backup policy.
 type Backup struct {
-	// Engine is how the service is backed up: BackupPostgres, for a database
-	// Caravana reaches over its port, BackupVolume, for the files of the
-	// service's volumes, or BackupSQLite, for one SQLite file on a volume.
+	// Engine is how the service is backed up: a dump engine (BackupPostgres,
+	// BackupMySQL or BackupMongoDB), for a database Caravana reaches over its
+	// port, BackupVolume, for the files of the service's volumes, or
+	// BackupSQLite, for one SQLite file on a volume.
 	Engine string `json:"engine"`
 	// File is the SQLite database's absolute path as the service sees it.
 	// Only the sqlite engine takes it, and it is required there: it must lie
