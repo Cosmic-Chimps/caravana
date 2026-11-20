@@ -149,6 +149,8 @@ func (s *server) routeTable() []route {
 		{"GET", "/logs", s.requireSession(s.showLogsPage)},
 		{"GET", "/parts/logs", s.requirePart(s.partLogs)},
 		{"GET", "/logs/download", s.requireSession(s.downloadLogsFile)},
+		{"GET", "/requests", s.requireSession(s.showRequestsPage)},
+		{"GET", "/parts/requests", s.requirePart(s.partRequests)},
 		{"GET", "/ops", s.requireSession(s.showOps)},
 		{"GET", "/parts/ops/server", s.requirePart(s.partOpsServer)},
 		{"GET", "/ops/servers", s.requireSession(s.showOpsServers)},
@@ -224,6 +226,7 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/promote", s.protected(s.requireSession(s.promoteApp))},
 		{"POST", "/apps/{id}/copy", s.protected(s.requireSession(s.copyApp))},
 		{"GET", "/apps/{id}/logs", s.requireSession(s.showAppLogs)},
+		{"GET", "/apps/{id}/requests", s.requireSession(s.showAppRequests)},
 		{"POST", "/apps/{id}/deploy", s.protected(s.requireSession(s.deployApp))},
 		{"POST", "/apps/{id}/deployments/{deploymentId}/redeploy", s.protected(s.requireSession(s.redeployVersion))},
 		{"GET", "/apps/{id}/deployments/{deploymentId}/jobspec", s.requireSession(s.exportVersion)},
@@ -387,7 +390,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "requests", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which
@@ -413,6 +416,10 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 		// comes after it, so the app's "content", "head" and "page-class" are the ones the set keeps.
 		if name == "app" {
 			files = append(files, "templates/logs.html")
+		}
+		// An app's Requests tab is the Requests page filtered to the app (feature 047), the same way.
+		if name == "app" {
+			files = append(files, "templates/requests.html")
 		}
 		// The Operator Overview draws the Needs-you list with the Developer home's own template
 		// (feature 027), and a project's page its rail's Needs-you list and Activity rows (feature

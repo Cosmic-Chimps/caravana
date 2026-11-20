@@ -1078,3 +1078,31 @@ func TestHistogramMarkersNameV0AndOneDeployOnce(t *testing.T) {
 		t.Errorf("no version: %q %+v", none.Deploy, none.Marks)
 	}
 }
+
+// A window the address gives, from and to (a request's row and Monitoring's Errors chart link to one,
+// feature 047): the page reads that window, paused, with no Live button, and says so.
+func TestLogsPageWindow(t *testing.T) {
+	e := logsPageEnv(t)
+	from, to := e.now.Add(-8*time.Minute-30*time.Second).Truncate(time.Second), e.now.Add(-6*time.Minute-30*time.Second).Truncate(time.Second)
+	q := "from=" + url.QueryEscape(from.Format(time.RFC3339)) + "&to=" + url.QueryEscape(to.Format(time.RFC3339))
+	body := e.pageOf(t, "/logs?"+q+"&service=blog%2Fweb")
+	got := text(body)
+	lgWant(t, "window", got, "connection refused to db", "slow query took 2s", to.Format("15:04")+" UTC")
+	lgWant(t, "window", body, `aria-label="2 lines in this range, 1 error"`)
+	lgNot(t, "window", got, "listening on :8080", "json boom", "retry failed")
+	lgNot(t, "window", body, "cv-livebtn", "sse-connect", `cv-seg-item cv-on`, "data-logs-feed")
+	// The range bar leaves the window and follows again; the download keeps it.
+	lgWant(t, "window", body, `href="/logs?range=1h&amp;service=blog%2Fweb" class="cv-seg-item"`,
+		`href="/logs/download?`+strings.ReplaceAll(url.Values{"from": {from.Format(time.RFC3339)}}.Encode(), "&", "&amp;"))
+	// The part reads the same window.
+	_, part := e.get(t, "/parts/logs?"+q)
+	lgWant(t, "the part", part, "connection refused to db")
+	lgNot(t, "the part", part, "listening on :8080")
+	// A half, a backwards or a malformed pair is refused.
+	for _, bad := range []string{"from=" + url.QueryEscape(from.Format(time.RFC3339)), "to=" + url.QueryEscape(to.Format(time.RFC3339)),
+		"from=" + url.QueryEscape(to.Format(time.RFC3339)) + "&to=" + url.QueryEscape(from.Format(time.RFC3339)), "from=x&to=y"} {
+		if resp, _ := e.get(t, "/logs?"+bad); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("GET /logs?%s = %d, want 400", bad, resp.StatusCode)
+		}
+	}
+}

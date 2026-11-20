@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/accesslog"
 	"github.com/cosmic-chimps/caravana/internal/metrics"
 	"github.com/cosmic-chimps/caravana/internal/service"
 )
@@ -103,6 +104,10 @@ type monPlot struct {
 	Usuals string
 	Unit   string
 	Date   bool
+	// ClickHref is the address a click on the plot opens at the hovered point, which monitoring.js
+	// completes with from and to ("" for a plot that isn't a link): the Errors chart's Requests page
+	// for the 5xx (feature 047).
+	ClickHref string
 }
 
 // monPlotTable is the hidden table of a plot.
@@ -113,7 +118,12 @@ type monPlotTable struct {
 	Rows    []monPlotRow
 }
 
-type monPlotRow struct{ Time, Value, Value2 string }
+type monPlotRow struct {
+	Time, Value, Value2 string
+	// Href is where the point's own window of requests is (the Errors chart's rows, so a page without
+	// script has the click's link); "" for the other charts.
+	Href string
+}
 
 // geom maps points and values onto the plot's box.
 type geom struct {
@@ -369,6 +379,9 @@ func (b *monBuilder) chart(sp metricSpec) monChart {
 	usuals, haveUsual := make([]string, n), false
 	for i, p := range pts {
 		row := monPlotRow{Time: times[i].UTC().Format(layout), Value: "no reading"}
+		if sp.id == "errors" {
+			row.Href = b.failedRequests(times[i], times[i].Add(v.Range.Step))
+		}
 		if p.Value != nil {
 			cells[i] = sp.num(sp.conv(*p.Value))
 			row.Value = cells[i]
@@ -380,6 +393,9 @@ func (b *monBuilder) chart(sp metricSpec) monChart {
 		}
 		plot.Table.Rows = append(plot.Table.Rows, row)
 	}
+	if sp.id == "errors" {
+		plot.ClickHref = b.failedRequests(time.Time{}, time.Time{})
+	}
 	plot.Values = strings.Join(cells, ",")
 	if haveUsual {
 		plot.Usuals = strings.Join(usuals, ",")
@@ -389,7 +405,18 @@ func (b *monBuilder) chart(sp metricSpec) monChart {
 	c.AxisStart = axisTime(times[0], dated) + " UTC"
 	c.AxisMid = axisTime(times[n/2], dated)
 	c.Captions = b.captions(sp)
+	if sp.id == "errors" {
+		c.Captions = append(c.Captions, monCaption{Text: msentence(mlink("See the requests that failed", b.failedRequests(times[0], v.At)))})
+	}
 	return c
+}
+
+// failedRequests is the Requests page for the place's 5xx, over a window (from and to) or, with
+// none, the page's default range, which monitoring.js narrows to a clicked point.
+func (b *monBuilder) failedRequests(from, to time.Time) string {
+	var status classSet
+	status[classIndex(accesslog.Class5xx)] = true
+	return requestsReq{Project: b.q.Project, Environment: b.q.Environment, Status: status, Range: logsRangeDefault, Live: true, From: from, To: to}.href()
 }
 
 // emptyChart says why a chart has nothing to draw.

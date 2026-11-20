@@ -64,7 +64,7 @@
 
 {{/* mon-sentence (Monitoring, feature 025; the Apps home draws it too): prose with names in mono, numbers in weight 500 and clock times (UTC first, the
      local time added by localtime.js). Takes a monSentence. */}}
-{{define "mon-sentence"}}{{range .}}{{if .Clock}}{{template "clock" .Clock}}{{else if .Strong}}<span class="cv-mnstrong">{{.Text}}</span>{{else if .Mono}}<span class="cv-inline-mono text-fg-1">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
+{{define "mon-sentence"}}{{range .}}{{if .Clock}}{{template "clock" .Clock}}{{else if .Href}}<a href="{{.Href}}">{{.Text}}</a>{{else if .Strong}}<span class="cv-mnstrong">{{.Text}}</span>{{else if .Mono}}<span class="cv-inline-mono text-fg-1">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
 
 {{/* mon-meter: the Meter of the handoff as an SVG: a track, what is used, and what Nomad has reserved hatched above it,
      and a readout; above 90 % (or a disk in a state) the fill and the readout are warn and a mark leads the

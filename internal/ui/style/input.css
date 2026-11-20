@@ -1555,6 +1555,78 @@
   .cv-page-logs { gap: 18px; padding: 24px 16px 40px; }
 }
 
+/* ---------------------------------------------------------------------------
+   Requests (feature 047): /requests and an app's Requests tab, the Logs page's shape (the head, filter
+   row, rail, histogram panel and stream box above are shared) for the HTTP requests Traefik served.
+   Only what differs is here: the status chips, the filter form's fields, the stacked histogram's
+   segments and the table's row. Every color is a token (the Token-Only Color Rule).
+   --------------------------------------------------------------------------- */
+@layer components {
+  /* The status chips: the level chips' shape; a chip that is on wears its class's hue. */
+  .cv-lvlchip.cv-on.cv-rqchip-2xx, .cv-lvlchip.cv-on.cv-rqchip-3xx { color: var(--color-fg-2); }
+  .cv-lvlchip.cv-on.cv-rqchip-4xx { color: var(--color-warn); }
+  .cv-lvlchip.cv-on.cv-rqchip-5xx { color: var(--color-failed); }
+
+  /* The form's fields: two selects, the path and the client, then Filter and Clear. */
+  .cv-rqfield { display: inline-flex; flex: none; }
+  .cv-rqselect { min-width: 9rem; height: 36px; }
+  .cv-rqpathfield { flex: 1 1 220px; min-width: 200px; }
+  .cv-rqclientfield { flex: 0 1 190px; min-width: 150px; }
+  .cv-rqclear { font: 400 13px/1 var(--font-mono); color: var(--color-fg-3); text-decoration: underline; text-decoration-color: var(--color-line-3); text-underline-offset: 3px; }
+  .cv-rqclear:hover { color: var(--color-fg-1); text-decoration-color: var(--color-fg-1); }
+
+  /* The stacked histogram: 2xx is the chart's count bar, the rest stack on it, errors on top. */
+  .cv-hbar-3xx { fill: var(--color-bar-hover); }
+  .cv-hbar-quiet { fill: var(--color-line-2); }
+  .cv-hbar-warn { fill: var(--color-warn); }
+
+  /* A row: time, service, method, host and path, status, time taken, size, client. */
+  .cv-rqrow { position: relative; display: grid; grid-template-columns: 104px 150px 56px minmax(0, 1fr) 56px 76px 72px 150px; gap: 12px; align-items: baseline; padding: 5px 16px; font: 400 13px/20px var(--font-mono); color: var(--color-fg-1); text-decoration: none; }
+  a.cv-rqrow:hover { background: var(--color-ink-1); color: var(--color-fg-1); }
+  a.cv-rqrow.cv-row-error:hover { background: var(--color-failed-wash-hover); }
+  .cv-rqrow:focus-visible { outline-offset: -2px; }
+  .cv-rqrow > * { min-width: 0; }
+  .cv-rqhead { padding-block: 6px; border-bottom: 1px solid var(--color-line-1); font: 500 11px/1.3 var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-fg-3); }
+  .cv-rqr { text-align: right; }
+  .cv-rqmethod { font: 500 12px/20px var(--font-mono); color: var(--color-fg-2); }
+  .cv-rqwhat { display: flex; align-items: baseline; gap: 0 6px; overflow: hidden; white-space: nowrap; }
+  .cv-rqhost { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; color: var(--color-fg-3); }
+  .cv-rqpath { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--color-fg-1); }
+  .cv-rqwhat > .cv-repeat { flex: none; }
+  /* The status: a chip coloured by class. 2xx wears the calm status hue, 3xx is neutral, 4xx warns, 5xx
+     fails, 1xx and "other" (a client that went away) are muted. */
+  .cv-rqstatus { justify-self: start; display: inline-flex; align-items: center; padding: 0 7px; border: 1px solid var(--color-line-2); border-radius: 3px; font: 500 12px/18px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-2); }
+  .cv-rqs-2xx { color: var(--color-healthy); border-color: var(--color-healthy-line); background: var(--color-healthy-bg); }
+  .cv-rqs-3xx { color: var(--color-fg-2); border-color: var(--color-line-2); }
+  .cv-rqs-4xx { color: var(--color-warn); border-color: var(--color-warn-line); background: var(--color-warn-bg); }
+  .cv-rqs-5xx { color: var(--color-failed); border-color: var(--color-failed-line); background: var(--color-failed-bg); }
+  .cv-rqs-1xx, .cv-rqs-other { color: var(--color-fg-3); border-color: var(--color-line-1); }
+  .cv-rqdur { font-variant-numeric: tabular-nums; color: var(--color-fg-2); white-space: nowrap; }
+  .cv-rqdur-slow { color: var(--color-warn); }
+  .cv-rqbytes { font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; }
+  .cv-rqclient { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12px/20px var(--font-mono); color: var(--color-fg-3); }
+}
+
+/* Under 760px of stream: the header goes and a row folds to three lines: time, service, status and time
+   taken; then the method and the address; then the client and the size. */
+@container cvstream (max-width: 759.98px) {
+  .cv-rqhead { display: none; }
+  .cv-rqrow { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "time svc status dur" "method what what what" "client client client bytes"; gap: 2px 10px; }
+  .cv-rqrow > .cv-ltime { grid-area: time; }
+  .cv-rqrow > .cv-lsvc { grid-area: svc; }
+  .cv-rqrow > .cv-rqstatus { grid-area: status; }
+  .cv-rqrow > .cv-rqdur { grid-area: dur; }
+  .cv-rqrow > .cv-rqmethod { grid-area: method; }
+  .cv-rqrow > .cv-rqwhat { grid-area: what; }
+  .cv-rqrow > .cv-rqclient { grid-area: client; }
+  .cv-rqrow > .cv-rqbytes { grid-area: bytes; }
+}
+
+/* Touch screens: the form's fields are as tall as the chips. */
+@media (pointer: coarse) {
+  .cv-rqselect { height: 44px; }
+}
+
 /* Reduced motion: the global rule stops the veil's animation, which would leave it at 5% for good,
    so a fresh row has no veil at all. */
 @media (prefers-reduced-motion: reduce) {
@@ -1617,6 +1689,8 @@
   /* The plot: an SVG (viewBox "0 0 300 120", preserveAspectRatio none, so every stroke is
      non-scaling), 120px tall, over a relative box that holds the deploy labels. */
   .cv-mnplot { position: relative; margin: 14px 16px 0; }
+  /* The Errors plot opens the Requests page at the point clicked (monitoring.js). */
+  .cv-mnplot[data-click-href] { cursor: pointer; }
   .cv-mnsvg { display: block; width: 100%; height: 120px; overflow: visible; }
   .cv-mngrid { stroke: var(--color-line-1); stroke-width: 1; vector-effect: non-scaling-stroke; fill: none; }
   /* The band: the lowest to the highest value of the same hour on the earlier days, a polygon, never an area from zero. */
@@ -1651,7 +1725,7 @@
   .cv-mnchart-empty > .cv-mark { margin-right: 8px; }
 
   /* The apps table: a panel, a 38px head on ink-2, rows of 52px; a container of its own (cvmntbl). */
-  .cv-mntable { --cols: 14px minmax(0, 1.3fr) 110px 100px 150px 222px minmax(0, 1.2fr) 80px 36px; container-type: inline-size; container-name: cvmntbl; }
+  .cv-mntable { --cols: 14px minmax(0, 1.3fr) 110px 100px 150px 222px minmax(0, 1.2fr) 80px 64px; container-type: inline-size; container-name: cvmntbl; }
   .cv-mnthead, .cv-mnrow { display: grid; grid-template-columns: var(--cols); column-gap: 16px; align-items: center; padding: 0 18px; }
   .cv-mnthead { height: 38px; background: var(--color-ink-2); border-bottom: 1px solid var(--color-line-1); }
   .cv-mnrow { position: relative; min-height: 52px; padding-block: 6px; font-size: 13px; }
@@ -1689,7 +1763,7 @@
   .cv-mnrestarts { font: 400 13px/1.35 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-1); text-align: right; }
   .cv-mnrestarts.cv-mnwarntext { color: var(--color-warn); }
   /* The logs link rides above the row link's overlay, in a cell of its own (the table's ninth, as its head has nine). */
-  .cv-mnlogscell { position: relative; z-index: 1; display: flex; justify-content: center; }
+  .cv-mnlogscell { position: relative; z-index: 1; display: flex; justify-content: center; gap: 4px; }
   .cv-mnlogs { position: relative; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 4px; color: var(--color-fg-3); text-decoration: none; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv); }
   .cv-mnlogs:hover { background: var(--color-ink-3); color: var(--color-fg-1); }
   .cv-mnlogs > .cv-icon { width: 15px; height: 15px; }

@@ -15,6 +15,10 @@
 // nothing is put on the page as markup: the text goes in with textContent, and the crosshair moves
 // with setAttribute (a style attribute would be refused by the page's policy).
 //
+// A plot may also be a link: with data-click-href (the Errors chart's Requests page for the 5xx), a
+// click opens that address at the hovered point, with from the point's time and to the next point's
+// (RFC 3339, whole seconds). Without script the chart's hidden table has the same links, one per row.
+//
 // One handler on `document` serves every plot, including the ones htmx draws again each minute.
 (function () {
   const PLOT = "[data-mon-plot]";
@@ -58,20 +62,33 @@
     return now && value && unit ? { chart: chart, now: now, value: value, unit: unit, usually: usually } : null;
   }
 
-  function show(plot, clientX) {
-    const values = (plot.dataset.values || "").split(",");
-    const head = parts(plot);
+  // The nearest point to the pointer: its index, the number of points, the first point's time and the step, both in
+  // milliseconds. null when the plot can't say.
+  function pointAt(plot, clientX) {
+    const n = (plot.dataset.values || "").split(",").length;
     const rect = plot.getBoundingClientRect();
-    if (!head || values.length < 2 || rect.width <= 0) {
-      return;
+    if (n < 2 || rect.width <= 0) {
+      return null;
     }
     const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    const i = Math.round(fraction * (values.length - 1));
     const start = Date.parse(plot.dataset.t0);
     const step = Number(plot.dataset.step) * 1000;
     if (isNaN(start) || isNaN(step)) {
+      return null;
+    }
+    return { i: Math.round(fraction * (n - 1)), n: n, start: start, step: step };
+  }
+
+  function show(plot, clientX) {
+    const values = (plot.dataset.values || "").split(",");
+    const head = parts(plot);
+    const point = pointAt(plot, clientX);
+    if (!head || !point) {
       return;
     }
+    const i = point.i;
+    const start = point.start;
+    const step = point.step;
     const cross = plot.querySelector("[data-mon-cross]");
     if (cross) {
       const x = String((i / (values.length - 1)) * WIDTH);
@@ -131,6 +148,26 @@
     if (plot) {
       show(plot, event.clientX);
     }
+  });
+
+  function whole(ms) {
+    return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+  }
+
+  document.addEventListener("click", function (event) {
+    const plot = plotOf(event.target);
+    if (!plot || !plot.dataset.clickHref || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) {
+      return;
+    }
+    const point = pointAt(plot, event.clientX);
+    if (!point) {
+      return;
+    }
+    const url = new URL(plot.dataset.clickHref, window.location.origin);
+    const at = point.start + point.i * point.step;
+    url.searchParams.set("from", whole(at));
+    url.searchParams.set("to", whole(at + point.step));
+    window.location.assign(url.pathname + url.search);
   });
 
   document.addEventListener("pointerout", function (event) {

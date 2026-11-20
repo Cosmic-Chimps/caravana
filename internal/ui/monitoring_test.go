@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -368,8 +370,15 @@ func TestMonChartShapes(t *testing.T) {
 	if !c.Plot.Date || !strings.Contains(c.AxisStart, "UTC") || len(c.Captions) != 0 {
 		t.Errorf("7 d chart = date %v axis %q captions %+v", c.Plot.Date, c.AxisStart, c.Captions)
 	}
-	// The band's thin edge is said once, under the chart grid, not on each chart.
+	// The band's thin edge is said once, under the chart grid, not on each chart. The Errors chart's
+	// one caption is its link to the requests that failed (feature 047).
 	for i, ch := range b.charts() {
+		if i == 1 {
+			if len(ch.Captions) != 1 || ch.Captions[0].Text.String() != "See the requests that failed" || ch.Captions[0].Text[0].Href == "" {
+				t.Errorf("the Errors chart's captions on the 7 d range = %+v, want the link to the failed requests", ch.Captions)
+			}
+			continue
+		}
 		if len(ch.Captions) != 0 {
 			t.Errorf("chart %d has captions %+v on the 7 d range", i, ch.Captions)
 		}
@@ -776,4 +785,119 @@ func TestMonitoringLiveRoute(t *testing.T) {
 	// A signed-out stream is told it ended.
 	gone := openStream(t, e.URL, "/live?watch=monitoring", "")
 	gone.expect("ended")
+}
+
+// ---- Links to Requests (feature 047) ------------------------------------------------------
+
+// The Errors chart links to the requests that failed over the chart's own range, its plot is a link
+// at the hovered point (monitoring.js completes the address), and the hidden table has the same links
+// point by point, so a page without script has them. The other charts have none.
+func TestMonitoringLinksToFailedRequests(t *testing.T) {
+	e := monEnv(t)
+	for _, path := range []string{"/monitoring", "/parts/monitoring"} {
+		_, body := e.get(t, path)
+		chart := regexp.MustCompile(`(?s)mon-chart-errors"(.*?)(mon-chart-p95"|\z)`).FindStringSubmatch(body)
+		if chart == nil {
+			t.Fatalf("GET %s has no Errors chart", path)
+		}
+		errors := chart[1]
+
+		// The caption: the page's place and the chart's range (6 h by default).
+		m := regexp.MustCompile(`<p class="cv-mncap"><a href="(/requests\?[^"]*)">See the requests that failed</a></p>`).FindStringSubmatch(errors)
+		if m == nil {
+			t.Fatalf("GET %s: no caption link:\n%s", path, text(errors))
+		}
+		u, err := url.Parse(strings.ReplaceAll(m[1], "&amp;", "&"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		from, to := mustTime(t, u.Query().Get("from")), mustTime(t, u.Query().Get("to"))
+		if u.Query().Get("status") != "5xx" || to.Sub(from) < 5*time.Hour || to.Sub(from) > 6*time.Hour+time.Minute {
+			t.Errorf("GET %s: caption link %s, want status=5xx over about 6 hours", path, m[1])
+		}
+		if u.Query().Get("project") != "" || u.Query().Get("environment") != "" {
+			t.Errorf("GET %s: the default place is in the link: %s", path, m[1])
+		}
+
+		// The plot: a link at the hovered point.
+		if !strings.Contains(errors, ` data-click-href="/requests?status=5xx"`) {
+			t.Errorf("GET %s: the Errors plot has no data-click-href", path)
+		}
+		if n := strings.Count(body, "data-click-href"); n != 1 {
+			t.Errorf("GET %s: %d plots are links, want only the Errors one", path, n)
+		}
+
+		// The table's rows: each point's own window, as long as the step.
+		step := regexp.MustCompile(`data-step="(\d+)"`).FindStringSubmatch(errors)
+		rows := regexp.MustCompile(`<th scope="row"><a href="(/requests\?[^"]*)">(\d\d:\d\d)</a></th>`).FindAllStringSubmatch(errors, -1)
+		if step == nil || len(rows) < 10 {
+			t.Fatalf("GET %s: step %v, %d linked rows", path, step, len(rows))
+		}
+		for _, r := range rows[:3] {
+			ru, _ := url.Parse(strings.ReplaceAll(r[1], "&amp;", "&"))
+			f, to := mustTime(t, ru.Query().Get("from")), mustTime(t, ru.Query().Get("to"))
+			if ru.Query().Get("status") != "5xx" || to.Sub(f).Seconds() != float64(mustAtoi(t, step[1])) || f.Format("15:04") != r[2] {
+				t.Errorf("row %s links to %s", r[2], r[1])
+			}
+		}
+		// The other charts' rows are plain text.
+		if other := regexp.MustCompile(`(?s)mon-chart-requests".*?</table>`).FindString(body); strings.Contains(other, "<a href") {
+			t.Errorf("GET %s: the Requests chart's table has links", path)
+		}
+	}
+}
+
+func mustAtoi(t *testing.T, s string) int {
+	t.Helper()
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// The apps table has a Requests link beside the Logs one, for the service; the place is in it when
+// it isn't Default › production.
+func TestMonitoringAppsTableLinksToRequests(t *testing.T) {
+	e := monEnv(t)
+	_, body := e.get(t, "/monitoring")
+	cell := regexp.MustCompile(`(?s)<div role="cell" class="cv-mnlogscell">.*?</div>`).FindString(body)
+	for _, want := range []string{
+		`<a href="/logs?app=whoami&amp;service=whoami%2Fweb" id="mon-row-whoami-web-logs" class="cv-mnlogs" aria-label="Logs of whoami"`,
+		`<a href="/requests?app=whoami&amp;service=whoami%2Fweb" id="mon-row-whoami-web-requests" class="cv-mnlogs" aria-label="Requests of whoami" title="Requests of whoami"`,
+	} {
+		if !strings.Contains(cell, want) {
+			t.Errorf("the links cell lacks %q:\n%s", want, cell)
+		}
+	}
+	if strings.Index(cell, "-logs") > strings.Index(cell, "-requests") {
+		t.Error("the Requests link comes before the Logs one")
+	}
+	if !strings.Contains(body, `<span class="sr-only">Logs and requests</span>`) {
+		t.Error("the column's name doesn't say requests")
+	}
+	// The refresh's row fragment has both too, and a place is carried.
+	_, part := e.get(t, "/parts/monitoring")
+	if !strings.Contains(part, `id="mon-row-whoami-web-requests"`) {
+		t.Error("the refreshed row lacks the Requests link")
+	}
+	b := &monBuilder{q: monReq{Project: "shop", Environment: "staging"}}
+	if got := b.failedRequests(time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 25, 0, 1, 0, 0, time.UTC)); got !=
+		"/requests?environment=staging&from=2026-10-25T00%3A00%3A00Z&project=shop&status=5xx&to=2026-10-25T00%3A01%3A00Z" {
+		t.Errorf("failedRequests in shop = %q", got)
+	}
+}
+
+// monitoring.js completes the plot's address with the hovered point's window.
+func TestMonitoringScriptOpensRequestsAtThePoint(t *testing.T) {
+	b, err := os.ReadFile("static/js/monitoring.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(b)
+	for _, want := range []string{"plot.dataset.clickHref", `searchParams.set("from"`, `searchParams.set("to"`, "point.start + point.i * point.step", "toISOString()"} {
+		if !strings.Contains(js, want) {
+			t.Errorf("monitoring.js lacks %q", want)
+		}
+	}
 }

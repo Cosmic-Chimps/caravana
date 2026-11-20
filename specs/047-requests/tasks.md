@@ -28,19 +28,19 @@ Plan: `plan.md` (D1–D13). Each phase is one commit; the lab steps run before t
 
 ## Phase B: the console, Monitoring's links, the docs
 
-- [ ] B1 `internal/ui/requests.go` and `templates/requests.html`: `/requests`, `/parts/requests`,
+- [x] B1 `internal/ui/requests.go` and `templates/requests.html`: `/requests`, `/parts/requests`,
       `/apps/{id}/requests` (the tab after Logs in `builtTabs`), the sidebar item, the live routes
       (`watch=requests`), the states (no Traefik, no access log yet, nothing in range, read cut short),
       "read from <clock>" and "the oldest kept" as Logs says them (D10). `tools/ui-css.sh build`.
-- [ ] B2 Monitoring: the Errors chart's caption link, the plot click in `static/js/monitoring.js` (and the
+- [x] B2 Monitoring: the Errors chart's caption link, the plot click in `static/js/monitoring.js` (and the
       hidden table rows' links), the apps table's Requests link (D10).
-- [ ] B3 Tests in `ui`: the page's shape, each filter's hidden fields and hrefs, the app tab, the states,
+- [x] B3 Tests in `ui`: the page's shape, each filter's hidden fields and hrefs, the app tab, the states,
       the sentinel search over every page and the log. `api/parity_test.go` entries for the new routes.
-- [ ] B4 `docs/requests.md` (what is recorded, what isn't, behind a proxy, how far back, the API), the row in
+- [x] B4 `docs/requests.md` (what is recorded, what isn't, behind a proxy, how far back, the API), the row in
       `docs/plan.md`'s "What other PaaS tools have" table (13, done in 047), `CLAUDE.md`'s "Where we are"
       paragraph, `changelog.d/047-requests.md` (Added, and Upgrade: rerun the installer, Traefik restarts
       once).
-- [ ] B5 The checks of A6 plus `tools/ui-css.sh check` and `tools/ui-vendor.sh check`.
+- [x] B5 The checks of A6 plus `tools/ui-css.sh check` and `tools/ui-vendor.sh check`.
 
 ## Phase C: the lab
 

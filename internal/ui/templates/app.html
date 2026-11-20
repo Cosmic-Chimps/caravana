@@ -2,7 +2,8 @@
      content (each tab adds its define here as its story lands). The header holds the app's
      actions (Restart, Stop…, Deploy, or Start); the top bar has none. The app's page has its
      own page padding and stack gap (page-class). The Logs tab is logs.html's page filtered to the
-     app (feature 024), in a cv-applogs box that is its container; only that tab loads logs.js. */}}
+     app (feature 024), in a cv-applogs box that is its container; only that tab loads logs.js. The Requests
+     tab (feature 047) is requests.html's page in the same box and loads no script. */}}
 
 {{define "page-class"}} cv-page-app{{end}}
 
@@ -71,6 +72,7 @@
 {{with .Configure}}{{template "configure" .}}{{end}}
 {{with .Compose}}{{template "compose-deploy" .}}{{end}}
 {{with .LogsTab}}<div class="cv-applogs">{{template "logs-page" .}}</div>{{end}}
+{{with .RequestsTab}}<div class="cv-applogs">{{template "requests-page" .}}</div>{{end}}
 {{with .Backups}}{{template "backups" .}}{{end}}
 {{with .VariablesTab}}{{template "variables" .}}{{end}}
 {{with .DomainsTab}}{{template "domains" .}}{{end}}

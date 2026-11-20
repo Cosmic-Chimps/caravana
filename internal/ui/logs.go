@@ -76,6 +76,51 @@ func logsRangeOf(key string) (logsRange, bool) {
 	return logsRange{}, false
 }
 
+// in is how a summary says the range: "in the last hour", or "in this range" for a window the
+// address gave as from and to.
+func (r logsRange) in() string {
+	if r.Key == "" {
+		return "in this range"
+	}
+	return "in the last " + r.Words
+}
+
+// customRange is the range of an address that gives from and to: it has no key and no preset's words.
+func customRange(from, to time.Time) logsRange { return logsRange{D: to.Sub(from)} }
+
+// windowOf reads the time range of an address, which the Logs and Requests pages share: a preset's
+// key in range (15m when absent), or from and to together, both RFC 3339, from before to (feature
+// 047: a request's row and Monitoring's Errors chart link to a window of their own). bad is "" or a
+// sentence saying what is wrong.
+func windowOf(v url.Values) (key string, from, to time.Time, bad string) {
+	key = v.Get("range")
+	if key == "" {
+		key = logsRangeDefault
+	}
+	if _, ok := logsRangeOf(key); !ok {
+		return key, from, to, "The range is 15m, 1h, 24h or 7d."
+	}
+	fs, ts := v.Get("from"), v.Get("to")
+	if fs == "" && ts == "" {
+		return key, from, to, ""
+	}
+	if fs == "" || ts == "" {
+		return key, from, to, "The \"from\" and \"to\" values come together."
+	}
+	var err error
+	if from, err = time.Parse(time.RFC3339, fs); err == nil {
+		to, err = time.Parse(time.RFC3339, ts)
+	}
+	if err != nil {
+		return key, time.Time{}, time.Time{}, "The \"from\" and \"to\" values are times in RFC 3339, such as 2026-10-25T00:30:00Z."
+	}
+	from, to = from.UTC(), to.UTC()
+	if !from.Before(to) {
+		return key, time.Time{}, time.Time{}, "The \"from\" value is before \"to\"."
+	}
+	return key, from, to, ""
+}
+
 // ---- The query --------------------------------------------------------------------------
 
 // levelOrder is the order the level chips and the levels value are written in.
@@ -138,11 +183,14 @@ type logsReq struct {
 	App, Service, Copy   string // Service is "<app>/<service>", as the API writes it
 	Q                    string
 	Range                string // a logsRange key
-	Levels               levelSet
-	Live                 bool
-	Before               time.Time // "Show older": the lines before it
-	Open                 string    // a line's id: the row that is open
-	At                   string    // a line's id: the "lines around this" view of Copy
+	// From and To are a window the address gave (a link from a request, or from Monitoring); both
+	// zero for a preset Range. A page with a window is read, not followed.
+	From, To time.Time
+	Levels   levelSet
+	Live     bool
+	Before   time.Time // "Show older": the lines before it
+	Open     string    // a line's id: the row that is open
+	At       string    // a line's id: the "lines around this" view of Copy
 
 	// tab is the app whose Logs tab the page is, or "" for /logs. It is never read from the
 	// address: the tab's path says it, and its links stay on the tab.
@@ -193,11 +241,12 @@ func logsReqOf(v url.Values) (q logsReq, bad string) {
 	if q.Environment == "" {
 		q.Environment = app.DefaultEnvironment
 	}
-	if q.Range == "" {
-		q.Range = logsRangeDefault
+	var win string
+	if q.Range, q.From, q.To, win = windowOf(v); win != "" {
+		return q, win
 	}
-	if _, ok := logsRangeOf(q.Range); !ok {
-		return q, "The range is 15m, 1h, 24h or 7d."
+	if q.custom() {
+		q.Live = false
 	}
 	if s := v.Get("levels"); s != "" {
 		var ok bool
@@ -248,6 +297,10 @@ func (q logsReq) values() url.Values {
 	if q.Range != logsRangeDefault {
 		set("range", q.Range)
 	}
+	if q.custom() {
+		set("from", q.From.UTC().Format(time.RFC3339))
+		set("to", q.To.UTC().Format(time.RFC3339))
+	}
 	if q.Levels != defaultLevels {
 		set("levels", q.Levels.param())
 	}
@@ -279,7 +332,13 @@ func (q logsReq) href(changes ...func(*logsReq)) string {
 func fresh(q *logsReq) { q.Before, q.Open, q.At = time.Time{}, "", "" }
 
 func withRange(key string) func(*logsReq) {
-	return func(q *logsReq) { fresh(q); q.Range = key }
+	return func(q *logsReq) {
+		fresh(q)
+		if q.custom() {
+			q.Live = true // a window is read, not followed; a preset range is followed again
+		}
+		q.Range, q.From, q.To = key, time.Time{}, time.Time{}
+	}
 }
 
 func withLevels(l levelSet) func(*logsReq) {
@@ -305,14 +364,31 @@ func withPlace(project, environment string) func(*logsReq) {
 // paused stops following: a page that is read, not watched.
 func paused(q *logsReq) { q.Live = false }
 
+// custom says the address gave a window of its own, from and to, not a preset range.
+func (q logsReq) custom() bool { return !q.From.IsZero() }
+
+// rangeOf is the range the page reads: the preset's, or the window's.
+func (q logsReq) rangeOf() logsRange {
+	if q.custom() {
+		return customRange(q.From, q.To)
+	}
+	rng, _ := logsRangeOf(q.Range)
+	return rng
+}
+
 // envQuery is the read the query asks the service for.
 func (q logsReq) envQuery() service.EnvLogQuery {
-	rng, _ := logsRangeOf(q.Range)
-	return service.EnvLogQuery{
+	eq := service.EnvLogQuery{
 		Project: q.Project, Environment: q.Environment,
 		App: q.App, Service: q.Service, Copy: q.Copy,
-		Levels: q.Levels.list(), Q: q.Q, Range: rng.D, Before: q.Before, Lines: logsPageLines,
+		Levels: q.Levels.list(), Q: q.Q, Before: q.Before, Lines: logsPageLines,
 	}
+	if q.custom() {
+		eq.From, eq.To = q.From, q.To
+	} else {
+		eq.Range = q.rangeOf().D
+	}
+	return eq
 }
 
 // onlyApp is the app whose deploys the stream shows: the one the query names, or none for all.
@@ -343,7 +419,7 @@ func (q logsReq) downloadHref() string {
 func (q logsReq) hidden(skip ...string) []hiddenField {
 	var out []hiddenField
 	v := q.pageValues()
-	for _, name := range []string{"project", "environment", "app", "service", "copy", "q", "range", "levels", "live", "before", "open", "at"} {
+	for _, name := range []string{"project", "environment", "app", "service", "copy", "q", "range", "from", "to", "levels", "live", "before", "open", "at"} {
 		if slices.Contains(skip, name) || !v.Has(name) {
 			continue
 		}
@@ -374,6 +450,8 @@ type logsView struct {
 	Ranges     []logsBarItem
 	Live       bool
 	LiveFlip   string
+	// Custom says the page reads a window the address gave (from and to): it has no Live button.
+	Custom bool
 	// The filter row.
 	SearchHidden []hiddenField
 	Places       logsPlaces
@@ -636,7 +714,7 @@ func (s *server) logsRegionOf(ctx context.Context, q logsReq) (*logsRegion, erro
 		return s.logsAroundOf(ctx, q)
 	}
 	now := s.now().UTC()
-	rng, _ := logsRangeOf(q.Range)
+	rng := q.rangeOf()
 	reg := &logsRegion{status: http.StatusOK}
 	read, err := s.svc.ReadLogs(ctx, q.envQuery())
 	var pe *service.PlaceError
@@ -655,7 +733,11 @@ func (s *server) logsRegionOf(ctx context.Context, q logsReq) (*logsRegion, erro
 		return nil, err
 	}
 	if reg.Problem != "" {
-		read = service.LogRead{From: now.Add(-rng.D), To: now, Coverage: service.LogCoverage{From: now.Add(-rng.D), Complete: true, Timed: true}}
+		from, to := now.Add(-rng.D), now
+		if q.custom() {
+			from, to = q.From, q.To
+		}
+		read = service.LogRead{From: from, To: to, Coverage: service.LogCoverage{From: from, Complete: true, Timed: true}}
 	}
 
 	// The rows: newest first, capped; a deploy older than the oldest row shown would sit under
@@ -752,7 +834,7 @@ func streamHead(q logsReq, copies []service.LogCopy, problem bool) logsStreamHea
 		return h
 	}
 	h.Paused = true
-	if q.At == "" && q.Before.IsZero() {
+	if q.At == "" && q.Before.IsZero() && !q.custom() {
 		newest := q
 		fresh(&newest)
 		h.Feed = &logsFeed{
@@ -924,6 +1006,7 @@ type histView struct {
 	Marks   []histMark
 	Table   []histRow
 	Start   string // "13:49 UTC"
+	End     string // the window's end, when the address gave one; "" means now
 	Read    string // "read from 14:21 UTC", when the read didn't reach the start of the range
 	Deploy  string // "┆ blog v24", the newest deploy in the range
 	Empty   bool
@@ -1053,9 +1136,9 @@ func histOf(h service.LogHistogram, cov service.LogCoverage, deploys []service.D
 	v.Deploy = deployLabel(marked)
 
 	if total == 0 {
-		v.Summary = "No lines in the last " + rng.Words
+		v.Summary = "No lines " + rng.in()
 	} else {
-		v.Summary = plural(total, "line") + " in the last " + rng.Words
+		v.Summary = plural(total, "line") + " " + rng.in()
 		if errs > 0 {
 			v.Summary += ", " + plural(errs, "error")
 		}
@@ -1064,6 +1147,9 @@ func histOf(h service.LogHistogram, cov service.LogCoverage, deploys []service.D
 		v.Summary += ", " + plural(n, "deploy")
 	}
 	v.Start = h.From.UTC().Format(layout)
+	if rng.Key == "" {
+		v.End = h.To.UTC().Format(layout)
+	}
 	if !cov.Complete {
 		v.Read = "read from " + cov.From.UTC().Format(layout)
 		if !cov.Timed {
@@ -1315,8 +1401,9 @@ func (s *server) logsViewOf(ctx context.Context, r *http.Request, pl places, q l
 		rq.Live = true
 		v.RegionHref = "/parts/logs?" + rq.values().Encode()
 	}
+	v.Custom = q.custom()
 	for _, rng := range logsRanges {
-		v.Ranges = append(v.Ranges, logsBarItem{Label: rng.Label, On: rng.Key == q.Range, Href: q.href(withRange(rng.Key))})
+		v.Ranges = append(v.Ranges, logsBarItem{Label: rng.Label, On: !q.custom() && rng.Key == q.Range, Href: q.href(withRange(rng.Key))})
 	}
 
 	// The place bars: each only when it has more than one choice, and never on an app's tab, whose
@@ -1589,8 +1676,11 @@ func (s *server) downloadLogsFile(w http.ResponseWriter, r *http.Request, sessio
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(logsDownloadDeadline))
 
 	now := s.now().UTC()
-	rng, _ := logsRangeOf(q.Range)
-	dw := &logsDownloadWriter{w: w, name: service.LogDownloadName(q.Project, q.Environment, now.Add(-rng.D), now)}
+	from, to := now.Add(-q.rangeOf().D), now
+	if q.custom() {
+		from, to = q.From, q.To
+	}
+	dw := &logsDownloadWriter{w: w, name: service.LogDownloadName(q.Project, q.Environment, from, to)}
 	err := s.svc.DownloadLogs(r.Context(), q.envQuery(), dw)
 	var fe *app.FieldError
 	var pe *service.PlaceError

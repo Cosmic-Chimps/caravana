@@ -153,3 +153,26 @@ Phase A (2026-11-20):
   `services` is the rail. There is no top-level `from`/`to`: the histogram's are the range.
 - **`logNotice` carries its notice kind** (`what`) and `WatchLogs`/`WatchRequests` share `watchPlace`;
   `SetLogWatchGaps` sets both watchers' gaps. `deploytest.SetTraefikJob(image, args...)` takes the job's arguments.
+
+Phase B (2026-11-20):
+
+- **The Logs page takes a window.** D10 has a request's row link to `/logs?service=<app>/<svc>&from=<t-1m>&to=<t+1m>` and Monitoring's
+  Errors chart link to Requests by `from` and `to`, but the Logs page read only a preset `range` (the service and the API already
+  took `from` and `to`). `logsReq` gained `From` and `To` (`windowOf`, which both pages use: a preset key, or both times in
+  RFC 3339 with from before to, else a 400 page). A page with a window is paused (a window isn't followed), has no Live button and no
+  "new lines" feed, labels its end instead of "now", and its summary says "in this range"; the range bar's links leave the window and
+  turn Live on again. Requests has the same window.
+- **The status chips toggle like the level chips, from "no filter".** With no `status` every chip is on and a click turns that class
+  off (`status=3xx,4xx,5xx`); the last class on can't be turned off, and the four chips on again is no filter. 1xx and "other" have no
+  chip: they are in the view until a chip narrows it. `?status=5xx` (Monitoring's link) shows only 5xx.
+- **Rows use the Logs convention for the time**, a plain `<time>` with its UTC date in the title and "times in UTC" in the head, not
+  the `clock` template: localtime.js appends its text after the element, which would add a cell to every row's grid. The clock
+  template draws "Requests before <clock>"; "read from <clock>" is plain text under the histogram, as Logs has it.
+- **Traefik not running is a 200 page and a 503 part.** The page shows the calm notice (a 503 page would hide the sidebar's way
+  out); `/parts/requests` answers the same sentence with 503, which htmx doesn't swap, so a refresh that can't read keeps the table.
+- **The Requests tab loads no script.** There is no fresh-row veil or paused counter (`logs.js` has both); a refresh is htmx's swap.
+- **Monitoring**: the apps table's Requests link sits in the Logs link's cell (one icon each, the last column is 64 px, was 36), for
+  every row, since a service with no domain simply has no requests; the column's hidden header reads "Logs and requests". The
+  Errors plot's click and its table's links are built from the plot's `t0` and `step` (`monitoring.js`, whose checksum is updated in
+  `tools/ui-vendor.versions`).
+- **No `service.RequestQuery` change.** Phase A's types and the API were enough.

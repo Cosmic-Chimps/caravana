@@ -109,7 +109,7 @@
 
 {{/* mon-plot: the SVG of a chart and its hidden table. Takes a monPlot. */}}
 {{define "mon-plot"}}
-<div class="cv-mnplot"{{if .Hover}} data-mon-plot data-t0="{{.T0}}" data-step="{{.Step}}" data-values="{{.Values}}"{{if .Usuals}} data-usuals="{{.Usuals}}"{{end}} data-unit="{{.Unit}}"{{if .Date}} data-date="1"{{end}}{{end}}>
+<div class="cv-mnplot"{{if .Hover}} data-mon-plot data-t0="{{.T0}}" data-step="{{.Step}}" data-values="{{.Values}}"{{if .Usuals}} data-usuals="{{.Usuals}}"{{end}} data-unit="{{.Unit}}"{{if .Date}} data-date="1"{{end}}{{with .ClickHref}} data-click-href="{{.}}"{{end}}{{end}}>
   <svg class="cv-mnsvg" viewBox="0 0 300 120" preserveAspectRatio="none" role="img" aria-label="{{.Label}}">
     <line class="cv-mngrid" x1="0" x2="300" y1="30" y2="30"/>
     <line class="cv-mngrid" x1="0" x2="300" y1="60" y2="60"/>
@@ -136,7 +136,7 @@
 <div class="sr-only"><table>
   <caption>{{.Table.Caption}}</caption>
   <thead><tr><th scope="col">Time (UTC)</th><th scope="col">{{.Table.Head}}</th>{{with .Table.Head2}}<th scope="col">{{.}}</th>{{end}}</tr></thead>
-  <tbody>{{range .Table.Rows}}<tr><th scope="row">{{.Time}}</th><td>{{.Value}}</td>{{if $.Table.Head2}}<td>{{.Value2}}</td>{{end}}</tr>{{end}}</tbody>
+  <tbody>{{range .Table.Rows}}<tr><th scope="row">{{if .Href}}<a href="{{.Href}}">{{.Time}}</a>{{else}}{{.Time}}{{end}}</th><td>{{.Value}}</td>{{if $.Table.Head2}}<td>{{.Value2}}</td>{{end}}</tr>{{end}}</tbody>
 </table></div>
 {{end}}
 
@@ -167,7 +167,7 @@
       <span role="columnheader">CPU</span>
       <span role="columnheader">Memory</span>
       <span role="columnheader" class="cv-mnr">Restarts</span>
-      <span role="columnheader"><span class="sr-only">Logs</span></span>
+      <span role="columnheader"><span class="sr-only">Logs and requests</span></span>
     </div>
     {{range .Rows}}
     <div class="cv-mnrow" role="row" id="{{.Anchor}}">{{template "mon-row-body" .}}</div>
@@ -189,7 +189,7 @@
       <div role="cell" class="cv-mncpu" data-label="CPU">{{with .Spark}}<svg class="cv-mnspark" viewBox="0 0 120 24" preserveAspectRatio="none" role="img" aria-label="{{.Title}}"><title>{{.Title}}</title>{{range .Segments}}<polyline class="cv-mnspark-line" points="{{.}}"/>{{end}}</svg><span class="cv-mncpu-read" title="{{.Title}}">{{.Read}}</span>{{else}}<span class="cv-mnnumber cv-mnnumber-none">—</span>{{end}}</div>
       <div role="cell" class="cv-mnmem" data-label="Memory">{{if .Mem.Known}}<svg class="cv-mnmeter-svg" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="{{.Mem.Title}}"><title>{{.Mem.Title}}</title><rect class="cv-mntrack" x="0" y="0" width="100" height="6"/><rect class="cv-mnfill{{if .Mem.Warn}} cv-mnfill-warn{{end}}" x="0" y="0" width="{{.Mem.Fill}}" height="6"/></svg><span class="cv-mnmem-read{{if .Mem.Warn}} cv-mnwarntext{{end}}">{{.Mem.Read}}</span>{{else}}<span class="cv-mnnumber cv-mnnumber-none">—</span>{{end}}</div>
       <div role="cell" class="cv-mnrestarts{{if .Restarts.Warn}} cv-mnwarntext{{end}}{{if .Restarts.None}} cv-mnnumber-none{{end}}" data-label="Restarts">{{.Restarts.Text}}</div>
-      <div role="cell" class="cv-mnlogscell"><a href="{{.LogsHref}}" id="{{.Anchor}}-logs" class="cv-mnlogs" aria-label="{{.LogsName}}" title="{{.LogsName}}">{{icon "scroll-text" 15}}</a></div>
+      <div role="cell" class="cv-mnlogscell"><a href="{{.LogsHref}}" id="{{.Anchor}}-logs" class="cv-mnlogs" aria-label="{{.LogsName}}" title="{{.LogsName}}">{{icon "scroll-text" 15}}</a><a href="{{.RequestsHref}}" id="{{.Anchor}}-requests" class="cv-mnlogs" aria-label="{{.RequestsName}}" title="{{.RequestsName}}">{{icon "arrow-left-right" 15}}</a></div>
 {{end}}
 
 {{/* mon-scales-body: the Scaling list under the apps table (feature 043): the place's last steps, drawn only
