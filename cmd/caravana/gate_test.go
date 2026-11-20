@@ -80,6 +80,12 @@ type gateTarget struct {
 	// Bella is the fake Bella Baxter on the in-process Caravana's loopback (feature 037); nil on a
 	// real host, where the secret-references step is skipped.
 	Bella *bellatest.Server
+	// RunDailyScans runs the image scanner's daily pass now (service.RunDailyScansForTests) and
+	// DropFinding deletes one advisory's stored findings of an image (service.DropFindingForTests),
+	// the stand-in for "the advisory didn't exist yet"; only the lab sets them (feature 044), and
+	// the image-scan step's rescan check is skipped on a real host.
+	RunDailyScans func(ctx context.Context) error
+	DropFinding   func(ctx context.Context, image, advisory string) (int, error)
 }
 
 // publicTarget is what only a real host has.
@@ -174,6 +180,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"published-ports", false, g.publishedPortsStep},
 		{"placement", false, g.placementStep},
 		{"autoscale", false, g.autoscaleStep},
+		{"image-scan", false, g.imageScanStep},
 		{"ports-closed", true, g.portsClosed},
 	}
 	for _, s := range steps {

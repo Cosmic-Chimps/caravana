@@ -201,7 +201,7 @@ func (s *server) liveApps(w http.ResponseWriter, r *http.Request) {
 		// The Operator Overview (feature 027): everything its regions draw, and the host's own events.
 		s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeMetrics, service.ChangeApps, service.ChangeActivity,
 			service.ChangeActions, service.ChangeSchedules, service.ChangeAttention, service.ChangeHost, service.ChangeDeployments,
-			service.ChangeCopies, service.ChangeUpdates}})
+			service.ChangeCopies, service.ChangeUpdates, service.ChangeScans}})
 		return
 	}
 	route := liveRoute{Kinds: []service.ChangeKind{service.ChangeApps, service.ChangeActivity, service.ChangeAttention,

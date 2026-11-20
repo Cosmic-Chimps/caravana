@@ -47,6 +47,10 @@ type Settings struct {
 	// and checks copies of a SQLite database (feature 029). It must be pinned
 	// by digest. Empty means DefaultSQLiteImage.
 	SQLiteImage string
+	// ScannerImage is the image that scans images for known vulnerabilities
+	// (Grype, feature 044). It must be pinned by digest. Empty means
+	// DefaultScannerImage.
+	ScannerImage string
 }
 
 // DefaultBackupImage is rclone 1.71, pinned by digest (an index, so it runs
@@ -71,6 +75,22 @@ func (s Settings) sqliteImage() string {
 		return DefaultSQLiteImage
 	}
 	return s.SQLiteImage
+}
+
+// DefaultScannerImage is Grype v0.117.0, pinned by digest (an index, so it runs
+// on amd64 and arm64).
+const DefaultScannerImage = "anchore/grype@sha256:ddf9e9f204049f3a4a0955ef70873cabab6a31432125ad4f20a490b54950a253"
+
+// DefaultScannerVersion is the version of DefaultScannerImage: the tag its digest
+// was taken from. The version a scan reports comes from the scanner itself.
+const DefaultScannerVersion = "0.117.0"
+
+// scannerImage is the scanner image these settings use.
+func (s Settings) scannerImage() string {
+	if s.ScannerImage == "" {
+		return DefaultScannerImage
+	}
+	return s.ScannerImage
 }
 
 // DefaultNamesImage is busybox 1.37, pinned by digest (an index, so it runs
@@ -201,6 +221,9 @@ func (s Settings) Validate() error {
 	}
 	if s.SQLiteImage != "" && !pinnedImageRE.MatchString(s.SQLiteImage) {
 		return app.NewFieldError("settings.sqliteImage", "%q must be an image pinned by digest (repo@sha256:...), without a tag", s.SQLiteImage)
+	}
+	if s.ScannerImage != "" && !pinnedImageRE.MatchString(s.ScannerImage) {
+		return app.NewFieldError("settings.scannerImage", "%q must be an image pinned by digest (repo@sha256:...), without a tag", s.ScannerImage)
 	}
 	return nil
 }

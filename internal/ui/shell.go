@@ -76,6 +76,8 @@ const (
 	navOpsOverview = "ops-overview"
 	navOpsServer   = "ops-server"
 	navOpsUpdates  = "ops-updates"
+	// Security (feature 044): the image scanner's page, /ops/security.
+	navOpsSecurity = "ops-security"
 )
 
 // shellPage starts the data of a console page: the title, and the shell
@@ -114,7 +116,7 @@ func activeIn(mode, active string) string {
 		return active
 	}
 	switch active {
-	case navSettings, navOpsOverview, navOpsServer, navOpsUpdates:
+	case navSettings, navOpsOverview, navOpsServer, navOpsUpdates, navOpsSecurity:
 		return active
 	}
 	return navOpsOverview

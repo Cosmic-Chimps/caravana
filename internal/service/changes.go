@@ -21,6 +21,7 @@ const (
 	ChangeMetrics     ChangeKind = "metrics"     // the sampler wrote a tick; never a number
 	ChangeHost        ChangeKind = "host"        // a host event was recorded (a boot, a new Caravana version); never its detail
 	ChangeServers     ChangeKind = "servers"     // a server was added, joined, became ready, was removed or got a role; never a token, key or address
+	ChangeScans       ChangeKind = "scans"       // the image scanner, a queue or a scan's result moved; never a finding
 	ChangeUpdates     ChangeKind = "updates"     // what is waiting changed: the OS's files, a release or package check, the check setting; never a name or a count
 )
 

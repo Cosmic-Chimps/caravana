@@ -720,9 +720,14 @@
   </form>
   {{end}}
 </section>
+<section id="security" aria-labelledby="security-title" class="flex flex-col gap-2">
+  <h2 id="security-title" class="cv-label">Security</h2>
+  {{with .ScanRefusal}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+  <div class="cv-panel" hx-get="/parts/apps/{{.Security.ID}}/security" hx-trigger="sse:scans, sse:sync" hx-swap="innerHTML" aria-live="polite">{{template "security-region" .Security}}</div>
+</section>
 <section aria-labelledby="history-title" class="flex flex-col gap-2">
   <h2 id="history-title" class="cv-label">Deployments</h2>
-  <div class="cv-panel" hx-get="{{.History.RefreshHref}}" hx-trigger="sse:deployments, sse:copies, sse:sync" hx-swap="innerHTML" aria-live="polite">{{template "deployments-region" .History}}</div>
+  <div class="cv-panel" hx-get="{{.History.RefreshHref}}" hx-trigger="sse:deployments, sse:copies, sse:scans, sse:sync" hx-swap="innerHTML" aria-live="polite">{{template "deployments-region" .History}}</div>
 </section>
 {{end}}
 
@@ -756,6 +761,7 @@
   </ol>
   {{end}}
   <p class="cv-deploy-sentence">{{template "sentence" .Sentence}}</p>
+  {{with .Vulns}}<p class="cv-data-muted">{{.}}</p>{{end}}
   {{with .Progress}}<p class="cv-deploy-progress"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
   {{if .Error}}<p class="cv-data-muted cv-detail">{{with .ErrorLead}}<span class="cv-detail-lead">{{.}}</span>{{end}}{{.Error}}</p>{{end}}
   {{with .Action}}<p class="cv-deploy-action"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a></p>{{end}}

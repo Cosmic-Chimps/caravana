@@ -67,6 +67,8 @@ func (s *Service) onEvents(b deploy.EventBatch) {
 			s.wakes.wake(runsKey)
 		case strings.Contains(id, "_backup"), strings.Contains(id, "_restore"):
 			s.wakes.wake(backupsKey)
+		case strings.HasPrefix(id, "_scan-"):
+			s.wakes.wake(scanJobsKey)
 		}
 	}
 

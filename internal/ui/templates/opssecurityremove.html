@@ -1,0 +1,25 @@
+{{/* The confirmation page of removing the image scanner (/ops/security/remove, feature 044): what goes, and the one
+     button that does it, in the Stop page's shape. A refusal takes the panel's and the button's place and says why,
+     with only the way back. Takes a securityRemovePage. */}}
+
+{{define "content"}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">Remove the image scanner?</h1>
+  </header>
+
+  {{if .Refusal}}
+  <div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .Refusal}}</span></div>
+  <div class="cv-actions"><a href="/ops/security" class="cv-btn cv-btn-secondary">Back to Security</a></div>
+  {{else}}
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    <p class="text-base text-fg-1">This deletes the scanner's vulnerability database and the SBOMs it kept, every stored scan result and run, and the needs-you items they opened.</p>
+    <p class="text-sm text-fg-2">Your apps are not touched. Nothing is scanned or checked at deploy until you install the scanner again, and a deploy is no longer refused for a vulnerable image.</p>
+  </div>
+  <form method="post" action="/ops/security/remove" class="cv-actions">
+    <button type="submit" class="cv-btn cv-btn-primary">Remove the image scanner</button>
+    <a href="/ops/security" class="cv-btn cv-btn-secondary">Cancel</a>
+  </form>
+  {{end}}
+</section>
+{{end}}

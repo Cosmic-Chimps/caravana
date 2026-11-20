@@ -28,6 +28,7 @@ var (
 	opGetDeploymentCompose  = operation{"getDeploymentCompose", http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}/compose"}
 	opListTemplates         = operation{"listTemplates", http.MethodGet, "/v1/templates"}
 	opGetTemplate           = operation{"getTemplate", http.MethodGet, "/v1/templates/{name}"}
+	opGetAppScan            = operation{"getAppScan", http.MethodGet, "/v1/apps/{id}/scan"}
 
 	opDeployApp          = operation{"deployApp", http.MethodPost, "/v1/apps/{id}/deployments"}
 	opRedeployDeployment = operation{"redeployDeployment", http.MethodPost, "/v1/apps/{id}/deployments/{deploymentId}/redeploy"}
@@ -44,7 +45,7 @@ var allOperations = []operation{
 	opListRecentDeployments, opListDeployments, opGetDeployment, opListCopies,
 	opGetLogs, opListVolumes, opListBackups, opListAppActions, opListAttention,
 	opPreviewPromotion, opExportApp, opExportDeployment, opGetCompose,
-	opGetDeploymentCompose, opListTemplates, opGetTemplate,
+	opGetDeploymentCompose, opListTemplates, opGetTemplate, opGetAppScan,
 	opDeployApp, opRedeployDeployment, opPromoteApp, opRestartApp, opStopApp,
 	opStartApp, opCreateBackup,
 }

@@ -1,0 +1,206 @@
+{
+  "Region": null,
+  "Namespace": null,
+  "ID": "_scan-r3",
+  "Name": "_scan-r3",
+  "Type": "batch",
+  "Priority": null,
+  "AllAtOnce": null,
+  "Datacenters": [
+    "*"
+  ],
+  "NodePool": null,
+  "Constraints": null,
+  "Affinities": null,
+  "TaskGroups": [
+    {
+      "Name": "scan",
+      "Count": 1,
+      "Constraints": [
+        {
+          "LTarget": "${node.unique.id}",
+          "RTarget": "node-7",
+          "Operand": "="
+        }
+      ],
+      "Affinities": null,
+      "Tasks": [
+        {
+          "Name": "grype",
+          "Driver": "docker",
+          "User": "",
+          "Lifecycle": null,
+          "Config": {
+            "args": [
+              "sbom:/cache/sbom/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.cdx.json",
+              "-o",
+              "template=/alloc/data/scan.txt",
+              "-t",
+              "/local/scan.tmpl"
+            ],
+            "image": "anchore/grype@sha256:ddf9e9f204049f3a4a0955ef70873cabab6a31432125ad4f20a490b54950a253"
+          },
+          "Constraints": null,
+          "Affinities": null,
+          "Env": {
+            "GRYPE_CHECK_FOR_APP_UPDATE": "false",
+            "GRYPE_DB_CACHE_DIR": "/cache/db",
+            "GRYPE_DB_MAX_ALLOWED_BUILT_AGE": "120h",
+            "GRYPE_DB_UPDATE_CHECK_MAX_FREQUENCY": "24h"
+          },
+          "Services": null,
+          "Resources": {
+            "CPU": 500,
+            "Cores": null,
+            "MemoryMB": 512,
+            "MemoryMaxMB": 2048,
+            "DiskMB": null,
+            "Networks": null,
+            "Devices": null,
+            "NUMA": null,
+            "SecretsMB": null,
+            "IOPS": null
+          },
+          "RestartPolicy": null,
+          "Meta": null,
+          "KillTimeout": 10000000000,
+          "LogConfig": {
+            "MaxFiles": 2,
+            "MaxFileSizeMB": 1,
+            "Enabled": null,
+            "Disabled": null
+          },
+          "Artifacts": null,
+          "Vault": null,
+          "Consul": null,
+          "Templates": [
+            {
+              "SourcePath": null,
+              "DestPath": "local/scan.tmpl",
+              "EmbeddedTmpl": "caravana-scan v1{{- define \"f\" }}{{ printf \"%s\" . | replace \"\\t\" \" \" | replace \"\\n\" \" \" | replace \"\\r\" \" \" }}{{ end }}{{- range .Matches }}\nm\t{{ template \"f\" .Vulnerability.ID }}\t{{ template \"f\" .Vulnerability.Severity }}\t{{ template \"f\" .Vulnerability.Fix.State }}\t{{ template \"f\" (join \",\" .Vulnerability.Fix.Versions) }}\t{{ template \"f\" .Artifact.Name }}\t{{ template \"f\" .Artifact.Version }}\t{{ template \"f\" .Artifact.Type }}\t{{ template \"f\" .Vulnerability.DataSource }}\t{{ range $i, $r := .RelatedVulnerabilities }}{{ if $i }},{{ end }}{{ template \"f\" $r.ID }}{{ end }}\t{{ with .Vulnerability.EPSS }}{{ with index . 0 }}{{ .EPSS }}{{ end }}{{ end }}\t{{ with .Vulnerability.EPSS }}{{ with index . 0 }}{{ .Percentile }}{{ end }}{{ end }}\t{{ if .Vulnerability.KnownExploited }}kev{{ end }}{{- end }}\ndb\t{{ template \"f\" .Descriptor.DB.Status.Built }}\t{{ template \"f\" .Descriptor.DB.Status.SchemaVersion }}\t{{ template \"f\" .Descriptor.Version }}\n",
+              "ChangeMode": "noop",
+              "ChangeScript": null,
+              "ChangeSignal": null,
+              "Once": null,
+              "Splay": null,
+              "Perms": null,
+              "Uid": null,
+              "Gid": null,
+              "LeftDelim": "[[%",
+              "RightDelim": "%]]",
+              "Envvars": null,
+              "VaultGrace": null,
+              "Wait": null,
+              "ErrMissingKey": null
+            }
+          ],
+          "DispatchPayload": null,
+          "VolumeMounts": [
+            {
+              "Volume": "cache",
+              "Destination": "/cache",
+              "ReadOnly": false,
+              "PropagationMode": null,
+              "SELinuxLabel": null
+            }
+          ],
+          "Leader": false,
+          "ShutdownDelay": 0,
+          "KillSignal": "",
+          "Kind": "",
+          "ScalingPolicies": null,
+          "Secrets": null,
+          "Identity": null,
+          "Identities": null,
+          "Actions": null,
+          "Schedule": null
+        }
+      ],
+      "Spreads": null,
+      "Volumes": {
+        "cache": {
+          "Name": "cache",
+          "Type": "host",
+          "Source": "caravana-scanner",
+          "ReadOnly": false,
+          "Sticky": false,
+          "AccessMode": "single-node-single-writer",
+          "AttachmentMode": "file-system",
+          "MountOptions": null,
+          "PerAlloc": false
+        }
+      },
+      "RestartPolicy": {
+        "Interval": null,
+        "Attempts": 0,
+        "Delay": null,
+        "Mode": "fail",
+        "RenderTemplates": null
+      },
+      "Disconnect": null,
+      "ReschedulePolicy": {
+        "Attempts": 0,
+        "Interval": null,
+        "Delay": null,
+        "DelayFunction": null,
+        "MaxDelay": null,
+        "Unlimited": false
+      },
+      "EphemeralDisk": null,
+      "Update": null,
+      "Migrate": null,
+      "Networks": [
+        {
+          "Mode": "bridge",
+          "Device": "",
+          "CIDR": "",
+          "IP": "",
+          "DNS": null,
+          "ReservedPorts": null,
+          "DynamicPorts": null,
+          "Hostname": "",
+          "MBits": null,
+          "CNI": null
+        }
+      ],
+      "Meta": null,
+      "Services": null,
+      "ShutdownDelay": null,
+      "MaxRunDuration": null,
+      "StopAfterClientDisconnect": null,
+      "MaxClientDisconnect": null,
+      "Scaling": null,
+      "Consul": null,
+      "PreventRescheduleOnLost": null
+    }
+  ],
+  "Update": null,
+  "Multiregion": null,
+  "Spreads": null,
+  "Periodic": null,
+  "ParameterizedJob": null,
+  "Reschedule": null,
+  "Migrate": null,
+  "Meta": {
+    "caravana.image": "registry.example.com:5000/team/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "caravana.scan": "r3"
+  },
+  "UI": null,
+  "Stop": null,
+  "ParentID": null,
+  "Dispatched": false,
+  "DispatchIdempotencyToken": null,
+  "Payload": null,
+  "ConsulNamespace": null,
+  "VaultNamespace": null,
+  "NomadTokenID": null,
+  "Status": null,
+  "StatusDescription": null,
+  "Stable": null,
+  "Version": null,
+  "SubmitTime": null,
+  "CreateIndex": null,
+  "ModifyIndex": null,
+  "JobModifyIndex": null,
+  "VersionTag": null
+}

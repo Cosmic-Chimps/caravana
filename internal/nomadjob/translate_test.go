@@ -507,6 +507,7 @@ func TestTranslateErrors(t *testing.T) {
 		{"names image with a tag", func(a *app.App, d *app.Deployment, s *Settings) { s.NamesImage = "busybox:1.37" }, "settings.namesImage"},
 		{"backup image with a tag", func(a *app.App, d *app.Deployment, s *Settings) { s.BackupImage = "rclone/rclone:latest" }, "settings.backupImage"},
 		{"sqlite image with a tag", func(a *app.App, d *app.Deployment, s *Settings) { s.SQLiteImage = "alpine/sqlite:latest" }, "settings.sqliteImage"},
+		{"scanner image with a tag", func(a *app.App, d *app.Deployment, s *Settings) { s.ScannerImage = "anchore/grype:v0.117.0" }, "settings.scannerImage"},
 
 		{"memory below minimum", func(a *app.App, d *app.Deployment, s *Settings) {
 			a.Services[0].Resources.MemoryMB = 5

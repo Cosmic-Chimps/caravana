@@ -130,6 +130,11 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 	case AttentionScaleAtMax:
 		ev.Title = where + ": at its maximum and still over its target"
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
+	case AttentionImageVulnerable:
+		ev.Title = fmt.Sprintf("%s: %s has %s (%s)", where, it.Package, it.Advisory, it.Severity)
+		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
+		ev.Package, ev.PackageVersion, ev.FixedIn = it.Package, it.PackageVersion, it.FixedIn
+		ev.Advisory, ev.Severity, ev.Image = it.Advisory, it.Severity, it.Image
 	default: // a kind added to the list and not yet worded here: still say something
 		ev.Title = fmt.Sprintf("%s: needs you (%s)", where, it.Kind)
 		ev.Text = ev.Title + "."
@@ -266,6 +271,8 @@ func problemPath(kind AttentionKind, appID, subject string) string {
 		return "/ops/updates"
 	case AttentionServerDown, AttentionServerCertExpiring, AttentionServerMoveIncomplete:
 		return "/ops/servers/" + url.PathEscape(subject)
+	case AttentionImageVulnerable:
+		return deploymentPath(appID, "")
 	case AttentionDomainDNSElsewhere, AttentionDomainCertExpiring:
 		return "/domains?open=" + url.QueryEscape(subject) + "#domain-" + subject
 	}
@@ -399,6 +406,9 @@ func problemSubject(it AttentionItem) string {
 	if it.Kind == AttentionDiskNearlyFull {
 		return it.Mount
 	}
+	if it.Kind == AttentionImageVulnerable {
+		return it.Package // one problem per package, whichever advisory is the worst now
+	}
 	// The OS kinds name their server once there are several, and keep their key (feature 031).
 	if it.Server != "" && it.Kind != AttentionOSRebootRequired && it.Kind != AttentionOSSecurityUpdates {
 		return it.Server
@@ -436,7 +446,10 @@ func problemSubject(it AttentionItem) string {
 // servers whose newest host sample is too old, "" being the one Caravana runs on.
 type judged struct {
 	Copies, Disks, OS, Servers bool
-	DisksUnjudged              []string
+	// Scans is true while the image scanner is installed (feature 044): image_vulnerable is judged
+	// only then, so removing the add-on sends no burst of "resolved".
+	Scans         bool
+	DisksUnjudged []string
 }
 
 // problemDiskSlot is the server part of a disk problem's key: "" for the server Caravana runs on, else
@@ -456,7 +469,7 @@ func diskUnjudged(key string, j judged) bool {
 }
 
 // allJudged is a check that could read everything.
-var allJudged = judged{Copies: true, Disks: true, OS: true, Servers: true}
+var allJudged = judged{Copies: true, Disks: true, OS: true, Servers: true, Scans: true}
 
 // notJudged says whether a kind of item is one the check couldn't judge. It
 // takes the kind as the list writes it or as the table stores it (a plain
@@ -471,6 +484,8 @@ func notJudged[K ~string](kind K, j judged) bool {
 		return !j.OS
 	case AttentionServerDown, AttentionServerMoveIncomplete:
 		return !j.Servers
+	case AttentionImageVulnerable:
+		return !j.Scans
 	}
 	return false
 }
@@ -603,7 +618,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 	}
 	display := s.projectDisplay(ctx)
 	now := s.clock.Now().UTC()
-	changes := diffProblems(prev, att.Items, judged{Copies: !att.CopiesUnknown, Disks: !att.DisksUnknown, OS: !att.OSUnknown, Servers: !att.ServersUnknown, DisksUnjudged: att.DisksUnjudged}, exists, now, s.resolveAfter)
+	changes := diffProblems(prev, att.Items, judged{Copies: !att.CopiesUnknown, Disks: !att.DisksUnknown, OS: !att.OSUnknown, Servers: !att.ServersUnknown, Scans: !att.ScansOff, DisksUnjudged: att.DisksUnjudged}, exists, now, s.resolveAfter)
 
 	check := store.ProblemCheck{Seen: changes.Seen, SeenAt: now, Removed: slices.Clone(changes.Dropped), Dropped: changes.Dropped}
 	var opened, resolved []notify.Event

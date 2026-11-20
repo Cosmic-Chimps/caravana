@@ -52,6 +52,9 @@ const (
 	// AttentionScaleAtMax: a scaled service runs its maximum and is still over its target (feature 043):
 	// a warning.
 	AttentionScaleAtMax AttentionKind = "scale_at_max"
+	// AttentionImageVulnerable: a service's live image has an advisory at or above the notify level
+	// that has a known fix (feature 044), one item per package. A warning, failed when one is critical.
+	AttentionImageVulnerable AttentionKind = "image_vulnerable"
 )
 
 // skippingAt is how many skipped slots in a row make a schedule an item: each
@@ -142,7 +145,18 @@ type AttentionItem struct {
 	Queued, Left int
 	// Count is scale_at_max's service count, which is its maximum (feature 043).
 	Count int
-	When  time.Time
+	// The facts of image_vulnerable (feature 044): the package and its installed version, the worst
+	// of its advisories at or above the notify level that have a fix (its ID, its severity and the
+	// versions that fix it), how many more such advisories the package has, whether one is known to
+	// be exploited, and the image's digest. The item's Level is failed when one is critical. Names and
+	// versions from the scanner's database only, never anything the app wrote.
+	Package, PackageVersion string
+	FixedIn                 []string
+	Advisory, Severity      string
+	Image                   string
+	MoreAdvisories          int
+	KEV                     bool
+	When                    time.Time
 	// Detail is the raw fact: Nomad's description, the deploy or backup error,
 	// or, for the schedule kinds, a sentence in Caravana's words. Never a
 	// run's output.
@@ -170,6 +184,9 @@ type Attention struct {
 	// ServersUnknown says Nomad's nodes couldn't be read: server_down is missing because it couldn't be
 	// judged, not because the servers are up, so the notifier sends no "resolved" for it.
 	ServersUnknown bool
+	// ScansOff says the image scanner isn't installed: image_vulnerable isn't derived, and the
+	// notifier sends no "resolved" for it (feature 044).
+	ScansOff bool
 }
 
 // Attention builds the needs-you list from what is stored and what Nomad
@@ -242,6 +259,12 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 		return Attention{}, fmt.Errorf("attention: %w", err)
 	}
 	out.Items = append(out.Items, scaleItems...)
+	scanItems, scansOff, err := s.scanItems(ctx, apps)
+	if err != nil {
+		return Attention{}, fmt.Errorf("attention: %w", err)
+	}
+	out.ScansOff = scansOff
+	out.Items = append(out.Items, scanItems...)
 	sortAttention(out.Items)
 	return out, nil
 }

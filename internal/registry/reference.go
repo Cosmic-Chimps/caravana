@@ -114,15 +114,16 @@ func Endpoint(host string) string {
 	switch {
 	case host == "docker.io":
 		return "https://registry-1.docker.io"
-	case isLoopback(host):
+	case IsLoopback(host):
 		return "http://" + host
 	}
 	return "https://" + host
 }
 
-// isLoopback reports whether host, with or without a port, is localhost or a
-// loopback address (127.0.0.0/8, ::1).
-func isLoopback(host string) bool {
+// IsLoopback reports whether host, with or without a port, is localhost or a
+// loopback address (127.0.0.0/8, ::1): a registry only the node itself can
+// reach.
+func IsLoopback(host string) bool {
 	name := host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		name = h

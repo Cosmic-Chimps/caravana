@@ -511,5 +511,7 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 	s.publish(Change{What: ChangeApps})
 	s.publish(Change{What: ChangeActivity})
 	s.publish(Change{What: ChangeAttention})
+	// The scans of the images only this app ran go with it (feature 044).
+	s.pruneScans(context.WithoutCancel(ctx))
 	return nil
 }

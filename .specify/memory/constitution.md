@@ -1,5 +1,15 @@
 <!--
 Sync Impact Report
+- Version change: 1.2.0 → 1.2.1 (2026-11-19, PATCH: II's list of helpers names those of feature 044,
+  image scanning, CodeAlta task z57f, which its plan names; the rule itself is unchanged)
+- Modified principles: II. One Model, Many Inputs (the list only: helpers that belong to no app,
+  the scan jobs `_scan-<id>` and the host volume `caravana-scanner`)
+- Added sections: none
+- Removed sections: none
+- Templates: ✅ no change (plan, spec and tasks templates read this file); ✅ CLAUDE.md links here
+- Deferred TODOs: none
+
+Earlier report (1.2.0):
 - Version change: 1.1.2 → 1.2.0 (2026-11-16, MINOR: VI materially expanded for feature 041, published
   ports, CodeAlta task dfn8)
 - Modified principles:
@@ -119,7 +129,9 @@ Rationale: the target user runs budget VMs; every extra moving part is a cost th
   the `caravana-volumes` prestart task (016), the `caravana-sqlite` and `caravana-upload`
   poststart sidecars of a service with a `sqlite` backup (029), the backup and restore jobs
   `<app>_<service>_backup` and `<app>_<service>_restore` (010) and the schedule run jobs
-  `<app>_run-<id>` (022).
+  `<app>_run-<id>` (022). Helpers that belong to no app are named so no app's ID or prefix can
+  match them; today these are the image scanner's jobs `_scan-<id>` and its host volume
+  `caravana-scanner` (044), which exist only while the owner has the scanner installed.
 - `nomadjob.Translate` MUST stay a pure function (no I/O, same input gives the same job) and is
   covered by golden-file tests.
 
@@ -253,4 +265,4 @@ Rationale: the maintainer is learning Go; code must be easy to read, change and 
   section, or materially expands one; PATCH clarifies wording.
 - Reviews check compliance with this document; the plan's Constitution Check is the first gate.
 
-**Version**: 1.2.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-11-16
+**Version**: 1.2.1 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-11-19

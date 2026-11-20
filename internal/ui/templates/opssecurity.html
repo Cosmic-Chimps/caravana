@@ -1,0 +1,178 @@
+{{/* Operator › Security (/ops/security, feature 044): the image scanner as an add-on. Before it is installed the
+     page says what it does and what it costs; installed, it shows the add-on, its settings, the images the
+     apps run with their counts and the recent runs. The page is complete without script: the install, the
+     removal, the settings and Scan all now are plain posts. The main region (#sec-top) and the lists under
+     the settings (#sec-lists, swapped by id in the same answer) are drawn again from /parts/ops/security on
+     the scans notice; the settings form sits outside both, so a refresh never replaces what is being typed.
+     When the add-on's state changes, the part asks the browser to load the page again (HX-Refresh). Every
+     clock time is a clock; no text of the scanner is drawn, only its parsed counts and Caravana's sentences. */}}
+
+{{define "page-class"}} cv-page-upd{{end}}
+
+{{/* sec-top: what the add-on is doing, by state. Takes a secData. */}}
+{{define "sec-top"}}
+{{if eq .State "available"}}
+<div class="cv-panel cv-secoffer">
+  <h2 class="cv-label">Image scanner</h2>
+  <p class="text-base text-fg-1">Checks the images your apps run against a database of known vulnerabilities, once a day and after every deploy, and tells you about the ones that have a fix.</p>
+  <dl class="cv-seccost">
+    <div><dt>Disk</dt><dd>about {{.Cost.Disk}} on one server</dd></div>
+    <div><dt>Download</dt><dd>about {{.Cost.Download}} a day</dd></div>
+    <div><dt>Memory</dt><dd>{{.Cost.Memory}} while it scans</dd></div>
+  </dl>
+  <p class="text-sm text-fg-2">It sends nothing about this server or its apps anywhere. It only downloads its database and the layers of the images it checks. Until you install it, nothing is downloaded, scanned or judged.</p>
+  <form method="post" action="/ops/security/install" class="cv-actions"><button type="submit" class="cv-btn cv-btn-primary">Install the image scanner</button></form>
+</div>
+{{else if eq .State "installing"}}
+<div class="cv-panel cv-dmbanner" role="status">
+  <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-rolling" aria-hidden="true"></span></span>
+  <div class="cv-dmbanner-text">
+    <p class="cv-dmbanner-line">Installing the image scanner.</p>
+    <p class="cv-dmbanner-explain">It is downloading its vulnerability database. When that is done, every image your apps run is scanned. This page updates by itself.</p>
+  </div>
+</div>
+{{else if eq .State "removing"}}
+<div class="cv-panel cv-dmbanner" role="status">
+  <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-rolling" aria-hidden="true"></span></span>
+  <div class="cv-dmbanner-text">
+    <p class="cv-dmbanner-line">Removing the image scanner.</p>
+    <p class="cv-dmbanner-explain">Its database and every result are being deleted. This page updates by itself.</p>
+  </div>
+</div>
+{{else if eq .State "failed"}}
+<div class="cv-panel cv-dmbanner" role="alert">
+  <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-failed" aria-hidden="true"></span></span>
+  <div class="cv-dmbanner-text">
+    <p class="cv-dmbanner-line">The image scanner didn't finish.</p>
+    <p class="cv-dmbanner-explain">{{.Reason}}</p>
+  </div>
+  <div class="cv-actions">
+    <form method="post" action="/ops/security/install"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Try again</button></form>
+    <a href="/ops/security/remove" class="cv-btn cv-btn-secondary cv-btn-sm">Remove…</a>
+  </div>
+</div>
+{{else}}
+<div class="cv-panel cv-secaddon">
+  <p class="cv-secaddon-line"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span class="text-fg-1">Image scanner</span>
+    <span class="cv-inline-mono text-fg-1">{{.Addon.Version}}</span>{{with .Addon.Server}} · on server <span class="cv-inline-mono text-fg-1">{{.}}</span>{{end}}{{with .Addon.Database}} · database of {{.}}{{end}}{{with .Addon.Since}} · installed {{template "clock" .}}{{end}}</p>
+  <div class="cv-actions">
+    <form method="post" action="/ops/security/scan"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Scan all now</button></form>
+    <a href="/ops/security/remove" class="cv-btn cv-btn-secondary cv-btn-sm">Remove…</a>
+  </div>
+</div>
+{{if .Queued}}<p class="cv-secmeta" role="status">{{.Queued}} {{if eq .Queued 1}}scan is{{else}}scans are{{end}} queued or running.</p>{{end}}
+{{end}}
+{{end}}
+
+{{/* sec-lists: the images table and the recent runs of an installed add-on. Takes a secData. */}}
+{{define "sec-lists"}}
+{{if eq .State "installed"}}
+<section class="cv-upsec" aria-labelledby="sec-images-title">
+  <div class="cv-mnsec"><h2 class="cv-label" id="sec-images-title">Images</h2><span class="cv-mnsec-link">times in UTC</span></div>
+  <div class="cv-panel">
+    {{if .Images}}
+    <table class="cv-sectable">
+      <thead><tr><th scope="col">Image</th><th scope="col">Used by</th><th scope="col">Findings</th><th scope="col">Scanned</th><th scope="col">Status</th></tr></thead>
+      <tbody>
+      {{range .Images}}
+      <tr>
+        <td>{{template "sec-image" .Image}}</td>
+        <td>{{range .UsedBy}}<a href="{{.Href}}" class="cv-inline-mono">{{.App}}</a><span class="cv-inline-mono text-fg-2">/{{.Service}}</span> {{end}}</td>
+        <td>{{if .HasResult}}{{if .Clean}}<span class="cv-sevchip cv-sevchip-plain">no known vulnerabilities</span>{{else}}{{template "sec-chips" .Chips}}{{end}}{{else}}<span class="text-fg-2">—</span>{{end}}</td>
+        <td>{{with .Scanned}}{{template "clock" .}}{{else}}<span class="text-fg-2">never</span>{{end}}{{if .Database}}<br><span class="cv-secmeta">database of {{.Database}}</span>{{end}}</td>
+        <td>{{template "status-quiet" .Status}}{{with .Reason}}<br><span class="cv-secmeta">{{.}}</span>{{end}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    {{template "empty" .NoImages}}
+    {{end}}
+  </div>
+</section>
+<section class="cv-upsec" aria-labelledby="sec-runs-title">
+  <div class="cv-mnsec"><h2 class="cv-label" id="sec-runs-title">Recent runs</h2><span class="cv-mnsec-link">times in UTC</span></div>
+  <div class="cv-panel">
+    {{if .Runs}}
+    <table class="cv-sectable">
+      <thead><tr><th scope="col">When</th><th scope="col">Started by</th><th scope="col">Image</th><th scope="col">Read</th><th scope="col">Status</th><th scope="col">Scanner</th><th scope="col">Database</th></tr></thead>
+      <tbody>
+      {{range .Runs}}
+      <tr>
+        <td>{{template "clock" .Created}}{{with .Took}}<br><span class="cv-secmeta">{{.}}</span>{{end}}</td>
+        <td>{{.Trigger}}</td>
+        <td>{{if .HasImage}}{{template "sec-image" .Image}}{{else}}<span class="text-fg-2">—</span>{{end}}</td>
+        <td>{{with .Source}}{{.}}{{else}}<span class="text-fg-2">—</span>{{end}}</td>
+        <td>{{template "status-quiet" .Status}}{{with .Reason}}<br><span class="cv-secmeta">{{.}}</span>{{end}}</td>
+        <td class="cv-inline-mono">{{with .Scanner}}{{.}}{{else}}<span class="text-fg-2">—</span>{{end}}</td>
+        <td>{{with .Database}}{{.}}{{else}}<span class="text-fg-2">—</span>{{end}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    {{template "empty" .NoRuns}}
+    {{end}}
+  </div>
+</section>
+{{end}}
+{{end}}
+
+{{/* sec-part: what /parts/ops/security answers: the main region, and by id the lists. Takes a secData. */}}
+{{define "sec-part"}}{{template "sec-top" .}}
+<div hx-swap-oob="innerHTML:#sec-lists">{{template "sec-lists" .}}</div>
+{{end}}
+
+{{define "content"}}
+<header class="cv-pagehead">
+  <h1 class="cv-headline">Security</h1>
+  <p class="cv-lede">The image scanner: known vulnerabilities in the images your apps run. It is separate from Updates, which is about this server's own packages.</p>
+</header>
+{{with .Refusal}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+<div class="cv-upbody">
+  <div id="sec-top" class="cv-upbody" hx-get="/parts/ops/security?state={{.Data.State}}" hx-trigger="sse:scans, sse:attention, sse:sync" hx-swap="innerHTML">{{template "sec-top" .Data}}</div>
+
+  {{if eq .Data.State "installed"}}
+  <section id="settings" class="cv-upsec" aria-labelledby="sec-settings-title">
+    <div class="cv-mnsec"><h2 class="cv-label" id="sec-settings-title">Settings</h2></div>
+    <form method="post" action="/ops/security/settings" class="cv-panel cv-sform">
+      {{if .Saved}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>Saved.</span></div>{{end}}
+      <div class="cv-setrow">
+        <div class="cv-setrow-text"><label class="cv-setrow-label" for="sec-level">Tell me about</label>
+          <p class="cv-setrow-hint" id="sec-level-hint">The lowest severity that opens an item on the needs-you list. Only findings with a fix open one.</p></div>
+        <div class="cv-setrow-ctl">
+          <select class="cv-field cv-select" id="sec-level" name="notifyLevel" aria-describedby="sec-level-hint{{if .Form.Level.Error}} sec-level-error{{end}}"{{if .Form.Level.Error}} aria-invalid="true"{{end}}>{{range .Form.Levels}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+          {{template "field-error" .Form.Level}}
+        </div>
+      </div>
+      <div class="cv-setrow">
+        <div class="cv-setrow-text"><span class="cv-setrow-label">Deploy check</span>
+          <p class="cv-setrow-hint">A deploy of an image with a critical finding that has a fix is refused, until the image is fixed.</p></div>
+        <div class="cv-setrow-ctl">
+          <label class="cv-check"><input type="checkbox" id="sec-refuse" name="refuseFixableCritical" value="1"{{if .Form.Refuse.Value}} checked{{end}}><span>Refuse to deploy an image with a fixable critical finding</span></label>
+        </div>
+      </div>
+      <div class="cv-setrow">
+        <div class="cv-setrow-text"><label class="cv-setrow-label" for="sec-hour">Daily scan</label>
+          <p class="cv-setrow-hint">Every image is checked again once a day, at or after this hour, against the newest database.</p></div>
+        <div class="cv-setrow-ctl">
+          <select class="cv-field cv-select" id="sec-hour" name="dailyHour"{{if .Form.Hour.Error}} aria-invalid="true" aria-describedby="sec-hour-error"{{end}}>{{range .Form.Hours}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+          {{template "field-error" .Form.Hour}}
+        </div>
+      </div>
+      <div class="cv-setrow">
+        <div class="cv-setrow-text"><label class="cv-setrow-label" for="sec-url">Database address</label>
+          <p class="cv-setrow-hint" id="sec-url-hint">Leave empty for the scanner's own. A mirror's <span class="cv-inline-mono">latest.json</span> address (https) works too.</p></div>
+        <div class="cv-setrow-ctl">
+          <input class="cv-field cv-field-mono" id="sec-url" type="text" name="databaseUrl" value="{{.Form.URL.Value}}" placeholder="https://" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="sec-url-hint{{if .Form.URL.Error}} sec-url-error{{end}}"{{if .Form.URL.Error}} aria-invalid="true"{{end}}>
+          {{template "field-error" .Form.URL}}
+        </div>
+      </div>
+      <div class="cv-setrow"><div class="cv-setrow-text"></div><div class="cv-setrow-ctl"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save</button></div></div>
+    </form>
+  </section>
+  {{end}}
+
+  <div id="sec-lists" class="cv-upbody">{{template "sec-lists" .Data}}</div>
+</div>
+{{end}}

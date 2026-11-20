@@ -84,7 +84,7 @@ var consoleParity = map[string]parity{
 	"GET /apps/{id}": {ops: []string{"getApp", "listCopies", "getProject", "getEnvironmentApp", "listAppActions"}},
 
 	// The created notice of an app installed from a template reads the template's notes (getTemplate).
-	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments", "getTemplate"}},
+	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments", "getTemplate", "getAppScan", "getDeploymentScan"}},
 	// A failed deploy on an image also reads the registries, to say whether to add or fix credentials.
 	"GET /apps/{id}/configure": {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules", "listRegistries", "getTemplate"}},
 	// The Logs tab (feature 024) is the Logs page filtered to the app: listLogs with ?app= (and the lines around one,
@@ -102,7 +102,7 @@ var consoleParity = map[string]parity{
 	"GET /parts/apps/{id}/header": {ops: []string{"getApp", "getProject", "getEnvironmentApp"}},
 	// listCopies with usage=true, as the Running tab's copies region.
 	"GET /parts/apps/{id}/copies":      {ops: []string{"listCopies"}},
-	"GET /parts/apps/{id}/deployments": {ops: []string{"listDeployments"}},
+	"GET /parts/apps/{id}/deployments": {ops: []string{"listDeployments", "getDeploymentScan"}},
 	"GET /parts/apps/{id}/actions":     {ops: []string{"listAppActions"}},
 
 	// What the console changes.
@@ -304,6 +304,21 @@ var consoleParity = map[string]parity{
 	"GET /ops/updates/caravana":  {ops: []string{"getUpdates"}},
 	"POST /ops/updates/caravana": {ops: []string{"requestUpdate"}},
 	"GET /parts/ops/updates/run": {ops: []string{"getUpdates", "listAttention"}},
+	// Operator › Security (feature 044): the add-on (listAddons), its images (listImageScans), the recent runs
+	// (listScanRuns) and the settings (getScanSettings). The part is the same regions drawn again on the scans
+	// notice. The confirmation page reads the add-on; its post is removeAddon. Install is installAddon, the
+	// settings form putScanSettings and Scan all now requestScan with no app.
+	"GET /ops/security":           {ops: []string{"listAddons", "listImageScans", "listScanRuns", "getScanSettings"}},
+	"GET /parts/ops/security":     {ops: []string{"listAddons", "listImageScans", "listScanRuns"}},
+	"POST /ops/security/install":  {ops: []string{"installAddon"}},
+	"GET /ops/security/remove":    {ops: []string{"listAddons"}},
+	"POST /ops/security/remove":   {ops: []string{"removeAddon"}},
+	"POST /ops/security/settings": {ops: []string{"putScanSettings"}},
+	"POST /ops/security/scan":     {ops: []string{"requestScan"}},
+	// An app's Security panel (feature 044) is getAppScan; Scan now is requestScan for the app. The history's
+	// one-line counts read the scans of the listed deployments' images (getDeploymentScan).
+	"GET /parts/apps/{id}/security": {ops: []string{"getAppScan", "listAddons"}},
+	"POST /apps/{id}/security/scan": {ops: []string{"requestScan"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

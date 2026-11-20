@@ -2415,3 +2415,42 @@
 @media (min-width: 1200px) {
   .cv-nodegrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* ---------------------------------------------------------------------------
+   Image scanning (feature 044): Operator › Security and an app's Security panel. The count chips carry
+   their word, so the tone (the failed tone for critical, the warning tone for high) is never the only
+   signal. Tokens only.
+   --------------------------------------------------------------------------- */
+@layer components {
+  .cv-sevchip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border: 1px solid var(--color-line-2); border-radius: 2px; background: var(--color-ink-2); font: 400 12px/1 var(--font-mono); color: var(--color-fg-2); white-space: nowrap; }
+  .cv-sevn { font-weight: 500; }
+  .cv-sevchip-critical { color: var(--color-failed); background: var(--color-failed-bg); border-color: var(--color-failed-line); }
+  .cv-sevchip-high { color: var(--color-warn); background: var(--color-warn-bg); border-color: var(--color-warn-line); }
+  .cv-secpanel { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px 18px; min-width: 0; }
+  .cv-secpanel + .cv-secpanel { border-top: 1px solid var(--color-line-1); }
+  .cv-sechead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; overflow-wrap: anywhere; }
+  .cv-secchips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cv-secmeta { font: 400 13px/1.45 var(--font-sans); color: var(--color-fg-3); text-wrap: pretty; overflow-wrap: anywhere; }
+  .cv-secstatus { margin: 0; }
+  .cv-secfix { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; width: 100%; }
+  .cv-secfix > li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; font: 400 13px/1.45 var(--font-sans); color: var(--color-fg-1); }
+  .cv-secfix > li > .cv-secmeta { flex-basis: 100%; }
+  .cv-secall { width: 100%; }
+  .cv-secall > summary { display: inline-flex; cursor: pointer; }
+  .cv-sectable { width: 100%; border-collapse: collapse; margin-top: 10px; font: 400 13px/1.4 var(--font-sans); color: var(--color-fg-1); }
+  .cv-sectable th { text-align: left; font: 500 12px/1.3 var(--font-sans); color: var(--color-fg-2); padding: 8px 12px; background: var(--color-ink-2); border-bottom: 1px solid var(--color-line-1); }
+  .cv-sectable td { padding: 9px 12px; vertical-align: top; border-top: 1px solid var(--color-line-1); overflow-wrap: anywhere; }
+  .cv-panel > .cv-sectable { margin-top: 0; }
+  .cv-secscan { padding: 0 18px 16px; }
+  .cv-secoffer { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 18px 20px; }
+  .cv-seccost { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 0; }
+  .cv-seccost > div { display: flex; flex-direction: column; gap: 2px; }
+  .cv-seccost dt { font: 500 12px/1.3 var(--font-sans); color: var(--color-fg-2); }
+  .cv-seccost dd { margin: 0; font: 400 14px/1.4 var(--font-sans); color: var(--color-fg-1); }
+  .cv-secaddon { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; }
+  .cv-secaddon-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font: 400 14px/1.4 var(--font-sans); color: var(--color-fg-2); }
+}
+@container cvupd (max-width: 759.98px) {
+  .cv-panel:has(> .cv-sectable) { overflow-x: auto; }
+  .cv-panel > .cv-sectable { min-width: 640px; }
+}
