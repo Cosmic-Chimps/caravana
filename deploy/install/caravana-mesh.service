@@ -4,10 +4,20 @@
 # Nomad, which requires it, and before systemd-networkd, which also configures caravana0 on the
 # first server, so the two never both make it. A reboot brings the network and Nomad back by
 # themselves.
+#
+# It runs in early boot, so it has no default dependencies: with them it came after sysinit.target,
+# and cloud-init (After=systemd-networkd-wait-online.service, Before=sysinit.target) closed a loop
+# through systemd-networkd that systemd broke by dropping a job at random, ssh.socket on some boots
+# (task c6wd). It needs only the local file systems (the agent in /usr/local/libexec, its state in
+# /etc/caravana-node, `wg`'s file in /etc/wireguard) and the modules the host loads at boot; the
+# kernel loads wireguard and dummy by itself when `ip link add` asks for them. After
+# network-pre.target, the host's firewall is up first.
 [Unit]
 Description=Caravana's private network (caravana0 and the WireGuard mesh)
-After=network-pre.target
-Before=nomad.service systemd-networkd.service
+DefaultDependencies=no
+After=local-fs.target systemd-modules-load.service network-pre.target
+Before=nomad.service systemd-networkd.service shutdown.target
+Conflicts=shutdown.target
 
 [Service]
 Type=oneshot

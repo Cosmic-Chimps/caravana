@@ -1659,7 +1659,19 @@ costs a rebuild of its copies. Operator doc: `docs/network-blips.md`.
   replacement registers: Traefik rebuilds the load balancer and counts the unreachable copy up until its next check
   (2 calls at 75–80 s, both runs), so steps 6d and 7 allow 4 late failures. Steps 8–11 haven't run to the end with the
   change: the runs that got that far stopped on the network (partial Nomad downloads), a stalled `limactl shell` and,
-  in step 8, a boot ordering cycle between `caravana-mesh.service` and cloud-init that drops `ssh.socket` (task `c6wd`).
+  in step 8, a boot ordering cycle between `caravana-mesh.service` and cloud-init that dropped `ssh.socket` (task `c6wd`,
+  fixed below).
+
+Boot ordering (CodeAlta task `c6wd`, worktree branch `alta/glowing-baker-ttss`): `caravana-mesh.service` has
+`DefaultDependencies=no` (after `local-fs.target`, `systemd-modules-load.service` and `network-pre.target`; before Nomad,
+systemd-networkd and `shutdown.target`). With default dependencies it came after `sysinit.target`, and cloud-init
+(`After=systemd-networkd-wait-online.service`, `Before=sysinit.target`) closed a loop through networkd on every boot of a
+cloud-init host since 031; systemd broke it by dropping a job that changed per boot (`ssh.socket`, `docker.socket`,
+`cloud-init.service`) and left the system `degraded`. A control on a bare Ubuntu 24.04 Lima VM (2026-11-19): the old
+ordering logged 2 cycle lines per boot, the new one 0 with the system `running`. A rerun of the installer rewrites the
+unit and reloads systemd. `install-test.sh` checks the rewrite and a reboot (ssh, no `ordering cycle` in `journalctl -b`,
+`systemd-analyze verify`, the mesh, Nomad, the console and whoami), and `cluster-test.sh` checks the journal after its
+reboots in steps 7 and 8.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM

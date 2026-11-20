@@ -7,8 +7,9 @@
 # server, also as a host from before it takes it. Feature 031's first-server steps are in it:
 # the private network (caravana0, the WireGuard mesh), Nomad's RPC on the mesh address with TLS, the
 # cluster's CA and gossip key in Nomad Variables with no key left on disk, the server registered with
-# Caravana, the refusals of both roles, and what --uninstall leaves. Then it deletes the VM. About 20
-# minutes. Adding a server and converting an older host need more machines: deploy/dev/cluster-test.sh.
+# Caravana, the refusals of both roles, and what --uninstall leaves. A reboot must come back whole, with
+# no ordering cycle in the boot's journal (task c6wd). Then it deletes the VM. About 20 minutes. Adding
+# a server and converting an older host need more machines: deploy/dev/cluster-test.sh.
 #
 #   deploy/dev/install-test.sh          run it on Ubuntu 24.04 (KEEP=1 keeps the VM for a look afterwards)
 #   IMAGE=debian-12 deploy/dev/install-test.sh    on another supported image: Lima's ubuntu-24.04 (the
@@ -200,6 +201,41 @@ check_mesh_host() {
   [ "$(vm sudo stat -c '%a %U' /etc/caravana-node/node.env)" = "600 root" ] || die "node.env should be root 0600"
   vm sudo grep -qx 'CARAVANA_URL=http://127.0.0.1:7070' /etc/caravana-node/node.env || die "node.env should name the console on loopback"
   vm sudo grep -Eqx 'CARAVANA_NODE_TOKEN=cvnd_[A-Za-z0-9_-]{43}' /etc/caravana-node/node.env || die "node.env should hold a node token"
+}
+
+# check_mesh_unit_rewritten VERSION: a rerun puts back the mesh unit as the release has it and reloads
+# systemd. The unit is made the one from before task c6wd first (default dependencies, which closed an
+# ordering cycle with cloud-init).
+check_mesh_unit_rewritten() {
+  local unit=/etc/systemd/system/caravana-mesh.service out
+  vm sudo sed -i '/^DefaultDependencies=no$/d' "$unit"
+  vm sudo systemctl daemon-reload
+  [ "$(vm systemctl show -p DefaultDependencies --value caravana-mesh)" = yes ] || die "couldn't put back the old mesh unit"
+  out="$(install "$1")"
+  grep -q '^changed: .*caravana-mesh.service' <<<"$out" || die "the rerun should rewrite caravana-mesh.service: $(grep '^changed:' <<<"$out")"
+  vm cmp -s "$unit" "/opt/caravana/$1/caravana-mesh.service" || die "the rerun didn't write the release's caravana-mesh.service"
+  [ "$(vm systemctl show -p NeedDaemonReload --value caravana-mesh)" = no ] || die "the rerun didn't reload systemd after rewriting the mesh unit"
+  [ "$(vm systemctl show -p DefaultDependencies --value caravana-mesh)" = no ] || die "the mesh unit should have no default dependencies"
+}
+
+# check_reboot_host: a reboot brings the host back by itself (task c6wd): ssh answers (limactl start
+# waits for it), no ordering cycle in the boot's journal (caravana-mesh.service once closed one with
+# cloud-init, and systemd broke it by dropping a job, ssh.socket on some boots), and the private
+# network, Nomad, the console and whoami come back.
+check_reboot_host() {
+  local cycles
+  limactl stop "$NAME" >/dev/null 2>&1 || die "couldn't stop the VM"
+  limactl start --timeout 5m "$NAME" >/dev/null 2>&1 || die "the VM didn't answer ssh within 5 minutes of its reboot"
+  cycles="$(vm sudo journalctl -b -o cat | grep -c 'ordering cycle' || true)"
+  [ "$cycles" = 0 ] || die "the boot's journal has $cycles ordering cycle lines:\n$(vm sudo journalctl -b -o cat | grep 'ordering cycle')"
+  vm sudo systemd-analyze verify caravana-mesh.service nomad.service || die "systemd-analyze verify finds a problem in the units"
+  local end=$((SECONDS + 180))
+  until app_answers; do
+    [ "$SECONDS" -lt "$end" ] || die "whoami didn't answer within 3 minutes of the reboot"
+    sleep 3
+  done
+  vm_curl -fsS -o /dev/null "https://$DOMAIN/v1/health" || die "the console doesn't answer after the reboot"
+  check_mesh_host
 }
 
 # check_servers_api: the first server is registered with Caravana and listed as the one ready server.
@@ -775,6 +811,9 @@ PY
   refuses "--join on a first server" "this is the first server of its cluster" --join "$good_token" --url https://caravana.test
   refuses "--leave on a first server" "this is the first server" --leave
 
+  say "a rerun rewrites a mesh unit from before task c6wd and reloads systemd"
+  check_mesh_unit_rewritten "$v1"
+
   say "a Traefik job from before feature 025 is restarted once for its request numbers, and says so"
   vm sudo bash -c "grep -v 'metrics.prometheus' /opt/caravana/$v1/traefik.nomad.hcl >/tmp/traefik-old.hcl &&
     caravana-nomad job run -detach -var console_domain=$DOMAIN -var acme=none -var acme_email=$EMAIL /tmp/traefik-old.hcl >/dev/null" ||
@@ -808,6 +847,9 @@ PY
 
   say "a published port: the public host network, an answer through the firewall, and closed again (feature 041)"
   check_published_host
+
+  say "a reboot: ssh, no ordering cycle, and the network, Nomad, the console and whoami come back (task c6wd)"
+  check_reboot_host
 
   say "upgrade to $v2 with whoami answering throughout"
   local flag="$WORK/watching" fails
