@@ -18,20 +18,24 @@ import (
 // NotificationChannel is one place messages go, without its secrets.
 type NotificationChannel struct {
 	ID   string // "nch_" and 12 random hex digits
-	Kind string // webhook, slack, discord or ntfy
+	Kind string // webhook, slack, discord, ntfy, email or telegram
 	Name string
 	// Address is what the console shows. It is masked for Slack, Discord and
 	// ntfy, because the whole URL is the secret, and whole for a webhook.
 	Address string
 	// Events lists what the channel wants: "problems", "deploy_failed" and
 	// "deploy_succeeded", in any combination.
-	Events    []string
-	Paused    bool
+	Events []string
+	Paused bool
+	// Settings is the JSON of the kind's non-secret settings (the mail server and
+	// addresses of an email channel, the chat of a Telegram one), "{}" for a kind
+	// with none. The service reads and writes it; the store only keeps it.
+	Settings  []byte
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
-const channelColumns = "id, kind, name, address, events, paused, created_at, updated_at"
+const channelColumns = "id, kind, name, address, events, paused, created_at, updated_at, settings"
 
 // SaveNotificationChannel adds a channel, or updates the one with this ID. The
 // creation time of an existing channel is kept.
@@ -40,11 +44,16 @@ func (s *Store) SaveNotificationChannel(ctx context.Context, c NotificationChann
 	if err != nil {
 		return fmt.Errorf("save notification channel %q: %w", c.ID, err)
 	}
+	settings := string(c.Settings)
+	if settings == "" {
+		settings = "{}"
+	}
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO notification_channels (`+channelColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO notification_channels (`+channelColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, name = excluded.name, address = excluded.address,
-			events = excluded.events, paused = excluded.paused, updated_at = excluded.updated_at`,
-		c.ID, c.Kind, c.Name, c.Address, string(events), boolInt(c.Paused), formatTime(c.CreatedAt), formatTime(c.UpdatedAt))
+			events = excluded.events, paused = excluded.paused, updated_at = excluded.updated_at,
+			settings = excluded.settings`,
+		c.ID, c.Kind, c.Name, c.Address, string(events), boolInt(c.Paused), formatTime(c.CreatedAt), formatTime(c.UpdatedAt), settings)
 	if err != nil {
 		return fmt.Errorf("save notification channel %q: %w", c.ID, err)
 	}
@@ -96,15 +105,16 @@ func (s *Store) DeleteNotificationChannel(ctx context.Context, id string) error 
 
 func scanChannel(row scanner) (NotificationChannel, error) {
 	var c NotificationChannel
-	var events, created, updated string
+	var events, created, updated, settings string
 	var paused int
-	if err := row.Scan(&c.ID, &c.Kind, &c.Name, &c.Address, &events, &paused, &created, &updated); err != nil {
+	if err := row.Scan(&c.ID, &c.Kind, &c.Name, &c.Address, &events, &paused, &created, &updated, &settings); err != nil {
 		return NotificationChannel{}, err
 	}
 	if err := json.Unmarshal([]byte(events), &c.Events); err != nil {
 		return NotificationChannel{}, fmt.Errorf("bad stored events %q: %w", events, err)
 	}
 	c.Paused = paused == 1
+	c.Settings = []byte(settings)
 	var err error
 	if c.CreatedAt, err = parseTime(created); err != nil {
 		return NotificationChannel{}, err

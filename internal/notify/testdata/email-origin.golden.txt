@@ -1,0 +1,42 @@
+From: ops@example.com
+To: ana@example.com, ben@example.com
+
+From: "Caravana" <ops@example.com>
+To: <ana@example.com>, =?utf-8?q?Ben_D=C3=ADaz?= <ben@example.com>
+Subject: shop--staging--web: deployed v4
+Date: Sat, 17 Oct 2026 03:00:41 +0000
+Message-ID: <ndl_3f9a1c2b4d5e@caravana>
+MIME-Version: 1.0
+Auto-Submitted: auto-generated
+Content-Type: multipart/alternative; boundary="caravana-ndl_3f9a1c2b4d5e"
+
+--caravana-ndl_3f9a1c2b4d5e
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/plain; charset=utf-8
+
+shop--staging--web's deploy v4 is healthy, started by the API.
+From CI: abc1234 on main by ana, run https://github.com/acme/shop/actions/r=
+uns/212
+
+https://caravana.example.com/apps/shop--staging--web/deployments#deployment=
+-dep_5c4d3e
+
+--=20
+Sent by Caravana. Choose what this address receives in Settings =E2=80=BA N=
+otifications.
+
+--caravana-ndl_3f9a1c2b4d5e
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/html; charset=utf-8
+
+<p><strong>shop--staging--web: deployed v4</strong></p>
+<p>shop--staging--web&#39;s deploy v4 is healthy, started by the API.<br>
+From CI: abc1234 on main by ana, run https://github.com/acme/shop/actions/r=
+uns/212</p>
+<p><a href=3D"https://caravana.example.com/apps/shop--staging--web/deployme=
+nts#deployment-dep_5c4d3e">https://caravana.example.com/apps/shop--staging-=
+-web/deployments#deployment-dep_5c4d3e</a></p>
+<p>Sent by Caravana. Choose what this address receives in Settings =E2=80=
+=BA Notifications.</p>
+
+--caravana-ndl_3f9a1c2b4d5e--

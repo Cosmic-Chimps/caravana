@@ -16,7 +16,7 @@ var notifyT0 = time.Date(2026, 10, 16, 9, 0, 0, 123456789, time.UTC)
 func newChannel(id string) NotificationChannel {
 	return NotificationChannel{
 		ID: id, Kind: "ntfy", Name: "phone", Address: "https://ntfy.sh/my-topic",
-		Events: []string{"problems", "deploy_failed"}, CreatedAt: notifyT0, UpdatedAt: notifyT0,
+		Events: []string{"problems", "deploy_failed"}, Settings: []byte("{}"), CreatedAt: notifyT0, UpdatedAt: notifyT0,
 	}
 }
 
@@ -56,6 +56,7 @@ func TestNotificationChannels(t *testing.T) {
 		t1 := notifyT0.Add(time.Hour)
 		next := first
 		next.Name, next.Events, next.Paused, next.CreatedAt, next.UpdatedAt = "tablet", []string{"deploy_succeeded"}, true, t1, t1
+		next.Settings = []byte(`{"chatId":"1"}`)
 		if err := s.SaveNotificationChannel(ctx, next); err != nil {
 			t.Fatal(err)
 		}

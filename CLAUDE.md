@@ -1815,6 +1815,27 @@ doc: `docs/database-backups.md`. No new module, no policy change, constitution u
 - Not in 046: point-in-time recovery, replica sets and shards beyond the node the service reaches, `*_FILE` credentials,
   Percona XtraBackup, Redis.
 
+Email and Telegram notifications (CodeAlta task `c6v8`, worktree branch `alta/cosmic-phoenix-4c2k`): two more channel kinds beside
+`webhook`, `slack`, `discord` and `ntfy`, on the same queue, retries, deliveries, Send a test, Pause and Edit.
+- `internal/notify`: `Render` handles `telegram` (`POST <Bot API>/bot<token>/sendMessage`, JSON `chat_id` always a string, plain text,
+  previews off); an email channel has no URL, so `RenderMail` (pure; multipart/alternative, quoted-printable UTF-8, goldens
+  `email-*.golden.txt`) and `SendMail` (`net/smtp`, one 10 s deadline, `starttls`/`tls`/`none`, AUTH PLAIN only over TLS or to
+  localhost, no new module) replace `Render` + `Send`. `notify.Deliver` picks the pair and blanks the channel's secret out of an
+  error; the sender and Send a test both call it. The bot token is in the URL's path, so `Send` still names only the host.
+  `notify/smtptest` is a fake SMTP server (STARTTLS, implicit TLS, AUTH, refusals, hang) for the tests of every package.
+- Settings are JSON in the new column `notification_channels.settings` (migration 0037: the table is rebuilt for the wider CHECK
+  **together with `notification_deliveries`**, because dropping the old channels table would cascade-delete every delivery);
+  the SMTP password (`password`) and the bot token (`token`) live only in the Nomad Variable `caravana/notifications/<id>`.
+  `service.EmailSettings`/`TelegramSettings` are validated naming `email.host`, `email.to[i]`, `telegram.chatId`, `token`...;
+  `none` security only for localhost or a loopback address; shown address `ana@x.com, ben@x.com +1 more via smtp.x.com:587` or `chat -100…`.
+- API 0.52.0: `email`, `telegram`, `password` on create and patch, `NotificationEmail`/`NotificationTelegram`, `hasToken` also means
+  an SMTP password. Console: the add form draws every kind's rows and the stylesheet hides the others with `:has()` on the Kind
+  select (`.cv-nf-url|ntfy|email|telegram`), so it works without script; the handler reads only the chosen kind's inputs.
+- Lab: `TestConsoleLab` step `console-email-telegram` (`console_email_test.go`: an email channel through the form against a
+  fake SMTP server in the test process, a Telegram test to a recorded fake Bot API, a failed deploy mailed once, no secret in
+  any page or list) passed on 2026-11-20 (8 s, `-run 'TestConsoleLab/^console-(sign-in|email-telegram)$'`). Run it with the
+  main checkout's `deploy/dev/lab.sh env`: a worktree has no `deploy/dev/.data/env`.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

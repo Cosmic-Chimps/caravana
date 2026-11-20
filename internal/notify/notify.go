@@ -1,26 +1,30 @@
 // Package notify turns one event ("a backup failed", "a deploy ended") into
 // the HTTP request a notification channel expects, and sends it (feature 018).
-// It knows four kinds of channel: a signed JSON webhook, a Slack incoming
-// webhook, a Discord webhook and an ntfy topic.
+// It knows six kinds of channel: a signed JSON webhook, a Slack incoming
+// webhook, a Discord webhook, an ntfy topic, a Telegram chat (through the Bot
+// API) and email (through SMTP).
 //
 // The package depends on no other package of Caravana: callers hand it an
-// Event and a Channel and get a request back. Render is pure, so what each kind
-// sends is pinned by golden files; Send is the only function that touches the
-// network.
+// Event and a Channel and get a request (or, for email, a Mail) back. Render
+// and RenderMail are pure, so what each kind sends is pinned by golden files;
+// Send and SendMail are the only functions that touch the network, and Deliver
+// picks the right pair for a channel.
 package notify
 
 import "time"
 
 // The kinds of channel.
 const (
-	KindWebhook = "webhook"
-	KindSlack   = "slack"
-	KindDiscord = "discord"
-	KindNtfy    = "ntfy"
+	KindWebhook  = "webhook"
+	KindSlack    = "slack"
+	KindDiscord  = "discord"
+	KindNtfy     = "ntfy"
+	KindEmail    = "email"
+	KindTelegram = "telegram"
 )
 
 // Kinds lists the kinds of channel in the order the console offers them.
-var Kinds = []string{KindNtfy, KindSlack, KindDiscord, KindWebhook}
+var Kinds = []string{KindNtfy, KindSlack, KindDiscord, KindWebhook, KindEmail, KindTelegram}
 
 // The types of event. A problem is something the needs-you list derived (opened,
 // worsened when its level rises, resolved); a deploy event says how a
@@ -149,8 +153,40 @@ type Origin struct {
 //	slack, discord: Address is the incoming-webhook URL, which is itself the
 //	    secret; Secret is unused.
 //	ntfy: Address is the topic URL; Secret is the access token, or empty.
+//	email: SMTP is the mail server and the addresses; Secret is its password, or
+//	    empty. Address is unused.
+//	telegram: Address is the Bot API server (DefaultTelegramAPI unless the owner
+//	    runs their own), ChatID the chat to post to and Secret the bot token.
 type Channel struct {
 	Kind    string
 	Address string
 	Secret  string
+	// SMTP is the mail server and the addresses of an email channel; Secret is
+	// then its password, or empty.
+	SMTP *SMTP
+	// ChatID is the chat a telegram channel posts to; Address is then the Bot API
+	// server (DefaultTelegramAPI unless the owner runs their own) and Secret the
+	// bot token.
+	ChatID string
+}
+
+// DefaultTelegramAPI is the Bot API's own server, the Address of a telegram
+// channel unless the owner runs a local Bot API server.
+const DefaultTelegramAPI = "https://api.telegram.org"
+
+// How the connection to a mail server is secured.
+const (
+	SecuritySTARTTLS = "starttls" // plain connection, upgraded with STARTTLS (usually port 587)
+	SecurityTLS      = "tls"      // TLS from the first byte (usually port 465)
+	SecurityNone     = "none"     // no encryption; the service allows it only for this host
+)
+
+// SMTP is where an email channel sends and to whom.
+type SMTP struct {
+	Host     string
+	Port     int
+	Security string   // SecuritySTARTTLS, SecurityTLS or SecurityNone
+	Username string   // empty: no AUTH
+	From     string   // one address, with or without a display name
+	To       []string // one or more addresses
 }

@@ -1,0 +1,4 @@
+POST https://api.telegram.org/bot123456789:AAH-sentinel_telegram_token_XXXXXXXX/sendMessage
+Content-Type: application/json
+
+{"chat_id":"-1001234567890","text":"New release: caravana 0.16.0\ncaravana 0.16.0 is out. You run 0.15.0.\nhttps://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0","link_preview_options":{"is_disabled":true}}

@@ -262,7 +262,7 @@ func TestSettingsNotifications(t *testing.T) {
 			{"not a URL", addValues("ntfy", "tablet", "topic", "", "problems"), "notify-add-url-error", "The URL must be an absolute http or https URL.", `value="tablet"`},
 			{"no name", addValues("webhook", "", okRcv.URL, "", "problems"), "notify-add-name-error", "The name is required.", `value="` + okRcv.URL + `"`},
 			{"nothing to send", addValues("webhook", "x", okRcv.URL, "", ""), "notify-add-events-error", "Pick at least one thing to send.", `value="x"`},
-			{"a token on Slack", addValues("slack", "x", okRcv.URL+"/services/T0/B0/"+notifyTestSecret, "tk_"+notifyTestSecret, "problems"), "notify-add-token-error", "The token is only for an ntfy channel.", `value="x"`},
+			{"a token on Slack", addValues("slack", "x", okRcv.URL+"/services/T0/B0/"+notifyTestSecret, "tk_"+notifyTestSecret, "problems"), "notify-add-token-error", "The token is only for an ntfy or a Telegram channel.", `value="x"`},
 		} {
 			before := len(e.channelIDs(t))
 			resp, body := e.submit(t, add, tc.values)

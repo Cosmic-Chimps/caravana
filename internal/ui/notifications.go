@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
@@ -18,20 +20,90 @@ import (
 // Settings › Notifications (feature 018, and 021 page 3): where Caravana tells
 // the owner what needs them and how deploys end, one connection row per channel.
 // Every form is a plain post, so the page works without script. The secret parts of a channel (a Slack or Discord URL,
-// an ntfy token, a webhook's signing secret) are write-only: no struct here has
+// an ntfy or Telegram bot token, an SMTP password, a webhook's signing secret) are write-only: no struct here has
 // a field for one, except the notice that shows a signing secret once, and a
-// refused form never gives a typed Slack or Discord URL or token back.
+// refused form never gives a typed Slack or Discord URL, token or password back.
 
 // notificationForm is what an add or edit form shows: the values as saved or as
-// typed, and the field a refusal names. Never a token, and never a Slack or
-// Discord URL, which is itself a secret.
+// typed, and the field a refusal names (the name of its input). Never a token or
+// a password, and never a Slack or Discord URL, which is itself a secret.
 type notificationForm struct {
 	Kind, Name, URL string
-	Problems        bool
-	DeployFailed    bool
-	DeploySucceeded bool
-	Field           string // the field at fault, after a refusal
-	Err             *fieldError
+	// The settings of an email channel (inputs smtpHost, smtpPort, smtpSecurity,
+	// smtpUsername, fromAddress and toAddresses, the last one as typed: addresses
+	// separated by commas, spaces or line breaks) and of a Telegram one (chatId and
+	// apiUrl, the Bot API server).
+	SMTPHost, SMTPPort, SMTPSecurity, SMTPUsername, FromAddress, ToAddresses string
+	ChatID, APIURL                                                           string
+	Problems                                                                 bool
+	DeployFailed                                                             bool
+	DeploySucceeded                                                          bool
+	Field                                                                    string // the field at fault, after a refusal
+	Err                                                                      *fieldError
+}
+
+// emailSettings reads the email inputs as the service's settings. A port that
+// isn't a number is refused here, since the service only has numbers.
+func (f notificationForm) emailSettings() (*service.EmailSettings, error) {
+	port := 0
+	if f.SMTPPort != "" {
+		var err error
+		if port, err = strconv.Atoi(f.SMTPPort); err != nil {
+			return nil, app.NewFieldError("email.port", "must be a number between 1 and 65535")
+		}
+	}
+	to := strings.FieldsFunc(f.ToAddresses, func(r rune) bool { return r == ',' || r == ';' || unicode.IsSpace(r) })
+	return &service.EmailSettings{Host: f.SMTPHost, Port: port, Security: f.SMTPSecurity, Username: f.SMTPUsername, From: f.FromAddress, To: to}, nil
+}
+
+func (f notificationForm) telegramSettings() *service.TelegramSettings {
+	return &service.TelegramSettings{ChatID: f.ChatID, APIURL: f.APIURL}
+}
+
+// notifyInput is one text input of an email or Telegram row, with the refusal
+// that names it.
+type notifyInput struct {
+	ID, Name, Type, Value, Placeholder, Err string
+}
+
+// Input is the view of the input called name, filled from value.
+func (v notifyFormView) Input(name, typ, value, placeholder string) notifyInput {
+	return notifyInput{ID: v.Prefix + "-" + name, Name: name, Type: typ, Value: value, Placeholder: placeholder, Err: v.Error(name)}
+}
+
+// Securities lists the entries of the security select, with the form's selected
+// (STARTTLS when it has none).
+func (v notifyFormView) Securities() []kindOption {
+	chosen := v.Form.SMTPSecurity
+	if chosen == "" {
+		chosen = notify.SecuritySTARTTLS
+	}
+	var out []kindOption
+	for _, o := range []kindOption{
+		{Value: notify.SecuritySTARTTLS, Label: "STARTTLS (port 587)"},
+		{Value: notify.SecurityTLS, Label: "TLS (port 465)"},
+		{Value: notify.SecurityNone, Label: "None, for a mail server on this host"},
+	} {
+		o.Selected = o.Value == chosen
+		out = append(out, o)
+	}
+	return out
+}
+
+// PasswordHint is the hint under the SMTP password input.
+func (v notifyFormView) PasswordHint() string {
+	if v.HasToken {
+		return "A password is set: leave it empty to keep it."
+	}
+	return "Leave empty when the server needs no login."
+}
+
+// BotTokenHint is the hint under the Telegram bot token input.
+func (v notifyFormView) BotTokenHint() string {
+	if v.Editing {
+		return "A token is set: leave it empty to keep it."
+	}
+	return "The token BotFather gave, like 123456789:AA…"
 }
 
 // notifyFormView is a form together with what its template needs to draw it.
@@ -40,7 +112,7 @@ type notifyFormView struct {
 	Form     notificationForm
 	Editing  bool   // an edit form: the kind is fixed
 	Kind     string // the channel's kind, when editing
-	HasToken bool   // an ntfy channel that has an access token
+	HasToken bool   // an ntfy channel that has an access token, or an email channel with a password
 }
 
 // notifyFormFor builds the view of a form for the template.
@@ -110,6 +182,10 @@ func kindLabel(kind string) string {
 		return "Discord"
 	case notify.KindWebhook:
 		return "Webhook"
+	case notify.KindEmail:
+		return "Email"
+	case notify.KindTelegram:
+		return "Telegram"
 	}
 	return kind
 }
@@ -137,7 +213,7 @@ type deliveryRow struct {
 type notificationRow struct {
 	ID, Name, Kind, KindLabel, Address string
 	KindLine                           string // the kind, then what the channel sends when that isn't everything
-	Icon                               string // the kind's icon: hash, message-square, bell or webhook
+	Icon                               string // the kind's icon: hash, message-square, bell, mail, send or webhook
 	Mark                               string // notificationsState's: healthy, warning or idle
 	Paused                             bool
 	HasToken                           bool
@@ -202,14 +278,19 @@ func formFromEvents(f notificationForm, events []string) notificationForm {
 // readNotificationForm reads an add or edit form. It keeps the typed URL only
 // for a webhook or ntfy channel, whose address the console shows anyway.
 func readNotificationForm(r *http.Request, kind string) notificationForm {
+	field := func(name string) string { return strings.TrimSpace(r.PostFormValue(name)) }
 	f := notificationForm{
-		Kind: kind, Name: strings.TrimSpace(r.PostFormValue("name")), URL: strings.TrimSpace(r.PostFormValue("url")),
+		Kind: kind, Name: field("name"), URL: field("url"),
+		SMTPHost: field("smtpHost"), SMTPPort: field("smtpPort"), SMTPSecurity: field("smtpSecurity"), SMTPUsername: field("smtpUsername"),
+		FromAddress: field("fromAddress"), ToAddresses: field("toAddresses"),
+		ChatID: field("chatId"), APIURL: field("apiUrl"),
 	}
 	return formFromEvents(f, r.PostForm["events"])
 }
 
 // echoable is the form to draw again after a refusal: a Slack, Discord or ntfy
-// address is a secret and doesn't come back, so the owner types it again.
+// address is a secret and doesn't come back, so the owner types it again. (A
+// password or token is never in the form at all.)
 func echoable(f notificationForm) notificationForm {
 	if f.Kind != notify.KindWebhook {
 		f.URL = ""
@@ -217,17 +298,46 @@ func echoable(f notificationForm) notificationForm {
 	return f
 }
 
+// notificationInputName is the input a service field error is drawn under: the
+// service names fields as the API does (email.host, token), the console's inputs
+// have their own names (smtpHost, botToken).
+func notificationInputName(kind, field string) string {
+	switch {
+	case strings.HasPrefix(field, "email.to"):
+		return "toAddresses"
+	case field == "token" && kind == notify.KindTelegram:
+		return "botToken"
+	}
+	if input, ok := map[string]string{
+		"email.host": "smtpHost", "email.port": "smtpPort", "email.security": "smtpSecurity", "email.username": "smtpUsername",
+		"email.from": "fromAddress", "telegram.chatId": "chatId", "telegram.apiUrl": "apiUrl",
+	}[field]; ok {
+		return input
+	}
+	return field
+}
+
 // notificationFieldMessage is a field error as a sentence for the input it
 // names: the service's messages are written to follow the field's name ("is
-// required").
-func notificationFieldMessage(fe *app.FieldError) string {
+// required"). The channel's kind tells the ntfy token from the Telegram bot token.
+func notificationFieldMessage(fe *app.FieldError, kind string) string {
 	if fe.Field == "events" {
 		if strings.Contains(fe.Message, "at least one") {
 			return "Pick at least one thing to send."
 		}
 		return "The events " + strings.TrimSuffix(fe.Message, ".") + "."
 	}
-	name := map[string]string{"name": "The name", "url": "The URL", "token": "The token", "kind": "The kind"}[fe.Field]
+	name := map[string]string{
+		"name": "The name", "url": "The URL", "token": "The token", "kind": "The kind",
+		"email.host": "The mail server", "email.port": "The port", "email.security": "The security", "email.username": "The user name",
+		"email.from": "The from address", "password": "The password", "telegram.chatId": "The chat ID", "telegram.apiUrl": "The Bot API address",
+	}[fe.Field]
+	switch {
+	case strings.HasPrefix(fe.Field, "email.to"):
+		name = "The to addresses"
+	case fe.Field == "token" && kind == notify.KindTelegram:
+		name = "The bot token"
+	}
 	if name == "" {
 		return fe.Message
 	}
@@ -251,9 +361,25 @@ func (s *server) addNotification(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	form := readNotificationForm(r, r.PostFormValue("kind"))
-	created, err := s.svc.CreateNotificationChannel(r.Context(), service.NotificationChannelInput{
-		Kind: form.Kind, Name: form.Name, URL: form.URL, Token: r.PostFormValue("token"), Events: formEvents(form),
-	})
+	// The form draws every kind's inputs (it works without script), so only the
+	// ones of the chosen kind are read; a stale URL typed before switching to
+	// email is ignored, not refused.
+	in := service.NotificationChannelInput{Kind: form.Kind, Name: form.Name, Events: formEvents(form)}
+	var err error
+	switch form.Kind {
+	case notify.KindEmail:
+		in.Email, err = form.emailSettings()
+		in.Password = r.PostFormValue("password")
+	case notify.KindTelegram:
+		in.Telegram = form.telegramSettings()
+		in.Token = r.PostFormValue("botToken")
+	default:
+		in.URL, in.Token = form.URL, r.PostFormValue("token")
+	}
+	var created service.CreatedNotificationChannel
+	if err == nil {
+		created, err = s.svc.CreateNotificationChannel(r.Context(), in)
+	}
 	switch {
 	case err == nil && created.SigningSecret != "":
 		s.renderSettings(w, r, entryNotifications, settingsData{Notifications: notificationsData{
@@ -281,11 +407,33 @@ func (s *server) updateNotification(w http.ResponseWriter, r *http.Request, sess
 		patch.Name = &form.Name
 		events := formEvents(form)
 		patch.Events = &events
-		if form.URL != "" {
-			patch.URL = &form.URL
-		}
-		if token := r.PostFormValue("token"); token != "" {
-			patch.Token = &token
+		switch form.Kind {
+		case notify.KindEmail:
+			email, err := form.emailSettings()
+			if err != nil {
+				s.refuseNotification(w, r, err, "update notification channel", id, form)
+				return
+			}
+			patch.Email = email
+			// An empty password keeps the one stored, unless the box says to remove it.
+			if password := r.PostFormValue("password"); password != "" {
+				patch.Password = &password
+			} else if r.PostFormValue("removePassword") == "1" {
+				none := ""
+				patch.Password = &none
+			}
+		case notify.KindTelegram:
+			patch.Telegram = form.telegramSettings()
+			if token := r.PostFormValue("botToken"); token != "" {
+				patch.Token = &token
+			}
+		default:
+			if form.URL != "" {
+				patch.URL = &form.URL
+			}
+			if token := r.PostFormValue("token"); token != "" {
+				patch.Token = &token
+			}
 		}
 	}
 	if r.PostForm.Has("paused") {
@@ -313,7 +461,7 @@ func (s *server) refuseNotification(w http.ResponseWriter, r *http.Request, err 
 		http.Redirect(w, r, "/settings/notifications", http.StatusSeeOther)
 	case errors.As(err, &fieldErr):
 		form = echoable(form)
-		form.Field, form.Err = fieldErr.Field, &fieldError{Text: notificationFieldMessage(fieldErr)}
+		form.Field, form.Err = notificationInputName(form.Kind, fieldErr.Field), &fieldError{Text: notificationFieldMessage(fieldErr, form.Kind)}
 		data := notificationsData{Add: form}
 		if editID != "" {
 			data = notificationsData{EditID: editID, Edit: form}
@@ -452,6 +600,10 @@ func kindIcon(kind string) string {
 		return "message-square"
 	case notify.KindNtfy:
 		return "bell"
+	case notify.KindEmail:
+		return "mail"
+	case notify.KindTelegram:
+		return "send"
 	}
 	return "webhook"
 }
@@ -472,6 +624,13 @@ func notificationsSection(now time.Time, facts settingsFacts, st entryState, dat
 		row.Edit = formFromEvents(notificationForm{Kind: c.Kind, Name: c.Name}, c.Events)
 		if c.Kind == notify.KindWebhook {
 			row.Edit.URL = c.Address
+		}
+		if e := c.Email; e != nil {
+			row.Edit.SMTPHost, row.Edit.SMTPSecurity, row.Edit.SMTPUsername, row.Edit.FromAddress = e.Host, e.Security, e.Username, e.From
+			row.Edit.SMTPPort, row.Edit.ToAddresses = strconv.Itoa(e.Port), strings.Join(e.To, ", ")
+		}
+		if t := c.Telegram; t != nil {
+			row.Edit.ChatID, row.Edit.APIURL = t.ChatID, t.APIURL
 		}
 		if c.ID == data.EditID {
 			row.Edit, row.Open = data.Edit, true

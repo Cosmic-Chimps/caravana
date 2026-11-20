@@ -184,41 +184,60 @@ var newRelease = Event{
 	At:      fixedNow,
 }
 
+// testMessage is what "Send a test" sends.
+var testMessage = Event{
+	Type:  EventTest,
+	Title: "Test message from Caravana",
+	Text:  `If you can read this, the channel "ops" is set up.`,
+	URL:   "https://caravana.example.com/settings/notifications",
+	At:    fixedNow,
+}
+
+// telegramChannel is a channel that posts to a group chat; the token is the
+// sentinel the leak tests look for.
+var telegramChannel = Channel{Kind: KindTelegram, Address: DefaultTelegramAPI, ChatID: "-1001234567890",
+	Secret: "123456789:AAH-sentinel_telegram_token_XXXXXXXX"}
+
 func TestRender(t *testing.T) {
 	tests := []struct {
 		name string
 		ch   Channel
 		ev   Event
 	}{
-		{"webhook", Channel{KindWebhook, "https://hooks.example.com/caravana?x=1", "whsec_test"}, deployFailed},
-		{"webhook-promoted", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, promoted},
-		{"webhook-origin", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, fromCI},
-		{"slack-origin", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, fromCI},
-		{"ntfy-origin", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, fromCI},
-		{"webhook-problem", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, backupFailed},
-		{"slack", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, backupFailed},
-		{"slack-no-link", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, resolvedNoLink},
-		{"discord", Channel{KindDiscord, "https://discord.com/api/webhooks/123/abc", ""}, deployFailed},
-		{"ntfy-token", Channel{KindNtfy, "https://ntfy.sh/my-topic", "tk_secret"}, backupFailed},
-		{"ntfy-resolved", Channel{KindNtfy, "https://ntfy.example.com/alerts", ""}, resolvedNoLink},
-		{"ntfy-deploy-failed", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, deployFailed},
-		{"webhook-schedule", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, scheduleFailed},
-		{"slack-schedule", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, scheduleFailed},
-		{"discord-schedule", Channel{KindDiscord, "https://discord.com/api/webhooks/123/abc", ""}, scheduleFailed},
-		{"ntfy-schedule", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, scheduleFailed},
-		{"webhook-domain", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, domainElsewhere},
-		{"slack-domain", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, domainElsewhere},
-		{"discord-domain", Channel{KindDiscord, "https://discord.com/api/webhooks/123/abc", ""}, certExpiring},
-		{"ntfy-domain", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, certExpiring},
-		{"webhook-cert", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, certExpiring},
-		{"webhook-disk", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, diskNearlyFull},
-		{"slack-disk", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, diskNearlyFull},
-		{"discord-disk", Channel{KindDiscord, "https://discord.com/api/webhooks/123/abc", ""}, diskNearlyFull},
-		{"ntfy-disk", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, diskNearlyFull},
-		{"webhook-release", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, newRelease},
-		{"slack-release", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, newRelease},
-		{"discord-release", Channel{KindDiscord, "https://discord.com/api/webhooks/123/abc", ""}, newRelease},
-		{"ntfy-release", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, newRelease},
+		{"webhook", Channel{Kind: KindWebhook, Address: "https://hooks.example.com/caravana?x=1", Secret: "whsec_test"}, deployFailed},
+		{"webhook-promoted", Channel{Kind: KindWebhook, Address: "https://hooks.example.com/caravana", Secret: "whsec_test"}, promoted},
+		{"webhook-origin", Channel{Kind: KindWebhook, Address: "https://hooks.example.com/caravana", Secret: "whsec_test"}, fromCI},
+		{"slack-origin", Channel{Kind: KindSlack, Address: "https://hooks.slack.com/services/T000/B000/XXXX", Secret: ""}, fromCI},
+		{"ntfy-origin", Channel{Kind: KindNtfy, Address: "https://ntfy.sh/my-topic", Secret: ""}, fromCI},
+		{"webhook-problem", Channel{Kind: KindWebhook, Address: "https://hooks.example.com/caravana", Secret: "whsec_test"}, backupFailed},
+		{"slack", Channel{Kind: KindSlack, Address: "https://hooks.slack.com/services/T000/B000/XXXX", Secret: ""}, backupFailed},
+		{"slack-no-link", Channel{Kind: KindSlack, Address: "https://hooks.slack.com/services/T000/B000/XXXX", Secret: ""}, resolvedNoLink},
+		{"discord", Channel{Kind: KindDiscord, Address: "https://discord.com/api/webhooks/123/abc", Secret: ""}, deployFailed},
+		{"ntfy-token", Channel{Kind: KindNtfy, Address: "https://ntfy.sh/my-topic", Secret: "tk_secret"}, backupFailed},
+		{"ntfy-resolved", Channel{Kind: KindNtfy, Address: "https://ntfy.example.com/alerts", Secret: ""}, resolvedNoLink},
+		{"ntfy-deploy-failed", Channel{Kind: KindNtfy, Address: "https://ntfy.sh/my-topic", Secret: ""}, deployFailed},
+		{"webhook-schedule", Channel{Kind: KindWebhook, Address: "https://hooks.example.com/caravana", Secret: "whsec_test"}, scheduleFailed},
+		{"slack-schedule", Channel{Kind: KindSlack, Address: "https://hooks.slack.com/services/T000/B000/XXXX", Secret: ""}, scheduleFailed},
+		{"discord-schedule", Channel{Kind: KindDiscord, Address: "https://discord.com/api/webhooks/123/abc", Secret: ""}, scheduleFailed},
+		{"ntfy-schedule", Channel{Kind: KindNtfy, Address: "https://ntfy.sh/my-topic", Secret: ""}, scheduleFailed},
+		{"webhook-domain", Channel{Kind: KindWebhook, Address: "https://hooks.example.com/caravana", Secret: "whsec_test"}, domainElsewhere},
+		{"slack-domain", Channel{Kind: KindSlack, Address: "https://hooks.slack.com/services/T000/B000/XXXX", Secret: ""}, domainElsewhere},
+		{"discord-domain", Channel{Kind: KindDiscord, Address: "https://discord.com/api/webhooks/123/abc", Secret: ""}, certExpiring},
+		{"ntfy-domain", Channel{Kind: KindNtfy, Address: "https://ntfy.sh/my-topic", Secret: ""}, certExpiring},
+		{"webhook-cert", Channel{Kind: KindWebhook, Address: "https://hooks.example.com/caravana", Secret: "whsec_test"}, certExpiring},
+		{"webhook-disk", Channel{Kind: KindWebhook, Address: "https://hooks.example.com/caravana", Secret: "whsec_test"}, diskNearlyFull},
+		{"slack-disk", Channel{Kind: KindSlack, Address: "https://hooks.slack.com/services/T000/B000/XXXX", Secret: ""}, diskNearlyFull},
+		{"discord-disk", Channel{Kind: KindDiscord, Address: "https://discord.com/api/webhooks/123/abc", Secret: ""}, diskNearlyFull},
+		{"ntfy-disk", Channel{Kind: KindNtfy, Address: "https://ntfy.sh/my-topic", Secret: ""}, diskNearlyFull},
+		{"webhook-release", Channel{Kind: KindWebhook, Address: "https://hooks.example.com/caravana", Secret: "whsec_test"}, newRelease},
+		{"slack-release", Channel{Kind: KindSlack, Address: "https://hooks.slack.com/services/T000/B000/XXXX", Secret: ""}, newRelease},
+		{"discord-release", Channel{Kind: KindDiscord, Address: "https://discord.com/api/webhooks/123/abc", Secret: ""}, newRelease},
+		{"ntfy-release", Channel{Kind: KindNtfy, Address: "https://ntfy.sh/my-topic", Secret: ""}, newRelease},
+		{"telegram-test", telegramChannel, testMessage},
+		{"telegram-problem", telegramChannel, backupFailed},
+		{"telegram-origin", telegramChannel, fromCI},
+		{"telegram-release", telegramChannel, newRelease},
+		{"telegram-own-server", Channel{Kind: KindTelegram, Address: "https://botapi.example.com/", ChatID: "@caravana_ops", Secret: "42:AAH-sentinel_telegram_token_XXXXXXXX"}, resolvedNoLink},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -274,7 +293,7 @@ func dump(t *testing.T, req *http.Request) string {
 // TestRenderWebhookSignature checks that the signature on a rendered webhook
 // verifies against its own body, which is how a receiver would check it.
 func TestRenderWebhookSignature(t *testing.T) {
-	req, err := Render(Channel{KindWebhook, "https://hooks.example.com/x", "whsec_test"}, deployFailed, "ndl_1", fixedNow)
+	req, err := Render(Channel{Kind: KindWebhook, Address: "https://hooks.example.com/x", Secret: "whsec_test"}, deployFailed, "ndl_1", fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,12 +313,12 @@ func TestRenderErrors(t *testing.T) {
 		name string
 		ch   Channel
 	}{
-		{"unknown kind", Channel{"carrier-pigeon", "https://example.com/" + sentinel, ""}},
-		{"not http", Channel{KindSlack, "ftp://example.com/" + sentinel, ""}},
-		{"no host", Channel{KindSlack, "https:///" + sentinel, ""}},
-		{"relative", Channel{KindDiscord, "/" + sentinel, ""}},
-		{"unparsable", Channel{KindSlack, "https://exa mple.com/%zz" + sentinel, ""}},
-		{"webhook without a secret", Channel{KindWebhook, "https://example.com/" + sentinel, ""}},
+		{"unknown kind", Channel{Kind: "carrier-pigeon", Address: "https://example.com/" + sentinel, Secret: ""}},
+		{"not http", Channel{Kind: KindSlack, Address: "ftp://example.com/" + sentinel, Secret: ""}},
+		{"no host", Channel{Kind: KindSlack, Address: "https:///" + sentinel, Secret: ""}},
+		{"relative", Channel{Kind: KindDiscord, Address: "/" + sentinel, Secret: ""}},
+		{"unparsable", Channel{Kind: KindSlack, Address: "https://exa mple.com/%zz" + sentinel, Secret: ""}},
+		{"webhook without a secret", Channel{Kind: KindWebhook, Address: "https://example.com/" + sentinel, Secret: ""}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -335,7 +354,7 @@ func TestRenderDetail(t *testing.T) {
 				t.Errorf("withDetail() = %q, want %q", got, want)
 			}
 			for _, kind := range []string{KindSlack, KindDiscord, KindNtfy} {
-				req, err := Render(Channel{kind, "https://example.com/x", ""}, ev, "ndl_1", fixedNow)
+				req, err := Render(Channel{Kind: kind, Address: "https://example.com/x"}, ev, "ndl_1", fixedNow)
 				if err != nil {
 					t.Fatal(err)
 				}

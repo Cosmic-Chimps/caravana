@@ -1,0 +1,36 @@
+From: ops@example.com
+To: ana@example.com, ben@example.com
+
+From: "Caravana" <ops@example.com>
+To: <ana@example.com>, =?utf-8?q?Ben_D=C3=ADaz?= <ben@example.com>
+Subject: New release: caravana 0.16.0
+Date: Sat, 17 Oct 2026 03:00:41 +0000
+Message-ID: <ndl_3f9a1c2b4d5e@caravana>
+MIME-Version: 1.0
+Auto-Submitted: auto-generated
+Content-Type: multipart/alternative; boundary="caravana-ndl_3f9a1c2b4d5e"
+
+--caravana-ndl_3f9a1c2b4d5e
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/plain; charset=utf-8
+
+caravana 0.16.0 is out. You run 0.15.0.
+
+https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0
+
+--=20
+Sent by Caravana. Choose what this address receives in Settings =E2=80=BA N=
+otifications.
+
+--caravana-ndl_3f9a1c2b4d5e
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/html; charset=utf-8
+
+<p><strong>New release: caravana 0.16.0</strong></p>
+<p>caravana 0.16.0 is out. You run 0.15.0.</p>
+<p><a href=3D"https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.=
+0">https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0</a></p>
+<p>Sent by Caravana. Choose what this address receives in Settings =E2=80=
+=BA Notifications.</p>
+
+--caravana-ndl_3f9a1c2b4d5e--
