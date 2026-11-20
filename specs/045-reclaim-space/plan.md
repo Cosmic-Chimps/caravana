@@ -362,3 +362,47 @@ Recorded here as the work finds them.
   volumes" (`TestCleanUpWithDockerVolumesShowsWhatWasRemoved`).
 - **Not run.** The archive on a real Nomad (does a batch job claim a dynamic host volume with an orphan's capability, does
   the mount read-only work, does purging the job release the claim before the delete) is Phase E's gate step `space`.
+
+**Phase E (lab, docs, release note), 2026-11-20.**
+
+- **The archive works on a real Nomad, unchanged.** The gate step `space` (`gate_space_test.go`) ran the whole path in the
+  lab (Nomad 2.0.7): the archive batch job claims a dynamic host volume with the orphan's capability
+  (`single-node-single-writer`, `file-system`), the read-only mount at `/data` works, the object is in the bucket
+  (`backups/gate/<app>/volumes/<ts>/<volume>.tar.gz`, `tar tzf` lists the volume's file), and purging the job released the claim
+  before `DeleteHostVolume`: no "in use" at the delete, so `nomadjob/archive.go` and `ArchiveVolume` needed no change.
+- **The step's shape.** The plan's "a reverted deploy that dropped a volume" needs Nomad's 10 minute progress deadline: a copy that
+  exits or never passes its check is rescheduled until then (as `brokenReverts` finds), so the step takes about 11½ minutes (692 s
+  on 2026-11-20, `-run 'TestLab/^(api-needs-token|space)$'`; a command that exits made no difference, 8 minutes was not enough).
+  The deployment that dropped `scratch` carries the "its data stays on server X" warning, not the healthy one after it (that one
+  drops nothing new from the stored app), so the step reads the warning on the broken deployment. `/v1/volumes/{name}/deletions`
+  has no list: the step checks `volume_not_found` on a POST for an unknown volume and `deletion_not_found` on a read of an unknown
+  ID (`GET /v1/volumes/{name}/deletions/{id}`). A killed run leaves its app's job and volumes in the lab (the next run's
+  `remove()` can't know the app in a fresh data dir): `lab-nomad job stop -purge gate-space` and `volume delete` clear it.
+  `console-space` passed too (81 s with `console-sign-in`).
+- **A bug the install-test found, fixed in the agent.** On Docker 29 (the VM's), `docker image rm busybox:1.37 busybox@sha256:…`
+  removes the image with its first name and fails on the second ("No such image: busybox@sha256:…", exit 1), so a clean-up
+  that had removed the image recorded `failed`. `clean` now checks after a failed `image rm` whether Docker still has the image
+  (`Agent.imageGone`: `image inspect <id>` answering "No such image") and counts it removed when it doesn't; any other answer is
+  still a failure. Test: `TestCleanUpCountsAnImageThatTheFirstNameTookAway` (the fake Docker's `vanishOn`/`vanishErr`).
+- **`failInterruptedDeletions` also removes the archive's leftovers.** For each interrupted deletion that was to back up first it
+  purges `<volume>_archive` and deletes its Nomad Variable (the destination's keys), through the new `Deployer.RemoveArchive`
+  (the same two calls `ArchiveVolume`'s deferred clean-up makes, which now uses it); a Nomad that refuses is logged, and the
+  record is settled either way. This closes Phase D's "a crash leaves the job". Tests: `TestRemoveArchive`,
+  `TestFailInterruptedDeletions`.
+- **`install-test.sh` `check_space_host`** (run after `check_published_host`, before the upgrade): four deployments of `spaceapp`
+  with `alpine:3.19`, `3.20`, `3.21` and `3.22` (checked: four distinct digests; a `sleep 1d`, 16 MB, no port); Nomad restarted;
+  `docker image ls --digests` has all four; the agent's report shows `unusedCount` ≥ 1 within 3 minutes; Clean up now → 202,
+  `done` within 3 minutes with `imagesRemoved` ≥ 1 and `bytesFreed` > 0; the first image gone, the three newest, Traefik's and
+  whoami's present; the next report says `unusedCount` 0 and names the clean-up; redeploying the second version is healthy within
+  90 s (the task said 60; a blue/green rollout waits 10 s of min-healthy time plus the start) with the image IDs unchanged (no
+  pull); the feed has "Cleaned up server …"; the setting round-trips. **It passed on 2026-11-20 (Ubuntu 24.04, 1501 s whole
+  script, the lab VM running beside it).** The first run failed on the agent bug above; the second on a variable the script's own
+  loop had overwritten (a script bug).
+- **Docs.** `docs/reclaim-space.md`, `changelog.d/045-reclaim-space.md` (Added ×3, Upgrade: rerun the installer), `CLAUDE.md`'s
+  paragraph, a row in `docs/plan.md`'s Phase 3 table (Reclaim space), spec status "Implemented, unreleased".
+- **A test that took minutes under `-race`.** `TestServerSpace/a keep list that doesn't fit…` (Phase A) saved 4096 apps one commit
+  at a time and passed the 25 minute `-race` limit on a loaded Mac; it now stores one app with 4097 services (7 s for the whole
+  test under `-race`). Even so, `internal/service` takes about 21 minutes and `internal/ui` about 25 minutes under `-race` alone on this
+  Mac (no ui test is over 14 s without it), and `internal/api` took 25 minutes in a whole-repo run with every package in parallel:
+  all passed, and it is load, not a hang. The whole-repo `go test -race ./...` run needs `-timeout 40m` here; CI's runners decide
+  whether theirs does.

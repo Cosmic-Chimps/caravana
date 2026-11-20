@@ -50,11 +50,8 @@ func (d *Deployer) ArchiveVolume(ctx context.Context, volume, appID string, dest
 		// The caller's context may be over (the wait timed out): the clean-up gets its own minute.
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 		defer cancel()
-		if perr := d.purgeJob(cleanup, id); perr != nil && err == nil {
-			err = perr
-		}
-		if derr := d.deleteVariable(cleanup, nomadjob.BackupVariablePath(id)); derr != nil && err == nil {
-			err = derr
+		if rerr := d.RemoveArchive(cleanup, volume); rerr != nil && err == nil {
+			err = rerr
 		}
 	}()
 
@@ -88,6 +85,16 @@ func (d *Deployer) ArchiveVolume(ctx context.Context, volume, appID string, dest
 		return "", 0, err
 	}
 	return "", 0, fmt.Errorf("%w: %s", ErrArchiveFailed, shorten(o.message, archiveMessageMax))
+}
+
+// RemoveArchive purges the archive job of the volume and deletes its variable (the destination's keys).
+// Both are already gone after an archive that ended, so it is for what a process that was killed
+// mid-archive left (feature 045). A job or variable that isn't there is no error.
+func (d *Deployer) RemoveArchive(ctx context.Context, volume string) error {
+	id := nomadjob.ArchiveJobID(volume)
+	perr := d.purgeJob(ctx, id)
+	derr := d.deleteVariable(ctx, nomadjob.BackupVariablePath(id))
+	return errors.Join(perr, derr)
 }
 
 // awaitArchive polls the job's copies until its one copy has ended, and returns it. No copy after

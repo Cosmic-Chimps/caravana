@@ -62,12 +62,12 @@
 
 ## Phase E — lab, docs, release note
 
-- [ ] T014 [SC-001..SC-004] `cmd/caravana/gate_space_test.go`, gate step `space` (D7); run it alone
+- [x] T014 [SC-001..SC-004] `cmd/caravana/gate_space_test.go`, gate step `space` (D7); run it alone
   (`CARAVANA_LAB=1 go test ./cmd/caravana -run 'TestLab/^(api-needs-token|space)$' -v`) and `console-space`.
-- [ ] T015 [SC-001] `deploy/dev/install-test.sh` `check_space_host` (D7); run `deploy/dev/install-test.sh`
+- [x] T015 [SC-001] `deploy/dev/install-test.sh` `check_space_host` (D7); run `deploy/dev/install-test.sh`
   (about 20 minutes) and record the result in the plan's Deviations.
-- [ ] T016 `docs/reclaim-space.md` (operator doc: what is removed, what is kept, the setting, the agent),
+- [x] T016 `docs/reclaim-space.md` (operator doc: what is removed, what is kept, the setting, the agent),
   `changelog.d/045-reclaim-space.md`, the `CLAUDE.md` "Where we are" paragraph, `docs/plan.md` mention.
-- [ ] T017 The full check: `go mod tidy -diff`, `go build`, `go vet`, `go tool staticcheck`, `go test -race`,
+- [x] T017 The full check: `go mod tidy -diff`, `go build`, `go vet`, `go tool staticcheck`, `go test -race`,
   `gofmt -l`, the cross-compile, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`, `tools/release.sh check`,
   shellcheck (docker `koalaman/shellcheck`) on the scripts touched.

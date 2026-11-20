@@ -468,10 +468,19 @@ func TestFailInterruptedDeletions(t *testing.T) {
 	if _, err := e.store.CreateVolumeDeletion(ctx, store.VolumeDeletion{ID: "vd_done", Volume: "x_z", Status: store.DeletionDone, FinishedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
+	// A deletion that was to back up first died with its archive job running and its keys in the job's variable.
+	if _, err := e.store.CreateVolumeDeletion(ctx, store.VolumeDeletion{ID: "vd_archive", Volume: "x_a", BackUpFirst: true, Status: store.DeletionArchiving}); err != nil {
+		t.Fatal(err)
+	}
+	e.nomad.AddForeignJob(&api.Job{ID: new("x_a_archive"), Name: new("x_a_archive"), Type: new("batch")})
+	e.nomad.SetVariable("nomad/jobs/x_a_archive", map[string]string{"RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY": "sk-left-behind"})
 	if err := e.svc.failInterruptedDeletions(ctx); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"vd_archiving", "vd_deleting"} {
+	if !e.nomad.Purged("x_a_archive") || e.nomad.Variable("nomad/jobs/x_a_archive") != nil {
+		t.Errorf("the interrupted archive's job purged %v, variable %v: both must go", e.nomad.Purged("x_a_archive"), e.nomad.Variable("nomad/jobs/x_a_archive"))
+	}
+	for _, id := range []string{"vd_archiving", "vd_deleting", "vd_archive"} {
 		d, _ := e.store.GetVolumeDeletion(ctx, id)
 		if d.Status != store.DeletionFailed || d.Error != "Caravana restarted during it" || d.FinishedAt.IsZero() {
 			t.Errorf("%s = %+v", id, d)

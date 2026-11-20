@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-20
 
-**Status**: Draft
+**Status**: Implemented, unreleased
 
 **Input**: CodeAlta task `p535` ("12 · Clean up unused images and orphan volumes", raised by the maintainer on
 2026-11-19): show what could go on each server, remove unused images automatically while keeping each app's last

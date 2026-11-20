@@ -42,6 +42,12 @@ type fakeDocker struct {
 	failOn string
 	// onRM is called before each `image rm`.
 	onRM func(args []string)
+	// vanishOn, when set, makes `image rm` of an image named in it fail with vanishErr after removing the
+	// image: a later `image inspect` of its ID says "No such image" (Docker 29 removes an image's other
+	// names with the first).
+	vanishOn  string
+	vanishErr error
+	gone      map[string]bool
 }
 
 func newFakeDocker(t *testing.T) *fakeDocker {
@@ -69,6 +75,9 @@ func (d *fakeDocker) Run(args []string) ([]byte, error) {
 					}
 				}
 			}
+			if len(out) == 0 || len(args) > 4 && d.gone[args[len(args)-1]] {
+				return nil, errors.New("docker image failed: exit status 1: Error response from daemon: No such image: " + args[len(args)-1])
+			}
 			return []byte(strings.Join(out, "\n") + "\n"), nil
 		case "container ls":
 			return []byte(d.containerLS), nil
@@ -85,6 +94,22 @@ func (d *fakeDocker) Run(args []string) ([]byte, error) {
 			}
 			if d.rmErr != nil && strings.Contains(strings.Join(args, " "), d.failOn) {
 				return nil, d.rmErr
+			}
+			if d.vanishErr != nil && strings.Contains(strings.Join(args, " "), d.vanishOn) {
+				for _, line := range strings.Split(d.imageInspect, "\n") {
+					if strings.Contains(line, `"`+args[2]+`"`) {
+						var in struct {
+							ID string `json:"Id"`
+						}
+						if json.Unmarshal([]byte(line), &in) == nil {
+							if d.gone == nil {
+								d.gone = map[string]bool{}
+							}
+							d.gone[in.ID] = true
+						}
+					}
+				}
+				return nil, d.vanishErr
 			}
 			return nil, nil
 		case "builder prune", "volume prune":
@@ -761,6 +786,27 @@ func TestCleanUpKeepsTheFirstErrorAndGoesOn(t *testing.T) {
 	}
 	if out := a.stdout.String(); !strings.Contains(out, "Clean-up failed: ") {
 		t.Errorf("stdout = %q", out)
+	}
+}
+
+// Removing an image's first name can remove the image and its other names: the command then fails on a later
+// name ("No such image"), but the image is gone, so it is no failure (install-test.sh, Docker 29).
+func TestCleanUpCountsAnImageThatTheFirstNameTookAway(t *testing.T) {
+	c := newConsole(t)
+	a := newTestAgent(t, c)
+	a.joined(t)
+	d := newFakeDocker(t)
+	d.df = []string{fixture(t, "system-df.txt"), dfAfter(t)}
+	d.vanishOn = "node:24-alpine"
+	d.vanishErr = errors.New("docker image failed: exit status 1: Error response from daemon: No such image: node@sha256:" + strings.Repeat("a", 64))
+	withDocker(a, d)
+	st, _ := a.LoadState()
+	if err := a.applyClean(ctx(), st, &CleanRequest{ID: cleanIDA}); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = a.LoadState()
+	if lc := st.LastClean; lc.Error != "" || lc.ImagesRemoved != 4 {
+		t.Errorf("last clean = %+v, want the 4 unused images removed and no error", lc)
 	}
 }
 

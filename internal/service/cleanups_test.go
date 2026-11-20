@@ -620,12 +620,14 @@ func TestServerSpace(t *testing.T) {
 	t.Run("a keep list that doesn't fit leaves the images unread", func(t *testing.T) {
 		e := newClusterEnv(t)
 		e.firstSync(t, spaceReportOf(emptySpace()))
-		for i := range maxKeepDigests {
-			id := fmt.Sprintf("many-%d", i)
-			def := appOf(id, fmt.Sprintf("x@sha256:%064x", i))
-			if _, err := e.store.SaveApp(ctx, def.App, nil); err != nil {
-				t.Fatal(err)
-			}
+		// One stored app with a service per digest: thousands of apps, each its own commit, took
+		// minutes under -race.
+		images := make([]string, maxKeepDigests+1)
+		for i := range images {
+			images[i] = fmt.Sprintf("x@sha256:%064x", i)
+		}
+		if _, err := e.store.SaveApp(ctx, appOf("many", images...).App, nil); err != nil {
+			t.Fatal(err)
 		}
 		v, err := e.svc.ServerSpace(ctx, firstServerName)
 		if err != nil || v.Images != nil || !strings.Contains(v.ImagesUnavailable, "too many images") {

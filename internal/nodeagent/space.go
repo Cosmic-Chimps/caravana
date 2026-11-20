@@ -625,7 +625,7 @@ func (a *Agent) clean(ctx context.Context, req *CleanRequest) cleanResult {
 		} else {
 			args = append(args, img.ID)
 		}
-		if _, err := a.runLong(ctx, cleanCommandTimeout, "docker", args...); err != nil {
+		if _, err := a.runLong(ctx, cleanCommandTimeout, "docker", args...); err != nil && !a.imageGone(ctx, img.ID) {
 			res.fail("%v", err)
 			continue
 		}
@@ -659,6 +659,15 @@ func (a *Agent) clean(ctx context.Context, req *CleanRequest) cleanResult {
 		res.volumesRemoved = int(max(before["Local Volumes"].Total-after["Local Volumes"].Total, 0))
 	}
 	return res
+}
+
+// imageGone says Docker no longer has the image. `docker image rm` of an image's several names can fail
+// on the last ones ("No such image: repo@sha256:…", seen on Docker 29 in install-test.sh) because removing
+// the first name already removed the image and its other names, so a failed command is only a failure when
+// the image is still there. Any other answer from Docker, or none, counts as still there.
+func (a *Agent) imageGone(ctx context.Context, id string) bool {
+	_, err := a.runLong(ctx, cleanCommandTimeout, "docker", "image", "inspect", "--format", "{{.Id}}", id)
+	return err != nil && strings.Contains(err.Error(), "No such image")
 }
 
 // applyClean is step 4 of a sync: the console's clean-up request, run once per ID. The ID is written to

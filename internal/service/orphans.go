@@ -373,13 +373,20 @@ func (s *Service) GetVolumeDeletion(ctx context.Context, name, id string) (store
 var ErrDeletionNotFound = errors.New("no such deletion")
 
 // failInterruptedDeletions settles the deletions a previous process left open: nobody is left to finish
-// them, and what happened to the volume isn't known, so the record says it failed.
+// them, and what happened to the volume isn't known, so the record says it failed. A deletion that was to
+// back up first may have left its archive job running in Nomad with the destination's keys in the job's
+// variable: both are removed (best effort, only logged when Nomad refuses).
 func (s *Service) failInterruptedDeletions(ctx context.Context) error {
 	open, err := s.store.OpenVolumeDeletions(ctx)
 	if err != nil {
 		return fmt.Errorf("settle interrupted deletions: %w", err)
 	}
 	for _, d := range open {
+		if d.BackUpFirst {
+			if err := s.deployer.RemoveArchive(ctx, d.Volume); err != nil {
+				s.log.Warn("settle interrupted deletion: remove the archive job", "volume", d.Volume, "error", err)
+			}
+		}
 		if err := s.store.SettleVolumeDeletion(ctx, d.ID, store.DeletionFailed, time.Now().UTC(), "Caravana restarted during it"); err != nil {
 			return fmt.Errorf("settle interrupted deletion %s: %w", d.ID, err)
 		}

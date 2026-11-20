@@ -59,3 +59,10 @@ The cost: the lab (no agent) can't run the images flow, so `install-test.sh` che
 **R7 — The lab's one node and the console's name for it.** `ListServers` lists a Nomad node without a row as
 `managed: false` under its Nomad node name; `/v1/servers/{name}` finds it. The space read for it answers the
 orphan volumes (from Nomad, by `NodeID`) and `images: null` with `reason: "no agent"`.
+
+**R8 — Lab, observed in Phase E (2026-11-20).** On a real Nomad 2.0.7 a one-off batch job mounting a dynamic host volume with
+`single-node-single-writer`/`file-system` is placed on the volume's node, reads it through a read-only mount, and once the job is
+purged its claim is gone at once: the volume deletes with no "in use". A deployment whose copy never passes its check is
+rescheduled until the 10 minute progress deadline before Nomad reverts it. On Docker 29, `docker image rm` with an image's tag and
+its digest reference removes the image at the first name and fails on the second with "No such image", exit 1 (so the agent asks
+Docker whether the image is still there before calling that a failure).

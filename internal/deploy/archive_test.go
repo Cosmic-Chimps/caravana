@@ -192,3 +192,20 @@ func TestShorten(t *testing.T) {
 		t.Error("cut inside a character")
 	}
 }
+
+func TestRemoveArchive(t *testing.T) {
+	ctx := context.Background()
+	const jobID = "shop_uploads_archive"
+	d, _, nomad := newTestDeployer(t)
+	nomad.AddForeignJob(&api.Job{ID: new(jobID), Name: new(jobID), Type: new("batch")})
+	nomad.SetVariable("nomad/jobs/"+jobID, map[string]string{"RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY": "sk-left"})
+	if err := d.RemoveArchive(ctx, "shop_uploads"); err != nil {
+		t.Fatal(err)
+	}
+	if !nomad.Purged(jobID) || nomad.Variable("nomad/jobs/"+jobID) != nil {
+		t.Error("the leftover job or its variable is still there")
+	}
+	if err := d.RemoveArchive(ctx, "shop_uploads"); err != nil {
+		t.Errorf("removing what isn't there = %v, want no error", err)
+	}
+}
