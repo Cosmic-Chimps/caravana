@@ -57,6 +57,7 @@ func TestKindOf(t *testing.T) {
 		{"database by the last path segment only", img("docker.io/library/redis"), false, "database"},
 		{"valkey and mysql too", img("valkey/valkey:8"), false, "database"},
 		{"database by a postgres backup", backedUp, false, "database"},
+		{"database by a mongo image", img("mongo:8"), false, "database"},
 		{"a volume app", withVolume, false, "volume"},
 		{"a volume backup is not a database", volumeBackup, false, "volume"},
 		{"database wins over volume", dbWithVolume, false, "database"},

@@ -66,7 +66,7 @@ func (t backupsTab) Not() int { return len(t.Gaps) }
 type backupGap struct {
 	Service string
 	Label   string // the name as the sentence says it: "postgres", or "web · /data"
-	Meta    string // "PostgreSQL · 0 copies kept", "Volume · 210 MB"
+	Meta    string // "PostgreSQL · 0 copies kept", "MariaDB · 0 copies kept", "Volume · 210 MB"
 	Engine  string
 	// Confirm is what "Back up daily" says it will do, before it does it.
 	Confirm sentence
@@ -84,7 +84,7 @@ type backupSvcRow struct {
 	// running during a backup, and stops briefly for a restore.
 	SQLite bool
 	Open   bool
-	What   string // "PostgreSQL", "Volume · /data, /cache"
+	What   string // "PostgreSQL", "MariaDB", "MongoDB", "Volume · /data, /cache"
 	// Mark is the row's mark: rolling while a run is going, failed when the
 	// newest failed, healthy otherwise, idle when it never ran.
 	Mark string
@@ -210,14 +210,75 @@ func restoreAskFor(tab backupsTab, run backupRun, prefix string) restoreAskView 
 	return restoreAskView{AppID: tab.ID, Run: run, Prefix: prefix, Failed: prefix == "" && tab.ConfirmErr == run.ID, When: run.Clock.Text}
 }
 
+// dumpImageEngines maps the repository of a database image Caravana can dump
+// to the dump engine that backs it up (features 010 and 046). MariaDB and MySQL
+// share one engine, which picks the dump tool the image has.
+var dumpImageEngines = map[string]string{
+	"postgres": app.BackupPostgres,
+	"mysql":    app.BackupMySQL,
+	"mariadb":  app.BackupMySQL,
+	"mongo":    app.BackupMongoDB,
+}
+
+// dumpEngineOfImage is the dump engine of an image whose repository is (or ends
+// in a path segment) postgres, mysql, mariadb or mongo, and the database's name
+// as a person says it ("MariaDB"). ok is false for any other image.
+func dumpEngineOfImage(image string) (engine, name string, ok bool) {
+	ref, err := registry.Parse(image)
+	if err != nil {
+		return "", "", false
+	}
+	repo := ref.Repository
+	if i := strings.LastIndex(repo, "/"); i >= 0 {
+		repo = repo[i+1:]
+	}
+	engine, ok = dumpImageEngines[repo]
+	if !ok {
+		return "", "", false
+	}
+	switch repo {
+	case "postgres":
+		name = "PostgreSQL"
+	case "mysql":
+		name = "MySQL"
+	case "mariadb":
+		name = "MariaDB"
+	default:
+		name = "MongoDB"
+	}
+	return engine, name, true
+}
+
+// isDumpImage says whether image is one the console offers a dump for.
+func isDumpImage(image string) bool {
+	_, _, ok := dumpEngineOfImage(image)
+	return ok
+}
+
+// dumpName is how a service's dump engine is called on the page: "PostgreSQL",
+// "MySQL", "MariaDB" or "MongoDB". The mysql engine serves two databases, so
+// the image says which; an image that is neither (a custom one) gets "MySQL".
+func dumpName(engine, image string) string {
+	switch engine {
+	case app.BackupMySQL:
+		if _, name, ok := dumpEngineOfImage(image); ok && name == "MariaDB" {
+			return "MariaDB"
+		}
+		return "MySQL"
+	case app.BackupMongoDB:
+		return "MongoDB"
+	}
+	return "PostgreSQL"
+}
+
 // backupEngineFor says how a service could be backed up, from what it is: a
-// database image Caravana can dump (its repository is postgres, and it has a port
-// to dump over), else, with a volume, the volume engine. ok is false for a
-// service with neither, which has nothing the console can offer. A Postgres
-// service on a volume gets the dump, which doesn't stop it.
+// database image Caravana can dump (its repository is postgres, mysql, mariadb
+// or mongo, and it has a port to dump over), else, with a volume, the volume
+// engine. ok is false for a service with neither, which has nothing the console
+// can offer. A database service on a volume gets the dump, which doesn't stop it.
 func backupEngineFor(svc app.Service) (engine string, ok bool) {
-	if ref, err := registry.Parse(svc.Image); err == nil && len(svc.Ports) > 0 && (ref.Repository == "postgres" || strings.HasSuffix(ref.Repository, "/postgres")) {
-		return app.BackupPostgres, true
+	if engine, _, found := dumpEngineOfImage(svc.Image); found && len(svc.Ports) > 0 {
+		return engine, true
 	}
 	if len(svc.Volumes) > 0 {
 		return app.BackupVolume, true
@@ -281,7 +342,7 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 				gap.SQLiteFile = svc.Volumes[0].Path + "/"
 			} else {
 				gap.Confirm = sentence{plain("Backs up the database on the schedule below and keeps 7. This deploys the app.")}
-				gap.Meta = "PostgreSQL · 0 copies kept"
+				gap.Meta = dumpName(engine, svc.Image) + " · 0 copies kept"
 			}
 			tab.Gaps = append(tab.Gaps, gap)
 			continue
@@ -434,7 +495,7 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 	} else if row.SQLite {
 		row.What = "SQLite · " + b.File
 	} else {
-		row.What = "PostgreSQL"
+		row.What = dumpName(b.Engine, svc.Image)
 	}
 
 	var all int64

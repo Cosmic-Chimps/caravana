@@ -183,7 +183,7 @@ const (
 
 // databaseImages are the image repositories that make an app a database: the
 // last path segment of the image, before its tag or digest.
-var databaseImages = []string{"postgres", "mysql", "mariadb", "redis", "valkey"}
+var databaseImages = []string{"postgres", "mysql", "mariadb", "mongo", "redis", "valkey"}
 
 // imageName is the last path segment of an image reference before its tag or
 // digest, in lowercase: "ghcr.io/acme/postgres:16" and "postgres@sha256:..." are
@@ -200,14 +200,14 @@ func imageName(image string) string {
 // kindOf is the word the Apps home puts after an app's name, and what its kind
 // filter selects: the first rule that applies. compose is an app whose source is
 // Compose or that keeps its Compose file; database is an app with a service
-// backed up as Postgres or whose image is one of databaseImages; volume is an
+// backed up with a dump engine (Postgres, MySQL, MongoDB) or whose image is one of databaseImages; volume is an
 // app with any volume; an image app is kindImage ("").
 func kindOf(a app.App, keptFile bool) string {
 	if a.Source.Kind == app.SourceCompose || keptFile {
 		return kindCompose
 	}
 	for _, svc := range a.Services {
-		if svc.Backup != nil && svc.Backup.Engine == app.BackupPostgres {
+		if svc.Backup != nil && app.DumpEngine(svc.Backup.Engine) {
 			return kindDatabase
 		}
 		if slices.Contains(databaseImages, imageName(svc.Image)) {

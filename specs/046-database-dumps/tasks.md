@@ -20,10 +20,10 @@
 
 ## Phase B: console and docs
 
-- [ ] T007 `internal/ui`: engine select, `backupEngineFor`, labels, `builtinCommand`, `kindOf`, the Compose form's
+- [x] T007 `internal/ui`: engine select, `backupEngineFor`, labels, `builtinCommand`, `kindOf`, the Compose form's
   refusal text, `composepage` ShowBackup for mysql/mariadb/mongo images (D13); a sentinel test that no page shows a
   password; `tools/ui-css.sh build` if classes changed.
-- [ ] T008 Docs: `docs/database-backups.md` (what each engine runs, what it reads, restore semantics, the images it
+- [x] T008 Docs: `docs/database-backups.md` (what each engine runs, what it reads, restore semantics, the images it
   works with), `changelog.d/046-database-dumps.md`, CLAUDE.md's feature entry.
 
 ## Phase C: lab

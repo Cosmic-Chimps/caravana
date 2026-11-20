@@ -1777,6 +1777,44 @@ change, no new module, constitution unchanged (the archive job is a helper job t
 - Not in 045: other disk users (logs, Nomad's own data, old backups on the host), an editor for the daily hour, a registry cache
   prune, a clean-up without the agent.
 
+Feature 046 (`specs/046-database-dumps`, CodeAlta task `qgmm`, worktree branch `alta/balmy-elbrus-rj6w`): `backup: {engine: mysql}`
+(the official `mysql` and `mariadb` images) and `backup: {engine: mongodb}` (`mongo`) dump a running database like
+`postgres` does, without stopping it. `plan.md` D1–D14 are the decisions and its Deviations sections the changes; operator
+doc: `docs/database-backups.md`. No new module, no policy change, constitution unchanged (the jobs are 010's helper jobs).
+- Model: `app.DumpEngine(engine)` / `Backup.Dumps()` say "a Nomad job that dumps over the service's port" (postgres, mysql,
+  mongodb); every place that meant that tests it, and places that mean Postgres itself keep the name. `app.FindDumpLogin` is
+  the one login rule (validation, the deploy's credential read and the defaults), `DumpLoginHint` words the refusal on
+  `services[i].backup`, `BackupPasswordNames` feeds the plain-env warning and the template check. mysql reads
+  `MARIADB_ROOT_PASSWORD`, `MYSQL_ROOT_PASSWORD` (user root), else a `MARIADB_USER`/`MYSQL_USER` pair; mongodb reads
+  `MONGO_INITDB_ROOT_USERNAME` and `_PASSWORD`; `*_FILE` variables are not read.
+- Jobs (`nomadjob/dumps.go`, pure, goldens `dump-*`): one recipe per engine behind the same `dump` + `upload` and `download` +
+  `restore` groups. Objects are `.dump` (postgres), `.sql.gz` (mysql; the upload task gzips, so the image needs only its client)
+  and `.archive.gz` (mongodump compresses itself); the upload task has `BACKUP_EXT` and `BACKUP_GZIP` (the Postgres goldens
+  changed for it) and retention lists only the engine's extension, pins matching `<ts><ext>`. The login is in the job's own
+  Nomad Variable (`DB_USER`, `DB_PASSWORD`; Postgres keeps `PG*`) and reaches the tools through a file in the task's secrets
+  directory, never argv: a `[client]` option file for `--defaults-extra-file` (MySQL 8 deprecates `MYSQL_PWD`) and a
+  `--config` YAML for the Mongo tools (100.3+, in the mongo 4.4+ images). Scripts write with `printf` (dash's `echo` reads
+  backslashes) and refuse a value with a line break. mysql dumps every database the login sees but the four built-in ones
+  (`--databases --single-transaction --routines --events --triggers --no-tablespaces`; no database gives a one-comment dump),
+  restores per table (`DROP TABLE IF EXISTS`, tables made since stay, not one transaction: MySQL DDL commits); mongodb restores
+  with `--drop` and leaves `admin.*` and `config.*` alone. A missing tool fails the run with a sentence naming it ("the image
+  has neither mariadb-dump nor mysqldump", "the image has no mongodump"): Caravana doesn't look inside an image before it runs.
+- Store and API: migration 0036 widens the engine CHECK of `backups` and `restores`; records of every dump engine carry their
+  engine, and an expired object maps to its record by the digits before the first dot. API 0.51.0: the two engines in every
+  engine enum (policy, backup, restore, overlay), no new route or code.
+- Console: the Compose form's engine select ("MySQL or MariaDB (the service keeps running)", "MongoDB (the service keeps running)"),
+  the Backups tab's "Back up daily" for an image whose last path segment is `postgres`, `mysql`, `mariadb` or `mongo` with a port
+  (`dumpEngineOfImage`; a row and a gap say "PostgreSQL", "MySQL", "MariaDB" or "MongoDB", `dumpName`), built-in schedules read
+  `mysqldump`/`mongodump`, any dump engine and a `mongo` image make an app a database on the Apps home. A sentinel test in `ui` searches every page,
+  record and log for a secret and a plain-env password (Configure draws plain variables by design, so it is checked for the secret only).
+- Lab: the gate steps `mysql-backup-restore` (MariaDB 11.4) and `mongodb-backup-restore` (MongoDB 8.0), added by Phase C in
+  `cmd/caravana/gate_dumps_test.go` after `sqlite-backup-restore`: a timer run, Back up now while a writer inserts every 200 ms,
+  A → back up → B → restore → A, and no password in any job, export, answer, log or SQLite file. Both passed in the lab on
+  2026-11-20 (127 s and 119 s, each run alone with `-run 'TestLab/^(api-needs-token|mysql-backup-restore)$'`); no script
+  needed a change against the real tools. Not covered by the lab: an empty MySQL server (its dump is one SQL comment).
+- Not in 046: point-in-time recovery, replica sets and shards beyond the node the service reaches, `*_FILE` credentials,
+  Percona XtraBackup, Redis.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

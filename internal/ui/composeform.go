@@ -377,7 +377,7 @@ func (s *draftService) build() bool {
 		refuse(&s.BackupEngine, "Choose an engine to set a schedule, a file or how many to keep.")
 	case engine != app.BackupSQLite && s.BackupFile.Value != "":
 		refuse(&s.BackupFile, "Only the SQLite engine backs up a file; clear it, or choose SQLite file.")
-	case engine == app.BackupPostgres || engine == app.BackupVolume || engine == app.BackupSQLite:
+	case app.DumpEngine(engine) || engine == app.BackupVolume || engine == app.BackupSQLite:
 		// The file's rules are the model's (app.Validate); its errors come back
 		// on this input (fieldFor).
 		b := app.Backup{Engine: engine, File: s.BackupFile.Value, Schedule: s.BackupSchedule.Value, Restore: restore}
@@ -390,7 +390,7 @@ func (s *draftService) build() bool {
 		}
 		s.overlay.Backup = &b
 	case engine != "":
-		refuse(&s.BackupEngine, "Choose none, PostgreSQL, Volume or SQLite file.")
+		refuse(&s.BackupEngine, "Choose none, PostgreSQL, MySQL or MariaDB, MongoDB, Volume or SQLite file.")
 	}
 	return ok
 }

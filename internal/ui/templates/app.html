@@ -468,7 +468,7 @@
 {{else if not .Gaps}}
 <div class="cv-panel"><div class="cv-empty">
   <p class="cv-empty-title">Nothing to back up.</p>
-  <p class="cv-empty-text">No service of this app has a database image or a volume. A service can be given a backup policy in its definition (<span class="cv-inline-mono">backup: {engine: postgres}</span> for a database, <span class="cv-inline-mono">backup: {engine: volume}</span> for a service with a volume, <span class="cv-inline-mono">backup: {engine: sqlite, file: /data/app.db}</span> for a SQLite database on a volume), through the API or the Compose request.</p>
+  <p class="cv-empty-text">No service of this app has a database image or a volume. A service can be given a backup policy in its definition (<span class="cv-inline-mono">backup: {engine: postgres}</span> (or <span class="cv-inline-mono">mysql</span>, <span class="cv-inline-mono">mongodb</span>) for a database, <span class="cv-inline-mono">backup: {engine: volume}</span> for a service with a volume, <span class="cv-inline-mono">backup: {engine: sqlite, file: /data/app.db}</span> for a SQLite database on a volume), through the API or the Compose request.</p>
 </div></div>
 {{end}}
 

@@ -173,7 +173,7 @@ func serviceViews(d composeDraft, a *app.App) []composeServiceView {
 				v.ShowHealthPort = len(svc.Ports) > 1
 				// A database image, or a service with a volume (the volume engine's
 				// only requirement), can be given a backup.
-				v.ShowBackup = ds.hasBackupInput() || strings.Contains(strings.ToLower(svc.Image), "postgres") || len(svc.Volumes) > 0
+				v.ShowBackup = ds.hasBackupInput() || isDumpImage(svc.Image) || len(svc.Volumes) > 0
 			}
 		}
 		// An existing app's domains are edited on its Domains page, not here.

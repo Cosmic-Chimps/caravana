@@ -111,5 +111,23 @@ Phase A (T001–T006):
   the store defaulted it).
 - **`postgresBackup` is `dumpBackup`** (service); `recordApp` maps an expired file to its record with
   `expiredRecordID` (the digits before the first dot).
-- **Not checked without a lab** (Phase C): that MariaDB 11.4's client connects without TLS options to the
-  service's plain port, and that the clients accept a dump that is one SQL comment (an empty server).
+- **Checked in the lab** (Phase C, 2026-11-20): MariaDB 11.4's client connects through the option file without TLS
+  options, and the Mongo tools read `--config`; no script changed. Not covered: a dump that is one SQL comment (an
+  empty server).
+
+Phase B (T007, T008):
+
+- **Images are read by their last path segment.** `dumpEngineOfImage` (`internal/ui/backups.go`) parses the image with
+  `registry.Parse` and takes the last segment of the repository (`library/mariadb` → `mariadb`), so `ghcr.io/acme/mysql`
+  and `mongo-express` (not mongo) are told apart as Postgres' `HasSuffix("/postgres")` did. The Compose form's
+  `ShowBackup` uses the same rule (`isDumpImage`), which replaces its old `Contains "postgres"` test, so a service whose
+  image only contains the word no longer gets a Backup section by itself.
+- **MySQL or MariaDB by the image.** The mysql engine has two names on the page: `dumpName(engine, image)` says
+  "MariaDB" for a `mariadb` image and "MySQL" otherwise (a custom image gets the engine's name).
+- **The Compose form's refusal.** The Postgres entry keeps its label "PostgreSQL" (the console contract's words); the
+  refusal now reads "Choose none, PostgreSQL, MySQL or MariaDB, MongoDB, Volume or SQLite file."
+- **The sentinel test checks Configure for the secret only.** Configure shows plain variables by design (014), so a
+  plain-env password is drawn there; the plain sentinel is searched for on every other page, the log and the warnings,
+  and the secret sentinel on all of them, Configure included (`TestDumpBackupsShowNoPassword`).
+- **Docs.** `docs/database-backups.md` (new), `changelog.d/046-database-dumps.md` (no Upgrade note: an existing Postgres
+  job gets the upload script with `BACKUP_EXT` at its next deploy) and CLAUDE.md's Feature 046 paragraph.

@@ -212,7 +212,7 @@ func TestComposeDraftErrors(t *testing.T) {
 		{"health port text", "healthPort", "web", "healthPort", "1 to 65535"},
 		{"interval text", "healthInterval", "soon", "healthInterval", "seconds"},
 		{"timeout zero", "healthTimeout", "0", "healthTimeout", "seconds"},
-		{"engine unknown", "backupEngine", "mysql", "backupEngine", "none, PostgreSQL, Volume or SQLite file"},
+		{"engine unknown", "backupEngine", "oracle", "backupEngine", "none, PostgreSQL, MySQL or MariaDB, MongoDB, Volume or SQLite file"},
 		{"a file with another engine", "backupFile", "/data/app.db", "backupFile", "Only the SQLite engine"},
 		{"schedule without an engine", "backupSchedule", "0 4 * * *", "backupEngine", "Choose an engine"},
 		{"keep text", "backupKeep", "many", "backupKeep", "1 to 100"},

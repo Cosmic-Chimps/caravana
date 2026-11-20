@@ -301,7 +301,7 @@ type templateServiceView struct {
 	Name, Image string
 	Domains     []string // "your domain"
 	TeamOnly    bool
-	Backup      string // "postgres", "volume", "sqlite", or ""
+	Backup      string // "postgres", "mysql", "mongodb", "volume", "sqlite", or ""
 }
 
 // templatePreviewView is what a Preview shows: the app the answers make.
