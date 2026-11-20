@@ -24,23 +24,32 @@ import (
 // answer is no-store, a body is at most 64 KiB, and nothing here logs a body or a header (the request
 // log reads neither).
 
-// maxNodeBody is the largest body of a node call.
-const maxNodeBody = 64 << 10
+// maxNodeBody is the largest body of a node call; maxSyncBody is the largest body of a sync, whose
+// report names the server's images (feature 045: up to 1000 of them, each with names).
+const (
+	maxNodeBody = 64 << 10
+	maxSyncBody = 4 << 20
+)
 
 // decodeNodeJSON reads the JSON body of a node call: at most 64 KiB (413 body_too_large), then the
 // same rules as every other body.
 func decodeNodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxNodeBody))
+	return decodeNodeJSONMax(w, r, v, maxNodeBody)
+}
+
+// decodeNodeJSONMax is decodeNodeJSON with the largest body it accepts.
+func decodeNodeJSONMax(w http.ResponseWriter, r *http.Request, v any, limit int64) error {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	var tooBig *http.MaxBytesError
 	switch {
 	case errors.As(err, &tooBig):
 		return &Error{Status: http.StatusRequestEntityTooLarge, Code: codeBodyTooLarge,
-			Message: fmt.Sprintf("request body is larger than %d bytes", maxNodeBody)}
+			Message: fmt.Sprintf("request body is larger than %d bytes", limit)}
 	case err != nil:
 		return &Error{Status: http.StatusBadRequest, Code: codeBadRequest, Message: "could not read the request body"}
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
-	return decodeJSON(r, v)
+	return decodeJSONLimit(r, v, limit)
 }
 
 // nodeToken reads the node token: exactly one Authorization header, a Bearer one. A missing, doubled
@@ -146,7 +155,7 @@ func (s *server) syncNode(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var in service.NodeReport
-	if err := decodeNodeJSON(w, r, &in); err != nil {
+	if err := decodeNodeJSONMax(w, r, &in, maxSyncBody); err != nil {
 		return err
 	}
 	ans, err := s.svc.NodeSync(r.Context(), token, in)
@@ -166,8 +175,10 @@ func (s *server) syncNode(w http.ResponseWriter, r *http.Request) error {
 		State     string     `json:"state"`
 		Checks    []checkOut `json:"checks"`
 		Issuer    string     `json:"issuer,omitempty"`
+		// Clean is the clean-up this server's agent is asked to run (feature 045), absent for none.
+		Clean *service.CleanRequest `json:"clean,omitempty"`
 	}{ans.Name, ans.Index, ans.Pool, ans.Role, serversOrEmpty(ans.Servers), toPeersJSON(ans.Peers), ans.GossipKey, ans.Renew, ans.State,
-		toServerChecksJSON(ans.Checks), ans.Issuer}
+		toServerChecksJSON(ans.Checks), ans.Issuer, ans.Clean}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

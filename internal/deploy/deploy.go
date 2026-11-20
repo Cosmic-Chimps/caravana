@@ -188,6 +188,10 @@ func New(nomad *api.Client, reg *registry.Client, s nomadjob.Settings) *Deployer
 	return d
 }
 
+// HelperImages are the digest-pinned images of the helper tasks and jobs this deployer gives an app
+// (nomadjob.Settings.HelperImages): the clean-up of a server's images keeps them.
+func (d *Deployer) HelperImages() []string { return d.settings.HelperImages() }
+
 // Validate checks everything that doesn't need the registry or Nomad: the
 // app's rules, Nomad's limits and every image reference. Errors are
 // *app.FieldError. It is pure.

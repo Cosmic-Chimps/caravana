@@ -7,31 +7,31 @@
 
 ## Phase A — agent, store, service core (US1, US2, US3)
 
-- [ ] T001 [US2] [FR-001, FR-004] `internal/nodeagent/space.go`: `SpaceReport` and its types; `a.space(ctx, st)`
+- [x] T001 [US2] [FR-001, FR-004] `internal/nodeagent/space.go`: `SpaceReport` and its types; `a.space(ctx, st)`
   (the inventory from the Runner, research R4; `du` of the volume directories every 15 minutes with the sizes in
   `state.json`); `parseDockerDF`, `parseHumanSize`, `removable(images, keep)` pure; `a.clean` (contract §3);
   `Answer.Clean` and its validation in `validate.go`; `applySync` step 4; `Report.Space`; `caravana node space` in
   `cmd/caravana/node.go`. Tests with recorded Docker outputs in `internal/nodeagent/testdata/docker/` (taken from
   the lab VM: `limactl shell caravana-lab sudo docker …`), the fake Runner, `ParseSync` refusals, a clean that
   runs once per ID, the interrupted case. Add `du` to the Runner's documented list.
-- [ ] T002 [US1, US2, US3] [FR-003, FR-008] `internal/store/migrations/0035_reclaim_space.sql` and
+- [x] T002 [US1, US2, US3] [FR-003, FR-008] `internal/store/migrations/0035_reclaim_space.sql` and
   `internal/store/space.go` (D1) with round-trip tests; the two feed legs in `store/activity.go` with a test.
-- [ ] T003 [US2] [FR-002] `internal/service/space.go`: `keepFrom` (pure, table test: last N healthy per app, a
+- [x] T003 [US2] [FR-002] `internal/service/space.go`: `keepFrom` (pure, table test: last N healthy per app, a
   pending deployment, a stopped app's definition, helpers, dedup, the cap) and `keepDigests`.
-- [ ] T004 [US1, US3] [FR-007] `internal/deploy/volumes.go`: `AllHostVolumes` (list, no prefix), `HostVolumeDetail`
+- [x] T004 [US1, US3] [FR-007] `internal/deploy/volumes.go`: `AllHostVolumes` (list, no prefix), `HostVolumeDetail`
   (Get: HostPath, NodeID, Allocations), `DeleteHostVolume(id)` with the in-use refusal as `ErrVolumeInUse`;
   `deploytest` fakes. `internal/service/orphans.go`: `classifyOrphans` (pure, table test), the orphan view with
   size, place, "last deployed with it", in use.
-- [ ] T005 [US2] [FR-003, FR-005] `internal/service/cleanups.go`: `RequestCleanup`, `cleanupHandoff` in
+- [x] T005 [US2] [FR-003, FR-005] `internal/service/cleanups.go`: `RequestCleanup`, `cleanupHandoff` in
   `NodeSync` (`NodeReport.Space`, `validateReport`, `NodeAnswer.Clean`), `cleanupPass` with the three rules
   and `SetCleanupPassGap`, `CleanupSettings`/`PutCleanupSettings`, `ServerSpace`. Tests with a fake clock and
   the store: a request handed out once, settled from the report, failed after 10 minutes unpicked, lost after
   30, the daily run once per day, `no agent` for an unmanaged node.
-- [ ] T006 [US3] [FR-008, FR-010] `DeleteOrphanVolume` (no archive yet: `backUpFirst` refused
+- [x] T006 [US3] [FR-008, FR-010] `DeleteOrphanVolume` (no archive yet: `backUpFirst` refused
   `ErrNoBackupDestination` until Phase D), the activity words for both records (`service/activity.go`, tests),
   `unmountedVolumes`'s new text naming the server (test), the disk item's link in `internal/ui/attention.go`
   (`#space`).
-- [ ] T007 Update `specs/031-add-a-server/contracts/node.md` (§5, §6, §9 pointers to `contracts/agent.md`) and
+- [x] T007 Update `specs/031-add-a-server/contracts/node.md` (§5, §6, §9 pointers to `contracts/agent.md`) and
   `api.md` §4 (the report's `space`, the answer's `clean`).
 
 ## Phase B — API and MCP (US1–US3)

@@ -45,7 +45,8 @@
 // a real one is after a few seconds. Like Nomad, a name can't be created
 // twice, and a volume can't be deleted while copies of a job that mounts it
 // exist. HostVolumes() names them for tests, and AddHostVolume makes one as if
-// a deploy had.
+// a deploy had. A read of a volume lists the copies that claim it (those of a job
+// that mounts it, and the ones ClaimHostVolume names).
 //
 // Copies' files and restarts (allocfs.go), for volume backups: files in a
 // copy's directory are kept per copy and path (WriteAllocFile, AllocFile) and
@@ -165,6 +166,9 @@ type Nomad struct {
 type hostVolume struct {
 	vol   api.HostVolume
 	reads int
+	// claims are the IDs of copies a test says claim the volume (ClaimHostVolume), whatever job
+	// mounts it.
+	claims []string
 }
 
 // logKey names one output file: a copy's stdout or stderr.
@@ -1382,6 +1386,9 @@ func (n *Nomad) hostVolume(w http.ResponseWriter, r *http.Request) {
 			hv.vol.State = api.HostVolumeStateReady
 		}
 		v := hv.vol
+		for _, c := range n.claimsOn(hv) {
+			v.Allocations = append(v.Allocations, &api.AllocationListStub{ID: c})
+		}
 		n.writeJSON(w, &v)
 	case r.Method == http.MethodDelete:
 		hv, ok := n.volumes[id]
@@ -1389,8 +1396,8 @@ func (n *Nomad) hostVolume(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "volume not found", http.StatusNotFound)
 			return
 		}
-		if job := n.jobMounting(hv.vol.Name); job != "" && len(n.allocs[job]) > 0 {
-			http.Error(w, fmt.Sprintf("volume %s in use by allocations: [%s]", id, n.allocs[job][0].ID), http.StatusBadRequest)
+		if claims := n.claimsOn(hv); len(claims) > 0 {
+			http.Error(w, fmt.Sprintf("volume %s in use by allocations: [%s]", id, claims[0]), http.StatusBadRequest)
 			return
 		}
 		n.index++
@@ -1398,6 +1405,31 @@ func (n *Nomad) hostVolume(w http.ResponseWriter, r *http.Request) {
 		n.writeJSON(w, struct{}{})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// claimsOn are the copies that claim a host volume: the ones a test said (ClaimHostVolume) and those of
+// the job whose latest version mounts it. n.mu must be held.
+func (n *Nomad) claimsOn(hv *hostVolume) []string {
+	claims := slices.Clone(hv.claims)
+	if job := n.jobMounting(hv.vol.Name); job != "" {
+		for _, a := range n.allocs[job] {
+			claims = append(claims, a.ID)
+		}
+	}
+	return claims
+}
+
+// ClaimHostVolume says copies with these IDs claim the host volume name, as a running copy that mounts it
+// does: Nomad then lists them on the volume and refuses to delete it. No IDs undoes it. A name Nomad
+// doesn't have changes nothing.
+func (n *Nomad) ClaimHostVolume(name string, allocIDs ...string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, v := range n.volumes {
+		if v.vol.Name == name {
+			v.claims = slices.Clone(allocIDs)
+		}
 	}
 }
 

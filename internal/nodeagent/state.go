@@ -41,6 +41,14 @@ type State struct {
 	// Empty on a joined server, and on a host with no default route. A state.json written before it
 	// loads with none.
 	PublicInterface string `json:"publicInterface,omitempty"`
+	// VolumeSizes and VolumesMeasuredAt are the sizes of Nomad's host volume directories by their name
+	// and when they were measured (spec 045): measuring walks every file, so the sizes are kept between
+	// syncs and measured again every 15 minutes. LastClean is the outcome of the last clean-up this
+	// agent ran, and its ID is how a console's request is told from one that was already run. A
+	// state.json written before them loads with none.
+	VolumeSizes       map[string]int64 `json:"volumeSizes,omitempty"`
+	VolumesMeasuredAt string           `json:"volumesMeasuredAt,omitempty"`
+	LastClean         *CleanOutcome    `json:"lastClean,omitempty"`
 }
 
 // interfaceRE is what an interface's name may be: Linux allows 15 characters, and the agent refuses

@@ -149,7 +149,8 @@ line) move into the template. `nomad.hcl.tpl` is deleted and leaves the release'
 Applied to the join answer and every sync answer, before anything is written. One failure refuses the
 whole answer: stderr names the field, nothing changes.
 
-- The body is JSON of at most 256 KiB; unknown fields are ignored.
+- The body is JSON of at most 512 KiB (it was 256 KiB; feature 045's `clean.keep` is up to 4096 digests, about
+  300 KiB); unknown fields are ignored.
 - `index`: 1 to 63; in a sync, equal to the one in `state.json`. `name`: a valid name; in a sync, equal.
 - `pool`: a valid name. `role`: `client` or `server`; a server never goes back to `client` (refused).
 - `peers`: indexes 1 to 63, none equal to its own, none twice; `publicKey` valid (§1) and not its own;
@@ -161,6 +162,9 @@ whole answer: stderr names the field, nothing changes.
   made, valid now, with the DNS name `server.global.nomad` for a server and `client.global.nomad` for a
   client.
 - `nodeToken`: `cvnd_` and 43 characters of `[A-Za-z0-9_-]`.
+- `clean` (feature 045, optional): `id` 32 lowercase hex characters, `keep` at most 4096 entries of
+  `sha256:` and 64 lowercase hex characters, `dockerVolumes` a boolean. See
+  [045's contracts/agent.md](../../045-reclaim-space/contracts/agent.md) §2.
 
 ## 6. What `sync` applies, in this order
 
@@ -174,11 +178,20 @@ whole answer: stderr names the field, nothing changes.
    `POST /v1/node/certificate`, validate, write both files (temp, then rename, key first), `systemctl
    reload nomad` (L11).
 
+4. **Clean-up** (feature 045, last since it can take minutes). When the answer has a `clean` whose `id` isn't
+   `state.lastClean.id`: record the ID, remove the images no container uses and the `keep` list doesn't name,
+   prune the build cache (and Docker's leftover volumes when asked), record the outcome. A sync that promoted
+   the server returns before it and runs it at the next one. See
+   [045's contracts/agent.md](../../045-reclaim-space/contracts/agent.md) §3.
+
 The report it sends (api.md) is gathered first: the agent's and Nomad's versions, Docker (`docker info`
 answers), the disk under `/opt/nomad/data` (`df -Pm`), the kernel, memory, the certificate's end, the
 role in `state.json`, whether the local Nomad knows a leader (`GET http://127.0.0.1:4646/v1/status/leader`,
 which needs no token) and, for a server, whether `GET /v1/status/peers` lists its own `10.98.0.N:4647`;
-and per peer one `ping -c 1 -W 2 10.98.0.X`, eight at a time.
+and per peer one `ping -c 1 -W 2 10.98.0.X`, eight at a time. Since feature 045 it also carries `space`: what
+Docker holds (images with their digests and whether a container uses them, Docker's leftover volumes, the build
+cache) and the sizes of Nomad's host volume directories (`du -sk` every 15 minutes, kept in `state.json`); see
+[045's contracts/agent.md](../../045-reclaim-space/contracts/agent.md) §1. The Runner's programs now include `du`.
 
 ## 7. Units (shipped in the release, installed by the installer)
 
@@ -263,7 +276,10 @@ constraint {
 
 ## 9. What a compromised console can and can't do through the agent
 
-It can hand a server a peer of its choosing, promote a client to a Nomad server, or withhold a renewal.
+It can hand a server a peer of its choosing, promote a client to a Nomad server, or withhold a renewal. Since
+feature 045 it can also make the agent remove any image no container uses and Docker's anonymous volumes no
+container uses (Nomad pulls an image again when it needs it); it can't name a path, a container, a Nomad host
+volume or a command ([045's contracts/agent.md](../../045-reclaim-space/contracts/agent.md) §5).
 With its Nomad token it can already run containers on every server and read every secret, so none of that
 is new reach. It cannot make the agent run a program, write outside the files of §2, choose an address
 (they derive from indexes), or read a private key (none is ever sent). The CA's key is readable by

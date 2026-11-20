@@ -1144,10 +1144,11 @@ func TestNeedsYouLinksToTheServer(t *testing.T) {
 		t.Errorf("server_certificate_expiring links to %q (%q)", cert.Href, cert.Action)
 	}
 	disk := e.Server.attentionRow(now, service.AttentionItem{Kind: service.AttentionDiskNearlyFull, Server: "fsn-1", Mount: "/", When: now}, places{}, nil)
-	if disk.Action != "Open monitoring" || disk.Href != "/monitoring?server=fsn-1#host" {
-		t.Errorf("a disk item of fsn-1 links to %q", disk.Href)
+	if disk.Action != "Free up space" || disk.Href != "/ops/servers/fsn-1#space" {
+		t.Errorf("a disk item of fsn-1 links to %q (%q), want the server's page at #space (feature 045)", disk.Href, disk.Action)
 	}
 	local := e.Server.attentionRow(now, service.AttentionItem{Kind: service.AttentionDiskNearlyFull, Mount: "/", When: now}, places{}, nil)
+	// With no local server known yet (the sampler hasn't read the nodes) it keeps the host's numbers.
 	if local.Href != "/monitoring#host" {
 		t.Errorf("a disk item with one server links to %q, want /monitoring#host", local.Href)
 	}

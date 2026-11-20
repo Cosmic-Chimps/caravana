@@ -161,7 +161,7 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	}
 	m.warnings = append(m.warnings, PlainBackupPasswords(a)...)
 	if old, err := s.store.GetApp(ctx, a.ID); err == nil {
-		m.warnings = append(m.warnings, unmountedVolumes(old.App, a)...)
+		m.warnings = append(m.warnings, unmountedVolumes(old.App, a, s.droppedVolumeServers(ctx, old.App, a))...)
 		m.warnings = append(m.warnings, RemovedSecrets(old.App, a)...)
 		if old.Compose != nil && m.file == nil {
 			m.warnings = append(m.warnings, app.Warning{Message: droppedFileWarning})
@@ -207,24 +207,65 @@ func (s *Service) saveApp(ctx context.Context, a app.App, cond Condition, file *
 	return nil
 }
 
-// unmountedVolumes warns about each volume the stored app has and the new
-// one no longer mounts: its data stays, out of reach, until the app is
-// deleted (or the volume is mounted again).
-func unmountedVolumes(old, next app.App) []app.Warning {
+// droppedVolumes names the volumes the stored app has and the new one no
+// longer mounts, in the order the old definition lists them.
+func droppedVolumes(old, next app.App) []string {
 	mounted := map[string]bool{}
 	for _, svc := range next.Services {
 		for _, v := range svc.Volumes {
 			mounted[v.Name] = true
 		}
 	}
-	var out []app.Warning
+	var out []string
 	for _, svc := range old.Services {
 		for _, v := range svc.Volumes {
-			if !mounted[v.Name] {
-				out = append(out, app.Warning{Message: fmt.Sprintf(
-					"volume %q is no longer mounted; its data stays until the app is deleted or a service mounts it again", v.Name)})
+			if !mounted[v.Name] && !slices.Contains(out, v.Name) {
+				out = append(out, v.Name)
 			}
 		}
+	}
+	return out
+}
+
+// droppedVolumeServers says on which server each dropped volume's data stays (volume name to server
+// name), read from Nomad. Nothing is read when no volume was dropped, and a volume Nomad or the cluster
+// can't place is left out: its warning says "its server". It never fails a deploy.
+func (s *Service) droppedVolumeServers(ctx context.Context, old, next app.App) map[string]string {
+	dropped := droppedVolumes(old, next)
+	if len(dropped) == 0 {
+		return nil
+	}
+	have, err := s.deployer.HostVolumes(ctx, old.ID)
+	if err != nil {
+		s.log.Warn("deploy: read the dropped volumes' servers", "app", old.ID, "error", err)
+		return nil
+	}
+	dir, err := s.directory(ctx)
+	if err != nil {
+		return nil
+	}
+	out := map[string]string{}
+	for _, name := range dropped {
+		if node, ok := dir.byID(have[name].NodeID); ok && have[name].NodeID != "" {
+			out[name] = node.Name
+		}
+	}
+	return out
+}
+
+// unmountedVolumes warns about each volume the stored app has and the new
+// one no longer mounts: its data stays, out of reach, on its server until
+// the owner deletes it (Operator > Servers) or a service mounts it again.
+// servers says where each one's data is (see droppedVolumeServers).
+func unmountedVolumes(old, next app.App, servers map[string]string) []app.Warning {
+	var out []app.Warning
+	for _, name := range droppedVolumes(old, next) {
+		where := "its server"
+		if server := servers[name]; server != "" {
+			where = "server " + server
+		}
+		out = append(out, app.Warning{Message: fmt.Sprintf(
+			"volume %q is no longer mounted: its data stays on %s until you delete it under Operator › Servers", name, where)})
 	}
 	return out
 }

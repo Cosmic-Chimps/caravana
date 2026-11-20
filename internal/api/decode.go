@@ -26,7 +26,11 @@ const maxBodyBytes = 1 << 20 // 1 MiB
 // It uses encoding/json/v2, whose errors carry the full path of the field at
 // fault (e.g. /services/0/ports/0/bogus), with the options in json.go:
 // durations are strings such as "10s".
-func decodeJSON(r *http.Request, v any) error {
+func decodeJSON(r *http.Request, v any) error { return decodeJSONLimit(r, v, maxBodyBytes) }
+
+// decodeJSONLimit is decodeJSON with the largest body it accepts: a node's sync report may be larger
+// than any other body (feature 045).
+func decodeJSONLimit(r *http.Request, v any, limit int64) error {
 	mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		return &Error{Status: http.StatusUnsupportedMediaType, Code: codeUnsupportedMediaType,
@@ -39,13 +43,13 @@ func decodeJSON(r *http.Request, v any) error {
 
 	// Read one byte more than the limit, to tell "exactly the limit" from
 	// "too big".
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
+	body, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
 	if err != nil {
 		return &Error{Status: http.StatusBadRequest, Code: codeBadRequest, Message: "could not read the request body"}
 	}
-	if len(body) > maxBodyBytes {
+	if int64(len(body)) > limit {
 		return &Error{Status: http.StatusRequestEntityTooLarge, Code: codeBodyTooLarge,
-			Message: fmt.Sprintf("request body is larger than %d bytes", maxBodyBytes)}
+			Message: fmt.Sprintf("request body is larger than %d bytes", limit)}
 	}
 	if len(body) == 0 {
 		return &Error{Status: http.StatusBadRequest, Code: codeBadRequest, Message: "request body is required"}

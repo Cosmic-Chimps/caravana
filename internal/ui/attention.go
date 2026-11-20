@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -121,9 +122,15 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 		if it.Level == metrics.DiskFailed {
 			row.Mark = "failed"
 		}
-		row.Action, row.Href = "Open monitoring", "/monitoring#host"
-		if it.Server != "" { // a cluster of several: the server's own numbers (feature 031)
-			row.Href = "/monitoring?server=" + url.QueryEscape(it.Server) + "#host"
+		// The server's own page, at what can be freed on it (feature 045): the item names its server in a
+		// cluster of several, else it is the one Caravana runs on. Without that server's name yet, the
+		// host's numbers.
+		server := cmp.Or(it.Server, s.svc.LocalServerName())
+		switch {
+		case server != "":
+			row.Action, row.Href = "Free up space", serverHref(server)+"#space"
+		default:
+			row.Action, row.Href = "Open monitoring", "/monitoring#host"
 		}
 	case service.AttentionDomainDNSElsewhere:
 		row.Action, row.Href = "Open domain", domainHref(it.Domain)

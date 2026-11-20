@@ -43,6 +43,9 @@ type Report struct {
 	// console that predates the field still accepts the report.
 	Issuer string  `json:"issuer,omitempty"`
 	Reach  []Reach `json:"reach"`
+	// Space is what Docker and Nomad's volume directories hold (spec 045); absent when Docker doesn't
+	// answer, and for a console that predates it, which ignores it.
+	Space *SpaceReport `json:"space,omitempty"`
 }
 
 // Facts are what a join tells the console about a new server (api.md §4, POST /v1/join).
@@ -113,6 +116,9 @@ func (a *Agent) Report(ctx context.Context, st State) Report {
 		}
 	}
 	r.Reach = a.reach(ctx, st.Peers)
+	if dockerRunning {
+		r.Space = a.space(ctx, st)
+	}
 	return r
 }
 

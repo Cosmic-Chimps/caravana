@@ -73,7 +73,7 @@ func TestOpsServerDiskBanner(t *testing.T) {
 		return len(banners) > 0
 	})
 	if len(banners) != 1 || !strings.Contains(banners[0], "The disk at /") || !strings.Contains(banners[0], holdsBoth) ||
-		!strings.Contains(banners[0], "Open monitoring") {
+		!strings.Contains(banners[0], "Free up space") {
 		t.Fatalf("one filesystem: banners = %q", banners)
 	}
 

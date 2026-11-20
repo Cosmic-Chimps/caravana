@@ -62,6 +62,18 @@ func (d serverDirectory) local() (serverNode, bool) {
 	return serverNode{}, false
 }
 
+// LocalServerName is the name of the server Caravana runs on, as the sampler or the last read of Nomad's
+// nodes made it known ("" before either). Pages link to the server's own page with it.
+func (s *Service) LocalServerName() string {
+	st := &s.sampler
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if n, ok := st.dir.local(); ok {
+		return n.Name
+	}
+	return ""
+}
+
 // multi says the cluster has more than one server, so a name is worth saying.
 func (d serverDirectory) multi() bool { return len(d.nodes) > 1 }
 

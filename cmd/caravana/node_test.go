@@ -174,3 +174,18 @@ func TestNodeJoinWithNodeEnvNeedsNoFlags(t *testing.T) {
 		t.Errorf("join didn't render nomad.hcl: %v", err)
 	}
 }
+
+// `node space` (feature 045) reads Docker through the real runner: with no state, or with no Docker,
+// it says so and fails, and it takes no argument.
+func TestNodeSpace(t *testing.T) {
+	root := t.TempDir()
+	if code, stdout, stderr := nodeRun(t, root, "space"); code != exitFailed || stdout != "" || stderr == "" {
+		t.Errorf("space without state: %d %q %q", code, stdout, stderr)
+	}
+	if code, _, _ := nodeRun(t, root, "space", "extra"); code != exitUsage {
+		t.Errorf("space with an argument: %d", code)
+	}
+	if entries, _ := os.ReadDir(root); len(entries) != 0 {
+		t.Errorf("space made files: %v", entries)
+	}
+}

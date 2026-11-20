@@ -195,3 +195,43 @@ Forms work without JavaScript.
 ## Deviations
 
 Recorded here as the work finds them.
+
+**Phase A (agent, store, service core), 2026-11-20.**
+
+- **Agent answer limit.** `clean.keep` of 4096 digests is about 300 KiB of JSON, over 031's 256 KiB limit on what the
+  agent reads of the console's answer, so `maxAnswer` is now 512 KiB (`internal/nodeagent/validate.go`; 031's `node.md` §5
+  says so). The 256 KiB body test now sends 600 KiB.
+- **Sync body limit.** The report names up to 1000 images, which the console's node calls (64 KiB) and its generic JSON
+  reader (1 MiB) refused, so the whole sync would have failed on a busy host. `internal/api` is otherwise Phase B's, but two
+  small edits were needed for the protocol to work at all: `POST /v1/node/sync` accepts 4 MiB (`decodeNodeJSONMax`,
+  `decodeJSONLimit` in `decode.go`; join and certificate keep 64 KiB), and its answer carries `clean`
+  (`nodecalls.go`). The agent also keeps its own space block under 2 MiB, dropping the smallest images (`maxSpaceJSON`).
+  `api/openapi.yaml` still says "bodies at most 64 KiB" and has no `space` or `clean`: T008 must add both
+  (`NodeReport.space`, `NodeSyncAnswer.clean`, the 4 MiB), since `NodeReport` is `additionalProperties: false`.
+- **Agent details.** The method is `a.clean` as planned, beside agent.go's text cleaner `clean` (a method and a function
+  don't clash). `ExecRunner.WithTimeout` gives `du` (2 min) and a clean-up's Docker commands (5 min each) more than the
+  30 s of an ordinary call; a fake runner just ignores it. `bytesFreed` sums the Images and Build Cache sizes (and Local
+  Volumes only when Docker's volumes were pruned), not Containers, which grow on their own. Step 4 runs after a failed
+  renewal (its error is returned after), and not after a promotion (that sync returns first; the answer repeats until
+  it runs). `docker image inspect` tolerates an image that vanished between the list and the inspect; the container
+  reads are strict, since an unread container would make its image look unused. `caravana node space` doesn't write
+  state.json (it measures the volume directories into memory only).
+- **Store.** `image_cleanups.server_idx` references `servers (idx) ON DELETE CASCADE`, as `server_moves` does, so a
+  removed server's history goes with it and a reused index never inherits it; a partial unique index
+  (`image_cleanups_one_open`) makes "one open per server" atomic (`store.ErrCleanupOpen`). Added beyond D1's list:
+  `SetLastAutomaticDay`, `SetVolumeDeletionDeleting`, `ListHealthyDeployments` (the newest healthy deployments with a
+  definition, so the keep rule doesn't read every deployment of an app). `TestUpgradeTo0033` ran "the rest of the
+  migrations" and counted them; it now stops at 33.
+- **Service.** `keepFrom` takes `map[string][]store.DeploymentRecord` (there is no `store.Deployment`) and returns
+  `([]string, error)`, `ErrKeepListTooLong` when over 4096; it reads each deployment's recorded `Digests` as well as its
+  definition's images. A report older than 10 minutes counts as "no agent" for `RequestCleanup` and the daily run
+  (`agentReporting`). `cleanupHandoff` never fails the sync: what goes wrong is logged and the answer has no `clean`.
+  `DeleteOrphanVolume` takes the trigger as `app.Trigger` and stores its word; it records the row as `deleting` before
+  asking Nomad and settles it after, so a crash leaves a row `failInterruptedDeletions` closes at start. With `backUpFirst`
+  it returns `ErrNoBackupDestination` for now, marked `// Phase D` (T012). `deploy.HostVolumeDetail` returns a
+  `VolumeDetail`; `DeleteHostVolume` counts a volume that is already gone as deleted, as `DeleteVolumes` does.
+  `humanSize` in `activity.go` repeats the console's `humanBytes` rule, which this package can't import.
+- **Disk item's link.** It reads "Free up space" and goes to `/ops/servers/<name>#space` (the item's server, else
+  `Service.LocalServerName()`, a new accessor over the sampler's directory); with no local name known yet it keeps the
+  old "Open monitoring" link. `platform_test.go` and `opsserver_states_test.go` were updated. The `#space` anchor is
+  Phase C's.

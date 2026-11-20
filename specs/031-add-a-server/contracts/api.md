@@ -111,7 +111,8 @@ with no other server but the first still needs `network` to reach the first.
 ## 4. Node calls (their own credentials; not behind `authenticate`)
 
 Served on the main listener only. Each answer is `Cache-Control: no-store`. Request bodies at most
-64 KiB, JSON. Errors have the usual shape.
+64 KiB, JSON, except a sync's (4 MiB since feature 045: its report may name up to 1000 images). Errors have the
+usual shape.
 
 **`POST /v1/join`** (`joinServer`). No header credentials; the token is in the body. Failed tries are
 limited per address like sign-ins (5 per 15 minutes; 429 `too_many_attempts`).
@@ -154,6 +155,13 @@ limited per address like sign-ins (5 per 15 minutes; 429 `too_many_attempts`).
  "gossipKey": "…", "renew": false, "state": "joining",
  "checks": [{"name": "connected", "ok": true, "detail": "Connected to the cluster"}]}
 ```
+
+Since feature 045 the report may also carry `space` (what Docker and Nomad's volume directories hold: images,
+Docker's leftover volumes, the build cache, volume sizes, the last clean-up's outcome) and the answer a `clean`
+(`{"id", "keep": ["sha256:…"], "dockerVolumes": false}`) while the console has a clean-up open for the server;
+both are optional, so an older agent or console still works. Their shapes, limits and refusals are in
+[045's contracts/agent.md](../../045-reclaim-space/contracts/agent.md) §1 and §2. A bad `space` block is a 422
+`invalid_field` naming it (`space.images[3].digests[0]`).
 
 `gossipKey` only when `role` is `server`. `peers` are every other server that is `joining` or `ready`.
 `renew` is true when the certificate the server reported ends in under 30 days. 401 `node_token_invalid`

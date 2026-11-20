@@ -117,6 +117,9 @@ type NodeReport struct {
 	// that doesn't know it.
 	Issuer string      `json:"issuer,omitempty"`
 	Reach  []NodeReach `json:"reach"`
+	// Space is what the server's Docker and its host volume directories hold (feature 045); nil for an
+	// agent that doesn't say, or whose Docker didn't answer.
+	Space *NodeSpace `json:"space,omitempty"`
 }
 
 // JoinRequest is the body of POST /v1/join.
@@ -155,6 +158,8 @@ type NodeAnswer struct {
 	Checks      []ServerCheck
 	// Issuer is the cluster's issuer for this server to render (spec 038); empty for none.
 	Issuer string
+	// Clean is the clean-up this server's agent is asked to run (feature 045); nil for none.
+	Clean *CleanRequest
 }
 
 // ServerJoin is a join command that was just made (addServer's answer). Token is the only place the
@@ -384,17 +389,7 @@ func validateFacts(f NodeFacts) error {
 }
 
 // checkText refuses a text that is long or holds a control character.
-func checkText(field, v string) error {
-	if len(v) > maxFactLen {
-		return app.NewFieldError(field, "is longer than %d characters", maxFactLen)
-	}
-	for _, r := range v {
-		if r < ' ' || r == 0x7f {
-			return app.NewFieldError(field, "has a control character")
-		}
-	}
-	return nil
-}
+func checkText(field, v string) error { return checkTextMax(field, v, maxFactLen) }
 
 // Join answers a server's first call (api.md §4, POST /v1/join). remoteAddr is where the call came
 // from, an IP address or "" when unknown. Everything that can fail on the request's content fails
@@ -662,7 +657,7 @@ func validateReport(r NodeReport) error {
 			return app.NewFieldError("reach", "has an index outside 1 to %d", mesh.MaxIndex)
 		}
 	}
-	return nil
+	return validateSpace(r.Space)
 }
 
 // NodeSync is a server's periodic call (api.md §4, POST /v1/node/sync): it stores the report,
@@ -741,6 +736,7 @@ func (s *Service) NodeSync(ctx context.Context, nodeToken string, report NodeRep
 		ans.GossipKey = key
 	}
 	ans.Issuer = s.noteIssuer(cur.Name, ans.Role == "server", report.Issuer, now)
+	ans.Clean = s.cleanupHandoff(ctx, cur, report, now)
 	return ans, nil
 }
 

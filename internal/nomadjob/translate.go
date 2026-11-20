@@ -49,6 +49,13 @@ type Settings struct {
 	SQLiteImage string
 }
 
+// HelperImages are the images of the helper tasks and jobs these settings give an app (the names
+// sidecar, the backup and volume tool, the SQLite sidecar), each pinned by digest. Clean-up keeps them
+// on a server so a deploy never waits on a pull of one.
+func (s Settings) HelperImages() []string {
+	return []string{s.namesImage(), s.backupImage(), s.sqliteImage()}
+}
+
 // DefaultBackupImage is rclone 1.71, pinned by digest (an index, so it runs
 // on amd64 and arm64).
 const DefaultBackupImage = "rclone/rclone@sha256:3103526c506266a9ecdf064efe99bf3677d92ef6407af124d8c56b4f49cbaa51"

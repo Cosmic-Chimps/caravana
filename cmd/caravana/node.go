@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -29,6 +30,7 @@ commands:
                     Nomad certificate now; --checks prints the checks the console reports
   show FIELD        print public-key, name, index, role or first
   leave             take this server out of the cluster (not the first server)
+  space             print what Docker and Nomad's volume directories hold, as JSON (reads only)
 
 Run it as root. CARAVANA_INSECURE=1 (or --insecure) skips checking the console's certificate.
 `
@@ -74,7 +76,7 @@ func runNode(ctx context.Context, args []string, getenv func(string) string,
 	case "sync":
 		renew = fs.Bool("renew", false, "renew the Nomad certificate now")
 		checks = fs.Bool("checks", false, "print the checks the console reports")
-	case "up", "show", "leave":
+	case "up", "show", "leave", "space":
 	default:
 		fmt.Fprintf(stderr, "caravana node: unknown command %q\n\n%s", command, nodeUsage)
 		return exitUsage
@@ -174,6 +176,13 @@ func runNode(ctx context.Context, args []string, getenv func(string) string,
 		}
 	case "leave":
 		err = agent.Leave(ctx)
+	case "space":
+		var report *nodeagent.SpaceReport
+		if report, err = agent.SpaceNow(ctx); err == nil {
+			enc := json.NewEncoder(stdout)
+			enc.SetIndent("", "  ")
+			err = enc.Encode(report)
+		}
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "caravana node %s: %v\n", command, err)

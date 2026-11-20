@@ -158,3 +158,34 @@ func TestAddHostVolume(t *testing.T) {
 		t.Errorf("Get = %+v, %v; want the path %q, ready on the first read", v, err, path)
 	}
 }
+
+func TestClaimHostVolume(t *testing.T) {
+	n := New(t)
+	c := newClient(t, n)
+	n.AddHostVolume("kuma_data")
+	n.AddHostVolume("kuma_other")
+	stubs, _, _ := c.HostVolumes().List(&api.HostVolumeListRequest{}, &api.QueryOptions{Prefix: "kuma_data"})
+	id := stubs[0].ID
+
+	n.ClaimHostVolume("kuma_data", "alloc-1", "alloc-2")
+	v, _, err := c.HostVolumes().Get(id, nil)
+	if err != nil || len(v.Allocations) != 2 || v.Allocations[0].ID != "alloc-1" {
+		t.Fatalf("Get = %+v, %v; want the two claiming copies", v, err)
+	}
+	if _, _, err := c.HostVolumes().Delete(&api.HostVolumeDeleteRequest{ID: id}, nil); err == nil {
+		t.Error("a claimed volume was deleted")
+	} else if !strings.Contains(err.Error(), "in use by allocations") {
+		t.Errorf("delete error = %v", err)
+	}
+	n.ClaimHostVolume("kuma_data")
+	if v, _, _ := c.HostVolumes().Get(id, nil); len(v.Allocations) != 0 {
+		t.Errorf("allocations after the claim is undone: %v", v.Allocations)
+	}
+	if _, _, err := c.HostVolumes().Delete(&api.HostVolumeDeleteRequest{ID: id}, nil); err != nil {
+		t.Errorf("delete of an unclaimed volume = %v", err)
+	}
+	n.ClaimHostVolume("nope", "x") // a name Nomad doesn't have: nothing
+	if got := n.HostVolumes(); len(got) != 1 || got[0] != "kuma_other" {
+		t.Errorf("HostVolumes = %v", got)
+	}
+}
