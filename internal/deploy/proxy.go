@@ -11,7 +11,7 @@ import (
 
 // Traefik's job and allocation, read for the Requests page (feature 047). The
 // access log is Traefik's stdout, which Nomad keeps like any task's output, so
-// the service reads it with LogFiles and ReadLogAt of the allocation ProxyCopy
+// the service reads it with LogFiles and ReadLogAt of the allocations ProxyCopies
 // finds. Nothing here looks at a line.
 
 // ProxyJob is the ID of Traefik's job, and ProxyTask the name of its task, as
@@ -30,9 +30,28 @@ var ErrNoProxy = errors.New("no Traefik is running")
 // group, which is also the task whose output files LogFiles lists (use
 // ProxyTask). With no such allocation it is ErrNoProxy.
 func (d *Deployer) ProxyCopy(ctx context.Context) (Copy, error) {
+	copies, err := d.ProxyCopies(ctx)
+	if err != nil {
+		return Copy{}, err
+	}
+	return copies[0], nil
+}
+
+// ProxyCopies is the allocations whose Traefik output Nomad may still keep.
+// The first is the one ProxyCopy picks: the running one, the newest when there
+// are several. After it come the others of the job, newest first: one being
+// replaced or stopped that still runs, and the finished ones (complete, failed
+// or lost, with Gone set) until Nomad collects them. Pending and unknown ones
+// have no output and are left out. The requests served before a Traefik
+// restart are in the files of those older allocations. With no running
+// allocation it is ErrNoProxy.
+func (d *Deployer) ProxyCopies(ctx context.Context) ([]Copy, error) {
 	stubs, _, err := d.nomad.Allocations().List((&api.QueryOptions{}).WithContext(ctx))
 	if err != nil {
-		return Copy{}, d.callError("list Traefik's allocations", err)
+		return nil, d.callError("list Traefik's allocations", err)
+	}
+	newer := func(a, b *api.AllocationListStub) bool {
+		return a.CreateTime > b.CreateTime || (a.CreateTime == b.CreateTime && a.ID > b.ID)
 	}
 	var best *api.AllocationListStub
 	for _, s := range stubs {
@@ -40,14 +59,40 @@ func (d *Deployer) ProxyCopy(ctx context.Context) (Copy, error) {
 			(s.DesiredStatus != "" && s.DesiredStatus != api.AllocDesiredStatusRun) {
 			continue
 		}
-		if best == nil || s.CreateTime > best.CreateTime || (s.CreateTime == best.CreateTime && s.ID > best.ID) {
+		if best == nil || newer(s, best) {
 			best = s
 		}
 	}
 	if best == nil {
-		return Copy{}, ErrNoProxy
+		return nil, ErrNoProxy
 	}
-	return copyOf(best, nil), nil
+	var older []*api.AllocationListStub
+	for _, s := range stubs {
+		if s == best || s.JobID != ProxyJob {
+			continue
+		}
+		switch s.ClientStatus {
+		case api.AllocClientStatusRunning, api.AllocClientStatusComplete,
+			api.AllocClientStatusFailed, api.AllocClientStatusLost:
+			older = append(older, s)
+		}
+	}
+	slices.SortFunc(older, func(a, b *api.AllocationListStub) int {
+		switch {
+		case newer(a, b):
+			return -1
+		case newer(b, a):
+			return 1
+		}
+		return 0
+	})
+	copies := []Copy{copyOf(best, nil)}
+	for _, s := range older {
+		c := copyOf(s, nil)
+		c.Gone = c.Terminal
+		copies = append(copies, c)
+	}
+	return copies, nil
 }
 
 // ProxyAccessLog says whether Traefik's job writes its access log: one of its

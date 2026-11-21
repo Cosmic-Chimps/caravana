@@ -19,7 +19,9 @@ import (
 // Requests (feature 047): each HTTP request Traefik served for the apps of one
 // project › environment, read from Traefik's stdout, which Nomad keeps in
 // alloc/logs/traefik.stdout.<n>. ReadRequests walks those files backwards with
-// the same walk the Logs page uses (walkLogStream) and never stores anything.
+// the same walk the Logs page uses (walkLogStream), the running allocation first
+// and then the ones before it (a Traefik restart) while the range reaches past
+// their start, and never stores anything.
 //
 // A request line is Traefik's text about an app's request and may hold a path
 // a person typed. Nothing here writes one to the server log, an error, a
@@ -214,7 +216,7 @@ func (s *Service) ReadRequests(ctx context.Context, q RequestQuery) (RequestRead
 	if !logged {
 		return read, nil
 	}
-	proxy, err := s.deployer.ProxyCopy(ctx)
+	copies, err := s.deployer.ProxyCopies(ctx)
 	if err != nil {
 		return RequestRead{}, fmt.Errorf("read requests: %w", err)
 	}
@@ -228,33 +230,72 @@ func (s *Service) ReadRequests(ctx context.Context, q RequestQuery) (RequestRead
 	readCtx, cancel := context.WithTimeout(ctx, s.logDeadline)
 	defer cancel()
 
-	files, err := s.deployer.LogFiles(readCtx, proxy.ID, deploy.ProxyTask)
-	switch {
-	case err != nil && ctx.Err() != nil:
-		return RequestRead{}, ctx.Err()
-	case errors.Is(err, deploy.ErrCopyNotFound):
-		return RequestRead{}, fmt.Errorf("read requests: %w", ErrNoProxy)
-	case err != nil && readCtx.Err() == nil:
-		return RequestRead{}, fmt.Errorf("read requests: %w", err)
-	}
-	var stdout []deploy.LogFile
-	for _, f := range files {
-		if f.Stream == logline.Stdout {
-			stdout = append(stdout, f)
-		}
-	}
-
-	res := streamRead{reason: stopDeadline}
-	if err == nil {
-		res, err = s.walkLogStream(readCtx, proxy, stdout, walkLimits{budget: requestStreamBudget, from: win.from, upper: win.upper()})
-		if err != nil {
-			return RequestRead{}, fmt.Errorf("read requests: %w", err)
-		}
-		if res.reason == stopDeadline && ctx.Err() != nil {
+	res, oldest, err := s.walkProxyOutput(readCtx, copies, walkLimits{budget: requestStreamBudget, from: win.from, upper: win.upper()})
+	if err != nil {
+		if ctx.Err() != nil {
 			return RequestRead{}, ctx.Err()
 		}
+		return RequestRead{}, fmt.Errorf("read requests: %w", err)
 	}
-	return finishRequestRead(read, q, win, proxy, res, narrow, owners), nil
+	if res.reason == stopDeadline && ctx.Err() != nil {
+		return RequestRead{}, ctx.Err()
+	}
+	return finishRequestRead(read, q, win, oldest, res, narrow, owners), nil
+}
+
+// walkProxyOutput reads Traefik's stdout files of the allocations in copies
+// (ProxyCopies: the running one first, then the older ones, newest first) with
+// walkLogStream, and answers the lines of all of them, oldest first, and the
+// oldest allocation it read. It goes on to the next allocation only when the
+// one just read was read whole (stopEnd, nothing purged under it) and began
+// after lim.from: the older requests of the range are in the allocation before
+// it. The byte budget is shared.
+//
+// The first allocation not being there is ErrNoProxy; a later one that Nomad
+// collected since the list ends the walk with the allocation before it. The
+// readCtx ending is stopDeadline with what was gathered.
+func (s *Service) walkProxyOutput(ctx context.Context, copies []deploy.Copy, lim walkLimits) (streamRead, deploy.Copy, error) {
+	res := streamRead{reason: stopDeadline}
+	var last deploy.Copy
+	var batches [][]rawLine // newest allocation first
+	for i, c := range copies {
+		files, err := s.deployer.LogFiles(ctx, c.ID, deploy.ProxyTask)
+		if err != nil {
+			if ctx.Err() != nil {
+				res.reason = stopDeadline
+				break
+			}
+			if errors.Is(err, deploy.ErrCopyNotFound) {
+				if i == 0 {
+					return streamRead{}, deploy.Copy{}, ErrNoProxy
+				}
+				break
+			}
+			return streamRead{}, deploy.Copy{}, err
+		}
+		var stdout []deploy.LogFile
+		for _, f := range files {
+			if f.Stream == logline.Stdout {
+				stdout = append(stdout, f)
+			}
+		}
+		one, err := s.walkLogStream(ctx, c, stdout, walkLimits{budget: lim.budget - res.read, from: lim.from, upper: lim.upper})
+		if err != nil {
+			return streamRead{}, deploy.Copy{}, err
+		}
+		res.read += one.read
+		res.reason, res.dropped = one.reason, one.dropped
+		last = c
+		batches = append(batches, one.raws)
+		if !(one.reason == stopEnd && !one.dropped && c.CreatedAt != nil && c.CreatedAt.After(lim.from)) {
+			break
+		}
+	}
+	res.raws = nil
+	for i := len(batches) - 1; i >= 0; i-- {
+		res.raws = append(res.raws, batches[i]...)
+	}
+	return res, last, nil
 }
 
 // requestOwners checks the query's place, app and service and returns the
@@ -336,7 +377,7 @@ func (f requestFilter) keeps(r accesslog.Request) bool {
 
 // finishRequestRead parses what the walk read, keeps what is in the window and
 // passes the filters, sorts it newest first and fills the answer.
-func finishRequestRead(read RequestRead, q RequestQuery, win logWindow, proxy deploy.Copy, res streamRead,
+func finishRequestRead(read RequestRead, q RequestQuery, win logWindow, oldest deploy.Copy, res streamRead,
 	narrow requestNarrow, owners accesslog.Owners) RequestRead {
 	filter := q.filter()
 	lines := q.Lines
@@ -409,12 +450,13 @@ func finishRequestRead(read RequestRead, q RequestQuery, win logWindow, proxy de
 			read.Coverage.From = edge
 		}
 	case stopEnd:
-		// The oldest file of this allocation was read to its start. Requests
-		// before the allocation began are in an older allocation's files (a
-		// Traefik restart), which this read doesn't open: say so.
-		if proxy.CreatedAt != nil && proxy.CreatedAt.After(win.from) && !res.dropped {
+		// The oldest file of the oldest allocation read was read to its start.
+		// The requests before that allocation began are in one Nomad already
+		// collected (none is listed, or it was collected during the read), so
+		// the read says it reached this allocation's start.
+		if oldest.CreatedAt != nil && oldest.CreatedAt.After(win.from) && !res.dropped {
 			read.Coverage.Complete = false
-			read.Coverage.From = proxy.CreatedAt.UTC()
+			read.Coverage.From = oldest.CreatedAt.UTC()
 			if read.Coverage.From.After(win.upper()) {
 				read.Coverage.From = win.upper()
 			}

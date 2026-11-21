@@ -649,3 +649,123 @@ func TestReadRequestsDeadline(t *testing.T) {
 		t.Errorf("coverage = %+v, want incomplete and not timed", read.Coverage)
 	}
 }
+
+const copyTraefikOld = "7a1c9e22-0000-4000-8000-0000000000ab"
+const copyTraefikOlder = "7a1c9e22-0000-4000-8000-0000000000ac"
+
+// traefikRestart makes the running allocation begin at 00:20 and adds a finished
+// one (copyTraefikOld) created at readStart, as after the installer's rerun.
+func traefikRestart(e *env) {
+	run := copyStub(copyTraefik, "traefik", "running", reqAt("00:20:00"))
+	run.CreateTime = reqAt("00:20:00").UnixNano()
+	old := copyStub(copyTraefikOld, "traefik", "complete", readStart)
+	old.CreateTime = readStart.UnixNano()
+	e.nomad.SetCopies("traefik", run, old)
+}
+
+func fileRequestsOf(e *env, copyID string) int {
+	n := 0
+	for _, r := range e.nomad.FileRequests() {
+		if r.Copy == copyID {
+			n++
+		}
+	}
+	return n
+}
+
+// After a Traefik restart the requests served before it are in the previous
+// allocation's files: the read opens them while the range reaches past the new
+// allocation's start.
+func TestReadRequestsAcrossRestart(t *testing.T) {
+	e := reqEnv(t)
+	traefikRestart(e)
+	e.nomad.AddLogFile(copyTraefik, "stdout", 0, []string{
+		reqLine(reqAt("00:30:00"), time.Second, "blog-web", "GET", "/new", 200, "1.1.1.1"),
+	}, wrote("00:39:50"))
+	e.nomad.AddLogFile(copyTraefikOld, "stdout", 0, []string{
+		reqLine(reqAt("00:00:00").Add(-30*time.Minute), time.Second, "blog-web", "GET", "/older", 200, "1.1.1.1"),
+		reqLine(reqAt("00:10:00"), time.Second, "blog-web", "GET", "/old", 200, "1.1.1.1"),
+	}, wrote("00:19:50"))
+
+	// 1 h: from 23:40, so the old allocation's first line is before the range.
+	read := mustReadRequests(t, e, RequestQuery{Range: time.Hour})
+	if got := paths(read.Requests); !slices.Equal(got, []string{"/new", "/old"}) {
+		t.Errorf("1h: %q, want /new, /old", got)
+	}
+	if !read.Coverage.Complete {
+		t.Errorf("1h coverage = %+v, want complete", read.Coverage)
+	}
+
+	// 15 m: the running allocation began (00:20) before the range's start (00:25).
+	before := fileRequestsOf(e, copyTraefikOld)
+	read = mustReadRequests(t, e, RequestQuery{})
+	if got := paths(read.Requests); !slices.Equal(got, []string{"/new"}) {
+		t.Errorf("15m: %q, want /new", got)
+	}
+	if n := fileRequestsOf(e, copyTraefikOld) - before; n != 0 {
+		t.Errorf("15m made %d file requests for the old allocation, want 0", n)
+	}
+
+	// 24 h: the old allocation's first file was read to its start, and it began
+	// at 23:00, inside the range: nothing older is listed.
+	read = mustReadRequests(t, e, RequestQuery{Range: 24 * time.Hour})
+	if got := paths(read.Requests); !slices.Equal(got, []string{"/new", "/old", "/older"}) {
+		t.Errorf("24h: %q", got)
+	}
+	if read.Coverage.Complete || !read.Coverage.From.Equal(readStart) || read.Dropped {
+		t.Errorf("24h coverage = %+v dropped %v, want incomplete from %v", read.Coverage, read.Dropped, readStart)
+	}
+}
+
+// The walk opens the allocations newest first.
+func TestReadRequestsAcrossRestartOrder(t *testing.T) {
+	e := reqEnv(t)
+	older := copyStub(copyTraefikOlder, "traefik", "complete", readStart.Add(-time.Hour))
+	older.CreateTime = readStart.Add(-time.Hour).UnixNano()
+	run := copyStub(copyTraefik, "traefik", "running", reqAt("00:20:00"))
+	run.CreateTime = reqAt("00:20:00").UnixNano()
+	old := copyStub(copyTraefikOld, "traefik", "complete", readStart)
+	old.CreateTime = readStart.UnixNano()
+	e.nomad.SetCopies("traefik", older, old, run)
+	for _, id := range []string{copyTraefik, copyTraefikOld, copyTraefikOlder} {
+		e.nomad.AddLogFile(id, "stdout", 0, []string{
+			reqLine(reqAt("00:10:00"), time.Second, "blog-web", "GET", "/"+id[len(id)-2:], 200, "1.1.1.1"),
+		}, wrote("00:15:00"))
+	}
+	read := mustReadRequests(t, e, RequestQuery{Range: 24 * time.Hour})
+	if len(read.Requests) != 3 {
+		t.Fatalf("requests = %q", paths(read.Requests))
+	}
+	var order []string
+	for _, r := range e.nomad.FileRequests() {
+		if r.Op == "ls" && !slices.Contains(order, r.Copy) {
+			order = append(order, r.Copy)
+		}
+	}
+	if want := []string{copyTraefik, copyTraefikOld, copyTraefikOlder}; !slices.Equal(order, want) {
+		t.Errorf("walk order = %v, want %v", order, want)
+	}
+}
+
+// A file Nomad purged under the running allocation ends the walk: what is before
+// it isn't in the allocation before.
+func TestReadRequestsPurgedStopsAcrossRestart(t *testing.T) {
+	e := reqEnv(t)
+	traefikRestart(e)
+	e.nomad.AddLogFile(copyTraefik, "stdout", 3, []string{
+		reqLine(reqAt("00:30:00"), time.Second, "blog-web", "GET", "/new", 200, "1.1.1.1"),
+	}, wrote("00:39:50"))
+	e.nomad.AddLogFile(copyTraefikOld, "stdout", 0, []string{
+		reqLine(reqAt("00:10:00"), time.Second, "blog-web", "GET", "/old", 200, "1.1.1.1"),
+	}, wrote("00:19:50"))
+	read := mustReadRequests(t, e, RequestQuery{Range: 24 * time.Hour})
+	if !read.Dropped {
+		t.Error("Dropped = false with the first files purged")
+	}
+	if got := paths(read.Requests); !slices.Equal(got, []string{"/new"}) {
+		t.Errorf("paths = %q, want /new", got)
+	}
+	if n := fileRequestsOf(e, copyTraefikOld); n != 0 {
+		t.Errorf("%d file requests for the old allocation, want 0", n)
+	}
+}

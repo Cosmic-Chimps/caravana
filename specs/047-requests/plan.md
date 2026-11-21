@@ -142,7 +142,7 @@ Phase A (2026-11-20):
   file as if it had read the range. The read says so: when the walk ends at the oldest file and the allocation's
   `CreatedAt` is after the range's start, `Coverage` is incomplete and `From` is the allocation's start ("read from
   14:02 UTC"). Reading the older allocations too (`deploy.LogCopies([]string{"traefik"})` already lists the finished
-  ones until Nomad collects them) is a follow-up, not done here.
+  ones until Nomad collects them) was done as a follow-up on 2026-11-21 (task `kbsz`): `deploy.ProxyCopies` and the walk across allocations.
 - **`RequestRead` has `Services`** (`[]RequestService{App, Service, Count}`): the rail's counts, taken after the
   status, method, path, duration and client filters but not the app and service ones, so the rail can offer the other
   services of the place. The list and the histogram are narrowed by app and service.

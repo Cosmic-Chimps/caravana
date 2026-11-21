@@ -6,7 +6,7 @@
   a row opens the Logs around its time. Monitoring's Errors chart links to the 5xx of its range (a click on the
   plot opens the minute you point at) and its apps table has a Requests link per service. Only the path is
   recorded: Traefik drops the query string and every header before the line exists, and Caravana stores
-  nothing. The page says how far back it read. `GET /v1/requests` (API 0.52.0). See `docs/requests.md`.
+  nothing. The page says how far back it read; after a Traefik restart the earlier allocations are read too while Nomad keeps them. `GET /v1/requests` (API 0.52.0). See `docs/requests.md`.
 
 ### Changed
 - **The Logs page accepts a window.** `/logs?from=…&to=…` (RFC 3339) reads exactly that window, paused, which

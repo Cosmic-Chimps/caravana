@@ -1834,7 +1834,8 @@ change, constitution unchanged.
   (status classes, method, path prefix, minimum duration, client) and sorted newest first by `StartUTC`, since the file is in
   completion order. `RequestRead` has `AccessLog` (false when the job doesn't write the log: nothing is read), `Total`, `Coverage`,
   `Dropped`, `Services` (the rail's counts, after every filter but the app and service) and `Histogram()` (30 bins by class).
-  After a Traefik restart the read starts at the new allocation's creation, and says so. `WatchRequests` follows Traefik's stdout
+  The read goes on into the allocations before the last Traefik restart while Nomad keeps them (`deploy.ProxyCopies`),
+  and when Nomad already collected what came before, the coverage names the oldest allocation reached. `WatchRequests` follows Traefik's stdout
   while a Live page is open and sends the `requests` notice (the app ID, never a line), at most every 2 s per place.
 - API 0.52.0: `listRequests` (`GET /v1/requests`, `no-store`), 422 `invalid_field` naming the field, 404 as the logs', 503
   `proxy_unavailable`; deploy tokens are denied by the default deny.
@@ -1863,8 +1864,7 @@ change, constitution unchanged.
   `check_requests_host` (the `accesslog` arguments in Traefik's job and one `GET /v1/requests`) is written and shellchecked,
   not run.
 - Not in 047: long-term analytics, geo lookup of clients, storing the log, requests no app's router took, Traefik's
-  `forwardedHeaders` trust list (behind a proxy the client is the proxy's address), a download, a per-copy attribution, reading the
-  allocations before the last Traefik restart.
+  `forwardedHeaders` trust list (behind a proxy the client is the proxy's address), a download, a per-copy attribution.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM

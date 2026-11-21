@@ -55,7 +55,8 @@ requests), or 5 seconds have passed. The page says how far it got:
 - A page shows the newest 200 requests and says how many the read found.
 
 After Traefik restarts (the installer's rerun restarts it once), the earlier requests are in the previous
-allocation's files, which a read does not open: the page reads from the new allocation's start and says so.
+allocations' files. The read opens them too, newest first, while Nomad keeps them (until its garbage
+collection), and says "read from <time>" only for what Nomad already collected.
 
 A request is listed at the time it **started**. The file is written when a request **ends**, so a slow request
 sits after faster ones that started later; the page sorts them by start. A request that began just before the
