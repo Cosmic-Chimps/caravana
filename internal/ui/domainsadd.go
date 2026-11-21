@@ -57,6 +57,12 @@ type domainAddView struct {
 	// Port is the chosen service's port, ":8080", drawn as text after it.
 	Port    string
 	Records recordBox
+	// Zones are the zones with a DNS provider: Caravana makes the record of a
+	// domain under one itself (feature 048). The note under the record box names
+	// them. Managed is the zone that covers the host after Check now, which
+	// replaces the box with a sentence.
+	Zones   []string
+	Managed string
 	// Checked says Check now ran: DNS and Cert hold its results.
 	Checked bool
 	DNS     checkLine
@@ -166,6 +172,11 @@ func (s *server) domainAddFor(ctx context.Context, in domainAddInput, fixedApp s
 		Cert:    checkLine{Mark: "idle", Words: "HTTPS certificate"},
 		Primary: true}
 	v.Records = recordBoxFor(in.Host, s.hostAddressTexts(ctx))
+	zones, err := s.svc.DNSZones(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v.Zones = zoneNames(zones)
 	if fixedApp != "" {
 		v.Action, v.CancelHref, v.FixedApp = "/apps/"+url.PathEscape(fixedApp)+"/domains", "/apps/"+url.PathEscape(fixedApp)+"/domains", fixedApp
 	}
@@ -300,6 +311,17 @@ func (v *domainAddView) applyCheck(chk service.DomainCheck) {
 		}
 	}
 	v.Primary = chk.DNS.Status == edge.DNSOK || behindProxy
+
+	// A host under a zone Caravana manages gets its record made at the add: with no record
+	// there yet, the box is replaced by that sentence and the DNS line says so. A record that
+	// is there keeps its own line: one that points elsewhere is refused at the add.
+	if chk.ManagedZone != "" {
+		v.Managed = chk.ManagedZone
+		if chk.DNS.Status == edge.DNSNone {
+			v.DNS = checkLine{Mark: "idle", Words: "DNS record", Reason: plainS("none yet: Caravana will create it")}
+			v.Primary = true
+		}
+	}
 
 	v.Cert = checkLine{Mark: "idle", Words: "HTTPS certificate"}
 	c := chk.Certificate
@@ -511,6 +533,7 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 	}
 	var fieldErr *app.FieldError
 	var taken *service.DomainTakenError
+	var exists *service.DNSRecordExistsError
 	switch {
 	case errors.As(err, &taken):
 		fieldError(&form.Host, sentence{mono(taken.Host), plain(" is already a domain of "), mono(taken.App), plain(". Remove it there first.")})
@@ -523,6 +546,8 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 	case errors.Is(err, service.ErrAppChanged):
 		form.Notice = sentence{plain(changedSincePage)}
 		refuse(http.StatusConflict)
+	case errors.As(err, &exists):
+		fieldError(&form.Host, sentence{mono(exists.Host), plain(" already has a record at Cloudflare pointing at "), mono(exists.Content), plain(". Remove it there, or point it here by hand.")})
 	case errors.As(err, &fieldErr) && strings.Contains(fieldErr.Field, ".domains[") && strings.HasSuffix(fieldErr.Field, ".path"):
 		fieldError(&form.Path, sentence{plain(fieldErr.Message)})
 	case errors.As(err, &fieldErr) && strings.Contains(fieldErr.Field, ".domains["):

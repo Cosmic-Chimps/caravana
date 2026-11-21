@@ -1815,6 +1815,56 @@ doc: `docs/database-backups.md`. No new module, no policy change, constitution u
 - Not in 046: point-in-time recovery, replica sets and shards beyond the node the service reaches, `*_FILE` credentials,
   Percona XtraBackup, Redis.
 
+Feature 048 (`specs/048-dns-providers`, CodeAlta task `s0ce`, worktree branch `alta/balmy-daisy-m7wj`): a zone may be
+connected to Cloudflare, and Caravana then makes the DNS record of each domain an app adds under it. `plan.md` D1–D11 are
+the decisions and its Deviations sections (phases A and B) the changes; operator doc: `docs/dns-providers.md`. No new
+module (the Cloudflare client is `net/http`), no policy change (the token's variable is under `caravana/*`), constitution
+unchanged.
+- The seam (`internal/dns`, pure of Caravana): `Record`, `Provider` (`FindZone`, `Records`, `Create`, `Update` for the proxy
+  setting, `Delete`), the sentinels `ErrRefused`, `ErrZoneNotFound`, `ErrUnavailable`, `ErrRecordNotFound` (no error holds a
+  body, a token or a URL), `ZoneOf` (the longest zone that is the host or a parent), `Cloudflare` over `net/http` and
+  `CloudflareFactory`; `dnstest` has an in-memory `Provider` (knobs: refuse, unavailable, seeded hand-made records, a token
+  to want) and a fake Cloudflare over `httptest` (`Server`).
+- The token: Nomad Variable `caravana/dns/<zone key>` (`deploy.DNSZoneVariablePath`, item `token`; `.` is `~` in the key);
+  SQLite (migration 0037: `dns_zones`, `dns_records`) holds the zone, the proxy setting, the provider's zone ID and the last
+  test, and one row per record Caravana made, keyed by the provider's record ID.
+- Flow (`service/dnsrecords.go`): `checkDNSRecords` is the last of `saveAndDeploy`'s checks (the only one that leaves the
+  process): a host under a zone with no row of its app, whose record at the provider is an A, AAAA or CNAME pointing
+  elsewhere, is `*DNSRecordExistsError` (409 `dns_record_exists`, on the domain's field); a record that already points here is
+  left alone; one with our comment is adopted. `ensureDNSRecords` makes the missing records (an A per IPv4 and an AAAA per
+  IPv6 address of `hostAddresses`, TTL automatic, comment `caravana:<app>`, one row written right after each create) in
+  `deployWarned` before `Register`; no public address is `ErrHostAddressUnknown` (409 `dns_address_unknown`); a provider
+  that refuses or can't be reached is `*DNSProviderError` (422 `dns_provider_refused`, 502 `dns_provider_unavailable`).
+  `pruneDNSRecords` removes the rows of hosts the app dropped after a good `Register`, `DeleteApp` removes the app's records,
+  and the pass (`service/dnspass.go`, at start and every 10 minutes, `SetDNSPassGap`) removes the rest and retries failures; it
+  never creates a record. A failure to remove never fails a deploy or a delete.
+- Zones (`service/dnszones.go`): `SaveDNSZone` (token first, then the row; a changed token or proxy setting forgets the last
+  test; a changed proxy setting is applied to Caravana's records, and a partial failure comes back with the saved zone as
+  "saved, but the old setting stays on N records; the next save tries again"), `DeleteDNSZone` (the records stay at Cloudflare),
+  `TestDNSZone` (an outcome, never an error; the zone's records are in the answer only), `ManagedZone`.
+  `Service.SetDNSProviders(dns.CloudflareFactory(""))` is called from `cmd/caravana/main.go`.
+- API 0.53.0: `listDNSZones`, `putDNSZone`, `deleteDNSZone`, `testDNSZone`, `listDNSRecords`, `Domain.record`,
+  `DomainCheck.managedZone`, the five codes above and `dns_zone_not_found`; deploy tokens are denied by the default deny.
+- Console (`internal/ui/dnszones.go`, `dns_test.go`): Settings › DNS providers (`/settings/dns`, entry `dns`, icon `globe`,
+  after Certificates; the row's mark and the nav's count-or-failed follow `dnsZonesState`): add, Edit (token optional), Test
+  (answers 200 with the zone's records under its row), Remove (the records stay at Cloudflare). The page reuses the secret
+  providers' inputs (`provider-fields`) and its token field never has a value. The Domains page says "DNS record · made by
+  Caravana in <zone> (Cloudflare, direct|proxied)" in a managed row's detail, the Add panel names the zones and, after Check now
+  for a host under one with no record, says Caravana creates it; the refusals are drawn at the Domain field
+  (`dns_record_exists`) or as the form's notice (`refuseDeploy` words the provider and address errors for every deploy form).
+  A proxied domain shows as pointing elsewhere until its certificate is issued (023's rule). Forms work without JavaScript.
+- Lab: `startLab` runs a `dnstest.Server` (a fake Cloudflare on loopback, `gateTarget.DNS`, nil on a real host, where the
+  steps skip) and gives the in-process Caravana `dns.CloudflareFactory(<its URL>)`. The gate step `dns-records`
+  (`gate_dns_records_test.go`: the zone with a sentinel token, Test, five deploys covering create, no call on a redeploy,
+  `dns_record_exists`, a hand-made record pointing here left alone, prune, the proxy update, `dns_provider_refused`, the
+  delete, the zone's removal leaving the record at the fake, the token in no answer, log, job, export or SQLite file) and
+  the console step `console-dns-providers` (`console_dns_test.go`) passed in the lab on 2026-11-21 (78 s and 16 s, each
+  run alone with `CARAVANA_PUBLIC_URL=https://console.lab.test`, which the lab's resolver answers with 203.0.113.1).
+  Without it the gate step checks the `dns_address_unknown` refusal and skips, and the console step skips the Add domain
+  parts.
+- Not in 048: DNS-01 and wildcard certificates, other DNS providers, records that follow a change of the installation's
+  address, CNAME records.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

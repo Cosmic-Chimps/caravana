@@ -77,6 +77,8 @@ type domainJSON struct {
 	DNS         dnsJSON         `json:"dns"`
 	Certificate certificateJSON `json:"certificate"`
 	CheckedAt   *time.Time      `json:"checkedAt"`
+	// Record is set when Caravana made the host's DNS record (feature 048).
+	Record *dnsManagedRecordJSON `json:"record"`
 }
 
 func toDNSJSON(d edge.DNS) dnsJSON {
@@ -108,6 +110,7 @@ func toDomainJSON(v service.DomainView) domainJSON {
 		Service: v.Service, Port: v.Port, Path: v.Path, WWWRedirect: v.WWWRedirect, TeamOnly: v.TeamOnly,
 		Router: v.Router, RedirectOf: v.RedirectOf, State: string(v.State),
 		DNS: toDNSJSON(v.DNS), Certificate: toCertificateJSON(v.Certificate), CheckedAt: v.CheckedAt,
+		Record: toManagedRecordJSON(v.Record),
 	}
 }
 
@@ -176,6 +179,8 @@ type domainCheckJSON struct {
 	DNS         dnsJSON         `json:"dns"`
 	Certificate certificateJSON `json:"certificate"`
 	CheckedAt   time.Time       `json:"checkedAt"`
+	// ManagedZone is the zone with a DNS provider that covers the host, "" for none.
+	ManagedZone string `json:"managedZone"`
 }
 
 // checkDomain answers POST /v1/domains/check: the host checked now, not from
@@ -197,7 +202,7 @@ func (s *server) checkDomain(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	out := domainCheckJSON{Host: c.Host, Record: make([]dnsRecordJSON, 0, len(c.Records)),
-		DNS: toDNSJSON(c.DNS), Certificate: toCertificateJSON(c.Certificate), CheckedAt: c.CheckedAt}
+		DNS: toDNSJSON(c.DNS), Certificate: toCertificateJSON(c.Certificate), CheckedAt: c.CheckedAt, ManagedZone: c.ManagedZone}
 	for _, rec := range c.Records {
 		out.Record = append(out.Record, dnsRecordJSON(rec))
 	}

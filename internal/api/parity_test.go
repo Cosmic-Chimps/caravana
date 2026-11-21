@@ -14,7 +14,7 @@ import (
 // no operation and no reason is a mistake, not a decision).
 // settingsReads are what every Settings page reads for its nav.
 var settingsReads = []string{"listTokens", "listRegistries", "listNotificationChannels", "listNotificationDeliveries",
-	"getBackupDestination", "listApps", "listBackups", "listCertificates", "listSecretProviders"}
+	"getBackupDestination", "listApps", "listBackups", "listCertificates", "listSecretProviders", "listDNSZones"}
 
 type parity struct {
 	ops []string
@@ -60,7 +60,9 @@ var consoleParity = map[string]parity{
 	// Secret providers (feature 037).
 	"GET /settings/secret-providers": {ops: settingsReads},
 	"GET /settings/backup-storage":   {ops: settingsReads},
-	"GET /settings/notifications":    {ops: settingsReads},
+	// DNS providers (feature 048): the rows are listDNSZones, which every Settings page reads for its nav.
+	"GET /settings/dns":           {ops: settingsReads},
+	"GET /settings/notifications": {ops: settingsReads},
 	// Certificates (feature 023): the table is listCertificates; the issuer, the contact email and Warn when are getCertificateSettings.
 	"GET /settings/certificates":  {ops: append([]string{"getCertificateSettings"}, settingsReads...)},
 	"POST /settings/certificates": {ops: []string{"putCertificateSettings"}},
@@ -154,8 +156,8 @@ var consoleParity = map[string]parity{
 	"GET /apps/{id}/variables":      {ops: []string{"getApp", "listSecretProviders"}}, // the providers the Add form offers (feature 037)
 	"POST /apps/{id}/variables":     {ops: []string{"getApp", "deployApp"}},
 	"POST /apps/{id}/variables/env": {ops: []string{"getApp", "deployApp"}},
-	"GET /apps/{id}/domains":        {ops: []string{"getApp", "listDomains", "listApps"}},
-	"POST /apps/{id}/domains":       {ops: []string{"getApp", "listDomains", "checkDomain", "deployApp"}},
+	"GET /apps/{id}/domains":        {ops: []string{"getApp", "listDomains", "listApps", "listDNSZones"}},
+	"POST /apps/{id}/domains":       {ops: []string{"getApp", "listDomains", "checkDomain", "deployApp", "listDNSZones"}},
 	// "Back up daily" sets a service's backup policy: a deploy of the app with backup {engine, schedule, keep}.
 	"POST /apps/{id}/backups/policy": {ops: []string{"getApp", "deployApp"}},
 	// Pin and unpin a backup, and a service's restore schedule (feature 036): the schedule is a deploy
@@ -172,6 +174,9 @@ var consoleParity = map[string]parity{
 	"POST /settings/registries":              {ops: []string{"putRegistry"}},
 	"POST /settings/registries/test":         {ops: []string{"testRegistry"}},
 	"POST /settings/registries/remove":       {ops: []string{"deleteRegistry"}},
+	"POST /settings/dns":                     {ops: []string{"putDNSZone"}},
+	"POST /settings/dns/test":                {ops: []string{"testDNSZone"}},
+	"POST /settings/dns/remove":              {ops: []string{"deleteDNSZone"}},
 	"POST /settings/secret-providers":        {ops: []string{"putSecretProvider"}},
 	"POST /settings/secret-providers/test":   {ops: []string{"testSecretProvider"}},
 	"POST /settings/secret-providers/remove": {ops: []string{"deleteSecretProvider"}},
@@ -233,11 +238,12 @@ var consoleParity = map[string]parity{
 	// Domains (feature 023). The list reads every domain with its state (listDomains, with the filter's
 	// ?project= and ?app=), the apps for the filter and the Add panel, and the projects for the filter.
 	// Check again and the Add panel's Check now are checkDomain; Add is a deploy of the app with one more
-	// domain on its revision, refused when another app has the host (listDomains).
-	"GET /domains":                   {ops: []string{"listDomains", "listApps", "listProjects"}},
+	// domain on its revision, refused when another app has the host (listDomains). The Add panel also names the
+	// zones Caravana makes records in (listDNSZones, feature 048).
+	"GET /domains":                   {ops: []string{"listDomains", "listApps", "listProjects", "listDNSZones"}},
 	"GET /parts/domains":             {ops: []string{"listDomains", "listApps"}},
-	"GET /parts/domains/add-service": {ops: []string{"getApp"}}, // the Add panel's service field for a picked app
-	"POST /domains":                  {ops: []string{"listApps", "getApp", "listDomains", "checkDomain", "deployApp"}},
+	"GET /parts/domains/add-service": {ops: []string{"getApp", "listApps", "listDNSZones"}}, // the Add panel's service field for a picked app
+	"POST /domains":                  {ops: []string{"listApps", "getApp", "listDomains", "checkDomain", "deployApp", "listDNSZones"}},
 	"POST /domains/{host}/check":     {ops: []string{"checkDomain"}},
 	// The Options form (feature 023): Team only, the www redirect and the path of one domain, and Remove…, are a
 	// deploy of the app with that service's domains replaced, on the revision getApp gave (deployApp with

@@ -23,6 +23,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/api"
 	"github.com/cosmic-chimps/caravana/internal/config"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/dns"
 	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/registry"
@@ -136,6 +137,8 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	// Secret providers (feature 037): Bella Baxter, through Bella's own SDK. Without this no provider
 	// can be saved, tested or read.
 	svc.SetSecretSources(service.BellaSource)
+	// DNS providers (feature 048): Cloudflare, at its own address.
+	svc.SetDNSProviders(dns.CloudflareFactory(""))
 	svc.SetNotifyResolveAfter(cfg.NotifyResolveAfter)
 	svc.SetEdgeAddress(cfg.EdgeAddress)
 	svc.SetTraefikMetricsURL(cfg.TraefikMetricsURL)

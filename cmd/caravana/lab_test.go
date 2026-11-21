@@ -30,6 +30,8 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/dns"
+	"github.com/cosmic-chimps/caravana/internal/dns/dnstest"
 	"github.com/cosmic-chimps/caravana/internal/edge"
 	"github.com/cosmic-chimps/caravana/internal/edge/edgetest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/bella/bellatest"
@@ -97,6 +99,9 @@ func startLab(t *testing.T) labEnv {
 	// A fake Bella Baxter on loopback, which the in-process Caravana reaches like a real one (feature 037).
 	bella := bellatest.New()
 	t.Cleanup(bella.Close)
+	// A fake Cloudflare on loopback, which the in-process Caravana's DNS provider reaches like the real
+	// one (feature 048). It accepts no token until a step sets one with SetToken.
+	cloudflare := dnstest.NewServer(t, "lab-no-token")
 	getenv := func(key string) string {
 		if key == "NOMAD_TOKEN" {
 			return scoped
@@ -157,6 +162,8 @@ func startLab(t *testing.T) labEnv {
 		svc.SetReleasePinURLs(release.URL+"/download", release.URL+"/raw")
 		svc.SetReleaseCheckGap(labReleaseGap)
 		svc.SetProRunner(labPro{})
+		// DNS zones are Cloudflare's, and Cloudflare is the fake above (feature 048).
+		svc.SetDNSProviders(dns.CloudflareFactory(cloudflare.URL))
 	}
 	t.Cleanup(func() { serviceHook = nil })
 
@@ -221,6 +228,7 @@ func startLab(t *testing.T) labEnv {
 			HostRoot:  hostRoot,
 			Release:   release,
 			Bella:     bella,
+			DNS:       cloudflare,
 			SetScheduleLimit: func(d time.Duration) {
 				currentMu.Lock()
 				defer currentMu.Unlock()

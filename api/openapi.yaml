@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.51.0
+  version: 0.53.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -3770,6 +3770,154 @@ paths:
         "502":
           $ref: "#/components/responses/BadGateway"
 
+  /v1/dns/zones:
+    get:
+      operationId: listDNSZones
+      summary: List the DNS zones Caravana may make records in, never their tokens.
+      description: By zone name. `records` counts the records Caravana made in each.
+      tags: [dns]
+      responses:
+        "200":
+          description: The zones.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DNSZoneList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/dns/zones/{zone}:
+    parameters:
+      - $ref: "#/components/parameters/DNSZoneName"
+    put:
+      operationId: putDNSZone
+      summary: Add a DNS zone, or replace the one with this name.
+      description: |
+        With a zone and an API token for it, Caravana makes the DNS record of each domain an app
+        adds under the zone (an A record per IPv4 address of this installation, an AAAA per IPv6
+        one, marked `caravana:<app>` in the record's comment) and removes it when the domain goes.
+        Only records Caravana made are ever changed or removed. The token (Cloudflare: Zone › DNS
+        › Edit for this zone) is required when creating and optional when updating: leave it out to
+        keep the one stored before. It is kept only in the cluster's secret store and never
+        returned. `proxied` is Cloudflare's orange cloud for the records Caravana makes.
+
+        A save with a new token or proxy setting forgets the last test. A save also brings the
+        records Caravana made to the proxy setting; when the provider can't take some, the zone
+        is saved and the answer is `dns_provider_unavailable` or `dns_provider_refused`, whose
+        message says "saved, but N records keep the old setting; the next save tries again".
+
+        Nothing is deployed. 201 when the zone is new, 200 when replaced.
+      tags: [dns]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DNSZoneRequest"
+      responses:
+        "200":
+          description: Replaced.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DNSZone"
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DNSZone"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/DNSProviderRefused"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+    delete:
+      operationId: deleteDNSZone
+      summary: Forget a DNS zone and its token.
+      description: |
+        The records Caravana made in the zone stay at the provider: Caravana forgets which they
+        were, so it never removes them. Domains under the zone stop getting records.
+      tags: [dns]
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/DNSZoneNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/dns/zones/{zone}/test:
+    parameters:
+      - $ref: "#/components/parameters/DNSZoneName"
+    post:
+      operationId: testDNSZone
+      summary: List the zone's records as the provider has them now.
+      description: |
+        Finds the zone at the provider and lists all its records, saying which ones Caravana made.
+        The outcome is recorded with its time. A provider that refuses the token, doesn't have
+        the zone or can't be reached is an answer, not an error: the response is 200 and
+        `lastTest.ok` is false, with the reason in `lastTest.message`, in Caravana's words (never
+        the provider's own text), and `records` is empty. The records are the provider's now; they
+        are in this answer only and are never stored. Sent with `Cache-Control: no-store`.
+      tags: [dns]
+      responses:
+        "200":
+          description: The zone's test.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DNSZoneTest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/DNSZoneNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/dns/records:
+    get:
+      operationId: listDNSRecords
+      summary: List the DNS records Caravana made.
+      description: |
+        From Caravana's own table, with no call to a provider: each record's host, type, zone, app,
+        address and proxy setting. A record a failed removal left behind is listed until a later
+        pass removes it.
+      tags: [dns]
+      responses:
+        "200":
+          description: The records, by host.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DNSRecordList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/addons:
     get:
       operationId: listAddons
@@ -6213,6 +6361,16 @@ components:
       schema:
         type: string
         enum: ["*"]
+    DNSZoneName:
+      name: zone
+      in: path
+      required: true
+      description: The zone's name, a lowercase domain name with its dot.
+      schema:
+        type: string
+      examples:
+        zone:
+          value: example.com
     SecretProviderName:
       name: name
       in: path
@@ -7984,6 +8142,140 @@ components:
           type: string
           description: Bella's environment slug. Caravana reads this one environment.
 
+    DNSZoneRequest:
+      type: object
+      additionalProperties: false
+      required: [provider]
+      properties:
+        provider:
+          type: string
+          enum: [cloudflare]
+        proxied:
+          type: boolean
+          default: false
+          description: The proxy setting (Cloudflare's orange cloud) of the records Caravana makes.
+        token:
+          type: string
+          description: The provider's API token. Required the first time; leave it out to keep the one stored. Never returned.
+
+    DNSZoneTestOutcome:
+      type: object
+      additionalProperties: false
+      required: [at, ok, message, count]
+      properties:
+        at: {type: string, format: date-time}
+        ok:
+          type: boolean
+          description: True when the provider listed the zone.
+        message:
+          type: string
+          description: |
+            "12 records, 2 made by Caravana", or why not, in Caravana's words: the token was
+            refused, the provider has no such zone, or it can't be reached.
+        count:
+          type: integer
+          description: How many records a successful test listed; 0 otherwise.
+
+    DNSZone:
+      type: object
+      additionalProperties: false
+      required: [zone, provider, proxied, records, createdAt, updatedAt]
+      description: |
+        A DNS zone, without its token. `lastTest` is the last `testDNSZone`: absent until the
+        first test, and after a save with a new token or proxy setting.
+      properties:
+        zone: {type: string}
+        provider:
+          type: string
+          enum: [cloudflare]
+        proxied: {type: boolean}
+        records:
+          type: integer
+          description: How many records Caravana made in the zone.
+        lastTest:
+          $ref: "#/components/schemas/DNSZoneTestOutcome"
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+
+    DNSZoneList:
+      type: object
+      additionalProperties: false
+      required: [zones]
+      properties:
+        zones:
+          type: array
+          items:
+            $ref: "#/components/schemas/DNSZone"
+
+    DNSProviderRecord:
+      type: object
+      additionalProperties: false
+      required: [id, type, name, content, proxied, comment, ttl, managed, app]
+      description: A record as the provider has it now.
+      properties:
+        id: {type: string, description: The provider's ID of the record.}
+        type: {type: string, description: "`A`, `AAAA`, `CNAME`, `TXT`..."}
+        name: {type: string, description: The full host.}
+        content: {type: string}
+        proxied: {type: boolean}
+        comment: {type: string}
+        ttl: {type: integer, description: Seconds; 1 is automatic.}
+        managed:
+          type: boolean
+          description: True for a record Caravana made.
+        app:
+          type: string
+          description: The app a record Caravana made is for; empty otherwise.
+
+    DNSZoneTest:
+      type: object
+      additionalProperties: false
+      required: [zone, lastTest, records]
+      properties:
+        zone: {type: string}
+        lastTest:
+          $ref: "#/components/schemas/DNSZoneTestOutcome"
+        records:
+          type: array
+          description: Every record of the zone now; empty when the test failed. In this answer only.
+          items:
+            $ref: "#/components/schemas/DNSProviderRecord"
+
+    DNSRecordMade:
+      type: object
+      additionalProperties: false
+      required: [host, type, zone, app, content, proxied, createdAt]
+      description: A record Caravana made.
+      properties:
+        host: {type: string}
+        type: {type: string, enum: [A, AAAA]}
+        zone: {type: string}
+        app: {type: string, description: The ID of the app whose domain the record serves.}
+        content: {type: string, description: The address the record points at.}
+        proxied: {type: boolean}
+        createdAt: {type: string, format: date-time}
+
+    DNSRecordList:
+      type: object
+      additionalProperties: false
+      required: [records]
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/DNSRecordMade"
+
+    DNSManagedRecord:
+      type: object
+      additionalProperties: false
+      required: [zone, provider, proxied, createdAt]
+      description: The fact that Caravana made a domain's DNS record.
+      properties:
+        zone: {type: string}
+        provider: {type: string, enum: [cloudflare]}
+        proxied: {type: boolean}
+        createdAt: {type: string, format: date-time}
+
     SecretProvider:
       type: object
       additionalProperties: false
@@ -8568,7 +8860,7 @@ components:
     Domain:
       type: object
       additionalProperties: false
-      required: [host, app, project, environment, appName, service, port, path, wwwRedirect, teamOnly, router, state, dns, certificate, checkedAt]
+      required: [host, app, project, environment, appName, service, port, path, wwwRedirect, teamOnly, router, state, dns, certificate, checkedAt, record]
       properties:
         host: {type: string}
         app:
@@ -8614,6 +8906,11 @@ components:
           type: [string, "null"]
           format: date-time
           description: When it was last checked; null when never.
+        record:
+          description: Set when Caravana made this host's DNS record at a provider (see `putDNSZone`); null otherwise.
+          oneOf:
+            - $ref: "#/components/schemas/DNSManagedRecord"
+            - type: "null"
 
     DomainDNS:
       type: object
@@ -8662,9 +8959,15 @@ components:
     DomainCheck:
       type: object
       additionalProperties: false
-      required: [host, record, dns, certificate, checkedAt]
+      required: [host, record, dns, certificate, checkedAt, managedZone]
       properties:
         host: {type: string}
+        managedZone:
+          type: string
+          description: |
+            The zone with a DNS provider that covers the host (see `putDNSZone`), or "" for none.
+            For such a host Caravana makes the record when the domain is added, so `record` is
+            what it will make, and `dns` says no record yet until then.
         record:
           type: array
           description: The records that point the host here; empty when this host's addresses aren't known.
@@ -11593,7 +11896,9 @@ components:
                 `output_not_kept`, `builtin_schedule`, `schedule_exists`, `run_going`, `run_not_running`, `log_rotated`, `download_busy`,
                 `passkey_not_found`, `last_passkey`, `no_passkey`, `port_taken`, `no_public_network`,
                 `placement_impossible`, `server_moving`, `server_not_ready`, `no_other_server`,
-                `image_vulnerable`, `scanner_not_installed`, `addon_busy`, `addon_not_found`.
+                `image_vulnerable`, `scanner_not_installed`, `addon_busy`, `addon_not_found`,
+                `dns_record_exists`, `dns_address_unknown`, `dns_provider_refused`, `dns_provider_unavailable`,
+                `dns_zone_not_found`.
               examples: [invalid_field]
             message:
               type: string
@@ -11887,6 +12192,23 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    DNSZoneNotFound:
+      description: There is no DNS zone with this name (`dns_zone_not_found`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    DNSProviderRefused:
+      description: |
+        `dns_provider_refused`: the provider refused the token or doesn't have the zone; the
+        message says which, in Caravana's words, and when the zone was saved first (a new proxy
+        setting the provider couldn't take) it says "saved, but N records keep the old
+        setting; the next save tries again". Also a deploy's answer when a domain under a zone
+        needs a record and the provider refuses (`field` the domain's `host`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     SecretProviderNotFound:
       description: There is no secret provider with this name (`secret_provider_not_found`).
       content:
@@ -12039,7 +12361,13 @@ components:
         `services[0].placement.require.gpu` for a label no server that accepts work has,
         `services[0].placement.avoid` when every such server is avoided): Nomad's plan says no server
         can run the service as its `placement` asks, so nothing was registered; the deployment record
-        is `failed`, and the running copies, if any, keep running.
+        is `failed`, and the running copies, if any, keep running. Or `dns_record_exists`
+        (`field` the domain's `host`, or its `wwwRedirect` for the pair): the host is under a zone
+        with a DNS provider and has a record there that points somewhere else (the `message`
+        says where); nothing was saved or recorded, and Caravana never changes a record it
+        didn't make. Or `dns_address_unknown`: a domain needs a DNS record and this
+        installation's public address isn't known (set `CARAVANA_PUBLIC_URL` to an address
+        that resolves); nothing was saved or recorded.
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"
@@ -12076,6 +12404,12 @@ components:
         decrypted). The message names the provider and the path, never a value or the
         provider's own text. The values the running copies have are untouched.
 
+        On a deploy that adds a domain under a zone with a DNS provider (`putDNSZone`), also
+        `dns_provider_refused` (`field` the domain's `host`, or `wwwRedirect` for its pair): the
+        provider refused the zone's token, or doesn't have the zone. The message says so in
+        Caravana's words. The check that finds it records nothing; one that fails while the
+        records are made leaves the deployment `failed`, and what was made stays Caravana's.
+
         With the image scanner installed and the gate on (`putScanSettings`), also
         `image_vulnerable` (`field` `services[i].image`): the image has a critical vulnerability
         with a known fix. The message names the advisory, the package and the versions that fix it
@@ -12096,8 +12430,11 @@ components:
         secret provider that can't be reached or answered with a server error is
         `secret_provider_unavailable` (`field` `services[i].secrets[j].from`; only that deploy
         fails, running copies keep their values), and the secret store that holds provider
-        credentials, `secret_store_unavailable`. The deployment record (see `Location`) is
-        `failed`.
+        credentials, `secret_store_unavailable`. A DNS provider that can't be reached, when a
+        domain under one of its zones needs a record, is `dns_provider_unavailable` (`field` the
+        domain's `host`); a check that finds this before the app is saved records nothing, and
+        one that fails after it leaves the deployment `failed`. The deployment record (see
+        `Location`), when there is one, is `failed`.
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"
@@ -12283,6 +12620,8 @@ tags:
     description: Credentials for private container registries.
   - name: secret-providers
     description: Outside places an app's secrets may be read from (Bella Baxter), and Refresh secrets.
+  - name: dns
+    description: DNS zones Caravana may make records in, and the records it made.
   - name: notifications
     description: Channels that tell the owner what needs them and how deploys end, and their deliveries.
   - name: schedules

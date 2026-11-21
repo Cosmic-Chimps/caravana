@@ -149,6 +149,11 @@ func (s *server) routes() []route {
 		{http.MethodPut, "/v1/secret-providers/{name}", s.putSecretProvider, false, false},
 		{http.MethodDelete, "/v1/secret-providers/{name}", s.deleteSecretProvider, false, false},
 		{http.MethodPost, "/v1/secret-providers/{name}/test", s.testSecretProvider, false, false},
+		{http.MethodGet, "/v1/dns/zones", s.listDNSZones, false, false},
+		{http.MethodPut, "/v1/dns/zones/{zone}", s.putDNSZone, false, false},
+		{http.MethodDelete, "/v1/dns/zones/{zone}", s.deleteDNSZone, false, false},
+		{http.MethodPost, "/v1/dns/zones/{zone}/test", s.testDNSZone, false, false},
+		{http.MethodGet, "/v1/dns/records", s.listDNSRecords, false, false},
 		{http.MethodGet, "/v1/notifications/channels", s.listNotificationChannels, false, false},
 		{http.MethodPost, "/v1/notifications/channels", s.createNotificationChannel, false, false},
 		{http.MethodPatch, "/v1/notifications/channels/{id}", s.updateNotificationChannel, false, false},
@@ -384,6 +389,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := domainError(err); e != nil {
+		return e
+	}
+	if e := dnsError(err); e != nil {
 		return e
 	}
 	if e := portsError(err); e != nil {

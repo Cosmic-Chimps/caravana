@@ -29,6 +29,7 @@
     {{else if eq .Entry "backup-storage"}}{{template "settings-backup-storage" .}}
     {{else if eq .Entry "notifications"}}{{template "settings-notifications" .}}
     {{else if eq .Entry "certificates"}}{{template "settings-certificates" .}}
+    {{else if eq .Entry "dns"}}{{template "settings-dns" .}}
     {{else if eq .Entry "sign-in"}}{{template "settings-sign-in" .}}
     {{else if eq .Entry "tokens"}}{{template "settings-tokens" .}}
     {{else if eq .Entry "appearance"}}{{template "settings-appearance" .}}
@@ -471,6 +472,109 @@
 {{if eq .Kind "textarea"}}<textarea class="cv-field cv-field-area cv-field-mono" id="{{.ID}}" name="{{.Name}}" rows="4"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false" autocomplete="off"{{if .Err}} autofocus aria-invalid="true" aria-describedby="{{.ID}}-error"{{end}}></textarea>
 {{else}}<input class="cv-field cv-field-mono" type="{{.Kind}}" id="{{.ID}}" name="{{.Name}}"{{if ne .Kind "password"}} value="{{.Value}}"{{end}}{{with .Placeholder}} placeholder="{{.}}"{{end}}{{if .ReadOnly}} readonly{{end}} autocapitalize="off" spellcheck="false" autocomplete="{{if eq .Kind "password"}}new-password{{else}}off{{end}}"{{if .Err}} autofocus aria-invalid="true" aria-describedby="{{.ID}}-error"{{end}}>{{end}}
 {{with .Err}}<span id="{{$.ID}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+{{end}}
+
+{{/* ------------------------------------------------------------- DNS providers
+     The zones Caravana makes DNS records in (feature 048). The API token is write-only: no field of
+     the page data holds it, an empty field keeps the stored one, and a refused save never puts it
+     back. Test is a post whose answer lists the zone's records, read at that moment and kept
+     nowhere; Edit and Remove open a <details>. */}}
+{{define "settings-dns"}}
+{{with .DNS}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">DNS providers</h1>
+    <p class="cv-lede">Zones where Caravana makes the DNS record for a domain you add, so you don't.</p>
+  </div>
+  <a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add zone</a>
+</header>
+<p class="cv-hint">Caravana keeps the token in the cluster's secret store and uses it to list, make and remove the records it made itself. Make a token for Caravana alone, limited to this zone with Zone › DNS › Edit.</p>
+{{with .Notice}}
+{{if .Bad}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>
+{{else}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+{{end}}
+{{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+
+{{if .Rows}}
+<div class="cv-panel cv-conns">
+  {{range $i, $row := .Rows}}
+  <div class="cv-conn">
+    <div class="cv-conn-row">
+      <span class="cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+      <div class="cv-conn-name">
+        <span class="cv-conn-title cv-inline-mono" title="{{.Zone}}">{{.Zone}}</span>
+        <span class="cv-conn-kind">{{.Kind}}</span>
+      </div>
+      <div class="cv-conn-state">
+        <span class="cv-conn-st{{if .StateFailed}} cv-conn-st-failed{{end}}">{{.State}}</span>
+        <span class="cv-conn-ev"{{with .Test}} title="{{.Exact}}"{{end}}>{{.Event}}</span>
+      </div>
+      <span class="cv-conn-used">{{.Made}}</span>
+      <div class="cv-conn-acts">
+        <form method="post" action="/settings/dns/test">
+          <input type="hidden" name="zone" value="{{.Zone}}">
+          <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Test {{.Zone}}">Test</button>
+        </form>
+        <details class="cv-confirm cv-confirm-row" id="dns-edit-{{$i}}" name="conn-{{$i}}"{{if .Open}} open{{end}}>
+          <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Edit {{.Zone}}">Edit</summary>
+          <form method="post" action="/settings/dns" class="cv-confirm-body" autocomplete="off">
+            <input type="hidden" name="edit" value="1">
+            {{template "dns-fields" (dnsFormView .Edit (printf "dns-edit-%d" $i))}}
+            <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-primary">Save</button></div>
+          </form>
+        </details>
+        <details class="cv-confirm cv-confirm-row" name="conn-{{$i}}">
+          <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove {{.Zone}}">Remove</summary>
+          <form method="post" action="/settings/dns/remove" class="cv-confirm-body">
+            <input type="hidden" name="zone" value="{{.Zone}}">
+            {{if eq .Count 1}}<p>The record Caravana made in this zone stays at Cloudflare; remove it there if you no longer want it.</p>
+            {{else if .Count}}<p>The {{.Count}} records Caravana made in this zone stay at Cloudflare; remove them there if you no longer want them.</p>
+            {{else}}<p>Caravana made no records in this zone. Domains under it stop getting records from Caravana.</p>{{end}}
+            <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Remove</button></div>
+          </form>
+        </details>
+      </div>
+    </div>
+    {{if .StateFailed}}<p class="cv-conn-note">Deploys that add a domain under this zone fail until Caravana can reach it again.{{with .Detail}}<span class="cv-conn-detail">{{.}}</span>{{end}}</p>{{end}}
+    {{if .Tested}}
+    <div class="cv-conn-note" id="dns-records-{{$i}}">
+      {{if .Listed}}
+      <p>The records of {{.Zone}} as Cloudflare has them now:</p>
+      <table class="cv-dnsrecs">
+        <thead><tr><th scope="col">Type</th><th scope="col">Name</th><th scope="col">Content</th><th scope="col">Proxied</th><th scope="col"><span class="sr-only">Made by</span></th></tr></thead>
+        <tbody>
+          {{range .Listed}}<tr><td>{{.Type}}</td><td class="cv-inline-mono">{{.Name}}</td><td class="cv-inline-mono">{{.Content}}</td><td>{{.Proxied}}</td><td>{{.Made}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+      {{else}}<p>{{.Zone}} has no records at Cloudflare.</p>{{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="cv-panel"><div class="cv-empty">
+  <p class="cv-empty-title">No DNS providers. Add a Cloudflare zone and Caravana makes the record for each domain you add under it.</p>
+  <a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add zone</a>
+</div></div>
+{{end}}
+
+<form method="post" action="/settings/dns" id="add" class="cv-panel" autocomplete="off">
+  <h2 class="cv-label cv-addhead">Add a Cloudflare zone</h2>
+  {{template "dns-fields" (dnsFormView .Add "dns-add")}}
+  <div class="cv-btnrow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save</button></div>
+</form>
+{{end}}
+{{end}}
+
+{{/* dns-fields: the inputs of a zone form, as setting rows, and its proxy setting. Takes a
+     dnsFormViewT. */}}
+{{define "dns-fields"}}
+{{template "provider-fields" .Form}}
+{{template "srow-open" (srow "Proxy through Cloudflare" "The orange cloud. It applies to the records Caravana makes; records you made are left alone." .ProxyID)}}
+<label class="cv-check"><input type="checkbox" id="{{.ProxyID}}" name="proxied" value="1"{{if .Proxied}} checked{{end}}><span>Proxy through Cloudflare</span></label>
+{{template "srow-close"}}
 {{end}}
 
 {{/* ---------------------------------------------------------- Backup storage

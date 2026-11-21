@@ -494,6 +494,21 @@ func certFact(now time.Time, c edge.Certificate) domainFact {
 // Check again: the detail then says it once, with the fix. A DNS-elsewhere row leads with the record
 // to change it to, and keeps what DNS says now and the last check; an expiring one keeps its facts.
 func domainDetailOf(now time.Time, v service.DomainView, box recordBox, check domainCheckForm, opts domainOptions, banner bool) domainDetail {
+	d := domainStateDetail(now, v, box, check, opts, banner)
+	if v.Record != nil {
+		// Caravana made this domain's record (feature 048): the fact comes with every state.
+		how := "direct"
+		if v.Record.Proxied {
+			how = "proxied"
+		}
+		d.Facts = append(d.Facts, domainFact{Key: "DNS record", Value: sentence{plain("made by Caravana in "), mono(v.Record.Zone), plain(" (Cloudflare, " + how + ")")}})
+		d.Wide = true
+	}
+	return d
+}
+
+// domainStateDetail is domainDetailOf's part that depends on the state alone.
+func domainStateDetail(now time.Time, v service.DomainView, box recordBox, check domainCheckForm, opts domainOptions, banner bool) domainDetail {
 	d := domainDetail{Host: v.Host, Options: opts}
 	appName := domainAppText(v)
 	checked := checkedWhen(now, v.CheckedAt)

@@ -29,6 +29,7 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/dns/dnstest"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/secrets/bella/bellatest"
 )
@@ -80,6 +81,9 @@ type gateTarget struct {
 	// Bella is the fake Bella Baxter on the in-process Caravana's loopback (feature 037); nil on a
 	// real host, where the secret-references step is skipped.
 	Bella *bellatest.Server
+	// DNS is the fake Cloudflare the in-process Caravana's DNS provider talks to (feature 048); nil on
+	// a real host, where the dns-records step is skipped.
+	DNS *dnstest.Server
 	// RunDailyScans runs the image scanner's daily pass now (service.RunDailyScansForTests) and
 	// DropFinding deletes one advisory's stored findings of an image (service.DropFindingForTests),
 	// the stand-in for "the advisory didn't exist yet"; only the lab sets them (feature 044), and
@@ -170,6 +174,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"schedules", false, g.schedulesStep},
 		{"schedule-in-copy", false, g.scheduleInCopyStep},
 		{"domains", false, g.domainsStep},
+		{"dns-records", false, g.dnsRecordsStep},
 		{"logs", false, g.logsStep},
 		{"monitoring", false, g.monitoringStep},
 		{"os-updates", false, g.osUpdatesStep},
