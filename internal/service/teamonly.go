@@ -156,15 +156,28 @@ func (s *Service) ensureTeamPasswords(ctx context.Context, a app.App) (map[strin
 	if err != nil {
 		return nil, err
 	}
-	have := map[string]bool{}
+	have := map[string]string{} // host → the hash of this app's row
 	for _, row := range rows {
 		if row.AppID == a.ID {
-			have[row.Host] = true
+			have[row.Host] = row.Hash
 		}
 	}
+	// A preview of a project with a preview password shares the project's hash
+	// (spec 049 D6): its hosts get that row, and no password is made or shown.
+	// Read under the lock, as SetPreviewSettings changes it under the same one.
+	_, shared := s.previewHash(ctx, a.ID)
 	var made map[string]string
 	for _, host := range slices.Sorted(maps.Keys(want)) {
-		if have[host] {
+		if shared != "" {
+			if have[host] != shared {
+				if err := s.store.SetTeamPassword(ctx, host, a.ID, shared, s.clock.Now().UTC()); err != nil {
+					s.dropTeamPasswordsLocked(ctx, made)
+					return nil, err
+				}
+			}
+			continue
+		}
+		if _, ok := have[host]; ok {
 			continue
 		}
 		password := newTeamPassword()
@@ -287,7 +300,8 @@ func (s *Service) pruneTeamPasswords(ctx context.Context, a *app.App) error {
 //
 // Errors: store.ErrNotFound for an unknown app, ErrAppStopped for a stopped
 // one, ErrDomainNotFound when the app has no such domain, ErrNotTeamOnly when
-// the domain isn't Team only. When the variable can't be written, the old
+// the domain isn't Team only, ErrPreviewPassword when the app is in a preview
+// of a project with a preview password (the domain uses that one). When the variable can't be written, the old
 // password stays.
 func (s *Service) RotateTeamPassword(ctx context.Context, appID, host string) (string, error) {
 	host = normalizeHost(host)
@@ -311,6 +325,10 @@ func (s *Service) RotateTeamPassword(ctx context.Context, appID, host string) (s
 		return "", fmt.Errorf("app %q has no domain %q: %w", appID, host, ErrDomainNotFound)
 	case !teamOnly:
 		return "", fmt.Errorf("domain %q: %w", host, ErrNotTeamOnly)
+	}
+	// A preview's domains share the project's password: it is changed there.
+	if project, hash := s.previewHash(ctx, appID); hash != "" {
+		return "", &PreviewPasswordError{Project: project}
 	}
 
 	s.teamMu.Lock()

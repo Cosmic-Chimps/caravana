@@ -174,6 +174,10 @@ type Service struct {
 	// spaceMu guards deleting, the volumes whose deletion is going: one at a time per volume.
 	spaceMu  sync.Mutex
 	deleting map[string]bool
+
+	// Previews (feature 049), see previews.go.
+	previewGap    time.Duration // between two passes of the reaper
+	previewExpiry atomic.Int64  // when positive, how long every preview may sit idle, in nanoseconds (the lab's shortcut)
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -268,6 +272,8 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		scan:       newScanState(),
 		cleanupGap: defaultCleanupGap,
 		deleting:   map[string]bool{},
+
+		previewGap: defaultPreviewReapGap,
 	}
 	// Copies show the deployment's version where Nomad's is a scale step's
 	// (feature 043, see autoscale.go).
@@ -509,6 +515,14 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runCleanupPass(ctx, cleanupGap)
+	}()
+	// Previews nobody closed expire (feature 049): the reaper closes them, the first pass one gap after
+	// start; it starts no watchers.
+	previewGap := s.previewGap // read here: tests set the field after Start
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runPreviewReaper(ctx, previewGap)
 	}()
 	return nil
 }

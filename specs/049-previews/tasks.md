@@ -2,21 +2,21 @@
 
 ## Phase A: model, store, service, API
 
-- [ ] T001 `app.PreviewNumber(name) (int, bool)` and the reserved `pr-` prefix rule (D1), table tests.
-- [ ] T002 Migration `0038_previews.sql` (D9); store: preview settings on `ProjectRecord`
+- [x] T001 `app.PreviewNumber(name) (int, bool)` and the reserved `pr-` prefix rule (D1), table tests.
+- [x] T002 Migration `0038_previews.sql` (D9); store: preview settings on `ProjectRecord`
       (`PreviewLimit`, `PreviewExpireDays`, `PreviewPasswordHash`), `SetPreviewSettings`,
       `InsertPreviewEnvironment` with the limit in one transaction and `*PreviewLimitError` (D4),
       `PreviewActivity(project)` (D2), the Team-only row rewrite for a project's preview hosts (D6); tests.
-- [ ] T003 Service `previews.go`: `CreateEnvironment` uses the name rule and the limit; `Previews` (D8);
+- [x] T003 Service `previews.go`: `CreateEnvironment` uses the name rule and the limit; `Previews` (D8);
       `SetPreviewSettings` (validation, password hash, row rewrite and sync with rollback, `previews_open`, the
       first-time warning); `ClosePreview` and `ErrNotAPreview` (D7); the reaper with `SetPreviewReapGap` and
       `SetPreviewExpiryForTests` (D3); tests with the fake clock and fakes.
-- [ ] T004 Service deploy path: `previewTeamOnly` and its warning, `ensureTeamPasswords` using the project hash,
+- [x] T004 Service deploy path: `previewTeamOnly` and its warning, `ensureTeamPasswords` using the project hash,
       `RotateTeamPassword`'s `preview_password` refusal (D6); tests (no password in any answer or row but the hash).
-- [ ] T005 API: `scopeRules` as rules with the three new entries (D5), `allowedForDeployTokens`,
+- [x] T005 API: `scopeRules` as rules with the three new entries (D5), `allowedForDeployTokens`,
       `TestScopedTokenWalksEveryRoute` for the new shapes; `getPreviews`, `putPreviewSettings`, `closePreview`;
       `Environment.preview`; the four codes; error mapping; `api/openapi.yaml` 0.54.0 (contract test, parity test).
-- [ ] T006 MCP: nothing new (deploy-only tools); check the contract test still passes.
+- [x] T006 MCP: nothing new (deploy-only tools); check the contract test still passes.
 
 ## Phase B: console and docs
 

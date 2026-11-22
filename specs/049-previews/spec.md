@@ -57,7 +57,7 @@ are one transaction.
 ### US5 (P1): previews are private
 
 A preview is unreleased code on a public address. The owner sets one preview password per project (12 to 128
-printable characters). While it is set, every domain of every app deployed into a preview environment of the
+printable characters, at most 72 bytes: bcrypt's limit). While it is set, every domain of every app deployed into a preview environment of the
 project is Team only (user `team`) with that password: the deploy turns `teamOnly` on for each domain that didn't
 have it, with one warning per app naming the first such field ("domains of preview environments are Team only
 with project blog's preview password"). No password is made or shown for these domains (no `teamPasswords` in the

@@ -137,6 +137,10 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	if err := s.deployer.Validate(a); err != nil {
 		return DeployResult{}, err
 	}
+	// The domains of a preview of a project with a preview password are Team only (spec 049 D6):
+	// the app that is stored and deployed says so, and the deploy warns once.
+	a, previewWarnings := s.applyPreviewTeamOnly(ctx, a)
+	m.warnings = append(m.warnings, previewWarnings...)
 	if err := s.checkConsoleDomain(a); err != nil {
 		return DeployResult{}, err
 	}
@@ -340,15 +344,24 @@ func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigge
 	if err := s.checkConsoleDomain(rec.App); err != nil {
 		return store.DeploymentRecord{}, err
 	}
-	// The app isn't saved again, so its kept file stays; the deployment records
+	// A preview whose project got its password since the app was saved is Team only from this
+	// deploy on (spec 049 D6); the stored app says so too.
+	a, previewWarnings := s.applyPreviewTeamOnly(ctx, rec.App)
+	if len(previewWarnings) > 0 {
+		if err := s.saveApp(ctx, a, Condition{}, rec.Compose); err != nil {
+			return store.DeploymentRecord{}, err
+		}
+		s.appChanged(a.ID)
+	}
+	// The app isn't saved again otherwise, so its kept file stays; the deployment records
 	// it too, so the history keeps the file this deploy came from.
-	return recordOnly(s.deployWarned(ctx, rec.App, trigger, made{file: rec.Compose}, nil))
+	return recordOnly(s.deployWarned(ctx, a, trigger, made{file: rec.Compose, warnings: previewWarnings}, nil))
 }
 
-// deploy runs one deploy of a, which was not made from a Compose file. Only
-// CreateApp uses it: a new app has no file yet.
-func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
-	return recordOnly(s.deployWarned(ctx, a, trigger, made{}, nil))
+// deploy runs one deploy of a, which was not made from a Compose file, with
+// m's warnings. Only CreateApp uses it: a new app has no file yet.
+func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger, m made) (store.DeploymentRecord, error) {
+	return recordOnly(s.deployWarned(ctx, a, trigger, m, nil))
 }
 
 // deployWarned is deploy with m, what a was made from: its warnings (a

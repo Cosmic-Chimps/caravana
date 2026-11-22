@@ -19,28 +19,65 @@ import (
 // decide in the test too).
 
 // scopeFinder says which app a request is about, for a route a deploy token may
-// use: the project and the app's name. ok is false when the request doesn't say
-// (a bad ID, a body that isn't JSON), which counts as out of scope.
+// use on its own app: the project and the app's name. ok is false when the
+// request doesn't say (a bad ID, a body that isn't JSON), which counts as out of
+// scope.
 type scopeFinder func(r *http.Request) (project, name string, ok bool)
 
+// scopeRule decides whether a deploy token for sc may make this request. A rule
+// reads only what the request itself says (its path and body), never the
+// stored state: the answer is the same whether or not the thing exists.
+type scopeRule func(r *http.Request, sc service.TokenScope) bool
+
+// ownApp is the rule of most routes: the request names, through find, the one
+// app in the scope.
+func ownApp(find scopeFinder) scopeRule {
+	return func(r *http.Request, sc service.TokenScope) bool {
+		project, name, ok := find(r)
+		return ok && project == sc.Project && name == sc.App
+	}
+}
+
 // scopeRules is the allowlist, keyed by "METHOD pattern" as routes() writes
-// them. It is the table of specs/020-deploy-from-ci/contracts/api.md.
-var scopeRules = map[string]scopeFinder{
+// them. It is the table of specs/020-deploy-from-ci/contracts/api.md, with the
+// three calls of previews (specs/049-previews/contracts/api.md): a deploy token
+// may open and close a preview of its own project, and delete its own app only
+// inside one.
+var scopeRules = map[string]scopeRule{
 	// The app named by {id}.
-	"GET /v1/apps/{id}":                            pathID,
-	"GET /v1/apps/{id}/compose":                    pathID,
-	"GET /v1/apps/{id}/deployments":                pathID,
-	"GET /v1/apps/{id}/deployments/{deploymentId}": pathID,
-	"POST /v1/apps/{id}/deployments":               pathID,
-	"POST /v1/apps/{id}/compose":                   pathID,
-	"POST /v1/apps/{id}/promote/preview":           pathID,
-	"POST /v1/apps/{id}/promote":                   pathID,
-	"POST /v1/apps/{id}/secrets/refresh":           pathID,
+	"GET /v1/apps/{id}":                            ownApp(pathID),
+	"GET /v1/apps/{id}/compose":                    ownApp(pathID),
+	"GET /v1/apps/{id}/deployments":                ownApp(pathID),
+	"GET /v1/apps/{id}/deployments/{deploymentId}": ownApp(pathID),
+	"POST /v1/apps/{id}/deployments":               ownApp(pathID),
+	"POST /v1/apps/{id}/compose":                   ownApp(pathID),
+	"POST /v1/apps/{id}/promote/preview":           ownApp(pathID),
+	"POST /v1/apps/{id}/promote":                   ownApp(pathID),
+	"POST /v1/apps/{id}/secrets/refresh":           ownApp(pathID),
 	// createApp: the app named by the body's id.
-	"POST /v1/apps": bodyID,
+	"POST /v1/apps": ownApp(bodyID),
 	// The place calls: the project in the path, the app by name.
-	"POST /v1/projects/{project}/environments/{environment}/apps":       pathProjectBodyName,
-	"GET /v1/projects/{project}/environments/{environment}/apps/{name}": pathProjectPathName,
+	"POST /v1/projects/{project}/environments/{environment}/apps":       ownApp(pathProjectBodyName),
+	"GET /v1/projects/{project}/environments/{environment}/apps/{name}": ownApp(pathProjectPathName),
+	// Previews (feature 049). Opening one: the project is the token's and the
+	// body's name is a preview name (pr-<n>), nothing else.
+	"POST /v1/projects/{project}/environments": func(r *http.Request, sc service.TokenScope) bool {
+		var in struct {
+			Name string `json:"name"`
+		}
+		return r.PathValue("project") == sc.Project && peekBody(r, &in) && app.IsPreviewEnvironment(in.Name)
+	},
+	// Closing one's environment: the project is the token's and the
+	// environment is a preview. Emptiness is the handler's (409 not_empty).
+	"DELETE /v1/projects/{project}/environments/{environment}": func(r *http.Request, sc service.TokenScope) bool {
+		return r.PathValue("project") == sc.Project && app.IsPreviewEnvironment(r.PathValue("environment"))
+	},
+	// Deleting its own app, only in a preview: in staging or production it is
+	// the owner's to delete.
+	"DELETE /v1/apps/{id}": func(r *http.Request, sc service.TokenScope) bool {
+		place, err := app.PlaceOf(r.PathValue("id"))
+		return err == nil && place.Project == sc.Project && place.Name == sc.App && app.IsPreviewEnvironment(place.Environment)
+	},
 }
 
 // pathID reads the app from the {id} of the path.
@@ -100,12 +137,11 @@ func peekBody(r *http.Request, v any) bool {
 }
 
 // scopeAllows is the check of a deploy token against a route: nil when the
-// route is in scopeRules and its app is the one in the scope, else the 403.
+// route is in scopeRules and its rule accepts the request for the scope, else
+// the 403.
 func scopeAllows(r *http.Request, rt route, sc service.TokenScope) error {
-	if find, listed := scopeRules[rt.method+" "+rt.path]; listed {
-		if project, name, ok := find(r); ok && project == sc.Project && name == sc.App {
-			return nil
-		}
+	if rule, listed := scopeRules[rt.method+" "+rt.path]; listed && rule(r, sc) {
+		return nil
 	}
 	return &Error{Status: http.StatusForbidden, Code: codeTokenScope, Message: sc.Describe()}
 }

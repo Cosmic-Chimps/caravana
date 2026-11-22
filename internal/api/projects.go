@@ -22,6 +22,15 @@ type environmentJSON struct {
 	Name     string `json:"name"`
 	Position int    `json:"position"`
 	Apps     int    `json:"apps"`
+	// Preview is set on a preview environment, pr-<n> (feature 049).
+	Preview *environmentPreviewJSON `json:"preview,omitempty"`
+}
+
+// environmentPreviewJSON is what a preview environment adds (schema
+// EnvironmentPreview): its pull request number and when it expires.
+type environmentPreviewJSON struct {
+	Number    int       `json:"number"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 // projectJSON is a project with its environments (schema Project).
@@ -34,7 +43,11 @@ type projectJSON struct {
 }
 
 func toEnvironmentJSON(e service.Environment) environmentJSON {
-	return environmentJSON{Project: e.Project, Name: e.Name, Position: e.Position, Apps: e.Apps}
+	out := environmentJSON{Project: e.Project, Name: e.Name, Position: e.Position, Apps: e.Apps}
+	if e.Preview != nil {
+		out.Preview = &environmentPreviewJSON{Number: e.Preview.Number, ExpiresAt: e.Preview.ExpiresAt}
+	}
+	return out
 }
 
 func toProjectJSON(p service.Project) projectJSON {

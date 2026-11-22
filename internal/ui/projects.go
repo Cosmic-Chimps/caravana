@@ -321,6 +321,7 @@ func (s *server) addEnvironment(w http.ResponseWriter, r *http.Request, session 
 	}
 	env, err := s.svc.CreateEnvironment(r.Context(), id, typed)
 	var fieldErr *app.FieldError
+	var limitErr *service.PreviewLimitError
 	switch {
 	case err == nil:
 		// The project's page, with the new environment's tab current.
@@ -329,8 +330,15 @@ func (s *server) addEnvironment(w http.ResponseWriter, r *http.Request, session 
 		s.projectGone(w, r, id)
 	case errors.Is(err, service.ErrEnvironmentExists):
 		refuse(http.StatusConflict, sentence{plain("This project already has an environment called "), mono(typed), plain(".")})
+	case errors.As(err, &limitErr):
+		// A name of the form pr-<n> is a preview, and the project is at its limit (feature 049).
+		refuse(http.StatusConflict, sentence{plain(upperFirst(limitErr.Error()) + ".")})
 	case errors.As(err, &fieldErr):
-		refuse(http.StatusUnprocessableEntity, sentence{plain("The name " + strings.TrimPrefix(fieldErr.Message, `"`+typed+`" `) + ".")})
+		msg := "The name " + strings.TrimPrefix(fieldErr.Message, `"`+typed+`" `)
+		if !strings.HasPrefix(fieldErr.Message, `"`+typed+`" `) {
+			msg = upperFirst(fieldErr.Message) // the reserved pr- prefix's message names no value
+		}
+		refuse(http.StatusUnprocessableEntity, sentence{plain(msg + ".")})
 	default:
 		s.serverError(w, r, "add environment", err)
 	}

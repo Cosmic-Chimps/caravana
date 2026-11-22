@@ -87,9 +87,11 @@ Body, every field optional (absent keeps):
 ```
 
 - `limit` 0–20, `expireAfterDays` 1–30: else 422 `invalid_field` naming it.
-- `password` 12–128 characters, printable (no control characters): else 422 on `password`. Sets or changes it;
-  open previews use a changed one at once. `password` with `removePassword: true`: 422 on `removePassword`.
-- `removePassword: true` while previews are open: 409 `previews_open` on `removePassword`, naming them.
+- `password` 12–128 characters and at most 72 bytes (bcrypt's limit: the hash Traefik checks is bcrypt),
+  printable (no control characters): else 422 on `password`. Sets or changes it; open previews use a changed one
+  at once. `password` with `removePassword: true`: 422 on `removePassword`.
+- `removePassword: true` while a password is set and previews are open: 409 `previews_open` on `removePassword`,
+  naming them. Without a password it changes nothing.
 - 200: the `settings` object (as in `getPreviews`) plus `warnings` (a list of `{field, message}`), with "open
   previews pr-3, pr-4 get the password at their next deploy" when a password was set the first time with previews
   open. The password is never in an answer.

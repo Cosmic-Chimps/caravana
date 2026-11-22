@@ -153,6 +153,8 @@ func startServiceLogging(t *testing.T, st *store.Store, d *deploy.Deployer, sec 
 	svc.labelGap = time.Hour
 	// Clean-ups: the pass at Start finds nothing; tests of it call cleanupPass.
 	svc.cleanupGap = time.Hour
+	// Previews: the reaper's pass is one gap after Start; tests of it call reapPreviews.
+	svc.previewGap = time.Hour
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {

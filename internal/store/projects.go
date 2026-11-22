@@ -37,6 +37,13 @@ type ProjectRecord struct {
 	DisplayName string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+
+	// Previews (feature 049, see previews.go): how many preview environments
+	// may be open, how many days one may sit idle, and the bcrypt hash of the
+	// password their domains share ("" for none).
+	PreviewLimit        int
+	PreviewExpireDays   int
+	PreviewPasswordHash string
 }
 
 // EnvironmentRecord is a stored environment of a project.
@@ -53,7 +60,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]ProjectRecord, error) {
 	// "id = 'default'" is 1 for Default and 0 for the rest, so it sorts first
 	// whatever the clock said when the others were made.
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, display_name, created_at, updated_at FROM projects
+		SELECT `+projectColumns+` FROM projects
 		ORDER BY id = 'default' DESC, created_at, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
@@ -77,7 +84,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]ProjectRecord, error) {
 // GetProject returns the project with the given ID, or ErrNotFound.
 func (s *Store) GetProject(ctx context.Context, id string) (ProjectRecord, error) {
 	rec, err := scanProject(s.db.QueryRowContext(ctx,
-		"SELECT id, display_name, created_at, updated_at FROM projects WHERE id = ?", id))
+		"SELECT "+projectColumns+" FROM projects WHERE id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return ProjectRecord{}, fmt.Errorf("project %q: %w", id, ErrNotFound)
 	}
@@ -87,12 +94,17 @@ func (s *Store) GetProject(ctx context.Context, id string) (ProjectRecord, error
 	return rec, nil
 }
 
+// projectColumns is what scanProject reads.
+const projectColumns = "id, display_name, created_at, updated_at, preview_limit, preview_expire_days, preview_password_hash"
+
 func scanProject(row interface{ Scan(...any) error }) (ProjectRecord, error) {
 	var rec ProjectRecord
 	var created, updated string
-	if err := row.Scan(&rec.ID, &rec.DisplayName, &created, &updated); err != nil {
+	var hash sql.NullString
+	if err := row.Scan(&rec.ID, &rec.DisplayName, &created, &updated, &rec.PreviewLimit, &rec.PreviewExpireDays, &hash); err != nil {
 		return ProjectRecord{}, err
 	}
+	rec.PreviewPasswordHash = hash.String
 	var err error
 	if rec.CreatedAt, err = parseTime(created); err != nil {
 		return ProjectRecord{}, fmt.Errorf("project %q: %w", rec.ID, err)
