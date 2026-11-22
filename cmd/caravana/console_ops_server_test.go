@@ -22,7 +22,7 @@ var (
 	// coSrvCopyRe is a copy's link in Running here: the copy ID and the app it goes to.
 	coSrvCopyRe = regexp.MustCompile(`<a href="(/apps/[^"]*)" id="srv-copy-([^"]*)" class="cv-srvlink`)
 	// coSrvUpSinceRe is the facts' "up since" time: UTC, with the date.
-	coSrvUpSinceRe = regexp.MustCompile(`\d{4}-\d\d-\d\d \d\d:\d\d UTC`)
+	coSrvUpSinceRe = regexp.MustCompile(`[A-Z][a-z]{2} \d{1,2}(, \d{4})? \d\d:\d\d UTC`)
 )
 
 // labHostRoot makes the directory the lab's in-process Caravana reads as the host's root

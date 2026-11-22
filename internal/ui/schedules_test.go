@@ -122,8 +122,9 @@ func TestClockOf(t *testing.T) {
 		{time.Date(2026, 10, 22, 14, 0, 0, 0, time.UTC), "yesterday 14:00 UTC", localTime},
 		{time.Date(2026, 10, 25, 3, 0, 0, 0, time.UTC), "in 2 d · Sun 03:00 UTC", localWeekday},
 		{time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC), "3 d ago · Tue 09:30 UTC", localWeekday},
-		{time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC), "2026-11-01 06:00 UTC", localDate},
-		{time.Date(2026, 10, 10, 6, 0, 0, 0, time.UTC), "2026-10-10 06:00 UTC", localDate},
+		{time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC), "Nov 1 06:00 UTC", localDate},
+		{time.Date(2026, 10, 10, 6, 0, 0, 0, time.UTC), "Oct 10 06:00 UTC", localDate},
+		{time.Date(2027, 1, 4, 6, 0, 0, 0, time.UTC), "Jan 4, 2027 06:00 UTC", localDate},
 		// Another zone is read as the same moment in UTC.
 		{time.Date(2026, 10, 24, 0, 30, 0, 0, time.FixedZone("CEST", 2*3600)), "22:30 UTC", localTime},
 	}
@@ -143,7 +144,7 @@ func TestClockOf(t *testing.T) {
 		time.Date(2026, 10, 23, 14, 15, 0, 0, time.UTC): "14:15",
 		time.Date(2026, 10, 24, 3, 0, 0, 0, time.UTC):   "tomorrow 03:00",
 		time.Date(2026, 10, 26, 3, 0, 0, 0, time.UTC):   "Mon 03:00",
-		time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC):    "2026-11-01 06:00",
+		time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC):    "Nov 1 06:00",
 	} {
 		if got := clockCompactOf(now, at); got.Text != want {
 			t.Errorf("clockCompactOf(%s) = %q, want %q", at, got.Text, want)

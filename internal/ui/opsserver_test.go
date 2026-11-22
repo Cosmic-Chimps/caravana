@@ -258,7 +258,7 @@ func TestOpsServerPage(t *testing.T) {
 	if strings.Contains(facts, "last seen") || strings.Contains(facts, "last reading") {
 		t.Errorf("a ready node read lately has a last seen row:\n%s", facts)
 	}
-	if !regexp.MustCompile(`<dt>up since</dt> <dd><time class="cv-clock" datetime="[^"]+" title="[^"]+" data-local="date">\d{4}-\d\d-\d\d \d\d:\d\d UTC</time>&#8288;&nbsp;&#8288;<span class="cv-srvafter">\(8 d ago\)</span>`).MatchString(strings.Join(strings.Fields(regionBetween(t, body, `class="cv-srvdl"`, "</dl>")), " ")) {
+	if !regexp.MustCompile(`<dt>up since</dt> <dd><time class="cv-clock" datetime="[^"]+" title="[^"]+" data-local="date">[A-Z][a-z]{2} \d{1,2} \d\d:\d\d UTC</time>&#8288;&nbsp;&#8288;<span class="cv-srvafter">\(8 d ago\)</span>`).MatchString(strings.Join(strings.Fields(regionBetween(t, body, `class="cv-srvdl"`, "</dl>")), " ")) {
 		t.Errorf("the facts lack up since with its relative words:\n%s", facts)
 	}
 	// The agent's items are each whole.

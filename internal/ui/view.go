@@ -937,7 +937,7 @@ type clockTime struct {
 	ISO   string // "2026-10-24T02:00:00Z", for datetime
 	Title string // "2026-10-24 02:00:00 UTC", for the hover
 	// Local is the shape of the local time localtime.js adds: "time" (14:15),
-	// "time-s" (14:15:02), "weekday" (Sun 14:15) or "date" (2026-10-24 14:15).
+	// "time-s" (14:15:02), "weekday" (Sun 14:15) or "date" (Oct 24 14:15).
 	Local string
 }
 
@@ -953,7 +953,8 @@ const (
 
 // clockOf is t as a clock time read from now: "14:15 UTC" today, "tomorrow
 // 02:00 UTC", "yesterday 14:00 UTC", "in 2 d · Sun 03:00 UTC" or "3 d ago · Tue
-// 14:00 UTC" within a week, and the date beyond it ("2026-10-12 03:00 UTC").
+// 14:00 UTC" within a week, and the console's short date beyond it ("Oct 12
+// 03:00 UTC", "Oct 12, 2025 03:00 UTC" in another year).
 func clockOf(now, t time.Time) clockTime {
 	return clockWith(now, t, "15:04", false)
 }
@@ -972,7 +973,7 @@ func clockTitleOf(now, t time.Time) clockTime {
 }
 
 // clockCompactOf is one time of a list of next runs ("14:15", "tomorrow
-// 03:00", "Sun 03:00", "2026-11-01 06:00"): no " UTC" (the list says it once,
+// 03:00", "Sun 03:00", "Nov 1 06:00"): no " UTC" (the list says it once,
 // after its last time) and no "in N d ·", which would read as the list's own
 // separator.
 func clockCompactOf(now, t time.Time) clockTime {
@@ -1001,7 +1002,7 @@ func clockWith(now, t time.Time, layout string, compact bool) clockTime {
 
 // dayWords is what goes before a clock time's hour: nothing for today (in
 // UTC), "tomorrow " or "yesterday ", the weekday within a week, else the
-// date; and the shape of the local time that matches it.
+// short date (shortDate); and the shape of the local time that matches it.
 func dayWords(now, t time.Time, compact bool) (string, string) {
 	days := int(stripDay(t).Sub(stripDay(now)) / (24 * time.Hour))
 	day := t.UTC().Format("Mon")
@@ -1019,5 +1020,5 @@ func dayWords(now, t time.Time, compact bool) (string, string) {
 	case days <= -2 && days >= -6:
 		return fmt.Sprintf("%d d ago · %s ", -days, day), localWeekday
 	}
-	return t.UTC().Format("2006-01-02") + " ", localDate
+	return shortDate(now, t) + " ", localDate
 }

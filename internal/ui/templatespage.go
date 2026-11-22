@@ -158,7 +158,7 @@ func (s *server) loadTemplateGrid(r *http.Request, place string) (templateGrid, 
 	c := shown.Catalog
 	g.Checking = c.Checking
 	if c.Source == service.CatalogFetched {
-		g.Version = sentence{plain("Catalog "), mono(c.Version), plain(", fetched " + clockText(c.FetchedAt) + ".")}
+		g.Version = sentence{plain("Catalog "), mono(c.Version), plain(", fetched " + clockText(s.now(), c.FetchedAt) + ".")}
 	} else {
 		g.Version = sentence{plain("Catalog "), mono(c.Version), plain(", built in.")}
 	}
@@ -180,9 +180,9 @@ func (s *server) loadTemplateGrid(r *http.Request, place string) (templateGrid, 
 	return g, nil
 }
 
-// clockText is a time as the footer says it: "2026-11-12 09:30 UTC".
-func clockText(t time.Time) string {
-	return t.UTC().Format("2006-01-02 15:04") + " UTC"
+// clockText is a time as the footer says it: "Nov 12 09:30 UTC".
+func clockText(now, t time.Time) string {
+	return shortDate(now, t) + " " + t.UTC().Format("15:04") + " UTC"
 }
 
 // drawTemplateGrid draws New app with the template tab.

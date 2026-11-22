@@ -1136,7 +1136,7 @@ func (s *server) serverFacts(r *http.Request, now time.Time, n *service.HostNode
 	if !n.BootTime.IsZero() {
 		boot := n.BootTime.UTC()
 		// Non-breaking spaces: the time is one word to the line breaker, which may only break after it.
-		c := clockAt(boot, strings.ReplaceAll(boot.Format("2006-01-02 15:04")+" UTC", " ", "\u00a0"), localDate)
+		c := clockAt(boot, strings.ReplaceAll(shortDate(now, boot)+" "+boot.Format("15:04")+" UTC", " ", "\u00a0"), localDate)
 		// The relative words are one word to the line breaker (non-breaking spaces), so "(8 d ago)" is never split.
 		out = append(out, srvFact{Key: "up since", Clock: &c, After: strings.ReplaceAll(agoWords(now, boot), " ", "\u00a0")})
 	}

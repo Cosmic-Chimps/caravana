@@ -1017,7 +1017,8 @@ sidebar's third Workspace item (`clock` icon), current on every `/schedules…` 
   preview, a backup's time, the deployment entry's Live stage) is a `<time class="cv-clock"
   datetime="…Z">` whose text is UTC first and named: "14:15 UTC", with the console's relative-day words
   computed in UTC on the server ("tomorrow 02:00 UTC", "yesterday 14:00 UTC", "in 2 d · Sun 03:00 UTC",
-  "3 d ago · Tue 09:30 UTC", the date beyond a week). One helper (`clockOf` in `view.go`, the `clock`
+  "3 d ago · Tue 09:30 UTC", beyond a week the short date "Nov 29 18:11 UTC", with the year only in another
+  year, as every date the console writes). One helper (`clockOf` in `view.go`, the `clock`
   template) makes them. `static/js/localtime.js`, ours and listed in `tools/ui-vendor.versions` with its
   sum, adds the viewer's local time after each in fg-3, " · 16:15 local", in the shape the element's
   `data-local` names (time, time with seconds, weekday, date; a time whose local day isn't its UTC day

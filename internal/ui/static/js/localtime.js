@@ -12,9 +12,10 @@
 //   time.cv-clock          adds " · 16:15 local" after the element, in the
 //                          shape its data-local names: time (16:15), time-s
 //                          (16:15:02), weekday (Sun 16:15) or date
-//                          (2026-10-23 16:15, and just 16:15 when the local
-//                          date is the UTC date, which the text already
-//                          says). A "time" whose local day isn't its UTC day
+//                          (Oct 23 16:15, Oct 23, 2027 16:15 in another year
+//                          than this one, the console's short date, and just
+//                          16:15 when the local date is the UTC date, which
+//                          the text already says). A "time" whose local day isn't its UTC day
 //                          gets the weekday, so it can't mislead.
 //                          data-local="none" gets nothing (a page's title).
 //   [data-local-line]      a table cell whose times take the local time on a
@@ -60,6 +61,15 @@
     return out;
   }
 
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  // shortDate is the console's date word (the server's shortDate): "Oct 23",
+  // and "Oct 23, 2027" when the year isn't the viewer's current one.
+  function shortDate(p) {
+    const text = MONTHS[Number(p.month) - 1] + " " + Number(p.day);
+    return p.year === partsOf(new Date()).year ? text : text + ", " + p.year;
+  }
+
   // The UTC date of a moment as YYYY-MM-DD, to compare with the local one.
   function utcDay(date) {
     return date.toISOString().slice(0, 10);
@@ -74,8 +84,8 @@
     }
     const day = p.year + "-" + p.month + "-" + p.day;
     if (shape === "date") {
-      // The date is left out when it is the UTC one: "2026-10-30 14:48 UTC · 08:48 local".
-      return day === utcDay(date) ? text : day + " " + text;
+      // The date is left out when it is the UTC one: "Oct 30 14:48 UTC · 08:48 local".
+      return day === utcDay(date) ? text : shortDate(p) + " " + text;
     }
     if (shape === "weekday" || day !== utcDay(date)) {
       return p.weekday + " " + text;
