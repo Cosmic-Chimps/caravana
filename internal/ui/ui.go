@@ -297,6 +297,7 @@ func (s *server) routeTable() []route {
 		{"GET", "/settings/backup-storage", s.requireSession(s.showBackupStorage)},
 		{"GET", "/settings/notifications", s.requireSession(s.showNotifications)},
 		{"GET", "/settings/certificates", s.requireSession(s.showCertificates)},
+		{"GET", "/settings/dns", s.requireSession(s.showDNSZones)},
 		{"GET", "/settings/tokens", s.requireSession(s.showTokens)},
 		{"GET", "/settings/appearance", s.requireSession(s.showAppearance)},
 		{"GET", "/settings/sign-in", s.requireSession(s.showSignIn)},
@@ -313,6 +314,9 @@ func (s *server) routeTable() []route {
 		{"POST", "/settings/tokens/{tokenId}/revoke", s.protected(s.requireSession(s.revokeToken))},
 		{"POST", "/settings/backups", s.protected(s.requireSession(s.setBackupDestination))},
 		{"POST", "/settings/certificates", s.protected(s.requireSession(s.setCertificates))},
+		{"POST", "/settings/dns", s.protected(s.requireSession(s.saveDNSZone))},
+		{"POST", "/settings/dns/test", s.protected(s.requireSession(s.testDNSZone))},
+		{"POST", "/settings/dns/remove", s.protected(s.requireSession(s.removeDNSZone))},
 		{"POST", "/settings/registries", s.protected(s.requireSession(s.saveRegistry))},
 		{"POST", "/settings/registries/test", s.protected(s.requireSession(s.testRegistry))},
 		{"POST", "/settings/registries/remove", s.protected(s.requireSession(s.removeRegistry))},
@@ -428,7 +432,7 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 			files = append(files, "templates/apps.html")
 		}
 		files = append(files, "templates/"+name+".html")
-		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "brandMark": brandMark, "destField": destField, "regField": regField, "providerForms": providerForms, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor, "inc": func(i int) int { return i + 1 }}).ParseFS(templatesFS, files...)
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "brandMark": brandMark, "destField": destField, "regField": regField, "providerForms": providerForms, "dnsFormView": dnsFormView, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor, "inc": func(i int) int { return i + 1 }}).ParseFS(templatesFS, files...)
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)
 		}

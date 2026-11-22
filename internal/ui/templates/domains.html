@@ -282,9 +282,14 @@
 
     <div class="cv-fld">
       <span class="cv-label">Point it at caravana</span>
+      {{if .Managed}}
+      <p class="cv-dnsintro">Caravana creates the record in <span class="cv-inline-mono">{{.Managed}}</span> at Cloudflare when you add the domain.</p>
+      {{else}}
       <p class="cv-dnsintro">Add this record where you manage DNS for the domain:</p>
       {{template "domain-records" .Records}}
       <p class="cv-note">The root of a domain needs an A record. A subdomain can use one too.</p>
+      {{with .Zones}}<p class="cv-note">Under {{range $i, $z := .}}{{if $i}}, {{end}}<span class="cv-inline-mono">{{$z}}</span>{{end}} Caravana creates the record itself.</p>{{end}}
+      {{end}}
     </div>
 
     <div class="cv-fld">

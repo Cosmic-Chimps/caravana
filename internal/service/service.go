@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/dns"
 	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -151,6 +152,11 @@ type Service struct {
 	// secretSources builds a provider's Source (feature 037), see secretproviders.go.
 	secretSources atomic.Pointer[SourceFactory]
 
+	// DNS providers (feature 048), see dnszones.go and dnspass.go: dnsFactory builds a zone's provider
+	// from its token, dnsGap is the time between two passes that remove records nobody needs.
+	dnsFactory atomic.Pointer[dns.Factory]
+	dnsGap     time.Duration
+
 	// serverMu serializes the servers' calls that read the rows and then change them: a join, a sync,
 	// a removal and the choice of Nomad servers (feature 031), see servers.go.
 	serverMu sync.Mutex
@@ -269,6 +275,7 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 
 		scan:       newScanState(),
 		cleanupGap: defaultCleanupGap,
+		dnsGap:     defaultDNSPassGap,
 		deleting:   map[string]bool{},
 	}
 	// Copies show the deployment's version where Nomad's is a scale step's
@@ -511,6 +518,14 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runCleanupPass(ctx, cleanupGap)
+	}()
+	// Records Caravana made at a DNS provider for hosts nobody has any more are removed, at start and every
+	// few minutes (feature 048); it starts no watchers.
+	dnsGap := s.dnsGap // read here: tests set the field after Start
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runDNSPass(ctx, dnsGap)
 	}()
 	return nil
 }

@@ -91,6 +91,9 @@ type DomainView struct {
 	// Taken lists the other apps whose definitions also have this host, by ID:
 	// two apps claim the address and Traefik picks one of them.
 	Taken []string
+	// Record is set when Caravana made this host's DNS record at a provider
+	// (feature 048).
+	Record *ManagedRecord
 }
 
 // DNSRecord is a record the owner creates where they manage a domain's DNS.
@@ -109,6 +112,10 @@ type DomainCheck struct {
 	DNS         edge.DNS
 	Certificate edge.Certificate
 	CheckedAt   time.Time
+	// ManagedZone is the zone with a DNS provider that covers the host
+	// (feature 048): Caravana makes the record when the domain is added. ""
+	// when no zone covers it.
+	ManagedZone string
 }
 
 // domainSettings are the edge checks' seams and settings, guarded by the
@@ -447,13 +454,19 @@ func (s *Service) Domains(ctx context.Context, f DomainFilter) ([]DomainView, er
 		byHost[c.Host] = c
 	}
 
+	records, err := s.managedRecords(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list domains: %w", err)
+	}
 	out := make([]DomainView, 0, len(targets))
 	for _, t := range targets {
 		var cached *store.DomainCheckRecord
 		if c, ok := byHost[t.host]; ok {
 			cached = &c
 		}
-		out = append(out, viewOf(t, cached))
+		v := viewOf(t, cached)
+		v.Record = records[t.host]
+		out = append(out, v)
 	}
 	sortDomains(out)
 	return out, nil
@@ -678,7 +691,11 @@ func (s *Service) CheckDomain(ctx context.Context, host, appID string) (DomainCh
 			return DomainCheck{}, err
 		}
 	}
-	return DomainCheck{Host: host, Records: recordsFor(host, expected), DNS: f.DNS, Certificate: f.Certificate, CheckedAt: f.CheckedAt}, nil
+	zone, _, err := s.ManagedZone(ctx, host)
+	if err != nil {
+		return DomainCheck{}, fmt.Errorf("check %q: %w", host, err)
+	}
+	return DomainCheck{Host: host, Records: recordsFor(host, expected), DNS: f.DNS, Certificate: f.Certificate, CheckedAt: f.CheckedAt, ManagedZone: zone.Zone}, nil
 }
 
 // saveCheck upserts a target's row from fresh facts and, when its state is new,

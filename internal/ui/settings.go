@@ -95,6 +95,7 @@ type settingsData struct {
 	Dest            destinationForm
 	Registries      registriesData
 	Providers       providersData
+	DNS             dnsData
 	Notifications   notificationsData
 	Certificates    certificatesData
 	Appearance      appearanceForm
@@ -266,6 +267,9 @@ func (s *server) settingsFacts(ctx context.Context) (settingsFacts, error) {
 	if f.SecretProviders, err = s.svc.SecretProviders(ctx); err != nil {
 		return f, fmt.Errorf("list secret providers: %w", err)
 	}
+	if f.DNSZones, err = s.svc.DNSZones(ctx); err != nil {
+		return f, fmt.Errorf("list DNS zones: %w", err)
+	}
 	if f.Channels, err = s.svc.NotificationChannels(ctx); err != nil {
 		return f, fmt.Errorf("list notification channels: %w", err)
 	}
@@ -322,6 +326,8 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 		data.Registries = registriesSection(now, facts, states[entryRegistries], data.Registries)
 	case entrySecretProviders:
 		data.Providers = providersSection(now, facts, states[entrySecretProviders], data.Providers)
+	case entryDNS:
+		data.DNS = dnsSection(now, facts, states[entryDNS], data.DNS)
 	case entryBackupStorage:
 		data.Dest = destinationSection(now, facts, states[entryBackupStorage], data.Dest)
 	case entryNotifications:

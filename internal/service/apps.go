@@ -480,6 +480,11 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 		return fmt.Errorf("delete the secrets of app %q: %w", id, err)
 	}
 
+	// The DNS records Caravana made for the app's hosts go with it (feature 048).
+	// A failure is logged and the rows kept: the pass removes them later, since
+	// store.DeleteApp leaves them for that.
+	s.removeDNSRecords(ctx, id)
+
 	// Nomad let go of the job: from here on the delete finishes even if the
 	// client goes away, because the job is already gone and the app must follow.
 	s.mu.Lock()

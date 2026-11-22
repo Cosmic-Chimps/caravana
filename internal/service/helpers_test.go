@@ -144,6 +144,8 @@ func startServiceLogging(t *testing.T, st *store.Store, d *deploy.Deployer, sec 
 	svc.SetEdge(edgetest.FakeResolver{}, &edgetest.FakeDialer{})
 	// Monitoring: no tick after Start. Tests of the sampler call sampleTick.
 	svc.metricsGap = time.Hour
+	// DNS: no pass after the first, which finds nothing. Tests of the pass call dnsPass.
+	svc.dnsGap = time.Hour
 	// The host's OS files: none, so a test never reads the machine it runs on.
 	svc.SetHostRoot(fstest.MapFS{})
 	// The updater: no pass after Start's first, which finds nothing. Tests of the watcher call

@@ -71,6 +71,9 @@ func asResult(rec store.DeploymentRecord, err error) (DeployResult, error) {
 type made struct {
 	file     *compose.Request
 	warnings []app.Warning
+	// dns is what the DNS check found (feature 048), for ensureDNSRecords to
+	// act on; nil when the deploy didn't come through the check.
+	dns *dnsPlan
 }
 
 // droppedFileWarning is recorded when a deploy from a definition (or from a
@@ -159,6 +162,15 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	if err := s.checkBackups(ctx, a); err != nil {
 		return DeployResult{}, err
 	}
+	// A host under a zone with a DNS provider gets its record (feature 048): a
+	// hand-made record pointing elsewhere, or a provider that can't be asked,
+	// refuses the deploy here, before anything is saved. Last of the checks,
+	// since it is the only one that leaves the process.
+	plan, err := s.checkDNSRecords(ctx, a)
+	if err != nil {
+		return DeployResult{}, err
+	}
+	m.dns = plan
 	m.warnings = append(m.warnings, PlainBackupPasswords(a)...)
 	if old, err := s.store.GetApp(ctx, a.ID); err == nil {
 		m.warnings = append(m.warnings, unmountedVolumes(old.App, a, s.droppedVolumeServers(ctx, old.App, a))...)
@@ -456,6 +468,14 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 		s.restoreSecrets(a.ID, dep.ID)
 		return asResult(s.fail(rec, err))
 	}
+	// The records that point the app's hosts here (feature 048), made before
+	// the job so the hosts resolve as soon as the copies are up. What was made
+	// before a failure stays owned (its rows are written at once).
+	if err := s.ensureDNSRecords(ctx, a, m.dns); err != nil {
+		s.restoreSecrets(a.ID, dep.ID)
+		s.forgetTeamPasswords(ctx, shown)
+		return asResult(s.fail(rec, err))
+	}
 
 	dep.Digests = digests
 	reg, err := s.deployer.Register(ctx, a, dep, s.owns(a.ID), private)
@@ -473,6 +493,9 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	if err := s.pruneTeamPasswords(ctx, &a); err != nil {
 		s.log.Warn("delete the passwords of domains no longer Team only; the next deploy tries again", "app", a.ID, "error", err)
 	}
+	// The same for the DNS records of hosts the app no longer has; a failure
+	// is logged and the row kept for the pass.
+	s.pruneDNSRecords(ctx, a)
 
 	// Nomad has accepted the job: from now on nothing is returned as an
 	// error. A failed write is logged, and the watcher brings the record up

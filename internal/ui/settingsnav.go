@@ -25,6 +25,7 @@ const (
 	entryBackupStorage   = "backup-storage"
 	entryNotifications   = "notifications"
 	entryCertificates    = "certificates"
+	entryDNS             = "dns"
 	entryTokens          = "tokens"
 	entrySignIn          = "sign-in"
 	entryAppearance      = "appearance"
@@ -45,6 +46,7 @@ var settingsGroups = []struct {
 		{entrySecretProviders, "Secret providers", "/settings/secret-providers", "key"},
 		{entryBackupStorage, "Backup storage", "/settings/backup-storage", "hard-drive"},
 		{entryCertificates, "Certificates", "/settings/certificates", "lock"},
+		{entryDNS, "DNS providers", "/settings/dns", "globe"},
 		{entryNotifications, "Notifications", "/settings/notifications", "bell"},
 	}},
 	{"Security", []settingsEntry{
@@ -117,6 +119,26 @@ func secretProvidersState(list []service.SecretProviderInfo) entryState {
 		default:
 			st.Rows[i] = "failed"
 			st.Mark, st.Why = "failed", "a secret provider can't be read"
+		}
+	}
+	return st
+}
+
+// dnsZonesState: a zone's mark is ■ when its last test could not reach it, ● when
+// it could and ○ when it was never tested or changed since (the service forgets
+// the last test when a save changes the token or the proxy setting); the nav
+// shows ■ when any can't be reached, else the number of zones.
+func dnsZonesState(list []service.DNSZoneInfo) entryState {
+	st := entryState{Count: len(list), Rows: make([]string, len(list))}
+	for i, z := range list {
+		switch {
+		case z.LastTest == nil:
+			st.Rows[i] = "idle"
+		case z.LastTest.OK:
+			st.Rows[i] = "healthy"
+		default:
+			st.Rows[i] = "failed"
+			st.Mark, st.Why = "failed", "a DNS zone can't be reached"
 		}
 	}
 	return st
@@ -285,12 +307,14 @@ type settingsFacts struct {
 	Registries []store.Registry
 	// SecretProviders are the secret providers with the apps that use them.
 	SecretProviders []service.SecretProviderInfo
-	Channels        []service.NotificationChannel
-	Deliveries      map[string][]store.Delivery // by channel ID, newest first
-	Tokens          []service.APITokenInfo
-	Certs           []service.CertificateView // problems first
-	Dest            *store.BackupDestination
-	LastBackup      *store.BackupRecord
+	// DNSZones are the DNS provider zones with the records Caravana made in each.
+	DNSZones   []service.DNSZoneInfo
+	Channels   []service.NotificationChannel
+	Deliveries map[string][]store.Delivery // by channel ID, newest first
+	Tokens     []service.APITokenInfo
+	Certs      []service.CertificateView // problems first
+	Dest       *store.BackupDestination
+	LastBackup *store.BackupRecord
 	// FailingBackup is the newest of the services' newest runs that failed; see backupFacts.Failing.
 	FailingBackup *store.BackupRecord
 	Apps          []store.AppRecord
@@ -323,6 +347,7 @@ func (f settingsFacts) states(now time.Time) map[string]entryState {
 		entryBackupStorage:   backupStorageState(backupFacts{Destination: f.Dest != nil, Last: f.LastBackup, Failing: f.FailingBackup, Policies: policyServices(f.Apps)}),
 		entryNotifications:   notificationsState(chs),
 		entryCertificates:    certificatesState(f.Certs),
+		entryDNS:             dnsZonesState(f.DNSZones),
 		entryTokens:          tokensState(now, f.Tokens),
 	}
 }

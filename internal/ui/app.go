@@ -16,6 +16,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/dns"
 	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/service"
@@ -1108,11 +1109,23 @@ func refuseDeploy(form *deployForm, err error) (status int, notice sentence, ok 
 	}
 
 	var refErr *service.ReferenceError
+	var existsErr *service.DNSRecordExistsError
+	var dnsErr *service.DNSProviderError
 	switch {
 	case errors.As(err, &refErr):
 		return referenceRefusal(refErr)
 	case errors.Is(err, service.ErrAppStopped):
 		return http.StatusConflict, sentence{plain(appStoppedText)}, true
+	case errors.As(err, &existsErr):
+		return http.StatusConflict, sentence{mono(existsErr.Host), plain(" already has a record at Cloudflare pointing at "), mono(existsErr.Content), plain(". Remove it there, or point it here by hand. Nothing was deployed.")}, true
+	case errors.As(err, &dnsErr):
+		status = http.StatusUnprocessableEntity
+		if errors.Is(dnsErr, dns.ErrUnavailable) {
+			status = http.StatusBadGateway
+		}
+		return status, sentence{plain(dnsErr.Words + ". Nothing was deployed.")}, true
+	case errors.Is(err, service.ErrHostAddressUnknown):
+		return http.StatusConflict, sentence{plain("Caravana can't tell this installation's public address, so it can't make the DNS record for the domain. Set CARAVANA_PUBLIC_URL to an address that resolves. Nothing was deployed.")}, true
 	case errors.Is(err, service.ErrAppNotDefined):
 		return http.StatusConflict, sentence{plain("This app has no definition yet, so there is nothing to deploy. Define it in Configure, or deploy a Compose file.")}, true
 	case errors.As(err, &fieldErr):
