@@ -2484,3 +2484,96 @@
   .cv-panel:has(> .cv-sectable) { overflow-x: auto; }
   .cv-panel > .cv-sectable { min-width: 640px; }
 }
+
+/* ---------------------------------------------------------------------------
+   Previews (feature 049, contracts/previews-screen.md): the open tab's list, one row per
+   preview, and the setup tab's form. The panel is a container, so a row folds by the room
+   the page has, not by the screen.
+   --------------------------------------------------------------------------- */
+@layer components {
+  /* The ghost button: no ground and no edge until hovered; the row's quiet actions. */
+  .cv-btn-ghost { background: transparent; color: var(--color-fg-2); border-color: transparent; text-decoration: none; }
+  .cv-btn-ghost:hover { background: var(--color-ink-2); color: var(--color-fg-1); }
+
+  /* The tabs row: the tabs, then the count line, then (a flex item of its own) the panel. The live
+     region is display: contents, so its count line and panel are items of this row. */
+  .cv-pvtop { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+  .cv-pvregion { display: contents; }
+  .cv-pvcount { font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-3); white-space: nowrap; }
+  .cv-pvpanel { flex: 1 1 100%; min-width: 0; container-type: inline-size; }
+  .cv-pvbars { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; max-width: 100%; }
+
+  .cv-pv + .cv-pv { border-top: 1px solid var(--color-line-1); }
+  .cv-pvrow { display: grid; grid-template-columns: 14px minmax(0, 2fr) 130px minmax(0, 0.8fr) minmax(0, 1fr) 254px; column-gap: 18px; align-items: center; min-height: 72px; padding: 12px 18px; }
+  .cv-pvrow > * { min-width: 0; }
+  .cv-pvmark { display: grid; place-items: center; }
+  .cv-pvwhat { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .cv-pvname { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .cv-pvnum { flex: none; font: 500 14px/1.2 var(--font-mono); color: var(--color-fg-2); }
+  .cv-pvbranch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 15px/1.2 var(--font-mono); color: var(--color-fg-1); }
+  /* A time inside the meta or the line is the text's size, not .cv-data's 14px; it keeps its mono face. */
+  .cv-pvmeta time, .cv-pvline time, .cv-pvmeta .cv-clock-local, .cv-pvline .cv-clock-local { font-size: inherit; line-height: inherit; }
+  /* The meta is a row: the words and the time are cut with an ellipsis, the run link after them never shrinks. */
+  .cv-pvmeta { display: flex; align-items: baseline; min-width: 0; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  .cv-pvmetatext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cv-pvrun { flex: none; white-space: pre; }
+  .cv-pvstate .cv-pill-sm { padding: 0; }
+  .cv-pvapps { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cv-pvchip { display: inline-flex; align-items: center; height: 22px; max-width: 100%; padding: 0 8px; border: 1px solid var(--color-line-2); border-radius: 3px; background: var(--color-ink-2); font: 400 12px/1 var(--font-mono); color: var(--color-fg-1); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cv-pvchip:hover { background: var(--color-ink-3); color: var(--color-fg-1); }
+  .cv-pvnone { font: 400 12px/1.2 var(--font-mono); color: var(--color-fg-3); }
+  .cv-pvaddr { display: flex; flex-direction: column; gap: 7px; font: 400 12px/1.2 var(--font-mono); }
+  .cv-pvaddr1 { display: flex; align-items: baseline; min-width: 0; }
+  .cv-pvhost { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg-2); text-decoration: none; }
+  .cv-pvhost-live { color: var(--color-fg-1); }
+  a.cv-pvhost:hover { color: var(--color-fg-1); text-decoration: underline; }
+  .cv-pvmore { flex: none; color: var(--color-fg-3); white-space: pre; }
+  .cv-pvmem { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg-3); }
+  /* Three fixed slots, Open, Logs and Close…: a row without Open leaves its slot empty, so every column
+     before the actions sits at the same x in every row. */
+  .cv-pvacts { display: grid; grid-template-columns: 82px 78px 82px; gap: 6px; white-space: nowrap; }
+  .cv-pvacts .cv-btn { width: 100%; min-width: 0; padding: 0 8px; }
+  .cv-pvlist { margin: 0; padding: 0; list-style: none; }
+
+  /* The line under a row: indented to the What column (18 + the mark's 14 + the gap 18). */
+  .cv-pvline { padding: 0 18px 14px 50px; font: 400 13px/1.5 var(--font-sans); color: var(--color-fg-3); text-wrap: pretty; }
+  .cv-pvline-failed { color: var(--color-fg-1); }
+  .cv-pvline .cv-btn { margin-left: 8px; }
+  .cv-pvdetail { font: 400 12px/1.5 var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
+
+  /* The setup form: a panel of setting rows. The panel is the container the rows fold by. */
+  .cv-pvform { container-type: inline-size; }
+  .cv-pvsay { font: 400 14px/1.4 var(--font-sans); color: var(--color-fg-2); }
+  .cv-pvinline { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .cv-pvnumber { flex: none; width: 90px; }
+  .cv-setrow-ctl > .cv-pvpass { max-width: 320px; }
+}
+
+/* Under 900px of page a row is three lines: the mark, What and the pill; the chips and the address
+   under What; the actions last. Unlayered, so it wins over the grid above. */
+@container (max-width: 899.98px) {
+  .cv-pvrow { grid-template-columns: 14px minmax(0, 1fr) auto; grid-template-areas: "mark what state" ". apps apps" ". addr addr" ". acts acts"; column-gap: 16px; row-gap: 10px; padding: 12px 16px; align-items: start; }
+  .cv-pvmark { grid-area: mark; padding-top: 4px; }
+  .cv-pvwhat { grid-area: what; }
+  .cv-pvstate { grid-area: state; padding-top: 2px; }
+  .cv-pvapps { grid-area: apps; }
+  .cv-pvaddr { grid-area: addr; }
+  .cv-pvacts { grid-area: acts; display: flex; flex-wrap: wrap; }
+  .cv-pvacts .cv-btn { width: auto; padding: 0 10px; }
+  .cv-pvslot { display: none; }
+  /* Folded, the meta wraps instead of being cut. */
+  /* Folded, the meta is one wrapping run of text, so " · run" follows the time instead of starting a line. */
+  .cv-pvmeta { display: block; }
+  .cv-pvmetatext { overflow: visible; text-overflow: clip; white-space: normal; }
+  .cv-pvrun { white-space: normal; }
+  .cv-pvline { padding-left: 46px; padding-right: 16px; }
+}
+@container (max-width: 639.98px) {
+  .cv-pvsave .cv-setrow-text { display: none; }
+}
+
+/* A touch screen's chip is a 44px target: the padding grows, the text doesn't. */
+@media (pointer: coarse) {
+  .cv-pvchip { height: auto; min-height: 44px; padding: 0 12px; }
+  .cv-pvacts .cv-btn { height: auto; min-height: 44px; }
+}

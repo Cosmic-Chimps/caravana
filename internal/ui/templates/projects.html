@@ -133,8 +133,8 @@
   </div>
   {{end}}
   <div class="cv-actions">
-    {{if not .Refusal}}<form method="post" action="{{.Action}}"><button type="submit" class="cv-btn cv-btn-danger">Close {{.Environment}}</button></form>{{end}}
-    <a href="{{.Back}}" class="cv-btn cv-btn-secondary">{{if .Refusal}}Back to settings{{else}}Cancel{{end}}</a>
+    {{if not .Refusal}}<form method="post" action="{{.Action}}">{{if .From}}<input type="hidden" name="from" value="previews">{{end}}<button type="submit" class="cv-btn cv-btn-danger">Close {{.Environment}}</button></form>{{end}}
+    <a href="{{.Back}}" class="cv-btn cv-btn-secondary">{{if .Refusal}}Back to {{if .From}}previews{{else}}settings{{end}}{{else}}Cancel{{end}}</a>
   </div>
 </section>
 {{end}}
@@ -211,34 +211,10 @@
   {{with .Previews}}
   <section id="previews" aria-labelledby="previews-title" class="cv-narrow flex flex-col gap-2">
     <h2 id="previews-title" class="cv-label">Previews</h2>
-    <form method="post" action="{{.Action}}" class="cv-panel p-4 flex flex-col gap-3">
-      <p class="cv-hint">A pull request's preview is an environment called <span class="cv-inline-mono">pr-&lt;number&gt;</span> with its own copy of the app{{if .Open}}. {{.Open}} open now{{end}}.</p>
-      <label class="cv-fld" for="{{.Limit.ID}}">
-        <span class="cv-label">Open previews at most</span>
-        <input class="cv-field cv-field-mono" id="{{.Limit.ID}}" type="text" inputmode="numeric" name="limit" value="{{.Limit.Value}}" autocomplete="off" maxlength="2"{{if .Limit.Error}} aria-invalid="true" aria-describedby="{{.Limit.ID}}-error"{{end}}{{if .Limit.Alert}} autofocus{{end}}>
-        <span class="cv-data-muted cv-hint">0 to 20. 0 means no previews. One more is refused until a preview is closed.</span>
-        {{template "field-error" .Limit}}
-      </label>
-      <label class="cv-fld" for="{{.Expire.ID}}">
-        <span class="cv-label">Close a preview after (days)</span>
-        <input class="cv-field cv-field-mono" id="{{.Expire.ID}}" type="text" inputmode="numeric" name="expireAfterDays" value="{{.Expire.Value}}" autocomplete="off" maxlength="2"{{if .Expire.Error}} aria-invalid="true" aria-describedby="{{.Expire.ID}}-error"{{end}}{{if .Expire.Alert}} autofocus{{end}}>
-        <span class="cv-data-muted cv-hint">1 to 30. Counted from the preview's newest deploy, so a pull request that keeps getting pushes stays open.</span>
-        {{template "field-error" .Expire}}
-      </label>
-      <label class="cv-fld" for="{{.Password.ID}}">
-        <span class="cv-label">{{if .PasswordSet}}New preview password{{else}}Preview password{{end}}</span>
-        <input class="cv-field cv-field-mono" id="{{.Password.ID}}" type="password" name="password" autocomplete="new-password" minlength="12" maxlength="128"{{if .Password.Error}} aria-invalid="true" aria-describedby="{{.Password.ID}}-error"{{end}}{{if .Password.Alert}} autofocus{{end}}>
-        <span class="cv-data-muted cv-hint">{{if .PasswordSet}}A password is set: every preview address asks for it (user <span class="cv-inline-mono">team</span>). Type a new one to change it for every open preview at once; leave this empty to keep it.{{else}}Previews are public. Set a password and every preview address asks for it (user <span class="cv-inline-mono">team</span>), 12 to 72 characters.{{end}}</span>
-        {{template "field-error" .Password}}
-      </label>
-      {{if .PasswordSet}}
-      <div class="cv-fld">
-        <label class="cv-check" for="{{.Remove.ID}}"><input type="checkbox" id="{{.Remove.ID}}" name="removePassword" value="1"{{if .RemoveOn}} checked{{end}}{{if .Remove.Error}} aria-invalid="true" aria-describedby="{{.Remove.ID}}-error"{{end}}><span>Remove the password</span></label>
-        {{template "field-error" .Remove}}
-      </div>
-      {{end}}
-      <div><button type="submit" class="cv-btn cv-btn-secondary">Save preview settings</button></div>
-    </form>
+    <div class="cv-panel p-4 flex flex-col gap-3">
+      <p class="text-base text-fg-2">{{template "sentence" .Sentence}}</p>
+      <div><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Change on the Previews page</a></div>
+    </div>
   </section>
   {{end}}
 

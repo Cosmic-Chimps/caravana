@@ -240,7 +240,7 @@ func TestProjectSettingsPage(t *testing.T) {
 	if f := formWith(t, body, "/projects/shop/environments/production/delete"); len(f.Disabled) != 0 {
 		t.Errorf("production's Delete should work: %+v", f)
 	}
-	for _, action := range []string{"/projects/shop", "/projects/shop/environments", "/projects/shop/previews/settings", "/projects/shop/delete"} {
+	for _, action := range []string{"/projects/shop", "/projects/shop/environments", "/projects/shop/delete"} {
 		if f := formWith(t, body, action); f.Method != "post" || f.HTMX {
 			t.Errorf("form %s = %+v, want a plain post", action, f)
 		}

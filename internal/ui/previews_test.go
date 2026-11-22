@@ -9,11 +9,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
-// Feature 049: the console's Previews section on a project's settings page, the preview
-// rows with their expiry, and Close preview behind a confirmation page.
+// Feature 049: the preview settings form (the Previews page's setup tab, previewspage_test.go), the
+// preview rows with their expiry on a project's settings page, and Close preview behind a
+// confirmation page.
 
 const previewSentinel = "s3cret-sentinel-049-password"
 
@@ -28,38 +30,57 @@ func previewShop(t *testing.T) *consoleEnv {
 	return e
 }
 
-func TestPreviewsSectionShowsTheSettingsAndTheRows(t *testing.T) {
+func TestProjectSettingsShowsThePreviewSummaryAndTheRows(t *testing.T) {
 	e := previewShop(t)
 	resp, body := e.get(t, "/projects/shop/settings")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET settings = %d", resp.StatusCode)
 	}
 	got := text(body)
-	for _, want := range []string{"Previews", "Open previews at most", "Close a preview after (days)", "Preview password",
-		"Previews are public.", "1 open now", "Save preview settings", "pr-3 · preview · expires", "Close preview…"} {
+	for _, want := range []string{"Previews", "At most 5 open previews, closed after 7 days without a deploy, public.",
+		"Change on the Previews page", "pr-3 · preview · expires", "Close preview…"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("settings lacks %q:\n%s", want, got)
 		}
 	}
-	for _, want := range []string{`name="limit" value="5"`, `name="expireAfterDays" value="7"`, `type="password" name="password"`,
+	for _, want := range []string{`href="/previews?project=shop&amp;tab=setup"`,
 		`href="/projects/shop/previews/pr-3/close"`, `class="cv-clock"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("settings lacks %s:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, `name="removePassword"`) {
-		t.Errorf("Remove the password is offered while there is none")
+	// The form moved to the Previews page: nothing here posts the settings.
+	for _, gone := range []string{`name="limit"`, `name="expireAfterDays"`, `type="password"`, "Save preview settings"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the project's settings still draws %s", gone)
+		}
 	}
 	// Only a preview has the line and the button.
 	if n := strings.Count(body, "Close preview…"); n != 1 {
 		t.Errorf("Close preview… appears %d times, want 1 (staging and production aren't previews)", n)
 	}
+
+	// The sentence follows the settings: a password, and off.
+	ctx := context.Background()
+	pw, zero := previewSentinel, 0
+	if _, err := e.Svc.SetPreviewSettings(ctx, "shop", service.PreviewSettingsInput{Password: &pw}); err != nil {
+		t.Fatal(err)
+	}
+	if _, body = e.get(t, "/projects/shop/settings"); !strings.Contains(text(body), "closed after 7 days without a deploy, with a password.") {
+		t.Errorf("the summary doesn't say there is a password:\n%s", text(body))
+	}
+	if _, err := e.Svc.SetPreviewSettings(ctx, "shop", service.PreviewSettingsInput{Limit: &zero}); err != nil {
+		t.Fatal(err)
+	}
+	if _, body = e.get(t, "/projects/shop/settings"); !strings.Contains(text(body), "Previews are off: at most 0.") {
+		t.Errorf("the summary doesn't say previews are off:\n%s", text(body))
+	}
 }
 
 func TestPreviewSettingsSave(t *testing.T) {
 	e := shopConsole(t)
-	resp, body := e.postForm(t, "/projects/shop/previews/settings", url.Values{"limit": {"2"}, "expireAfterDays": {"3"}, "password": {""}})
-	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/projects/shop/settings?saved=previews#previews" {
+	resp, body := e.postForm(t, "/projects/shop/previews/settings", url.Values{"limit": {"2"}, "expireAfterDays": {"3"}, "password": {""}, "from": {"previews"}})
+	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/previews?project=shop&saved=1&tab=setup" {
 		t.Fatalf("save = %d to %q:\n%s", resp.StatusCode, location(t, resp), body)
 	}
 	list, err := e.Svc.Previews(context.Background(), "shop")
@@ -69,19 +90,26 @@ func TestPreviewSettingsSave(t *testing.T) {
 	if st := list.Settings; st.Limit != 2 || st.ExpireAfterDays != 3 || st.PasswordSet {
 		t.Errorf("settings = %+v, want limit 2, 3 days, no password", st)
 	}
-	_, page := e.get(t, "/projects/shop/settings?saved=previews")
+	_, page := e.get(t, location(t, resp))
 	if !strings.Contains(text(page), "Preview settings saved.") || !strings.Contains(page, `name="limit" value="2"`) {
 		t.Errorf("the page after the save lacks the notice or the values:\n%s", text(page))
 	}
+	if _, plain := e.get(t, "/previews?tab=setup&project=shop"); strings.Contains(text(plain), "Preview settings saved.") {
+		t.Errorf("the notice is drawn without saved=1")
+	}
+	// A form that doesn't say it came from the Previews page goes back to the project's settings.
+	if resp, _ := e.postForm(t, "/projects/shop/previews/settings", url.Values{"limit": {"2"}}); resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/projects/shop/settings?saved=previews#previews" {
+		t.Errorf("save without from = %d to %q", resp.StatusCode, location(t, resp))
+	}
 
 	// Empty numbers keep what is there.
-	if resp, _ := e.postForm(t, "/projects/shop/previews/settings", url.Values{"limit": {""}, "expireAfterDays": {""}}); resp.StatusCode != http.StatusSeeOther {
+	if resp, _ := e.postForm(t, "/projects/shop/previews/settings", url.Values{"limit": {""}, "expireAfterDays": {""}, "from": {"previews"}}); resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("empty save = %d", resp.StatusCode)
 	}
 	if list, _ = e.Svc.Previews(context.Background(), "shop"); list.Settings.Limit != 2 || list.Settings.ExpireAfterDays != 3 {
 		t.Errorf("an empty form changed the settings: %+v", list.Settings)
 	}
-	if resp, _ := e.postForm(t, "/projects/nope/previews/settings", url.Values{"limit": {"1"}}); resp.StatusCode != http.StatusNotFound {
+	if resp, _ := e.postForm(t, "/projects/nope/previews/settings", url.Values{"limit": {"1"}, "from": {"previews"}}); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("an unknown project = %d, want 404", resp.StatusCode)
 	}
 }
@@ -102,12 +130,22 @@ func TestPreviewSettingsRefusalsAreDrawnAtTheirField(t *testing.T) {
 		{"password too short", url.Values{"password": {previewSentinel[:8]}}, 422, "The password is 8 characters; it must be 12 to 128.", `name="limit" value="5"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, body := e.postForm(t, "/projects/shop/previews/settings", tc.form)
+			form := url.Values{"from": {"previews"}}
+			for k, v := range tc.form {
+				form[k] = v
+			}
+			resp, body := e.postForm(t, "/projects/shop/previews/settings", form)
 			if resp.StatusCode != tc.status || resp.Header.Get("Location") != "" {
 				t.Fatalf("status = %d, Location %q, want %d with no redirect", resp.StatusCode, resp.Header.Get("Location"), tc.status)
 			}
 			if !strings.Contains(text(body), tc.want) {
 				t.Errorf("the page lacks %q:\n%s", tc.want, text(body))
+			}
+			// The refusal is the Previews page's setup tab, with the project's own form.
+			for _, want := range []string{`<h1 class="cv-headline">Previews</h1>`, `action="/projects/shop/previews/settings"`, `aria-invalid="true"`} {
+				if !strings.Contains(body, want) {
+					t.Errorf("the refusal isn't the setup tab: lacks %s", want)
+				}
 			}
 			if !strings.Contains(body, tc.keeps) {
 				t.Errorf("the page lacks %s", tc.keeps)
@@ -127,19 +165,20 @@ func TestPreviewPasswordLifecycleNeverDrawsThePassword(t *testing.T) {
 	password := previewSentinel
 
 	// First time, with a preview open: the page says it gets the password at its next deploy (200, no redirect).
-	resp, body := e.postForm(t, "/projects/shop/previews/settings", url.Values{"password": {password}})
+	resp, body := e.postForm(t, "/projects/shop/previews/settings", url.Values{"password": {password}, "from": {"previews"}})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("set password = %d:\n%s", resp.StatusCode, text(body))
 	}
 	if !strings.Contains(text(body), "Open previews pr-3 get the password at their next deploy.") {
 		t.Errorf("the answer doesn't name the open preview:\n%s", text(body))
 	}
-	if !strings.Contains(text(body), "A password is set:") || !strings.Contains(body, `name="removePassword"`) {
+	if !strings.Contains(text(body), "Every preview address asks for it, user team.") || !strings.Contains(body, `name="removePassword"`) ||
+		!strings.Contains(body, `placeholder="Leave empty to keep it"`) {
 		t.Errorf("the section doesn't say a password is set, with Remove:\n%s", text(body))
 	}
 
 	// Removing it with a preview open is a 409 at the checkbox, and nothing changed.
-	resp, body = e.postForm(t, "/projects/shop/previews/settings", url.Values{"removePassword": {"1"}})
+	resp, body = e.postForm(t, "/projects/shop/previews/settings", url.Values{"removePassword": {"1"}, "from": {"previews"}})
 	if resp.StatusCode != http.StatusConflict || resp.Header.Get("Location") != "" {
 		t.Fatalf("remove with a preview open = %d", resp.StatusCode)
 	}
@@ -154,7 +193,7 @@ func TestPreviewPasswordLifecycleNeverDrawsThePassword(t *testing.T) {
 	}
 
 	// The password with removePassword is refused at removePassword.
-	if resp, _ := e.postForm(t, "/projects/shop/previews/settings", url.Values{"password": {password}, "removePassword": {"1"}}); resp.StatusCode != http.StatusUnprocessableEntity {
+	if resp, _ := e.postForm(t, "/projects/shop/previews/settings", url.Values{"password": {password}, "removePassword": {"1"}, "from": {"previews"}}); resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Errorf("password with removePassword = %d, want 422", resp.StatusCode)
 	}
 
@@ -162,7 +201,7 @@ func TestPreviewPasswordLifecycleNeverDrawsThePassword(t *testing.T) {
 	if resp, _ := e.postForm(t, "/projects/shop/previews/pr-3/close", nil); resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("close = %d", resp.StatusCode)
 	}
-	if resp, _ := e.postForm(t, "/projects/shop/previews/settings", url.Values{"removePassword": {"1"}}); resp.StatusCode != http.StatusSeeOther {
+	if resp, _ := e.postForm(t, "/projects/shop/previews/settings", url.Values{"removePassword": {"1"}, "from": {"previews"}}); resp.StatusCode != http.StatusSeeOther {
 		t.Errorf("remove with no preview open = %d, want 303", resp.StatusCode)
 	}
 	if list, _ := e.Svc.Previews(context.Background(), "shop"); list.Settings.PasswordSet {
@@ -170,7 +209,8 @@ func TestPreviewPasswordLifecycleNeverDrawsThePassword(t *testing.T) {
 	}
 
 	// The password is in no page and no log line.
-	for _, path := range []string{"/projects/shop/settings", "/projects/shop", "/projects/shop/previews/pr-3/close", "/apps", "/projects"} {
+	for _, path := range []string{"/projects/shop/settings", "/projects/shop", "/projects/shop/previews/pr-3/close", "/apps", "/projects",
+		"/previews", "/previews?tab=setup&project=shop", "/parts/previews"} {
 		_, page := e.get(t, path)
 		if strings.Contains(page, password) {
 			t.Errorf("GET %s holds the password", path)

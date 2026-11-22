@@ -5,8 +5,9 @@
   of its own project and delete its own app and the empty environment there, and nothing else.
 - **Limit, expiry and a password for previews.** Each project keeps at most 5 open previews by default (0 to 20) and
   closes one 7 days after its newest deploy (1 to 30), so a missed close still cleans up. An optional project
-  password makes every preview address Team only. All three are on the project's settings page, which also shows
-  each preview's expiry and a Close preview button; the API has `getPreviews`, `putPreviewSettings` and
+  password makes every preview address Team only. All three are on the new Previews page (sidebar, "setup per
+  project"), whose first tab lists every open preview with its address, memory, state and a Close… button; the
+  project's settings page shows each preview's expiry too. The API has `getPreviews`, `putPreviewSettings` and
   `closePreview` (0.54.0). See `docs/previews.md`, including the one wildcard DNS record to set by hand.
 
 ### Changed

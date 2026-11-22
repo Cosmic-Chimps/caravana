@@ -158,6 +158,9 @@ type PreviewApp struct {
 	// default applied, times the copies it wants.
 	MemoryMB       int
 	LastDeployment *store.DeploymentRecord // nil when the app was never deployed
+	// Summary is the app summary the fields above were made from, for the console's
+	// Previews page, which words each app's status with the console's one set of words.
+	Summary AppSummary
 }
 
 // Preview is one open preview with its apps.
@@ -223,7 +226,7 @@ func (s *Service) Previews(ctx context.Context, project string) (PreviewList, er
 // previewApp is an app summary as a preview shows it.
 func (s *Service) previewApp(sum AppSummary) PreviewApp {
 	pa := PreviewApp{ID: sum.App.ID, Name: sum.Place.Name, State: sum.Status.State, Addresses: []string{},
-		LastDeployment: sum.LastDeployment}
+		LastDeployment: sum.LastDeployment, Summary: sum}
 	for i, svc := range sum.App.Services {
 		for _, d := range svc.Domains {
 			if !slices.Contains(pa.Addresses, d.Host) {

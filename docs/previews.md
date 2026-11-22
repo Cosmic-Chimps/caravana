@@ -92,7 +92,7 @@ wildcard record by hand**, pointing at the server like your other records:
 A preview is unreleased code on a public address. Set **one preview password per project** and every domain of every
 app deployed into a preview of that project becomes Team only: the browser asks for the user `team` and this password.
 
-Set it on the project's settings page (Previews), or through the API:
+Set it on the Previews page (the "setup per project" tab), or through the API:
 
 ```http
 PUT /v1/projects/blog/previews/settings
@@ -121,7 +121,10 @@ Two settings per project, on the same page:
 
 ## Seeing and closing previews
 
-The project's settings page lists each preview environment with "preview · expires <time>" and a **Close preview…**
-button. It asks first, then deletes every app in the preview (copies, jobs, volumes, secrets) and the environment.
+The **Previews** page in the sidebar lists the open previews of every project, problems first: the pull request's
+number, the branch when the deploy said one, who pushed it, its apps and address, the memory it reserves and when it
+closes if nothing is deployed to it. Its "setup per project" tab holds the limit, the days and the password. The
+project's settings page lists each preview environment with "preview · expires <time>" too. **Close…** (on either) asks
+first, then deletes every app in the preview (copies, jobs, volumes, secrets) and the environment.
 Through the API, `GET /v1/projects/{project}/previews` lists them with their apps, status, addresses, reserved memory
 and newest deploy, and `DELETE /v1/projects/{project}/previews/{environment}` closes one (full tokens only).

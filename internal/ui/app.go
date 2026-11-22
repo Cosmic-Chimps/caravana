@@ -838,6 +838,17 @@ func (s *server) loadHistory(r *http.Request, appID string) (historyRegion, erro
 	return region, nil
 }
 
+// deployErrorLead is what a deployment's raw error is, said before it: a reverted
+// deployment's error is Nomad's own message ("Nomad said: "), the others' is
+// Caravana's, so it needs no lead. The history entry and the Previews page's failure
+// line draw the error the same way.
+func deployErrorLead(rec store.DeploymentRecord) string {
+	if rec.Status == store.StatusReverted && rec.Error != "" {
+		return "Nomad said: "
+	}
+	return ""
+}
+
 func (s *server) historyEntry(ctx context.Context, now time.Time, rec store.DeploymentRecord, f deployFacts) historyEntry {
 	e := historyEntry{
 		ID:        rec.Deployment.ID,
@@ -857,9 +868,7 @@ func (s *server) historyEntry(ctx context.Context, now time.Time, rec store.Depl
 	if e.FullStrip {
 		e.Timing = deploymentTiming(rec, now)
 	}
-	if rec.Status == store.StatusReverted && rec.Error != "" {
-		e.ErrorLead = "Nomad said: "
-	}
+	e.ErrorLead = deployErrorLead(rec)
 	multi := len(rec.Deployment.Digests) > 1
 	for service, ref := range rec.Deployment.Digests {
 		d := digestView{Short: shortDigest(ref), Full: ref}

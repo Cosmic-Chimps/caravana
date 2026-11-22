@@ -12,16 +12,16 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/service"
 )
 
-// Previews in the console (feature 049, plan D11): the Previews section of a
-// project's settings page, the "preview · expires" line and Close preview on a
-// preview environment's row, and the page that asks before a preview is closed.
-// The service decides everything; these pages say it in words. The preview
-// password is typed into a password input, handed to the service and dropped:
-// no page, redirect or log line carries it back.
+// Previews in the console (feature 049, plan D11): the settings form of the Previews
+// page's setup tab (previewspage.go draws the page), the "preview · expires" line and
+// Close preview on a preview environment's row of a project's settings page, and the
+// page that asks before a preview is closed. The service decides everything; these
+// pages say it in words. The preview password is typed into a password input, handed
+// to the service and dropped: no page, redirect or log line carries it back.
 
-// previewsForm is the Previews section: the settings as they are (or as they
-// were typed in a refused post) and what is wrong with each. The password field
-// never has a value.
+// previewsForm is the setup tab's form: the settings as they are (or as they were
+// typed in a refused post) and what is wrong with each. The password field never has
+// a value.
 type previewsForm struct {
 	Action        string
 	Limit, Expire formField
@@ -31,7 +31,6 @@ type previewsForm struct {
 	Remove      formField
 	RemoveOn    bool
 	PasswordSet bool
-	Open        int
 }
 
 // previewRow is what a preview environment's row adds: when it expires and where
@@ -46,12 +45,15 @@ type previewClose struct {
 	Project, Environment string
 	Apps                 []projectApp
 	Action, Back         string
+	// From says the page was opened from the Previews page: Back, the crumbs and the
+	// redirect after closing lead there, and the form posts "from" back.
+	From bool
 	// Refusal replaces the button, in words.
 	Refusal sentence
 }
 
-// previewsExtra is what a response adds to the Previews section: what was typed
-// and the reasons.
+// previewsExtra is what a response adds to the setup form: what was typed and the
+// reasons.
 type previewsExtra struct {
 	Limit, Expire, Password *formField
 	Remove                  *formField
@@ -67,7 +69,6 @@ func previewsFormOf(project string, st service.PreviewSettings, extra *previewsE
 		Password:    formField{ID: "preview-password"},
 		Remove:      formField{ID: "preview-remove"},
 		PasswordSet: st.PasswordSet,
-		Open:        st.Open,
 	}
 	if extra == nil {
 		return f
@@ -91,10 +92,11 @@ func previewsFormOf(project string, st service.PreviewSettings, extra *previewsE
 
 // savePreviewSettings answers POST /projects/{project}/previews/settings: the
 // limit, the days, a new password and removing it. An empty number or password
-// keeps what is there. Success redirects to the section (303) with the calm
+// keeps what is there. Success redirects (303) to the setup tab, or to the project's
+// settings when the form didn't say it came from the Previews page, with the calm
 // sentence; a success with something to say (open previews that get the password
-// at their next deploy) is the page itself, 200. A refusal draws the section
-// again with the reason at its field, never a redirect.
+// at their next deploy) is the page itself, 200. A refusal draws the setup tab
+// again with the reason at its field, never a redirect (the form lives only there).
 func (s *server) savePreviewSettings(w http.ResponseWriter, r *http.Request, session string) {
 	id := r.PathValue("project")
 	if !s.readForm(w, r) {
@@ -119,7 +121,7 @@ func (s *server) savePreviewSettings(w http.ResponseWriter, r *http.Request, ses
 	}
 	refuse := func(status int, field *formField, text sentence) {
 		field.Error, field.Alert = text, true
-		s.settingsPage(w, r, status, id, projectExtras{Previews: typed})
+		s.renderPreviews(w, r, status, previewsQuery{Tab: tabSetup, Project: id}, previewsExtras{Setup: typed})
 	}
 
 	in := service.PreviewSettingsInput{RemovePassword: remove}
@@ -154,7 +156,11 @@ func (s *server) savePreviewSettings(w http.ResponseWriter, r *http.Request, ses
 			for _, w := range res.Warnings {
 				notice = append(notice, plain(" "+upperFirst(w.Message)+"."))
 			}
-			s.settingsPage(w, r, http.StatusOK, id, projectExtras{Notice: notice})
+			s.renderPreviews(w, r, http.StatusOK, previewsQuery{Tab: tabSetup, Project: id}, previewsExtras{Notice: notice})
+			return
+		}
+		if r.PostForm.Get("from") == "previews" {
+			http.Redirect(w, r, "/previews?"+url.Values{"tab": {tabSetup}, "project": {id}, "saved": {"1"}}.Encode(), http.StatusSeeOther)
 			return
 		}
 		http.Redirect(w, r, "/projects/"+url.PathEscape(id)+"/settings?saved=previews#previews", http.StatusSeeOther)
@@ -196,7 +202,10 @@ func (s *server) previewCloseOf(w http.ResponseWriter, r *http.Request) (preview
 	id, env := r.PathValue("project"), r.PathValue("environment")
 	base := "/projects/" + url.PathEscape(id)
 	v := previewClose{Project: id, Environment: env, Back: base + "/settings",
-		Action: base + "/previews/" + url.PathEscape(env) + "/close"}
+		Action: base + "/previews/" + url.PathEscape(env) + "/close", From: r.FormValue("from") == "previews"}
+	if v.From {
+		v.Back = "/previews"
+	}
 	p, err := s.svc.Project(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, service.ErrProjectNotFound) {
@@ -224,9 +233,13 @@ func (s *server) previewCloseOf(w http.ResponseWriter, r *http.Request) (preview
 
 // renderPreviewClose draws the confirmation page.
 func (s *server) renderPreviewClose(w http.ResponseWriter, r *http.Request, status int, v previewClose) {
-	head, err := s.shellPage(r, "Close "+v.Environment, navProjects,
-		crumb{Label: v.Project, Href: "/projects/" + url.PathEscape(v.Project)},
-		crumb{Label: "Settings", Href: v.Back}, crumb{Label: "Close " + v.Environment})
+	active := navProjects
+	crumbs := []crumb{{Label: v.Project, Href: "/projects/" + url.PathEscape(v.Project)},
+		{Label: "Settings", Href: v.Back}, {Label: "Close " + v.Environment}}
+	if v.From {
+		active, crumbs = navPreviews, previewCloseCrumbs(v.Environment)
+	}
+	head, err := s.shellPage(r, "Close "+v.Environment, active, crumbs...)
 	if err != nil {
 		s.serverError(w, r, "read admin", err)
 		return
@@ -252,8 +265,8 @@ func (s *server) showPreviewClose(w http.ResponseWriter, r *http.Request, sessio
 
 // closePreview answers POST /projects/{project}/previews/{environment}/close:
 // every app of the preview is deleted, then the environment, and the browser
-// goes back to the settings. A refusal draws the confirmation again, with the
-// reason in place of the button.
+// goes back to the settings (or the Previews page). A refusal draws the confirmation
+// again, with the reason in place of the button.
 func (s *server) closePreview(w http.ResponseWriter, r *http.Request, session string) {
 	v, ok := s.previewCloseOf(w, r)
 	if !ok {
@@ -262,6 +275,10 @@ func (s *server) closePreview(w http.ResponseWriter, r *http.Request, session st
 	err := s.svc.ClosePreview(r.Context(), v.Project, v.Environment, service.CloseByOwner)
 	switch {
 	case err == nil, errors.Is(err, service.ErrEnvironmentNotFound):
+		if v.From {
+			http.Redirect(w, r, "/previews?"+url.Values{"closed": {v.Environment}, "project": {v.Project}}.Encode(), http.StatusSeeOther)
+			return
+		}
 		http.Redirect(w, r, v.Back+"?closed="+url.QueryEscape(v.Environment), http.StatusSeeOther)
 	case errors.Is(err, service.ErrNotAPreview):
 		v.Refusal = sentence{mono(v.Environment), plain(" isn't a preview: only environments named pr-<pull request number> are.")}

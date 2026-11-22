@@ -1827,10 +1827,17 @@ named `pr-<n>` (`app.PreviewNumber`; the prefix is reserved), opened and closed 
   the environment). The preview password is one bcrypt hash: the deploy path turns `teamOnly` on for every domain of a preview
   (one warning) and the Team-only rows take the project's hash; changing it rewrites them with no deploy, removing it is 409
   `previews_open` while a preview is open, and `rotateTeamPassword` there is 409 `preview_password`.
-- API 0.54.0: `getPreviews`, `putPreviewSettings`, `closePreview`, `Environment.preview`. Console (`internal/ui/previews.go`):
-  the project settings page's Previews section (limit, days, password set/change/remove; refusals at their field, never a
-  redirect, the password never drawn back), "preview · expires <clock>" and Close preview… (a confirmation page) on each preview
-  row. The handoff's Previews page is a later designer-cycle task.
+- API 0.54.0: `getPreviews`, `putPreviewSettings`, `closePreview`, `Environment.preview`.
+- Console: the handoff's Previews page (task `64ph`, built through the designer cycle, `contracts/previews-screen.md` with its
+  rulings and last look): `/previews` and `/parts/previews` (`internal/ui/previewspage.go`, `templates/previews.html`), the
+  sidebar's Previews item after Projects. The open tab lists every project's open previews problems first, one aligned row each
+  (`#142` and the branch when the origin names one, never a `refs/pull/…` ref; the who-words without the ref; the console's
+  status word; app chips; the address, a link when healthy; reserved memory; Open, Logs, Close…; one line: the failed
+  deployment's error, the rollout, or "If nothing is deployed to it, it closes <clock>."). `service.PreviewApp.Summary` carries
+  the app summary for `appStatusView` (Go only, no API change). The setup tab is the settings form's one place (limit, days,
+  password; refusals at their field, the password never drawn back; the post's hidden `from=previews` returns there); the
+  project settings page keeps one sentence and a link, and each preview row's "preview · expires <clock>" and Close preview…
+  (`?from=previews` brings the confirmation back to the Previews page).
 - Lab: gate step `previews` (`gate_previews_test.go`, after `deploy-from-ci`), which also runs caravana-action's preview mode when
   `../caravana-action` has it (`CARAVANA_ACTION_DIR` points at it from a worktree; its preview mode is `0a99ae4` on the
   action's unpushed branch `preview-mode`). It passed in the lab on 2026-11-22 (111 s, run with

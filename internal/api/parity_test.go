@@ -206,7 +206,9 @@ var consoleParity = map[string]parity{
 	"POST /projects/{project}/delete":                            {ops: []string{"deleteProject"}},
 	"POST /projects/{project}/environments":                      {ops: []string{"createEnvironment"}},
 	"POST /projects/{project}/environments/{environment}/delete": {ops: []string{"deleteEnvironment"}},
-	// Previews (feature 049): the settings section reads getPreviews and saves with putPreviewSettings; Close preview is closePreview.
+	// Previews (feature 049): the Previews page lists every project's previews and its setup tab saves with putPreviewSettings; Close preview is closePreview.
+	"GET /previews":       {ops: []string{"listProjects", "getPreviews"}},
+	"GET /parts/previews": {ops: []string{"listProjects", "getPreviews"}},
 	"POST /projects/{project}/previews/settings":            {ops: []string{"getPreviews", "putPreviewSettings"}},
 	"GET /projects/{project}/previews/{environment}/close":  {ops: []string{"getProject", "listEnvironmentApps"}},
 	"POST /projects/{project}/previews/{environment}/close": {ops: []string{"closePreview"}},

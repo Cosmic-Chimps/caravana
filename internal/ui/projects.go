@@ -65,7 +65,7 @@ type projectView struct {
 	Name        formField
 	Envs        []envView
 	AddEnv      formField
-	Previews    *previewsForm
+	Previews    *previewsSummary
 	Delete      projectDelete
 }
 
@@ -194,7 +194,6 @@ type projectExtras struct {
 	Notice, Alert sentence
 	Name          *formField // the display name form, as typed
 	AddEnv        *formField
-	Previews      *previewsExtra // the Previews section, as typed in a refused form
 	Delete        *projectDelete // the Delete project section, with its refusal
 }
 
@@ -231,7 +230,7 @@ func (s *server) settingsPage(w http.ResponseWriter, r *http.Request, status int
 	v := &projectView{ID: id, Display: p.DisplayName, Notice: extra.Notice, Alert: extra.Alert,
 		Name:     formField{ID: "displayName", Value: p.DisplayName},
 		AddEnv:   formField{ID: "environment"},
-		Previews: previewsFormOf(id, pv.Settings, extra.Previews),
+		Previews: previewsSummaryOf(id, pv.Settings),
 		Delete:   projectDelete{Offered: id != app.DefaultProject, Action: base + "/delete", ID: id}}
 	if extra.Name != nil {
 		v.Name = *extra.Name
