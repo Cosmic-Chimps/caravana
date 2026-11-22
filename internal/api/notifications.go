@@ -9,22 +9,57 @@ import (
 )
 
 // Notification channels (feature 018). No type here has a field for a Slack or
-// Discord URL, an ntfy token or a signing secret, except the two answers that
-// show a signing secret once (a webhook's creation and its rotation), so no
-// other answer can carry one.
+// Discord URL, an ntfy or bot token, an SMTP password or a signing secret,
+// except the two answers that show a signing secret once (a webhook's creation
+// and its rotation), so no other answer can carry one.
 
 // notificationChannelJSON is a channel as every answer but a webhook's creation
 // shows it (schema NotificationChannel).
 type notificationChannelJSON struct {
-	ID        string    `json:"id"`
-	Kind      string    `json:"kind"`
-	Name      string    `json:"name"`
-	Address   string    `json:"address"`
-	Events    []string  `json:"events"`
-	Paused    bool      `json:"paused"`
-	HasToken  bool      `json:"hasToken"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID       string   `json:"id"`
+	Kind     string   `json:"kind"`
+	Name     string   `json:"name"`
+	Address  string   `json:"address"`
+	Events   []string `json:"events"`
+	Paused   bool     `json:"paused"`
+	HasToken bool     `json:"hasToken"`
+	// Email and Telegram are the non-secret settings of their kinds.
+	Email     *emailJSON    `json:"email,omitempty"`
+	Telegram  *telegramJSON `json:"telegram,omitempty"`
+	CreatedAt time.Time     `json:"createdAt"`
+	UpdatedAt time.Time     `json:"updatedAt"`
+}
+
+// emailJSON is the mail server and addresses of an email channel (schema
+// NotificationEmail), in a request and in an answer. The password is not part of it.
+type emailJSON struct {
+	Host     string   `json:"host"`
+	Port     int      `json:"port"`
+	Security string   `json:"security"`
+	Username string   `json:"username,omitempty"`
+	From     string   `json:"from"`
+	To       []string `json:"to"`
+}
+
+// telegramJSON is where a Telegram channel posts (schema NotificationTelegram).
+// The bot token is not part of it.
+type telegramJSON struct {
+	ChatID string `json:"chatId"`
+	APIURL string `json:"apiUrl,omitempty"`
+}
+
+func (e *emailJSON) settings() *service.EmailSettings {
+	if e == nil {
+		return nil
+	}
+	return &service.EmailSettings{Host: e.Host, Port: e.Port, Security: e.Security, Username: e.Username, From: e.From, To: e.To}
+}
+
+func (t *telegramJSON) settings() *service.TelegramSettings {
+	if t == nil {
+		return nil
+	}
+	return &service.TelegramSettings{ChatID: t.ChatID, APIURL: t.APIURL}
 }
 
 // createdNotificationChannelJSON is the answer to creating a channel (schema
@@ -52,10 +87,20 @@ func toNotificationChannelJSON(c service.NotificationChannel) notificationChanne
 	if events == nil {
 		events = []string{}
 	}
-	return notificationChannelJSON{
+	out := notificationChannelJSON{
 		ID: c.ID, Kind: c.Kind, Name: c.Name, Address: c.Address, Events: events, Paused: c.Paused,
 		HasToken: c.HasToken, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
+	if e := c.Email; e != nil {
+		out.Email = &emailJSON{Host: e.Host, Port: e.Port, Security: e.Security, Username: e.Username, From: e.From, To: e.To}
+		if out.Email.To == nil {
+			out.Email.To = []string{}
+		}
+	}
+	if t := c.Telegram; t != nil {
+		out.Telegram = &telegramJSON{ChatID: t.ChatID, APIURL: t.APIURL}
+	}
+	return out
 }
 
 func toDeliveryJSON(d store.Delivery) deliveryJSON {
@@ -83,18 +128,22 @@ func (s *server) listNotificationChannels(w http.ResponseWriter, r *http.Request
 // The answer for a webhook carries its signing secret, this once.
 func (s *server) createNotificationChannel(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
-		Kind   string   `json:"kind"`
-		Name   string   `json:"name"`
-		URL    string   `json:"url"`
-		Token  string   `json:"token"`
-		Events []string `json:"events"`
-		Paused bool     `json:"paused"`
+		Kind     string        `json:"kind"`
+		Name     string        `json:"name"`
+		URL      string        `json:"url"`
+		Token    string        `json:"token"`
+		Password string        `json:"password"`
+		Email    *emailJSON    `json:"email"`
+		Telegram *telegramJSON `json:"telegram"`
+		Events   []string      `json:"events"`
+		Paused   bool          `json:"paused"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		return err
 	}
 	created, err := s.svc.CreateNotificationChannel(r.Context(), service.NotificationChannelInput{
-		Kind: in.Kind, Name: in.Name, URL: in.URL, Token: in.Token, Events: in.Events, Paused: in.Paused,
+		Kind: in.Kind, Name: in.Name, URL: in.URL, Token: in.Token, Password: in.Password,
+		Email: in.Email.settings(), Telegram: in.Telegram.settings(), Events: in.Events, Paused: in.Paused,
 	})
 	if err != nil {
 		return registryInvalid(err) // field errors are 422 here, as for registries
@@ -107,20 +156,25 @@ func (s *server) createNotificationChannel(w http.ResponseWriter, r *http.Reques
 }
 
 // updateNotificationChannel answers PATCH /v1/notifications/channels/{id}. A
-// field left out keeps its value; "token" set to "" removes an ntfy token.
+// field left out keeps its value; "token" set to "" removes an ntfy token and
+// "password" set to "" an SMTP password.
 func (s *server) updateNotificationChannel(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
-		Name   *string   `json:"name"`
-		URL    *string   `json:"url"`
-		Token  *string   `json:"token"`
-		Events *[]string `json:"events"`
-		Paused *bool     `json:"paused"`
+		Name     *string       `json:"name"`
+		URL      *string       `json:"url"`
+		Token    *string       `json:"token"`
+		Password *string       `json:"password"`
+		Email    *emailJSON    `json:"email"`
+		Telegram *telegramJSON `json:"telegram"`
+		Events   *[]string     `json:"events"`
+		Paused   *bool         `json:"paused"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		return err
 	}
 	c, err := s.svc.UpdateNotificationChannel(r.Context(), r.PathValue("id"), service.NotificationChannelPatch{
-		Name: in.Name, URL: in.URL, Token: in.Token, Events: in.Events, Paused: in.Paused,
+		Name: in.Name, URL: in.URL, Token: in.Token, Password: in.Password,
+		Email: in.Email.settings(), Telegram: in.Telegram.settings(), Events: in.Events, Paused: in.Paused,
 	})
 	if err != nil {
 		return registryInvalid(err)

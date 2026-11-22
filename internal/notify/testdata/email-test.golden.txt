@@ -1,0 +1,36 @@
+From: ops@example.com
+To: ana@example.com, ben@example.com
+
+From: "Caravana" <ops@example.com>
+To: <ana@example.com>, =?utf-8?q?Ben_D=C3=ADaz?= <ben@example.com>
+Subject: Test message from Caravana
+Date: Sat, 17 Oct 2026 03:00:41 +0000
+Message-ID: <ndl_3f9a1c2b4d5e@caravana>
+MIME-Version: 1.0
+Auto-Submitted: auto-generated
+Content-Type: multipart/alternative; boundary="caravana-ndl_3f9a1c2b4d5e"
+
+--caravana-ndl_3f9a1c2b4d5e
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/plain; charset=utf-8
+
+If you can read this, the channel "ops" is set up.
+
+https://caravana.example.com/settings/notifications
+
+--=20
+Sent by Caravana. Choose what this address receives in Settings =E2=80=BA N=
+otifications.
+
+--caravana-ndl_3f9a1c2b4d5e
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/html; charset=utf-8
+
+<p><strong>Test message from Caravana</strong></p>
+<p>If you can read this, the channel &#34;ops&#34; is set up.</p>
+<p><a href=3D"https://caravana.example.com/settings/notifications">https://=
+caravana.example.com/settings/notifications</a></p>
+<p>Sent by Caravana. Choose what this address receives in Settings =E2=80=
+=BA Notifications.</p>
+
+--caravana-ndl_3f9a1c2b4d5e--

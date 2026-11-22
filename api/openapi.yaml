@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.51.0
+  version: 0.52.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -4088,10 +4088,13 @@ paths:
       description: |
         A channel is a place Caravana tells things to: what needs the owner (the `problems`
         events, sent when an item opens and when it has been gone for a while) and how deploys
-        end (`deploy_failed`, `deploy_succeeded`). The channel's secret parts (a Slack, Discord
-        or ntfy URL, an ntfy token, a webhook's signing secret) are kept in the cluster's
-        secret store and are never returned. A webhook channel's answer carries its
-        `signingSecret`, this once: `rotateNotificationSecret` makes a new one.
+        end (`deploy_failed`, `deploy_succeeded`). A channel is a signed `webhook`, `slack`,
+        `discord`, `ntfy`, `email` (through an SMTP server, with `email` and optionally `password`)
+        or `telegram` (through the Bot API, with `telegram` and the bot `token`); email and
+        Telegram channels have no `url`. The channel's secret parts (a Slack, Discord or ntfy
+        URL, an ntfy token, a Telegram bot token, an SMTP password, a webhook's signing secret)
+        are kept in the cluster's secret store and are never returned. A webhook channel's
+        answer carries its `signingSecret`, this once: `rotateNotificationSecret` makes a new one.
       tags: [notifications]
       requestBody:
         required: true
@@ -4130,9 +4133,11 @@ paths:
       operationId: updateNotificationChannel
       summary: Change a notification channel.
       description: |
-        Any of `name`, `url`, `token`, `events` and `paused`; a field left out keeps its value.
-        `url` may not be empty. For Slack, Discord and ntfy the URL is itself the secret and is
-        never shown, so leave it out to keep it. `token` is for ntfy only: `""` removes the token.
+        Any of `name`, `url`, `token`, `password`, `email`, `telegram`, `events` and `paused`; a
+        field left out keeps its value. `url` may not be empty. For Slack, Discord and ntfy the
+        URL is itself the secret and is never shown, so leave it out to keep it. `token` is for
+        ntfy (`""` removes it) and Telegram (the bot token, which can't be removed). `password`
+        is for email: `""` removes it. `email` and `telegram` replace that kind's settings whole.
         The kind never changes.
       tags: [notifications]
       requestBody:
@@ -7155,7 +7160,7 @@ components:
           pattern: "^nch_[0-9a-f]{12}$"
         kind:
           type: string
-          enum: [webhook, slack, discord, ntfy]
+          enum: [webhook, slack, discord, ntfy, email, telegram]
         name: {type: string}
         address:
           type: string
@@ -7164,6 +7169,10 @@ components:
             incoming-webhook URL is itself the secret, so only the host and the start of the path
             remain, for example `hooks.slack.com/services/T…/••••`. An ntfy topic URL is the only
             access control of a public topic, so only its host remains, for example `ntfy.sh/••••`.
+            An email channel shows its first two recipients and the server, for example
+            `ops@example.com, dev@example.com via smtp.example.com:587`; a Telegram channel its
+            chat, for example `chat -1001234567890` (and ` on <host>` for a Bot API server of
+            the owner's own). None of them holds a secret.
         events:
           type: array
           items:
@@ -7172,9 +7181,73 @@ components:
           type: boolean
         hasToken:
           type: boolean
-          description: True when an ntfy channel has an access token. The token is never returned.
+          description: |
+            True when an ntfy channel has an access token or an email channel has an SMTP
+            password; always true for a Telegram channel, which can't work without its bot
+            token. The token and the password are write-only and never returned.
+        email:
+          $ref: "#/components/schemas/NotificationEmail"
+        telegram:
+          $ref: "#/components/schemas/NotificationTelegram"
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+
+    NotificationEmail:
+      description: |
+        The mail server and addresses of an `email` channel. The SMTP password is a secret kept
+        in the cluster's secret store and is never part of this.
+      type: object
+      additionalProperties: false
+      required: [host, port, security, from, to]
+      properties:
+        host:
+          type: string
+          maxLength: 253
+          description: A host name or IP address, without a scheme, a port or a path.
+        port:
+          type: integer
+          minimum: 0
+          maximum: 65535
+          description: |
+            On a request, `0` (or left out) means the usual port of the `security`: 587 for
+            `starttls`, 465 for `tls`, 25 for `none`. An answer always has the number.
+        security:
+          type: string
+          enum: [starttls, tls, none]
+          description: |
+            How the connection is secured: `starttls` (the default; refused if the server
+            doesn't offer it), `tls` from the first byte, or `none`, which is allowed only for a
+            mail server on this host (`localhost` or a loopback address).
+        username:
+          type: string
+          maxLength: 256
+          description: The login for AUTH PLAIN. Left out, no login is made.
+        from:
+          type: string
+          description: One address, with or without a display name, like `Caravana <ops@example.com>`.
+        to:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: {type: string}
+          description: One to ten distinct addresses, with or without a display name.
+
+    NotificationTelegram:
+      description: |
+        Where a `telegram` channel posts. The bot token is a secret kept in the cluster's secret
+        store and is never part of this.
+      type: object
+      additionalProperties: false
+      required: [chatId]
+      properties:
+        chatId:
+          type: string
+          description: A chat number like `-1001234567890`, or a public channel's `@name`.
+        apiUrl:
+          type: string
+          description: |
+            The Bot API server's address, only when the owner runs their own (`https`, or `http`
+            for a server on this host; no path). Left out, `https://api.telegram.org`.
 
     NotificationChannelCreated:
       description: |
@@ -7189,7 +7262,7 @@ components:
           pattern: "^nch_[0-9a-f]{12}$"
         kind:
           type: string
-          enum: [webhook, slack, discord, ntfy]
+          enum: [webhook, slack, discord, ntfy, email, telegram]
         name: {type: string}
         address: {type: string, description: "As in `NotificationChannel`."}
         events:
@@ -7200,6 +7273,11 @@ components:
           type: boolean
         hasToken:
           type: boolean
+          description: As in `NotificationChannel`.
+        email:
+          $ref: "#/components/schemas/NotificationEmail"
+        telegram:
+          $ref: "#/components/schemas/NotificationTelegram"
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
         signingSecret:
@@ -7217,22 +7295,34 @@ components:
     NotificationChannelInput:
       type: object
       additionalProperties: false
-      required: [kind, name, url, events]
+      required: [kind, name, events]
       properties:
         kind:
           type: string
-          enum: [webhook, slack, discord, ntfy]
+          enum: [webhook, slack, discord, ntfy, email, telegram]
         name: {type: string, minLength: 1, maxLength: 80}
         url:
           type: string
           description: |
-            An absolute http or https URL: where a webhook is posted, the Slack or Discord
-            incoming-webhook URL, or the ntfy topic URL such as `https://ntfy.sh/my-topic`. A
-            webhook or ntfy URL may not hold a user name and password.
+            Required for `webhook`, `slack`, `discord` and `ntfy`, refused for `email` and
+            `telegram`. An absolute http or https URL: where a webhook is posted, the Slack or
+            Discord incoming-webhook URL, or the ntfy topic URL such as `https://ntfy.sh/my-topic`.
+            A webhook or ntfy URL may not hold a user name and password.
         token:
           type: string
           writeOnly: true
-          description: "ntfy only, and optional: the access token of a protected topic."
+          description: |
+            For ntfy, optional: the access token of a protected topic. For Telegram, required:
+            the bot token BotFather gave, like `123456789:AA…`. Kept in the secret store.
+        password:
+          type: string
+          writeOnly: true
+          maxLength: 1024
+          description: "`email` only, optional: the SMTP password. Kept in the secret store."
+        email:
+          $ref: "#/components/schemas/NotificationEmail"
+        telegram:
+          $ref: "#/components/schemas/NotificationTelegram"
         events:
           type: array
           minItems: 1
@@ -7254,7 +7344,17 @@ components:
         token:
           type: string
           writeOnly: true
-          description: ntfy only. `""` removes the token; leave it out to keep it.
+          description: |
+            ntfy and Telegram only. For ntfy, `""` removes the token; for Telegram it is the
+            bot token and can't be removed. Leave it out to keep it.
+        password:
+          type: string
+          writeOnly: true
+          description: "`email` only. `\"\"` removes the SMTP password; leave it out to keep it."
+        email:
+          $ref: "#/components/schemas/NotificationEmail"
+        telegram:
+          $ref: "#/components/schemas/NotificationTelegram"
         events:
           type: array
           minItems: 1
@@ -7294,8 +7394,8 @@ components:
     NotificationEvent:
       description: |
         The JSON a **webhook** channel receives: `POST <url>` with `Content-Type:
-        application/json`. Slack, Discord and ntfy channels get the same event as a short text
-        message instead. This is a document for receivers; no endpoint of this API takes or
+        application/json`. Slack, Discord, ntfy and Telegram channels get the same event as a short
+        text message instead, and email channels as a message with a plain-text and an HTML part. This is a document for receivers; no endpoint of this API takes or
         returns it.
 
         Headers:
@@ -11942,9 +12042,13 @@ components:
     NotificationInvalid:
       description: |
         `invalid_field`: `field` is `kind` (unknown), `name` (empty or over 80 characters), `url`
-        (empty, not an absolute http or https URL, or holding a user name and password in a
-        webhook or ntfy URL), `token` (on a channel that isn't ntfy) or `events` (none, or an
-        unknown one). Nothing was saved. The message never repeats the URL.
+        (empty, not an absolute http or https URL, holding a user name and password in a
+        webhook or ntfy URL, or given to an email or Telegram channel), `token` (on a channel
+        that is neither ntfy nor Telegram, or not a bot token), `password` or `email` (on
+        another kind, or too long), `email.host`, `email.port`, `email.security`,
+        `email.username`, `email.from`, `email.to` or `email.to[i]` (the address at index i),
+        `telegram`, `telegram.chatId`, `telegram.apiUrl` or `events` (none, or an unknown
+        one). Nothing was saved. The message never repeats the URL, a password or a token.
       content:
         application/json:
           schema:

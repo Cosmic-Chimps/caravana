@@ -1,0 +1,4 @@
+POST https://api.telegram.org/bot123456789:AAH-sentinel_telegram_token_XXXXXXXX/sendMessage
+Content-Type: application/json
+
+{"chat_id":"-1001234567890","text":"Test message from Caravana\nIf you can read this, the channel \"ops\" is set up.\nhttps://caravana.example.com/settings/notifications","link_preview_options":{"is_disabled":true}}

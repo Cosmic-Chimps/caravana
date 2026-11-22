@@ -161,10 +161,13 @@ func destField(f destinationForm, name, label, value, placeholder string) destFi
 
 // setRow is the label and hint of a setting row, and the input the label is for
 // ("" when it labels no single input).
-type setRow struct{ Label, Hint, For string }
+type setRow struct{ Label, Hint, For, Class string }
 
-// srowFor is the template function {{srow "Label" "Hint" "input-id"}}.
-func srowFor(label, hint, forID string) setRow { return setRow{Label: label, Hint: hint, For: forID} }
+// srowFor is the template function {{srow "Label" "Hint" "input-id"}}, with an
+// optional class for the row ({{srow "Label" "Hint" "input-id" "cv-nf-email"}}).
+func srowFor(label, hint, forID string, class ...string) setRow {
+	return setRow{Label: label, Hint: hint, For: forID, Class: strings.Join(class, " ")}
+}
 
 // showSettings answers GET /settings: Account.
 func (s *server) showSettings(w http.ResponseWriter, r *http.Request, session string) {

@@ -218,17 +218,13 @@ func (s *Service) attempt(ctx context.Context, row store.NotificationChannel, ch
 	}
 }
 
-// render turns a queued delivery into a request and sends it.
+// render turns a queued delivery into a message and sends it.
 func (s *Service) render(ctx context.Context, ch notify.Channel, d store.Delivery) error {
 	var ev notify.Event
 	if err := json.Unmarshal([]byte(d.Payload), &ev); err != nil {
 		return fmt.Errorf("read the queued message: %w", err)
 	}
-	req, err := notify.Render(ch, ev, d.ID, s.clock.Now())
-	if err != nil {
-		return err
-	}
-	return notify.Send(ctx, s.notifyClient, req)
+	return notify.Deliver(ctx, s.notifyClient, ch, ev, d.ID, s.clock.Now())
 }
 
 // giveUp marks queued deliveries failed without sending them.

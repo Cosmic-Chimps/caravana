@@ -34,6 +34,10 @@ func ParseAddress(raw string) (*url.URL, error) {
 //
 // The request has no context; Send adds the timeout.
 func Render(ch Channel, ev Event, deliveryID string, now time.Time) (*http.Request, error) {
+	if ch.Kind == KindEmail {
+		// An email channel has no URL address to check and no request to make.
+		return nil, errors.New("render an email message: use RenderMail")
+	}
 	if _, err := ParseAddress(ch.Address); err != nil {
 		return nil, fmt.Errorf("render a %s message: %w", ch.Kind, err)
 	}
@@ -47,6 +51,8 @@ func Render(ch Channel, ev Event, deliveryID string, now time.Time) (*http.Reque
 		return renderChat(ch, "content", "**", ev)
 	case KindNtfy:
 		return renderNtfy(ch, ev)
+	case KindTelegram:
+		return renderTelegram(ch, ev)
 	}
 	return nil, fmt.Errorf("render a message: unknown channel kind %q", ch.Kind)
 }
@@ -89,6 +95,42 @@ func renderChat(ch Channel, field, bold string, ev Event) (*http.Request, error)
 		return nil, fmt.Errorf("render a %s message: %w", ch.Kind, err)
 	}
 	return newPost(ch.Address, body, "application/json")
+}
+
+// telegramBody is the JSON of the Bot API's sendMessage. A struct, not a map,
+// so the fields keep their order and the golden file stays stable.
+type telegramBody struct {
+	// ChatID is always a string: the Bot API accepts one for a numeric chat too,
+	// and a string cannot lose precision the way a large number can.
+	ChatID             string `json:"chat_id"`
+	Text               string `json:"text"`
+	LinkPreviewOptions struct {
+		IsDisabled bool `json:"is_disabled"`
+	} `json:"link_preview_options"`
+}
+
+// renderTelegram renders a Bot API sendMessage: the title, the same text as
+// Slack's and the link, as plain text (no parse_mode), so nothing in an event
+// needs escaping. The bot token is part of the URL's path, which is why Send
+// never puts a path in an error.
+func renderTelegram(ch Channel, ev Event) (*http.Request, error) {
+	if ch.Secret == "" {
+		return nil, errors.New("render a telegram message: the channel has no bot token")
+	}
+	if ch.ChatID == "" {
+		return nil, errors.New("render a telegram message: the channel has no chat ID")
+	}
+	text := ev.Title + "\n" + withDetail(ev)
+	if ev.URL != "" {
+		text += "\n" + ev.URL
+	}
+	b := telegramBody{ChatID: ch.ChatID, Text: text}
+	b.LinkPreviewOptions.IsDisabled = true
+	body, err := marshal(b)
+	if err != nil {
+		return nil, fmt.Errorf("render a telegram message: %w", err)
+	}
+	return newPost(strings.TrimRight(ch.Address, "/")+"/bot"+ch.Secret+"/sendMessage", body, "application/json")
 }
 
 // renderNtfy renders an ntfy publish: the text is the body and everything else

@@ -1,0 +1,4 @@
+POST https://botapi.example.com/bot42:AAH-sentinel_telegram_token_XXXXXXXX/sendMessage
+Content-Type: application/json
+
+{"chat_id":"@caravana_ops","text":"kuma: the backup of uptime-kuma is working again\nIt has not been on the needs-you list for 5 minutes.","link_preview_options":{"is_disabled":true}}

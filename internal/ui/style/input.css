@@ -829,6 +829,14 @@
   .cv-addhead { margin: 0; padding: 16px 20px 0; }
   .cv-addhead + .cv-setrow { border-top: 0; }
 
+  /* Settings › Notifications' add form draws the rows of every kind, so it works without
+     script; a browser with :has() hides the rows the selected kind doesn't use (the server
+     reads only the chosen kind's inputs either way). */
+  [id=add]:has(select[name=kind] option[value=ntfy]:checked) :is(.cv-nf-email, .cv-nf-telegram),
+  [id=add]:has(select[name=kind] option[value=slack]:checked, select[name=kind] option[value=discord]:checked, select[name=kind] option[value=webhook]:checked) :is(.cv-nf-ntfy, .cv-nf-email, .cv-nf-telegram),
+  [id=add]:has(select[name=kind] option[value=email]:checked) :is(.cv-nf-url, .cv-nf-ntfy, .cv-nf-telegram),
+  [id=add]:has(select[name=kind] option[value=telegram]:checked) :is(.cv-nf-url, .cv-nf-ntfy, .cv-nf-email) { display: none; }
+
   /* A secret shown once: the sentence, the value in a box, then the example. */
   .cv-once { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; }
   .cv-once-text { font-size: 14px; line-height: 1.5; color: var(--color-fg-1); text-wrap: pretty; }

@@ -19,9 +19,10 @@ import (
 )
 
 // Notification channels (feature 018). SQLite keeps what the console shows;
-// the secret parts (a Slack, Discord or ntfy URL, an ntfy token, a webhook's
-// signing secret) live in a Nomad Variable (package deploy), written before the row
-// that lists the channel, so a listed channel always has what it needs.
+// the secret parts (a Slack, Discord or ntfy URL, an ntfy or Telegram token, an
+// SMTP password, a webhook's signing secret) live in a Nomad Variable (package
+// deploy), written before the row that lists the channel, so a listed channel
+// always has what it needs.
 
 // The events a channel can ask for.
 const (
@@ -36,7 +37,7 @@ var NotificationEvents = []string{EventProblems, EventDeployFailed, EventDeployS
 // The items of a channel's secret variable.
 const (
 	secretURL           = "url"            // slack, discord and ntfy: the whole URL
-	secretToken         = "token"          // ntfy: the access token
+	secretToken         = "token"          // ntfy: the access token; telegram: the bot token
 	secretSigningSecret = "signing_secret" // webhook
 )
 
@@ -48,33 +49,61 @@ const recentDeliveries = 20
 var ErrNotAWebhook = errors.New("only a webhook channel has a signing secret")
 
 // NotificationChannel is a channel as the console and the API show it: no
-// secret, only whether an ntfy token is set.
+// secret, only whether one is set. HasToken is whether an ntfy token or an SMTP
+// password is set; it is always true for Telegram, which can't work without its
+// bot token. Email and Telegram carry their settings, decoded from the row.
 type NotificationChannel struct {
 	store.NotificationChannel
 	HasToken bool
+	Email    *EmailSettings
+	Telegram *TelegramSettings
 }
 
-// NotificationChannelInput is what adding a channel takes. Token is for ntfy
-// only, and optional.
+// channelView is the view of a stored channel: the row with its settings read.
+func channelView(row store.NotificationChannel, hasToken bool) NotificationChannel {
+	settings := decodeSettings(row.Settings)
+	v := NotificationChannel{NotificationChannel: row, HasToken: hasToken}
+	switch row.Kind {
+	case notify.KindEmail:
+		v.Email = settings.Email
+	case notify.KindTelegram:
+		v.Telegram = settings.Telegram
+		v.HasToken = true
+	}
+	return v
+}
+
+// NotificationChannelInput is what adding a channel takes. Token is the access
+// token of an ntfy channel (optional) or the bot token of a Telegram one
+// (required). Email and Password are for an email channel (the password is
+// optional), Telegram for a Telegram one; an email or Telegram channel has no URL.
 type NotificationChannelInput struct {
-	Kind   string
-	Name   string
-	URL    string
-	Token  string
-	Events []string
-	Paused bool
+	Kind     string
+	Name     string
+	URL      string
+	Token    string
+	Password string
+	Email    *EmailSettings
+	Telegram *TelegramSettings
+	Events   []string
+	Paused   bool
 }
 
 // NotificationChannelPatch is what editing a channel takes; a nil field keeps
-// the stored value. Token set to "" removes the ntfy token. URL may not be
-// empty: leave it nil to keep the address (which for Slack, Discord and ntfy is
-// the secret and is never shown).
+// the stored value. Token set to "" removes the ntfy token; a Telegram channel
+// can't lose its bot token, so "" is refused there. Password set to "" removes
+// the SMTP password. Email and Telegram replace the channel's settings whole. URL
+// may not be empty: leave it nil to keep the address (which for Slack, Discord
+// and ntfy is the secret and is never shown).
 type NotificationChannelPatch struct {
-	Name   *string
-	URL    *string
-	Token  *string
-	Events *[]string
-	Paused *bool
+	Name     *string
+	URL      *string
+	Token    *string
+	Password *string
+	Email    *EmailSettings
+	Telegram *TelegramSettings
+	Events   *[]string
+	Paused   *bool
 }
 
 // CreatedNotificationChannel is the answer to adding a channel: the channel,
@@ -95,10 +124,12 @@ func (s *Service) NotificationChannels(ctx context.Context) ([]NotificationChann
 	out := make([]NotificationChannel, 0, len(rows))
 	for _, c := range rows {
 		hasToken := false
-		if c.Kind == notify.KindNtfy {
+		if c.Kind == notify.KindNtfy || c.Kind == notify.KindEmail {
 			items, err := s.deployer.NotificationSecret(ctx, c.ID)
 			if err != nil {
 				s.log.Warn("read the secrets of a notification channel", "channel", c.ID, "error", err)
+			} else if c.Kind == notify.KindEmail {
+				hasToken = items[secretPassword] != ""
 			} else {
 				// A channel made before the topic was a secret moves now.
 				if err := s.moveNtfyTopic(ctx, &c, items); err != nil {
@@ -111,13 +142,14 @@ func (s *Service) NotificationChannels(ctx context.Context) ([]NotificationChann
 		if wholeURL(c.Address) {
 			c.Address = shownAddress(c.Kind, c.Address)
 		}
-		out = append(out, NotificationChannel{NotificationChannel: c, HasToken: hasToken})
+		out = append(out, channelView(c, hasToken))
 	}
 	return out, nil
 }
 
 // CreateNotificationChannel adds a channel. Errors are *app.FieldError naming
-// "kind", "name", "url", "token" or "events", or the secret store's.
+// "kind", "name", "url", "token", "password", "email.…", "telegram.…" or
+// "events", or the secret store's.
 func (s *Service) CreateNotificationChannel(ctx context.Context, in NotificationChannelInput) (CreatedNotificationChannel, error) {
 	if !slices.Contains(notify.Kinds, in.Kind) {
 		return CreatedNotificationChannel{}, app.NewFieldError("kind", "must be one of: %s", strings.Join(notify.Kinds, ", "))
@@ -126,55 +158,108 @@ func (s *Service) CreateNotificationChannel(ctx context.Context, in Notification
 	if err != nil {
 		return CreatedNotificationChannel{}, err
 	}
-	address, err := channelURL(in.Kind, in.URL)
-	if err != nil {
+	if err := checkKindFields(in); err != nil {
 		return CreatedNotificationChannel{}, err
-	}
-	if in.Token != "" && in.Kind != notify.KindNtfy {
-		return CreatedNotificationChannel{}, app.NewFieldError("token", "is only for an ntfy channel")
 	}
 	events, err := channelEvents(in.Events)
 	if err != nil {
 		return CreatedNotificationChannel{}, err
 	}
 
+	// What is shown, what is kept in the row, and what is secret, by kind.
+	var shown string
+	var settings channelSettings
+	secrets := map[string]string{}
+	var signing string
+	hasToken := false
+	switch in.Kind {
+	case notify.KindEmail:
+		email, err := checkEmail(*in.Email)
+		if err != nil {
+			return CreatedNotificationChannel{}, err
+		}
+		if err := checkSMTPPassword(in.Password); err != nil {
+			return CreatedNotificationChannel{}, err
+		}
+		settings.Email = &email
+		shown = emailAddress(email)
+		secrets[secretPassword] = in.Password
+		hasToken = in.Password != ""
+	case notify.KindTelegram:
+		if err := checkBotToken(in.Token); err != nil {
+			return CreatedNotificationChannel{}, err
+		}
+		telegram, err := checkTelegram(*in.Telegram)
+		if err != nil {
+			return CreatedNotificationChannel{}, err
+		}
+		settings.Telegram = &telegram
+		shown = telegramAddress(telegram)
+		secrets[secretToken] = in.Token
+	default:
+		address, err := channelURL(in.Kind, in.URL)
+		if err != nil {
+			return CreatedNotificationChannel{}, err
+		}
+		shown = shownAddress(in.Kind, address)
+		switch in.Kind {
+		case notify.KindSlack, notify.KindDiscord:
+			secrets[secretURL] = address
+		case notify.KindNtfy:
+			secrets[secretURL] = address
+			secrets[secretToken] = in.Token
+			hasToken = in.Token != ""
+		case notify.KindWebhook:
+			if signing, err = newSigningSecret(); err != nil {
+				return CreatedNotificationChannel{}, err
+			}
+			secrets[secretSigningSecret] = signing
+		}
+	}
+
 	id, err := newID("nch_")
 	if err != nil {
 		return CreatedNotificationChannel{}, err
 	}
-	secrets := map[string]string{}
-	var signing string
-	switch in.Kind {
-	case notify.KindSlack, notify.KindDiscord:
-		secrets[secretURL] = address
-	case notify.KindNtfy:
-		secrets[secretURL] = address
-		secrets[secretToken] = in.Token
-	case notify.KindWebhook:
-		if signing, err = newSigningSecret(); err != nil {
-			return CreatedNotificationChannel{}, err
-		}
-		secrets[secretSigningSecret] = signing
-	}
-
 	// The secret first: a channel listed in the console always has one.
 	if err := s.deployer.SaveNotificationSecret(ctx, id, secrets); err != nil {
 		return CreatedNotificationChannel{}, err
 	}
 	now := time.Now().UTC()
 	row := store.NotificationChannel{
-		ID: id, Kind: in.Kind, Name: name, Address: shownAddress(in.Kind, address),
-		Events: events, Paused: in.Paused, CreatedAt: now, UpdatedAt: now,
+		ID: id, Kind: in.Kind, Name: name, Address: shown,
+		Events: events, Paused: in.Paused, Settings: encodeSettings(settings), CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.store.SaveNotificationChannel(ctx, row); err != nil {
 		// Don't leave a secret nobody can reach.
 		_ = s.deployer.DeleteNotificationSecret(context.WithoutCancel(ctx), id)
 		return CreatedNotificationChannel{}, err
 	}
-	return CreatedNotificationChannel{
-		NotificationChannel: NotificationChannel{NotificationChannel: row, HasToken: in.Token != ""},
-		SigningSecret:       signing,
-	}, nil
+	return CreatedNotificationChannel{NotificationChannel: channelView(row, hasToken), SigningSecret: signing}, nil
+}
+
+// checkKindFields refuses an input that carries a field of another kind, naming
+// it, so a form that sent too much (or the wrong thing) is told at once. It
+// checks which fields are present, not their values.
+func checkKindFields(in NotificationChannelInput) error {
+	email, telegram := in.Kind == notify.KindEmail, in.Kind == notify.KindTelegram
+	switch {
+	case (email || telegram) && strings.TrimSpace(in.URL) != "":
+		return app.NewFieldError("url", "is not used by an email or a Telegram channel")
+	case email && in.Email == nil:
+		return app.NewFieldError("email", "is required for an email channel")
+	case !email && in.Email != nil:
+		return app.NewFieldError("email", "is only for an email channel")
+	case !email && in.Password != "":
+		return app.NewFieldError("password", "is only for an email channel")
+	case telegram && in.Telegram == nil:
+		return app.NewFieldError("telegram", "is required for a Telegram channel")
+	case !telegram && in.Telegram != nil:
+		return app.NewFieldError("telegram", "is only for a Telegram channel")
+	case in.Token != "" && in.Kind != notify.KindNtfy && !telegram:
+		return app.NewFieldError("token", "is only for an ntfy or a Telegram channel")
+	}
+	return nil
 }
 
 // UpdateNotificationChannel changes what the patch names and keeps the rest. An
@@ -182,6 +267,9 @@ func (s *Service) CreateNotificationChannel(ctx context.Context, in Notification
 func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p NotificationChannelPatch) (NotificationChannel, error) {
 	row, err := s.store.GetNotificationChannel(ctx, id)
 	if err != nil {
+		return NotificationChannel{}, err
+	}
+	if err := checkPatchFields(row.Kind, p); err != nil {
 		return NotificationChannel{}, err
 	}
 	if p.Name != nil {
@@ -197,13 +285,34 @@ func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p No
 	if p.Paused != nil {
 		row.Paused = *p.Paused
 	}
-	if p.Token != nil && row.Kind != notify.KindNtfy {
-		return NotificationChannel{}, app.NewFieldError("token", "is only for an ntfy channel")
+
+	// The settings of an email or Telegram channel are replaced whole, and the
+	// address the list shows follows them.
+	settings := decodeSettings(row.Settings)
+	if p.Email != nil {
+		email, err := checkEmail(*p.Email)
+		if err != nil {
+			return NotificationChannel{}, err
+		}
+		settings.Email = &email
+		row.Address = emailAddress(email)
+	}
+	if p.Telegram != nil {
+		telegram, err := checkTelegram(*p.Telegram)
+		if err != nil {
+			return NotificationChannel{}, err
+		}
+		settings.Telegram = &telegram
+		row.Address = telegramAddress(telegram)
+	}
+	if p.Email != nil || p.Telegram != nil {
+		row.Settings = encodeSettings(settings)
 	}
 
-	// Work out the new secret items, if any change.
+	// Work out the new secret items, if any change. The kinds that show whether
+	// a secret is set (ntfy, email) read them every time.
 	var items map[string]string
-	if p.URL != nil || p.Token != nil || row.Kind == notify.KindNtfy {
+	if p.URL != nil || p.Token != nil || p.Password != nil || row.Kind == notify.KindNtfy || row.Kind == notify.KindEmail {
 		if items, err = s.deployer.NotificationSecret(ctx, id); err != nil {
 			return NotificationChannel{}, err
 		}
@@ -225,7 +334,19 @@ func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p No
 		}
 	}
 	if p.Token != nil {
+		if row.Kind == notify.KindTelegram {
+			if err := checkBotToken(*p.Token); err != nil {
+				return NotificationChannel{}, err
+			}
+		}
 		items[secretToken] = *p.Token
+		changed = true
+	}
+	if p.Password != nil {
+		if err := checkSMTPPassword(*p.Password); err != nil {
+			return NotificationChannel{}, err
+		}
+		items[secretPassword] = *p.Password
 		changed = true
 	}
 	if changed {
@@ -238,11 +359,35 @@ func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p No
 	if err := s.store.SaveNotificationChannel(ctx, row); err != nil {
 		return NotificationChannel{}, err
 	}
-	view := NotificationChannel{NotificationChannel: row}
-	if row.Kind == notify.KindNtfy {
-		view.HasToken = items[secretToken] != ""
+	hasToken := false
+	switch row.Kind {
+	case notify.KindNtfy:
+		hasToken = items[secretToken] != ""
+	case notify.KindEmail:
+		hasToken = items[secretPassword] != ""
 	}
-	return view, nil
+	return channelView(row, hasToken), nil
+}
+
+// checkPatchFields refuses a patch that names a field of another kind than the
+// channel's, naming it.
+func checkPatchFields(kind string, p NotificationChannelPatch) error {
+	isURLKind := kind != notify.KindEmail && kind != notify.KindTelegram
+	switch {
+	case p.URL != nil && !isURLKind:
+		return app.NewFieldError("url", "is not used by an email or a Telegram channel")
+	case p.Email != nil && kind != notify.KindEmail:
+		return app.NewFieldError("email", "is only for an email channel")
+	case p.Password != nil && kind != notify.KindEmail:
+		return app.NewFieldError("password", "is only for an email channel")
+	case p.Telegram != nil && kind != notify.KindTelegram:
+		return app.NewFieldError("telegram", "is only for a Telegram channel")
+	case p.Token != nil && kind != notify.KindNtfy && kind != notify.KindTelegram:
+		return app.NewFieldError("token", "is only for an ntfy or a Telegram channel")
+	case p.Token != nil && kind == notify.KindTelegram && *p.Token == "":
+		return app.NewFieldError("token", "is required for a Telegram channel")
+	}
+	return nil
 }
 
 // DeleteNotificationChannel removes a channel, its secrets and its deliveries.
@@ -321,12 +466,8 @@ func (s *Service) TestNotificationChannel(ctx context.Context, id string) (store
 		ID: deliveryID, ChannelID: row.ID, EventType: ev.Type, Title: ev.Title, Payload: string(payload),
 		Status: store.DeliverySent, Attempts: 1, NextAt: now, CreatedAt: now,
 	}
-	req, err := notify.Render(ch, ev, deliveryID, now)
-	if err == nil {
-		// notify's errors never hold the address, so this is safe to store.
-		err = notify.Send(ctx, s.notifyClient, req)
-	}
-	if err != nil {
+	// notify's errors never hold the address or a secret, so this is safe to store.
+	if err := notify.Deliver(ctx, s.notifyClient, ch, ev, deliveryID, now); err != nil {
 		d.Status, d.Error = store.DeliveryFailed, err.Error()
 	}
 	finished := time.Now().UTC()
@@ -360,7 +501,31 @@ func (s *Service) notifyChannel(ctx context.Context, row store.NotificationChann
 		return notify.Channel{}, err
 	}
 	ch := notify.Channel{Kind: row.Kind, Address: row.Address}
+	settings := decodeSettings(row.Settings)
 	switch row.Kind {
+	case notify.KindEmail:
+		e := settings.Email
+		if e == nil {
+			return notify.Channel{}, fmt.Errorf("the mail settings of channel %q are missing", row.Name)
+		}
+		// No password is fine: not every server asks for a login.
+		ch.Address = ""
+		ch.Secret = items[secretPassword]
+		ch.SMTP = &notify.SMTP{Host: e.Host, Port: e.Port, Security: e.Security, Username: e.Username, From: e.From, To: e.To}
+	case notify.KindTelegram:
+		t := settings.Telegram
+		if t == nil {
+			return notify.Channel{}, fmt.Errorf("the settings of channel %q are missing", row.Name)
+		}
+		if items[secretToken] == "" {
+			return notify.Channel{}, fmt.Errorf("the bot token of channel %q is missing from the secret store", row.Name)
+		}
+		ch.Address = notify.DefaultTelegramAPI
+		if t.APIURL != "" {
+			ch.Address = t.APIURL
+		}
+		ch.ChatID = t.ChatID
+		ch.Secret = items[secretToken]
 	case notify.KindSlack, notify.KindDiscord, notify.KindNtfy:
 		if items[secretURL] == "" {
 			return notify.Channel{}, fmt.Errorf("the address of channel %q is missing from the secret store", row.Name)

@@ -102,6 +102,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-compose-file-edit", c.composeFileEdit},
 		{"console-volumes", c.volumes},
 		{"console-notifications", c.notifications},
+		{"console-email-telegram", c.emailTelegram},
 		{"console-projects", c.projects},
 		{"console-project-page", c.projectPage},
 		{"console-create-only", c.createOnly},

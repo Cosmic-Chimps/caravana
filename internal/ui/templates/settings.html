@@ -39,7 +39,7 @@
 
 {{/* srow-open and srow-close: a setting row (label and hint at the left, the controls at the
      right) around whatever sits between them. Takes a setRow: srow "Label" "Hint" "input-id". */}}
-{{define "srow-open"}}<div class="cv-setrow">
+{{define "srow-open"}}<div class="cv-setrow{{with .Class}} {{.}}{{end}}">
   <div class="cv-setrow-text">
     {{if .For}}<label class="cv-setrow-label" for="{{.For}}">{{.Label}}</label>{{else}}<span class="cv-setrow-label">{{.Label}}</span>{{end}}
     {{with .Hint}}<p class="cv-setrow-hint" id="{{$.For}}-hint">{{.}}</p>{{end}}
@@ -861,13 +861,46 @@
 <input class="cv-field cv-field-mono" type="text" id="{{.Prefix}}-name" name="name" value="{{.Form.Name}}" placeholder="phone" maxlength="80" autocapitalize="off" spellcheck="false"{{with .Error "name"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-name-error"{{end}}>
 {{with .Error "name"}}<span id="{{$.Prefix}}-name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
 {{template "srow-close"}}
-{{template "srow-open" (srow "URL" .URLHint (print .Prefix "-url"))}}
+{{template "srow-open" (srow "URL" .URLHint (print .Prefix "-url") "cv-nf-url")}}
 <input class="cv-field cv-field-mono" type="text" id="{{.Prefix}}-url" name="url" value="{{.Form.URL}}" autocapitalize="off" spellcheck="false" autocomplete="off"{{with .Error "url"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-url-error"{{else}}{{if .URLHint}} aria-describedby="{{.Prefix}}-url-hint"{{end}}{{end}}>
 {{with .Error "url"}}<span id="{{$.Prefix}}-url-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
 {{template "srow-close"}}
-{{template "srow-open" (srow "ntfy access token" .TokenHint (print .Prefix "-token"))}}
+{{template "srow-open" (srow "ntfy access token" .TokenHint (print .Prefix "-token") "cv-nf-ntfy")}}
 <input class="cv-field cv-field-mono" type="password" id="{{.Prefix}}-token" name="token" autocomplete="new-password"{{with .Error "token"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-token-error"{{else}} aria-describedby="{{.Prefix}}-token-hint"{{end}}>
 {{with .Error "token"}}<span id="{{$.Prefix}}-token-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+{{template "srow-close"}}
+{{/* The email and Telegram rows are drawn for every kind; the stylesheet hides the ones the
+     selected kind doesn't use (a browser without :has() shows them all, and the server reads
+     only the chosen kind's). */}}
+{{template "srow-open" (srow "Mail server" "A host name or IP address." (print .Prefix "-smtpHost") "cv-nf-email")}}
+{{template "notify-input" (.Input "smtpHost" "text" .Form.SMTPHost "smtp.example.com")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Port" "Leave empty for the usual port of the security." (print .Prefix "-smtpPort") "cv-nf-email")}}
+{{template "notify-input" (.Input "smtpPort" "number" .Form.SMTPPort "587")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Security" "" (print .Prefix "-smtpSecurity") "cv-nf-email")}}
+{{template "notify-security" .}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "User name" "Leave empty when the server needs no login." (print .Prefix "-smtpUsername") "cv-nf-email")}}
+{{template "notify-input" (.Input "smtpUsername" "text" .Form.SMTPUsername "")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Password" .PasswordHint (print .Prefix "-password") "cv-nf-email")}}
+{{template "notify-input" (.Input "password" "password" "" "")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "From" "One address, like ops@example.com." (print .Prefix "-fromAddress") "cv-nf-email")}}
+{{template "notify-input" (.Input "fromAddress" "text" .Form.FromAddress "ops@example.com")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "To" "One to ten addresses, separated by commas, spaces or line breaks." (print .Prefix "-toAddresses") "cv-nf-email")}}
+{{template "notify-input" (.Input "toAddresses" "text" .Form.ToAddresses "owner@example.com, team@example.com")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Chat ID" "A number like -1001234567890, or a public channel's @name." (print .Prefix "-chatId") "cv-nf-telegram")}}
+{{template "notify-input" (.Input "chatId" "text" .Form.ChatID "-1001234567890")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Bot token" .BotTokenHint (print .Prefix "-botToken") "cv-nf-telegram")}}
+{{template "notify-input" (.Input "botToken" "password" "" "")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Bot API server" "Only if you run your own; leave empty for Telegram's." (print .Prefix "-apiUrl") "cv-nf-telegram")}}
+{{template "notify-input" (.Input "apiUrl" "text" .Form.APIURL "https://api.telegram.org")}}
 {{template "srow-close"}}
 {{template "srow-open" (srow "Send" "" "")}}
 <fieldset class="cv-fieldset flex flex-col gap-2"{{with .Error "events"}} aria-invalid="true" aria-describedby="{{$.Prefix}}-events-error"{{end}}>
@@ -880,6 +913,15 @@
 <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Add channel</button>
 {{template "srow-close"}}
 {{end}}
+
+{{/* notify-input: one text, number or password input of an email or Telegram row, with the
+     refusal that names it. Takes a notifyInput. A password input never has a value. */}}
+{{define "notify-input"}}<input class="cv-field cv-field-mono" type="{{.Type}}" id="{{.ID}}" name="{{.Name}}"{{if ne .Type "password"}} value="{{.Value}}"{{end}}{{with .Placeholder}} placeholder="{{.}}"{{end}}{{if eq .Type "number"}} min="1" max="65535"{{end}} autocapitalize="off" spellcheck="false" autocomplete="{{if eq .Type "password"}}new-password{{else}}off{{end}}"{{with .Err}} autofocus aria-invalid="true" aria-describedby="{{$.ID}}-error"{{end}}>
+{{with .Err}}<span id="{{$.ID}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}{{end}}
+
+{{/* notify-security: the security select of an email channel. Takes a notifyFormView. */}}
+{{define "notify-security"}}<select class="cv-field cv-select" id="{{.Prefix}}-smtpSecurity" name="smtpSecurity"{{with .Error "smtpSecurity"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-smtpSecurity-error"{{end}}>{{range .Securities}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+{{with .Error "smtpSecurity"}}<span id="{{$.Prefix}}-smtpSecurity-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}{{end}}
 
 {{/* The inputs of a Notifications edit form (in a row's confirmation). Takes a notifyFormView.
      An edit form keeps the kind in a hidden input. A token or Slack or Discord URL never has a
@@ -898,12 +940,36 @@
     <input class="cv-field cv-field-mono" type="text" id="{{.Prefix}}-name" name="name" value="{{.Form.Name}}" placeholder="phone" maxlength="80" autocapitalize="off" spellcheck="false"{{with .Error "name"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-name-error"{{end}}>
     {{with .Error "name"}}<span id="{{$.Prefix}}-name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
   </label>
+  {{if and (ne .Kind "email") (ne .Kind "telegram")}}
   <label class="cv-fld min-w-[12rem] flex-[2]">
     <span class="cv-label">URL</span>
     <input class="cv-field cv-field-mono" type="text" id="{{.Prefix}}-url" name="url" value="{{.Form.URL}}" autocapitalize="off" spellcheck="false" autocomplete="off"{{with .Error "url"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-url-error"{{else}}{{if .URLHint}} aria-describedby="{{.Prefix}}-url-hint"{{end}}{{end}}>
     {{with .Error "url"}}<span id="{{$.Prefix}}-url-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{else}}{{with .URLHint}}<span id="{{$.Prefix}}-url-hint" class="cv-data-muted">{{.}}</span>{{end}}{{end}}
   </label>
+  {{end}}
 </div>
+{{if eq .Kind "email"}}
+<div class="flex flex-wrap gap-4">
+  <label class="cv-fld min-w-[12rem] flex-[2]"><span class="cv-label">Mail server</span>{{template "notify-input" (.Input "smtpHost" "text" .Form.SMTPHost "smtp.example.com")}}</label>
+  <label class="cv-fld min-w-[6rem] flex-1"><span class="cv-label">Port</span>{{template "notify-input" (.Input "smtpPort" "number" .Form.SMTPPort "587")}}</label>
+  <label class="cv-fld min-w-[12rem] flex-1"><span class="cv-label">Security</span>{{template "notify-security" .}}</label>
+</div>
+<div class="flex flex-wrap gap-4">
+  <label class="cv-fld min-w-[12rem] flex-1"><span class="cv-label">User name</span>{{template "notify-input" (.Input "smtpUsername" "text" .Form.SMTPUsername "")}}</label>
+  <label class="cv-fld min-w-[12rem] flex-1"><span class="cv-label">Password</span>{{template "notify-input" (.Input "password" "password" "" "")}}<span class="cv-data-muted">{{.PasswordHint}}</span></label>
+</div>
+{{if .HasToken}}<label class="cv-check"><input type="checkbox" name="removePassword" value="1"><span>Remove the password</span></label>{{end}}
+<div class="flex flex-wrap gap-4">
+  <label class="cv-fld min-w-[12rem] flex-1"><span class="cv-label">From</span>{{template "notify-input" (.Input "fromAddress" "text" .Form.FromAddress "ops@example.com")}}</label>
+  <label class="cv-fld min-w-[12rem] flex-[2]"><span class="cv-label">To</span>{{template "notify-input" (.Input "toAddresses" "text" .Form.ToAddresses "owner@example.com, team@example.com")}}</label>
+</div>
+{{else if eq .Kind "telegram"}}
+<div class="flex flex-wrap gap-4">
+  <label class="cv-fld min-w-[12rem] flex-1"><span class="cv-label">Chat ID</span>{{template "notify-input" (.Input "chatId" "text" .Form.ChatID "-1001234567890")}}</label>
+  <label class="cv-fld min-w-[12rem] flex-1"><span class="cv-label">Bot token</span>{{template "notify-input" (.Input "botToken" "password" "" "")}}<span class="cv-data-muted">{{.BotTokenHint}}</span></label>
+</div>
+<label class="cv-fld min-w-[12rem]"><span class="cv-label">Bot API server</span>{{template "notify-input" (.Input "apiUrl" "text" .Form.APIURL "https://api.telegram.org")}}<span class="cv-data-muted">Only if you run your own; leave empty for Telegram's.</span></label>
+{{end}}
 {{if or (not .Editing) (eq .Kind "ntfy")}}
 <label class="cv-fld min-w-[12rem]">
   <span class="cv-label">ntfy access token</span>
