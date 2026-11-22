@@ -40,8 +40,10 @@ type envView struct {
 	Apps   []projectApp
 	Action string // where its Delete posts
 	Offer  bool   // the page has a Delete button for it
-	Reason string // why the button is disabled; "" when it works
-	Note   string // for the environment that can't be deleted at all
+	// Preview is set for a preview environment (pr-<n>): when it expires, and Close preview.
+	Preview *previewRow
+	Reason  string // why the button is disabled; "" when it works
+	Note    string // for the environment that can't be deleted at all
 }
 
 // projectDelete is the Delete project section.
@@ -63,6 +65,7 @@ type projectView struct {
 	Name        formField
 	Envs        []envView
 	AddEnv      formField
+	Previews    *previewsForm
 	Delete      projectDelete
 }
 
@@ -89,6 +92,7 @@ type projectsPage struct {
 	New     *newProjectForm
 	Screen  *projectScreen
 	Project *projectView
+	Close   *previewClose
 	Gone    sentence
 }
 
@@ -190,6 +194,7 @@ type projectExtras struct {
 	Notice, Alert sentence
 	Name          *formField // the display name form, as typed
 	AddEnv        *formField
+	Previews      *previewsExtra // the Previews section, as typed in a refused form
 	Delete        *projectDelete // the Delete project section, with its refusal
 }
 
@@ -211,6 +216,11 @@ func (s *server) settingsPage(w http.ResponseWriter, r *http.Request, status int
 		s.serverError(w, r, "list apps of project", err)
 		return
 	}
+	pv, err := s.svc.Previews(ctx, id)
+	if err != nil {
+		s.serverError(w, r, "read the previews of a project", err)
+		return
+	}
 	byEnv := map[string][]projectApp{}
 	for _, sum := range sums {
 		link := projectApp{Name: cmpName(sum), Href: "/apps/" + url.PathEscape(sum.App.ID)}
@@ -219,9 +229,10 @@ func (s *server) settingsPage(w http.ResponseWriter, r *http.Request, status int
 
 	base := "/projects/" + url.PathEscape(id)
 	v := &projectView{ID: id, Display: p.DisplayName, Notice: extra.Notice, Alert: extra.Alert,
-		Name:   formField{ID: "displayName", Value: p.DisplayName},
-		AddEnv: formField{ID: "environment"},
-		Delete: projectDelete{Offered: id != app.DefaultProject, Action: base + "/delete", ID: id}}
+		Name:     formField{ID: "displayName", Value: p.DisplayName},
+		AddEnv:   formField{ID: "environment"},
+		Previews: previewsFormOf(id, pv.Settings, extra.Previews),
+		Delete:   projectDelete{Offered: id != app.DefaultProject, Action: base + "/delete", ID: id}}
 	if extra.Name != nil {
 		v.Name = *extra.Name
 	}
@@ -233,6 +244,9 @@ func (s *server) settingsPage(w http.ResponseWriter, r *http.Request, status int
 	}
 	for _, e := range p.Environments {
 		ev := envView{Name: e.Name, Apps: byEnv[e.Name], Action: base + "/environments/" + url.PathEscape(e.Name) + "/delete"}
+		if e.Preview != nil {
+			ev.Preview = &previewRow{Expires: clockOf(s.now(), e.Preview.ExpiresAt), CloseHref: base + "/previews/" + url.PathEscape(e.Name) + "/close"}
+		}
 		switch {
 		case id == app.DefaultProject && e.Name == app.DefaultEnvironment:
 			ev.Note = "Apps that existed before projects live here, so it can't be deleted."
@@ -275,8 +289,13 @@ func (s *server) projectGone(w http.ResponseWriter, r *http.Request, id string) 
 // sentence after the display name's post redirects here.
 func (s *server) showProjectSettings(w http.ResponseWriter, r *http.Request, session string) {
 	var extra projectExtras
-	if r.URL.Query().Get("saved") == "1" {
+	switch q := r.URL.Query(); {
+	case q.Get("saved") == "1":
 		extra.Notice = sentence{plain("Display name saved.")}
+	case q.Get("saved") == "previews":
+		extra.Notice = sentence{plain("Preview settings saved.")}
+	case labelName.MatchString(q.Get("closed")):
+		extra.Notice = sentence{plain("Closed "), mono(q.Get("closed")), plain(": its apps and the environment are deleted.")}
 	}
 	s.settingsPage(w, r, http.StatusOK, r.PathValue("project"), extra)
 }

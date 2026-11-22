@@ -20,13 +20,13 @@
 
 ## Phase B: console and docs
 
-- [ ] T007 Project page Previews section and preview rows with expiry and Close preview (D11), no-JS forms,
+- [x] T007 Project page Previews section and preview rows with expiry and Close preview (D11), no-JS forms,
       `tools/ui-css.sh build` if classes changed, UI tests (no password on any page).
-- [ ] T008 `docs/previews.md`, `docs/plan.md`, `changelog.d/049-previews.md`, CLAUDE.md paragraph (D12).
+- [x] T008 `docs/previews.md`, `docs/plan.md`, `changelog.d/049-previews.md`, CLAUDE.md paragraph (D12).
 
 ## Phase C: lab
 
-- [ ] T009 Gate step `previews` (plan "Lab"), run alone:
+- [x] T009 Gate step `previews` (plan "Lab"), run alone:
       `CARAVANA_LAB=1 go test ./cmd/caravana -run 'TestLab/^(api-needs-token|previews)$' -v -timeout 20m`.
 
 ## Phase D: caravana-action (`../caravana-action`)

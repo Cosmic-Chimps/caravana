@@ -86,6 +86,10 @@ type gateTarget struct {
 	// the image-scan step's rescan check is skipped on a real host.
 	RunDailyScans func(ctx context.Context) error
 	DropFinding   func(ctx context.Context, image, advisory string) (int, error)
+	// SetPreviewExpiry makes d the time every preview may sit idle in place of each project's days
+	// (service.SetPreviewExpiryForTests; 0 gives the projects' own back); only the lab sets it
+	// (feature 049), and the previews step's reaper check is skipped on a real host.
+	SetPreviewExpiry func(d time.Duration)
 }
 
 // publicTarget is what only a real host has.
@@ -175,6 +179,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"os-updates", false, g.osUpdatesStep},
 		{"terminal", false, g.terminalStep},
 		{"deploy-from-ci", false, g.deployFromCIStep},
+		{"previews", false, g.previewsStep},
 		{"private-registry", false, g.privateRegistryStep},
 		{"templates", false, g.templatesStep},
 		{"secret-references", false, g.secretRefsStep},

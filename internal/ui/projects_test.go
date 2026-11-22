@@ -240,14 +240,14 @@ func TestProjectSettingsPage(t *testing.T) {
 	if f := formWith(t, body, "/projects/shop/environments/production/delete"); len(f.Disabled) != 0 {
 		t.Errorf("production's Delete should work: %+v", f)
 	}
-	for _, action := range []string{"/projects/shop", "/projects/shop/environments", "/projects/shop/delete"} {
+	for _, action := range []string{"/projects/shop", "/projects/shop/environments", "/projects/shop/previews/settings", "/projects/shop/delete"} {
 		if f := formWith(t, body, action); f.Method != "post" || f.HTMX {
 			t.Errorf("form %s = %+v, want a plain post", action, f)
 		}
 	}
 	// Every section is capped at one width, and the closed Delete panel says what it needs first.
-	if n := strings.Count(body, `class="cv-narrow flex flex-col gap-2"`) + strings.Count(body, `class="cv-danger cv-narrow flex flex-col gap-2"`); n != 4 {
-		t.Errorf("%d sections are capped with cv-narrow, want 4", n)
+	if n := strings.Count(body, `class="cv-narrow flex flex-col gap-2"`) + strings.Count(body, `class="cv-danger cv-narrow flex flex-col gap-2"`); n != 5 {
+		t.Errorf("%d sections are capped with cv-narrow, want 5", n)
 	}
 	if !strings.Contains(got, "The project has to be empty first: no app is deleted for you. Delete project…") || strings.Contains(got, "Back to the project") {
 		t.Errorf("the Delete section or the lede is off:\n%s", got)

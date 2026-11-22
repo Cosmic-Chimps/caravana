@@ -199,13 +199,17 @@ var consoleParity = map[string]parity{
 	// environment's newest deployments (listRecentDeployments; the API has no environment filter yet, the
 	// page reads the store by place). The settings page is the project and its apps, for the delete reasons.
 	"GET /projects/{project}":                                    {ops: []string{"getProject", "listEnvironmentApps", "listAttention", "listRecentDeployments"}},
-	"GET /projects/{project}/settings":                           {ops: []string{"getProject", "listEnvironmentApps"}},
+	"GET /projects/{project}/settings":                           {ops: []string{"getProject", "listEnvironmentApps", "getPreviews"}},
 	"GET /parts/projects/{project}/apps":                         {ops: []string{"getProject", "listEnvironmentApps"}},
 	"GET /parts/projects/{project}/rail":                         {ops: []string{"getProject", "listEnvironmentApps", "listAttention", "listRecentDeployments"}},
 	"POST /projects/{project}":                                   {ops: []string{"updateProject"}},
 	"POST /projects/{project}/delete":                            {ops: []string{"deleteProject"}},
 	"POST /projects/{project}/environments":                      {ops: []string{"createEnvironment"}},
 	"POST /projects/{project}/environments/{environment}/delete": {ops: []string{"deleteEnvironment"}},
+	// Previews (feature 049): the settings section reads getPreviews and saves with putPreviewSettings; Close preview is closePreview.
+	"POST /projects/{project}/previews/settings":            {ops: []string{"getPreviews", "putPreviewSettings"}},
+	"GET /projects/{project}/previews/{environment}/close":  {ops: []string{"getProject", "listEnvironmentApps"}},
+	"POST /projects/{project}/previews/{environment}/close": {ops: []string{"closePreview"}},
 	// Promote and copy between environments. The page reads the preview, which is a POST in the API
 	// because it takes a body but changes nothing; the form posts the promotion.
 	"GET /apps/{id}/promote":                 {ops: []string{"getApp", "previewPromotion", "getDeployment"}}, // getDeployment names the source's job version

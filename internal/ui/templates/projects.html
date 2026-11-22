@@ -117,6 +117,27 @@
     <div><button type="submit" class="cv-btn cv-btn-primary">Create project</button></div>
   </form>
 </section>
+{{else if .Close}}
+{{with .Close}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">Close <span class="cv-inline-mono">{{.Environment}}</span>?</h1>
+  </header>
+  {{if .Refusal}}
+  <div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .Refusal}}</span></div>
+  {{else}}
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    <p class="text-base text-fg-1">This deletes {{if .Apps}}every app in the preview and then the environment{{else}}the environment, which has no apps{{end}}. Each app's copies, volumes and secrets go with it.</p>
+    {{with .Apps}}<ul class="cv-env-apps">{{range .}}<li><a href="{{.Href}}" class="cv-app-name">{{.Name}}</a></li>{{end}}</ul>{{end}}
+    <p class="text-base text-fg-1">A pull request that is still open gets a new preview at its next push.</p>
+  </div>
+  {{end}}
+  <div class="cv-actions">
+    {{if not .Refusal}}<form method="post" action="{{.Action}}"><button type="submit" class="cv-btn cv-btn-danger">Close {{.Environment}}</button></form>{{end}}
+    <a href="{{.Back}}" class="cv-btn cv-btn-secondary">{{if .Refusal}}Back to settings{{else}}Cancel{{end}}</a>
+  </div>
+</section>
+{{end}}
 {{else if .Screen}}
 {{with .Screen}}
 {{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
@@ -168,11 +189,14 @@
       {{range .Envs}}{{$env := .Name}}
       <div class="cv-row cv-env-row" role="listitem">
         <div class="cv-env-head">
-          <h3 class="cv-data text-fg-1">{{.Name}}</h3>
+          <h3 class="cv-data text-fg-1">{{.Name}}{{with .Preview}} <span class="cv-data-muted">· preview · expires {{template "clock" .Expires}}</span>{{end}}</h3>
           {{if .Offer}}
-          <form method="post" action="{{.Action}}">
-            <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm"{{if .Reason}} disabled aria-describedby="env-{{.Name}}-reason"{{end}}>Delete {{.Name}}</button>
-          </form>
+          <span class="cv-actions">
+            {{with .Preview}}<a href="{{.CloseHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Close preview…</a>{{end}}
+            <form method="post" action="{{.Action}}">
+              <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm"{{if .Reason}} disabled aria-describedby="env-{{.Name}}-reason"{{end}}>Delete {{.Name}}</button>
+            </form>
+          </span>
           {{end}}
         </div>
         {{with .Reason}}<p id="env-{{$env}}-reason" class="cv-data-muted cv-hint">{{.}}</p>{{end}}
@@ -183,6 +207,40 @@
       {{end}}
     </div>
   </section>
+
+  {{with .Previews}}
+  <section id="previews" aria-labelledby="previews-title" class="cv-narrow flex flex-col gap-2">
+    <h2 id="previews-title" class="cv-label">Previews</h2>
+    <form method="post" action="{{.Action}}" class="cv-panel p-4 flex flex-col gap-3">
+      <p class="cv-hint">A pull request's preview is an environment called <span class="cv-inline-mono">pr-&lt;number&gt;</span> with its own copy of the app{{if .Open}}. {{.Open}} open now{{end}}.</p>
+      <label class="cv-fld" for="{{.Limit.ID}}">
+        <span class="cv-label">Open previews at most</span>
+        <input class="cv-field cv-field-mono" id="{{.Limit.ID}}" type="text" inputmode="numeric" name="limit" value="{{.Limit.Value}}" autocomplete="off" maxlength="2"{{if .Limit.Error}} aria-invalid="true" aria-describedby="{{.Limit.ID}}-error"{{end}}{{if .Limit.Alert}} autofocus{{end}}>
+        <span class="cv-data-muted cv-hint">0 to 20. 0 means no previews. One more is refused until a preview is closed.</span>
+        {{template "field-error" .Limit}}
+      </label>
+      <label class="cv-fld" for="{{.Expire.ID}}">
+        <span class="cv-label">Close a preview after (days)</span>
+        <input class="cv-field cv-field-mono" id="{{.Expire.ID}}" type="text" inputmode="numeric" name="expireAfterDays" value="{{.Expire.Value}}" autocomplete="off" maxlength="2"{{if .Expire.Error}} aria-invalid="true" aria-describedby="{{.Expire.ID}}-error"{{end}}{{if .Expire.Alert}} autofocus{{end}}>
+        <span class="cv-data-muted cv-hint">1 to 30. Counted from the preview's newest deploy, so a pull request that keeps getting pushes stays open.</span>
+        {{template "field-error" .Expire}}
+      </label>
+      <label class="cv-fld" for="{{.Password.ID}}">
+        <span class="cv-label">{{if .PasswordSet}}New preview password{{else}}Preview password{{end}}</span>
+        <input class="cv-field cv-field-mono" id="{{.Password.ID}}" type="password" name="password" autocomplete="new-password" minlength="12" maxlength="128"{{if .Password.Error}} aria-invalid="true" aria-describedby="{{.Password.ID}}-error"{{end}}{{if .Password.Alert}} autofocus{{end}}>
+        <span class="cv-data-muted cv-hint">{{if .PasswordSet}}A password is set: every preview address asks for it (user <span class="cv-inline-mono">team</span>). Type a new one to change it for every open preview at once; leave this empty to keep it.{{else}}Previews are public. Set a password and every preview address asks for it (user <span class="cv-inline-mono">team</span>), 12 to 72 characters.{{end}}</span>
+        {{template "field-error" .Password}}
+      </label>
+      {{if .PasswordSet}}
+      <div class="cv-fld">
+        <label class="cv-check" for="{{.Remove.ID}}"><input type="checkbox" id="{{.Remove.ID}}" name="removePassword" value="1"{{if .RemoveOn}} checked{{end}}{{if .Remove.Error}} aria-invalid="true" aria-describedby="{{.Remove.ID}}-error"{{end}}><span>Remove the password</span></label>
+        {{template "field-error" .Remove}}
+      </div>
+      {{end}}
+      <div><button type="submit" class="cv-btn cv-btn-secondary">Save preview settings</button></div>
+    </form>
+  </section>
+  {{end}}
 
   <section id="add-environment" aria-labelledby="add-env-title" class="cv-narrow flex flex-col gap-2">
     <h2 id="add-env-title" class="cv-label">Add environment</h2>

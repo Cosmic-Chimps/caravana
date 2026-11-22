@@ -1815,6 +1815,25 @@ doc: `docs/database-backups.md`. No new module, no policy change, constitution u
 - Not in 046: point-in-time recovery, replica sets and shards beyond the node the service reaches, `*_FILE` credentials,
   Percona XtraBackup, Redis.
 
+Feature 049 (`specs/049-previews`, CodeAlta task `rg2u`, worktree branch `alta/dreamy-glow-f7vh`): a preview is an environment
+named `pr-<n>` (`app.PreviewNumber`; the prefix is reserved), opened and closed by a deploy token, with its own copy of the app.
+`plan.md` D1–D12 are the decisions; operator doc: `docs/previews.md`. Migration 0038, no new module, no policy change.
+- Deploy tokens: `scopeRules` are functions of the request and the scope, and gained three: create `pr-<n>` in the token's
+  project, delete a `pr-<n>` environment of it and delete its own app inside one. `closePreview`, `getPreviews` and
+  `putPreviewSettings` stay denied to them.
+- Per project (`projects.preview_limit` 5, `preview_expire_days` 7, `preview_password_hash`): the limit is checked in the same
+  transaction as the insert (`*PreviewLimitError`, 409 `preview_limit`), expiry is computed from the newest deploy (never
+  stored) and a reaper (`SetPreviewReapGap`, 5 minutes) closes the expired with `ClosePreview` (every app by `DeleteApp`, then
+  the environment). The preview password is one bcrypt hash: the deploy path turns `teamOnly` on for every domain of a preview
+  (one warning) and the Team-only rows take the project's hash; changing it rewrites them with no deploy, removing it is 409
+  `previews_open` while a preview is open, and `rotateTeamPassword` there is 409 `preview_password`.
+- API 0.54.0: `getPreviews`, `putPreviewSettings`, `closePreview`, `Environment.preview`. Console (`internal/ui/previews.go`):
+  the project settings page's Previews section (limit, days, password set/change/remove; refusals at their field, never a
+  redirect, the password never drawn back), "preview · expires <clock>" and Close preview… (a confirmation page) on each preview
+  row. The handoff's Previews page is a later designer-cycle task.
+- Lab: gate step `previews` (`gate_previews_test.go`, after `deploy-from-ci`), which also runs caravana-action's preview mode when
+  `../caravana-action` has it.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
