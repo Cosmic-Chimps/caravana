@@ -645,14 +645,21 @@ func TestSQLiteCopyScript(t *testing.T) {
 		prep    func(r *sqliteRun, db string)
 		env     []string
 		out     string // overrides the default
-		wantMsg string
+		wantMsg string // the last line of stderr starts with it
+		wantIn  string // and holds it, when set
 	}{
 		{name: "no database file", wantMsg: "copy: there is no database file at /data/app.db"},
+		// The words after the prefix are sqlite3's own, and they changed
+		// between versions ("Error: file is not a database", then "Error in
+		// 5th command line argument: file is not a database"); the pinned
+		// alpine/sqlite image (3.53.4) prints the newer form too. The script
+		// controls only the prefix, the exit code and that the file is
+		// refused.
 		{name: "a file that isn't a database",
 			prep: func(r *sqliteRun, db string) {
 				r.write(db, "this is not sqlite, not at all, not even close to a database file")
 			},
-			wantMsg: "copy: Error: "},
+			wantMsg: "copy: ", wantIn: "not a database"},
 		{name: "the copy fails", prep: func(r *sqliteRun, db string) { r.database(db, 3) },
 			env: []string{"FAKE_SQLITE_FAIL=disk I/O error"}, wantMsg: "copy: Error: disk I/O error"},
 		{name: "the copy runs out of time", prep: func(r *sqliteRun, db string) { r.database(db, 3) },
@@ -680,8 +687,8 @@ func TestSQLiteCopyScript(t *testing.T) {
 			if res.code != 1 {
 				t.Fatalf("exit %d, want 1; stderr: %s", res.code, res.stderr)
 			}
-			if got := res.lastLine(); !strings.HasPrefix(got, tt.wantMsg) {
-				t.Errorf("last line of stderr = %q, want it to start with %q", got, tt.wantMsg)
+			if got := res.lastLine(); !strings.HasPrefix(got, tt.wantMsg) || !strings.Contains(got, tt.wantIn) {
+				t.Errorf("last line of stderr = %q, want it to start with %q and hold %q", got, tt.wantMsg, tt.wantIn)
 			}
 			if exists(out) {
 				t.Errorf("a failed copy left %s", out)
@@ -1091,13 +1098,16 @@ func TestSQLiteStageScript(t *testing.T) {
 		prep    func(r *sqliteRun)
 		env     []string
 		request string
-		wantMsg string
+		wantMsg string // the last line of stderr starts with it
+		wantIn  string // and holds it, when set
 	}{
 		{name: "a damaged file", prep: func(r *sqliteRun) { r.plainDatabase(filepath.Join(r.work, "web-2.db"), 3) },
 			env: []string{"FAKE_QUICK_CHECK=row 7 missing from index"}, wantMsg: "check: the backup is damaged: row 7 missing from index"},
+		// sqlite3's own words after the prefix differ by version (see the
+		// same case of TestSQLiteCopyScript).
 		{name: "not a database", prep: func(r *sqliteRun) {
 			r.write(filepath.Join(r.work, "web-2.db"), "not a database file, just text that is long enough to be read as a header by sqlite")
-		}, wantMsg: "check: Error: "},
+		}, wantMsg: "check: ", wantIn: "not a database"},
 		{name: "the check runs out of time", prep: func(r *sqliteRun) { r.plainDatabase(filepath.Join(r.work, "web-2.db"), 3) },
 			env: []string{"FAKE_TIMEOUT_EXPIRE=sqlite3"}, wantMsg: "check: timed out (the limit is 600 seconds)"},
 		{name: "files left by an earlier restore", prep: func(r *sqliteRun) {
@@ -1119,8 +1129,8 @@ func TestSQLiteStageScript(t *testing.T) {
 				request = "web-2"
 			}
 			res, staged := stage(r, tt.env, request)
-			if res.code != 1 || !strings.HasPrefix(res.lastLine(), tt.wantMsg) {
-				t.Fatalf("exit %d, last line %q, want 1 and a line starting %q", res.code, res.lastLine(), tt.wantMsg)
+			if got := res.lastLine(); res.code != 1 || !strings.HasPrefix(got, tt.wantMsg) || !strings.Contains(got, tt.wantIn) {
+				t.Fatalf("exit %d, last line %q, want 1 and a line starting %q and holding %q", res.code, got, tt.wantMsg, tt.wantIn)
 			}
 			if exists(staged) {
 				t.Error("a failed stage left the staged file")
