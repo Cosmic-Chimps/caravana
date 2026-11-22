@@ -115,6 +115,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-schedule-in-copy", c.scheduleInCopy},
 		{"console-domains-states", c.domainsStates},
 		{"console-logs", c.consoleLogs},
+		{"console-requests", c.consoleRequests},
 		{"console-monitoring", c.consoleMonitoring},
 		{"console-ops-overview", c.consoleOpsOverview},
 		{"console-ops-server", c.consoleOpsServer},

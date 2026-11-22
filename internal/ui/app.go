@@ -25,7 +25,7 @@ import (
 // tabSpec is one tab of the app page. Path is appended to /apps/{id}; the
 // Running tab's is "".
 type tabSpec struct {
-	Key   string // running, deployments, configure or logs
+	Key   string // running, deployments, configure, logs, requests or backups
 	Label string
 	Path  string
 }
@@ -38,6 +38,7 @@ var builtTabs = []tabSpec{
 	{Key: "deployments", Label: "Deployments", Path: "/deployments"},
 	{Key: "configure", Label: "Configure", Path: "/configure"},
 	{Key: "logs", Label: "Logs", Path: "/logs"},
+	{Key: "requests", Label: "Requests", Path: "/requests"},
 	{Key: "backups", Label: "Backups", Path: "/backups"},
 }
 
@@ -108,7 +109,9 @@ type appPage struct {
 	Compose     *composeView // Deploy from Compose, under the Configure tab
 	// LogsTab is the Logs page filtered to the app (feature 024), drawn with logs.html's template.
 	LogsTab *logsView
-	Backups *backupsTab
+	// RequestsTab is the Requests page filtered to the app (feature 047), drawn with requests.html's template.
+	RequestsTab *requestsView
+	Backups     *backupsTab
 	// Variables and Domains are Configure's own pages (feature 021); the Configure tab is current on both.
 	VariablesTab *variablesTab
 	DomainsTab   *domainsTab
@@ -405,7 +408,8 @@ func (s *server) tabKey(key string) string {
 // liveApp answers GET /live/apps/{id}: the stream of one app's page.
 // With ?watch=logs (the Logs tab) it also carries the app's logs notice (never
 // a line), and with live=1 besides, the app's place is followed while it is
-// open (feature 024); with ?tab=running (the Running tab) a "usage" event every
+// open (feature 024); ?watch=requests does the same for the Requests tab's
+// requests notice (feature 047); with ?tab=running (the Running tab) a "usage" event every
 // few seconds, which is what makes the copies region read CPU and memory again;
 // with ?tab=domains (the Domains page) the domains notice, and the domains are
 // checked every minute while it is open.
@@ -415,6 +419,11 @@ func (s *server) liveApp(w http.ResponseWriter, r *http.Request) {
 		Kinds: []service.ChangeKind{service.ChangeApp, service.ChangeDeployments, service.ChangeCopies, service.ChangeActions, service.ChangeDeleted,
 			service.ChangeScans}}
 	switch {
+	case r.URL.Query().Get("watch") == "requests":
+		route.Kinds = append(route.Kinds, service.ChangeRequests)
+		if r.URL.Query().Get("live") == "1" {
+			route.WatchRequests = s.appRequestsWatch(id)
+		}
 	case r.URL.Query().Get("watch") == "logs":
 		route.Kinds = append(route.Kinds, service.ChangeLogs)
 		if r.URL.Query().Get("live") == "1" {

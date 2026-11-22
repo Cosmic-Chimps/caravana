@@ -1836,6 +1836,57 @@ Email and Telegram notifications (CodeAlta task `c6v8`, worktree branch `alta/co
   any page or list) passed on 2026-11-20 (8 s, `-run 'TestConsoleLab/^console-(sign-in|email-telegram)$'`). Run it with the
   main checkout's `deploy/dev/lab.sh env`: a worktree has no `deploy/dev/.data/env`.
 
+Feature 047 (`specs/047-requests`, CodeAlta task `5k6z`, worktree branch `alta/hopeful-glen-8f72`): Requests, each HTTP
+request Traefik served, per app, read from Traefik's access log and never stored. `plan.md` D1–D13 are the decisions and its
+Deviations sections (phases A and B) the changes; operator doc: `docs/requests.md`. No migration, no new module, no policy
+change, constitution unchanged.
+- The log: both Traefik jobs write `--accesslog=true` as JSON to **stdout** with only the fields the page needs (`StartUTC`,
+  router, service, method, host, path, status, duration, bytes, client, TLS version, retries, entry point), no header and no
+  query string (`headers` and `queryparameters` `defaultmode=drop`: the sentinel `?token=s3cret-sentinel-047` gave `"RequestPath":"/"`
+  in the lab). Traefik's own log moved to stderr, so Nomad's `alloc/logs/traefik.stdout.<n>` holds access lines only; the job's
+  `logs { max_files = 10, max_file_size = 20 }` keeps about 200 MB. `install.sh` says Traefik restarts once when the running job
+  lacks `accesslog`.
+- `internal/accesslog` is pure (a test forbids network and Nomad imports): `Parse` (a line with `StartUTC` and `DownstreamStatus`,
+  else skipped), `Class` (`1xx`…`5xx`, `other`), `Owners`/`OwnersOf` (Traefik's service is `<app ID>-<service>`, so it is resolved
+  against the stored apps; `caravana@file` and a deleted app's service belong to nobody) and `ServiceOf` for the live follower.
+  `deploy.ProxyCopy` (the running allocation of job `traefik`; `ErrNoProxy`) and `ProxyAccessLog` (the job's arguments).
+- The read (`service/requests.go`): `ReadRequests` walks Traefik's stdout files backwards with 024's `walkLogStream`, under 024's
+  `logSem` and deadline, with a budget of 8 MiB (about 20,000 requests); each line is parsed, resolved to its owner, filtered
+  (status classes, method, path prefix, minimum duration, client) and sorted newest first by `StartUTC`, since the file is in
+  completion order. `RequestRead` has `AccessLog` (false when the job doesn't write the log: nothing is read), `Total`, `Coverage`,
+  `Dropped`, `Services` (the rail's counts, after every filter but the app and service) and `Histogram()` (30 bins by class).
+  The read goes on into the allocations before the last Traefik restart while Nomad keeps them (`deploy.ProxyCopies`),
+  and when Nomad already collected what came before, the coverage names the oldest allocation reached. `WatchRequests` follows Traefik's stdout
+  while a Live page is open and sends the `requests` notice (the app ID, never a line), at most every 2 s per place.
+- API 0.53.0 (0.52.0 is email and Telegram): `listRequests` (`GET /v1/requests`, `no-store`), 422 `invalid_field` naming the field, 404 as the logs', 503
+  `proxy_unavailable`; deploy tokens are denied by the default deny.
+- Console (`internal/ui/requests.go`, `templates/requests.html`, no script of its own): `/requests`, `/parts/requests` (the
+  histogram and the table, on the `requests` notice; 503 with the notice's sentence when Traefik isn't running, which htmx doesn't
+  swap), `/apps/{id}/requests` (the tab after Logs, the same page filtered to the app with "All requests"; its stream is
+  `/live/apps/{id}?watch=requests&live=1`), the sidebar's Requests item (icon `arrow-left-right`). The filters are links (status
+  chips: from no filter the first click turns that class off, the last class on can't be turned off) and one GET form (method,
+  minimum duration, path prefix, client). A row is a link to Logs around its time for its service. The histogram is the logs' SVG
+  stacked by class. Only the path is drawn, as text; control characters are dropped from it.
+- The Logs page gained a window: `/logs?from=&to=` (RFC 3339, both) reads exactly that window, paused, with no Live button
+  (`windowOf` serves both pages); a request's row and Monitoring's Errors chart link to it. Monitoring: the Errors chart's
+  caption "See the requests that failed" (`/requests?status=5xx` over the chart's range), a click on its plot opens the point's
+  minute (`data-click-href`, `monitoring.js`), its hidden table's rows are the same links, and the apps table has a Requests link
+  beside the Logs one.
+- Tests: sentinel tests in `service`, `api` and `ui` search every page, answer, error, log and the stored apps for
+  `s3cret-sentinel-047`.
+- Lab: `TestConsoleLab` has a step `console-requests` (`console_requests_test.go`: a busybox app with a domain and two CGI
+  scripts, the three requests through Traefik with `?token=<sentinel>`, the app's Requests tab, the 5xx chip and the path and
+  method filters, the workspace page, Logs around a row, Monitoring's link) and the gate a step `requests`
+  (`gate_requests_test.go`: `listRequests` with the gate's token, every filter, the 422 refusals naming their field, a deploy
+  token's 403, and the sentinel in no answer, log line or data file). Both passed in the lab on 2026-11-20 (32 s each, run
+  alone with `-run 'TestConsoleLab/^console-(sign-in|requests)$'` and `-run 'TestLab/^(api-needs-token|requests)$'`).
+  busybox's httpd answers a POST to a non-CGI path with 501, so the POST goes to a CGI script. Traefik's log keeps earlier
+  runs' requests, and an ID made again gets its old requests back, so each run uses an app ID of its own. `install-test.sh`'s
+  `check_requests_host` (the `accesslog` arguments in Traefik's job and one `GET /v1/requests`) is written and shellchecked,
+  not run.
+- Not in 047: long-term analytics, geo lookup of clients, storing the log, requests no app's router took, Traefik's
+  `forwardedHeaders` trust list (behind a proxy the client is the proxy's address), a download, a per-copy attribution.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

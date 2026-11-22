@@ -91,8 +91,38 @@ job "traefik" {
           # stays 25-50 ms. Caravana reads them once a minute (internal/metrics).
           "--metrics.prometheus=true",
           "--metrics.prometheus.buckets=0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10",
+          # Feature 047: the access log, one JSON line per request on Traefik's stdout, which
+          # Nomad keeps in alloc/logs/traefik.stdout.<n> (the logs block below says how much)
+          # and the Requests page reads back through Nomad's fs API. Only the fields the page
+          # needs are kept: no header, and no query string (tokens travel in them).
+          "--accesslog=true",
+          "--accesslog.format=json",
+          "--accesslog.fields.defaultmode=drop",
+          "--accesslog.fields.names.StartUTC=keep",
+          "--accesslog.fields.names.RouterName=keep",
+          "--accesslog.fields.names.ServiceName=keep",
+          "--accesslog.fields.names.RequestMethod=keep",
+          "--accesslog.fields.names.RequestHost=keep",
+          "--accesslog.fields.names.RequestPath=keep",
+          "--accesslog.fields.names.DownstreamStatus=keep",
+          "--accesslog.fields.names.Duration=keep",
+          "--accesslog.fields.names.DownstreamContentSize=keep",
+          "--accesslog.fields.names.ClientHost=keep",
+          "--accesslog.fields.names.TLSVersion=keep",
+          "--accesslog.fields.names.RetryAttempts=keep",
+          "--accesslog.fields.names.entryPointName=keep",
+          "--accesslog.fields.headers.defaultmode=drop",
+          "--accesslog.fields.queryparameters.defaultmode=drop",
           "--log.level=INFO",
+          "--log.filepath=/dev/stderr", # Traefik's own log on stderr, so stdout is the access log alone
         ]
+      }
+
+      # The access log's files: 10 of 20 MB, about 500,000 requests, before the oldest is
+      # purged (feature 047). Traefik's own log is on stderr, kept the same way.
+      logs {
+        max_files     = 10
+        max_file_size = 20
       }
 
       resources {

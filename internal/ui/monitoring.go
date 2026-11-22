@@ -129,6 +129,8 @@ type monPart struct {
 	Mono   bool
 	Strong bool
 	Clock  *clockTime
+	// Href makes the text a link (the Errors chart's "See the requests that failed").
+	Href string
 }
 
 // monSentence is prose with its names and numbers marked; the "mon-sentence" template draws it.
@@ -137,6 +139,9 @@ type monSentence []monPart
 func mtext(s string) monPart   { return monPart{Text: s} }
 func mname(s string) monPart   { return monPart{Text: s, Mono: true} }
 func mstrong(s string) monPart { return monPart{Text: s, Strong: true} }
+func mlink(text, href string) monPart {
+	return monPart{Text: text, Href: href}
+}
 func mclock(c clockTime) monPart {
 	return monPart{Clock: &c}
 }
@@ -315,6 +320,9 @@ type monRow struct {
 	Restarts monNum
 	LogsHref string
 	LogsName string
+	// RequestsHref is the Requests page for the service (feature 047), beside the Logs link.
+	RequestsHref string
+	RequestsName string
 }
 
 // monSpark is the CPU sparkline of a row: line segments in a 120 by 24 box.
@@ -886,6 +894,8 @@ func (b *monBuilder) row(sv service.ServiceMetrics) monRow {
 
 	logs := logsReq{Project: b.q.Project, Environment: b.q.Environment, App: sv.AppID, Service: sv.AppID + "/" + sv.Service, Range: logsRangeDefault, Levels: defaultLevels, Live: true}
 	row.LogsHref, row.LogsName = logs.href(), "Logs of "+b.serviceName(sv.AppName, sv.AppID, sv.Service)
+	reqs := requestsReq{Project: b.q.Project, Environment: b.q.Environment, App: sv.AppID, Service: sv.AppID + "/" + sv.Service, Range: logsRangeDefault, Live: true}
+	row.RequestsHref, row.RequestsName = reqs.href(), "Requests of "+b.serviceName(sv.AppName, sv.AppID, sv.Service)
 	return row
 }
 

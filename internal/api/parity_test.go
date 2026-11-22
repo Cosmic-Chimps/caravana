@@ -90,10 +90,14 @@ var consoleParity = map[string]parity{
 	// The Logs tab (feature 024) is the Logs page filtered to the app: listLogs with ?app= (and the lines around one,
 	// getLogsAround), the app's services for the rail (listApps), and the app for its header (getApp).
 	"GET /apps/{id}/logs": {ops: []string{"getApp", "listLogs", "getLogsAround", "listApps"}},
+	// The Requests tab (feature 047) is the Requests page filtered to the app: listRequests with ?app=, the app's
+	// services for the rail (listApps) and the app for its header (getApp).
+	"GET /apps/{id}/requests": {ops: []string{"getApp", "listRequests", "listApps"}},
 	// ?tab=running adds a "usage" event every 5 s that refetches the copies part (listCopies, usage=true).
 	// ?tab=domains adds the domains notice (listDomains ?app=). ?watch=logs adds the logs notice, on which the
-	// Logs tab reads its region again (listLogs ?app=).
-	"GET /live/apps/{id}": {ops: []string{"getApp", "listCopies", "listDeployments", "listLogs", "listDomains"}},
+	// Logs tab reads its region again (listLogs ?app=); ?watch=requests the requests notice, on which the Requests
+	// tab reads its region again (listRequests ?app=).
+	"GET /live/apps/{id}": {ops: []string{"getApp", "listCopies", "listDeployments", "listLogs", "listRequests", "listDomains"}},
 
 	"GET /parts/apps":             {ops: []string{"listProjects", "listApps"}},
 	"GET /parts/activity":         {ops: []string{"listRecentDeployments"}},
@@ -253,6 +257,12 @@ var consoleParity = map[string]parity{
 	"GET /logs":          {ops: []string{"listLogs", "getLogsAround", "listApps", "listProjects"}},
 	"GET /parts/logs":    {ops: []string{"listLogs"}},
 	"GET /logs/download": {ops: []string{"downloadLogs"}},
+	// Requests (feature 047). The page reads the environment's requests (listRequests, with the filters of its address:
+	// project, environment, app, service, status, method, path, minDuration, client, range, from, to, before), the apps
+	// for the rail (listApps) and the projects for the place bars. The part is the histogram and the table alone,
+	// drawn again on the requests notice.
+	"GET /requests":       {ops: []string{"listRequests", "listApps", "listProjects"}},
+	"GET /parts/requests": {ops: []string{"listRequests"}},
 	// Monitoring (feature 025). The page reads the place's numbers (getMetrics, with its range and sort), the host's
 	// (getHost: the sparkline titles say cores, and the "This host" section is the host's meters, room and
 	// seven days of memory) and the projects for the place bars. The part is the sources, issues, charts and

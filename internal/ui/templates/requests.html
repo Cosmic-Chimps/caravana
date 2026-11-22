@@ -1,0 +1,153 @@
+{{/* Requests (feature 047): the workspace page /requests, the Logs page's shape (logs.html) for the HTTP
+     requests Traefik served. The head (the range bar and Live), the filter row (the place bars, the
+     status chips and one GET form of method, duration, path and client) and the services rail are links
+     and a form, so the page works without script. The histogram and the table are the live region
+     #requests-live, drawn again from /parts/requests on the requests notice while Live is on; the
+     filter row and the rail sit outside it, so a typed path is never swapped away. A request is Traefik's
+     text about an app's request: its path is only ever drawn as text. The query string and every header
+     never reach it (Traefik drops them before the line exists).
+     An app's Requests tab draws the same "requests-page" inside the app's shell (app.html): its head is a
+     section title under the app's own headline, with "All requests" at the end of the sentence, and it
+     has no place bars (AllHref is set only there). */}}
+
+{{define "page-class"}} cv-page-logs{{end}}
+
+{{define "head"}}{{end}}
+
+{{define "content"}}
+{{with .Requests}}{{template "requests-page" .}}{{end}}
+{{end}}
+
+{{define "requests-page"}}
+<header class="cv-lhead">
+  <div class="cv-lhead-text">
+    {{with .AllHref}}
+    <h2 class="cv-pgtitle">Requests</h2>
+    <p class="cv-pgsub">Each HTTP request Traefik served, newest first. Only the path is recorded, never the query string or headers. <a href="{{.}}">All requests</a></p>
+    {{else}}
+    <h1 class="cv-headline">Requests</h1>
+    <p class="cv-lede">Each HTTP request Traefik served, newest first. Only the path is recorded, never the query string or headers.</p>
+    {{end}}
+  </div>
+  <div class="cv-lhead-tools">
+    <form method="get" action="{{.Action}}">
+      {{range .HeadHidden}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
+      <nav class="cv-seg" aria-label="Time range">
+        {{range .Ranges}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}
+      </nav>
+      {{if not .Custom}}<button type="submit" name="live" value="{{.LiveFlip}}" class="cv-btn cv-btn-sm cv-livebtn" title="{{if .Live}}Pause following{{else}}Follow new requests{{end}}" aria-pressed="{{if .Live}}true{{else}}false{{end}}">{{if .Live}}{{icon "pause" 14}}Live{{else}}{{icon "play" 14}}Paused{{end}}</button>{{end}}
+    </form>
+  </div>
+</header>
+
+<form class="cv-logfilter cv-rqfilter" method="get" action="{{.Action}}" role="search" aria-label="Filter the requests">
+  {{range .FilterHidden}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
+  {{with .Places.Projects}}<nav class="cv-seg" aria-label="Project">{{range .}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>{{end}}
+  {{with .Places.Environments}}<nav class="cv-seg" aria-label="Environment">{{range .}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>{{end}}
+  {{if .Places.Any}}<span class="cv-logfilter-div" aria-hidden="true"></span>{{end}}
+  <div class="cv-lvlchips" role="group" aria-label="Status">
+    {{range .Chips}}<a href="{{.Href}}" class="cv-lvlchip cv-rqchip-{{.Class}}{{if .On}} cv-on{{end}}" title="{{.Title}}">{{.Class}}{{with .Count}} <span class="cv-lvlchip-n">{{.}}</span>{{end}}<span class="sr-only">, {{if .On}}shown{{else}}hidden{{end}}</span></a>{{end}}
+  </div>
+  <label class="cv-rqfield"><span class="sr-only">Method</span>
+    <select class="cv-field cv-select cv-rqselect" name="method">{{range .Methods}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+  <label class="cv-rqfield"><span class="sr-only">Duration</span>
+    <select class="cv-field cv-select cv-rqselect" name="minDuration">{{range .Durations}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+  <label class="cv-logsearch cv-rqpathfield">
+    {{icon "search" 14}}
+    <span class="sr-only">Path starts with</span>
+    <input class="cv-logsearch-input" type="text" name="path" value="{{.Path}}" placeholder="Path starts with /…" autocomplete="off" autocapitalize="off" spellcheck="false">
+  </label>
+  <label class="cv-logsearch cv-rqclientfield">
+    <span class="sr-only">Client address</span>
+    <input class="cv-logsearch-input" type="text" name="client" value="{{.Client}}" placeholder="Client address" autocomplete="off" autocapitalize="off" spellcheck="false">
+  </label>
+  <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "filter" 14}}Filter</button>
+  {{with .ClearHref}}<a href="{{.}}" class="cv-rqclear">Clear</a>{{end}}
+</form>
+
+<div class="cv-lcols">
+  <nav class="cv-lograil" aria-label="Services">
+    <span class="cv-label cv-lograil-label">Services</span>
+    <a href="{{.Rail.All.Href}}" class="cv-lrailitem{{if .Rail.All.On}} cv-on{{end}}"{{if .Rail.All.On}} aria-current="true"{{end}}><span class="cv-svcring" aria-hidden="true"></span><span class="cv-lrailitem-name">{{.Rail.All.Name}}</span></a>
+    {{range .Rail.Groups}}
+    {{$app := .Name}}
+    {{with $app}}<span class="cv-label cv-lrailgroup">{{.}}</span>{{end}}
+    {{range .Items}}
+    <a href="{{.Href}}" class="cv-lrailitem cv-hue-{{.Hue}}{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}><span class="cv-svchue" aria-hidden="true"></span><span class="cv-lrailitem-name">{{with $app}}<span class="cv-lrailapp">{{.}}/</span>{{end}}{{.Name}}</span>{{with .Count}} <span class="cv-lrailitem-n" title="requests">{{.}}</span>{{end}}</a>
+    {{end}}
+    {{end}}
+  </nav>
+
+  <div class="cv-lmain">
+    <div class="cv-lmain" id="requests-live"{{if .Following}} hx-get="{{.RegionHref}}" hx-trigger="sse:requests" hx-swap="innerHTML"{{end}}>{{template "requests-region" .Region}}</div>
+    <footer class="cv-lfoot">
+      <p>Read from Traefik's access log, which Nomad keeps until its files rotate away. Traefik writes the path, never the query string, headers or cookies.</p>
+    </footer>
+  </div>
+</div>
+{{end}}
+
+{{/* requests-region: the histogram and the table; /parts/requests draws it alone. Takes a requestsRegion. */}}
+{{define "requests-region"}}
+{{with .Hist}}{{template "requests-hist" .}}{{end}}
+<section class="cv-logstream" aria-label="Requests">
+  <div class="cv-lstreamhead">
+    {{if .Head.Live}}<span class="cv-lstreamhead-live"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span> following Traefik</span><noscript><span>Following needs JavaScript. Reload the page to see newer requests.</span></noscript>
+    {{else if .Head.Paused}}<span>paused</span>{{end}}
+    {{with .Head.Count}}<span>{{.}}</span>{{end}}
+    {{with .Head.Older}}<span>Requests before {{template "clock" .Before}}. <a href="{{.Back}}">Back to the newest</a></span>{{end}}
+    {{if .Head.Cap}}<span class="cv-lstreamhead-cap">· newest {{.Head.Cap}} · <a href="{{.Head.CapHref}}">Show older</a></span>{{end}}
+    <span class="cv-lstreamhead-zone">times in UTC</span>
+  </div>
+  {{with .Problem}}<div class="cv-lerror" role="status"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}</span></div>{{end}}
+  {{if .Rows}}
+  <div class="cv-rqrow cv-rqhead cv-label" aria-hidden="true">
+    <span>Time</span><span>Service</span><span>Method</span><span>Host and path</span><span>Status</span><span class="cv-rqr">Took</span><span class="cv-rqr">Size</span><span>Client</span>
+  </div>
+  {{end}}
+  {{range .Rows}}
+  <a href="{{.Href}}" class="cv-rqrow{{if eq .Class "5xx"}} cv-row-error{{end}}" title="Logs around this request">
+    <time class="cv-ltime" datetime="{{.ISO}}" title="{{.TimeTitle}}">{{.Clock}}</time>
+    <span class="cv-lsvc cv-hue-{{.Hue}}"><span class="cv-svcname">{{.Service}}</span></span>
+    <span class="cv-rqmethod">{{.Method}}</span>
+    <span class="cv-rqwhat"><span class="cv-rqhost">{{.Host}}</span><span class="cv-rqpath">{{.Path}}</span>{{if .Retries}} <span class="cv-repeat" title="Traefik tried another copy">retried ×{{.Retries}}</span>{{end}}</span>
+    <span class="cv-rqstatus cv-rqs-{{.Class}}">{{if .Status}}{{.Status}}{{else}}—{{end}}</span>
+    <span class="cv-rqdur cv-rqr{{if .Slow}} cv-rqdur-slow{{end}}">{{.Duration}}</span>
+    <span class="cv-rqbytes cv-rqr">{{.Bytes}}</span>
+    <span class="cv-rqclient">{{.Client}}</span>
+  </a>
+  {{end}}
+  {{with .Empty}}<p class="cv-lempty">{{.}}</p>{{end}}
+  {{if or .Dropped .Older}}
+  <div class="cv-lolder">
+    {{if .Dropped}}<span>This is the oldest Nomad keeps: older requests were dropped.</span>{{end}}
+    {{with .Older}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">Show older</a>{{end}}
+  </div>
+  {{end}}
+</section>
+{{end}}
+
+{{/* requests-hist: the histogram, stacked by status class. The bars are rects with their numbers as
+     attributes and their colors from classes (the page allows no style attribute); a hidden table
+     carries the same numbers for a screen reader. Takes a rqHistView. */}}
+{{define "requests-hist"}}
+<section class="cv-panel cv-hist" aria-label="Requests over time">
+  <svg class="cv-hist-svg" viewBox="0 0 300 48" preserveAspectRatio="none" role="img" aria-label="{{.Summary}}">
+    {{range .Bars}}{{if .Unread}}<rect class="cv-hbar-unread" x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}"><title>{{.Title}}</title></rect>
+    {{else if .Empty}}<rect class="cv-hbar-empty" x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}"><title>{{.Title}}</title></rect>
+    {{else}}{{$bar := .}}{{range .Segs}}<rect class="{{.Class}}" x="{{$bar.X}}" y="{{.Y}}" width="{{$bar.W}}" height="{{.H}}"><title>{{$bar.Title}}</title></rect>{{end}}
+    {{end}}{{end}}
+  </svg>
+  <div class="sr-only"><table>
+    <caption>Requests read in each slice of the range</caption>
+    <thead><tr><th scope="col">From (UTC)</th><th scope="col">Requests</th><th scope="col">2xx</th><th scope="col">3xx</th><th scope="col">4xx</th><th scope="col">5xx</th></tr></thead>
+    <tbody>{{range .Table}}<tr><th scope="row">{{.From}}</th><td>{{.Requests}}</td><td>{{.C2}}</td><td>{{.C3}}</td><td>{{.C4}}</td><td>{{.C5}}</td></tr>{{end}}</tbody>
+  </table></div>
+  <div class="cv-hlabels">
+    <span>{{.Start}}</span>
+    {{with .Read}}<span class="cv-hlabel-read">{{.}}</span>{{end}}
+    <span class="cv-hlabel-end">{{with .End}}{{.}}{{else}}now{{end}}</span>
+  </div>
+  {{if .Empty}}<p class="cv-hist-empty">no requests in this range</p>{{end}}
+</section>
+{{end}}

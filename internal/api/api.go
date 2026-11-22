@@ -132,6 +132,7 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/logs", s.listLogs, false, false},
 		{http.MethodGet, "/v1/logs/around", s.getLogsAround, false, false},
 		{http.MethodGet, "/v1/logs/download", s.downloadLogs, false, false},
+		{http.MethodGet, "/v1/requests", s.listRequests, false, false},
 		{http.MethodPost, "/v1/apps/{id}/deployments", s.deploy, false, false},
 		{http.MethodGet, "/v1/apps/{id}/compose", s.getCompose, false, false},
 		{http.MethodPost, "/v1/apps/{id}/compose", s.deployCompose, false, false},

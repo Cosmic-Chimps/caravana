@@ -32,6 +32,9 @@ type liveSettings struct {
 	// watchLogs says a Logs page with Live on is open on a place until the
 	// returned done is called (Service.WatchLogs when nil).
 	watchLogs func(project, environment string) (done func())
+	// watchRequests says a Requests page with Live on is open on a place until the returned done is
+	// called (Service.WatchRequests when nil).
+	watchRequests func(project, environment string) (done func())
 }
 
 func (l liveSettings) coalesceEvery() time.Duration  { return orDefault(l.coalesce, defaultCoalesce) }
@@ -66,6 +69,9 @@ type liveRoute struct {
 	// the session is checked, and the returned done when the stream ends. While it is open the
 	// service follows the copies of the place and sends the logs notice when an app wrote.
 	WatchLogs func() (done func())
+	// WatchRequests is WatchLogs for a Requests page (feature 047): while it is open the service
+	// follows Traefik's log and sends the requests notice when one of the place's apps was asked.
+	WatchRequests func() (done func())
 }
 
 // stream answers a /live… request. It is the loop every such route shares:
@@ -125,6 +131,11 @@ func (s *server) stream(w http.ResponseWriter, r *http.Request, route liveRoute)
 
 	if route.WatchLogs != nil {
 		done := route.WatchLogs()
+		defer done()
+	}
+
+	if route.WatchRequests != nil {
+		done := route.WatchRequests()
 		defer done()
 	}
 

@@ -108,6 +108,8 @@ type Service struct {
 	logDeadline time.Duration // how long one page read may take
 	downloading atomic.Bool   // a download is going, see logsdownload.go
 	logWatch    logWatcher    // the places Live pages watch, see live.go
+	// Requests (feature 047), see requests.go and requestslive.go.
+	requestWatch logWatcher // the places Live Requests pages watch
 
 	// Domains (feature 023), see domains.go and domainwatch.go.
 	domainMu        sync.Mutex     // guards edgeCfg, the two gaps and domainsWatching

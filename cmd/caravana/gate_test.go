@@ -171,6 +171,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"schedule-in-copy", false, g.scheduleInCopyStep},
 		{"domains", false, g.domainsStep},
 		{"logs", false, g.logsStep},
+		{"requests", false, g.requestsStep},
 		{"monitoring", false, g.monitoringStep},
 		{"os-updates", false, g.osUpdatesStep},
 		{"terminal", false, g.terminalStep},

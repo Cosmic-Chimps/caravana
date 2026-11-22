@@ -43,7 +43,7 @@ func navOf(t *testing.T, body string) []string {
 }
 
 // The sidebar has exactly the handoff's order on every page (feature 027.5):
-// Workspace holds Home, Projects, Logs, Monitoring and Schedules, Configure holds
+// Workspace holds Home, Projects, Logs, Requests, Monitoring and Schedules, Configure holds
 // Domains, then Settings. It links nothing that has no page yet, and marks the right
 // one: Home on /apps, Projects on the projects and on every page of an app, Schedules
 // on /schedules (feature 022), Settings on /settings. The top bar
@@ -78,6 +78,7 @@ func TestShellOnEveryPage(t *testing.T) {
 		{"/schedules/new", "Schedules", "Schedules /New schedule"},
 		{"/domains", "Domains", "Domains"},
 		{"/logs", "Logs", "Logs"},
+		{"/requests", "Requests", "Requests"},
 		{"/monitoring", "Monitoring", "Monitoring"},
 	}
 	for _, tc := range tests {
@@ -87,7 +88,7 @@ func TestShellOnEveryPage(t *testing.T) {
 				t.Fatalf("GET %s = %d:\n%s", tc.path, resp.StatusCode, text(body))
 			}
 
-			want := []string{"Home=/apps", "Projects=/projects", "Logs=/logs", "Monitoring=/monitoring", "Schedules=/schedules", "Domains=/domains", "Settings=/settings"}
+			want := []string{"Home=/apps", "Projects=/projects", "Logs=/logs", "Requests=/requests", "Monitoring=/monitoring", "Schedules=/schedules", "Domains=/domains", "Settings=/settings"}
 			for i, item := range want {
 				if strings.HasPrefix(item, tc.active+"=") {
 					want[i] += "*"

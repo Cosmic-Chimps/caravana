@@ -14,7 +14,7 @@ type shellView struct {
 	Version  string  // Caravana's version, after "caravana"; "" for none
 	Email    string  // the admin, in the account row
 	Initials string  // the first two letters of the email's local part, upper case; "?" for none
-	Active   string  // navHome, navProjects, navSchedules, navDomains, navLogs, navMonitoring or navSettings: the sidebar item marked as current
+	Active   string  // navHome, navProjects, navSchedules, navDomains, navLogs, navRequests, navMonitoring or navSettings: the sidebar item marked as current
 	Crumbs   []crumb // the top bar's breadcrumbs, the last one being this page
 	NewApp   bool    // the top bar offers "New app"
 	// Mode is the view the page is drawn in: "dev" (Developer) or "ops"
@@ -68,6 +68,7 @@ const (
 	navSchedules  = "schedules"  // every page under /schedules (feature 022)
 	navDomains    = "domains"    // every page under /domains (feature 023)
 	navLogs       = "logs"       // every page under /logs (feature 024)
+	navRequests   = "requests"   // every page under /requests (feature 047)
 	navMonitoring = "monitoring" // every page under /monitoring (feature 025)
 	navSettings   = "settings"
 

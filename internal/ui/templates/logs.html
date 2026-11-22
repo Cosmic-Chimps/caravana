@@ -34,7 +34,7 @@
       {{if not .AroundView}}<nav class="cv-seg" aria-label="Time range">
         {{range .Ranges}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}
       </nav>{{end}}
-      <button type="submit" name="live" value="{{.LiveFlip}}" class="cv-btn cv-btn-sm cv-livebtn" title="{{if .Live}}Pause following{{else}}Follow new lines{{end}}" aria-pressed="{{if .Live}}true{{else}}false{{end}}">{{if .Live}}{{icon "pause" 14}}Live{{else}}{{icon "play" 14}}Paused{{end}}</button>
+      {{if not .Custom}}<button type="submit" name="live" value="{{.LiveFlip}}" class="cv-btn cv-btn-sm cv-livebtn" title="{{if .Live}}Pause following{{else}}Follow new lines{{end}}" aria-pressed="{{if .Live}}true{{else}}false{{end}}">{{if .Live}}{{icon "pause" 14}}Live{{else}}{{icon "play" 14}}Paused{{end}}</button>{{end}}
     </form>
   </div>
 </header>
@@ -146,7 +146,7 @@
     <span>{{.Start}}</span>
     {{with .Read}}<span class="cv-hlabel-read">{{.}}</span>{{end}}
     {{with .Deploy}}<span class="cv-hlabel-deploy">{{.}}</span>{{end}}
-    <span class="cv-hlabel-end">now</span>
+    <span class="cv-hlabel-end">{{with .End}}{{.}}{{else}}now{{end}}</span>
   </div>
   {{if .Empty}}<p class="cv-hist-empty">no lines in this range</p>{{end}}
 </section>
