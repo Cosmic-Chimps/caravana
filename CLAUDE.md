@@ -1832,7 +1832,10 @@ named `pr-<n>` (`app.PreviewNumber`; the prefix is reserved), opened and closed 
   redirect, the password never drawn back), "preview · expires <clock>" and Close preview… (a confirmation page) on each preview
   row. The handoff's Previews page is a later designer-cycle task.
 - Lab: gate step `previews` (`gate_previews_test.go`, after `deploy-from-ci`), which also runs caravana-action's preview mode when
-  `../caravana-action` has it.
+  `../caravana-action` has it (`CARAVANA_ACTION_DIR` points at it from a worktree; its preview mode is `0a99ae4` on the
+  action's unpushed branch `preview-mode`). It passed in the lab on 2026-11-22 (111 s, run with
+  `-run 'TestLab/^(api-needs-token|previews)$'`). The action prints `::add-mask::<value>` for each preview secret, so a
+  leak check skips those lines, as `deploy-from-ci` does for the token.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM

@@ -413,17 +413,21 @@ func (g *gate) previewsAction(t *testing.T, project, stagingID, previewApp, pass
 	}
 	noToken := func(what string, run actionRun) {
 		t.Helper()
+		// The lines that must hold a value are its "::add-mask::<value>": that is
+		// how the action tells GitHub to hide it, and GitHub never shows them.
+		secret := "preview-secret-" + g.run
 		var log []string
 		for _, line := range strings.Split(run.Log, "\n") {
-			if line != "::add-mask::"+made.Token {
+			if line != "::add-mask::"+made.Token && line != "::add-mask::"+secret {
 				log = append(log, line)
 			}
 		}
-		if text := strings.Join(log, "\n"); strings.Contains(text, made.Token) || strings.Contains(run.Summary, made.Token) {
+		text := strings.Join(log, "\n")
+		if strings.Contains(text, made.Token) || strings.Contains(run.Summary, made.Token) {
 			t.Errorf("%s: the token is in the script's log or summary", what)
 		}
-		noSecret(what+": the script's log", run.Log+run.Summary)
-		if strings.Contains(run.Log+run.Summary, "preview-secret-"+g.run) {
+		noSecret(what+": the script's log", text+run.Summary)
+		if strings.Contains(text+run.Summary, secret) {
 			t.Errorf("%s: a preview secret value is in the script's log or summary", what)
 		}
 	}
