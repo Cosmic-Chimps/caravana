@@ -296,11 +296,11 @@ func (s *Service) executeScan(ctx context.Context, run store.ScanRun) bool {
 	// Room (D7): a scan that would starve the server is skipped, and says so.
 	if !isDB {
 		if reason := s.scanRoom(runCtx); reason != "" {
+			s.recordTry(bg, run.Image, store.ScanSkipped, reason)
 			if err := s.store.EndScanRun(bg, run.ID, store.ScanSkipped, reason, "", time.Time{}, now()); err != nil {
 				s.log.Warn("record a skipped scan", "error", err)
 				return false
 			}
-			s.recordTry(bg, run.Image, store.ScanSkipped, reason)
 			s.scanDone(bg, run.Image)
 			return true
 		}
@@ -345,11 +345,11 @@ func (s *Service) executeScan(ctx context.Context, run store.ScanRun) bool {
 	}
 
 	if reason != "" {
+		s.recordTry(bg, run.Image, store.ScanFailed, reason)
 		if err := s.store.EndScanRun(bg, run.ID, store.ScanFailed, reason, "", time.Time{}, now()); err != nil {
 			s.log.Warn("settle a scan", "error", err)
 			return false
 		}
-		s.recordTry(bg, run.Image, store.ScanFailed, reason)
 		s.scanDone(bg, run.Image)
 		return true
 	}
@@ -376,7 +376,9 @@ func (s *Service) executeScan(ctx context.Context, run store.ScanRun) bool {
 }
 
 // recordTry records a failed or skipped try on the image's row, when the run is
-// of an image (the install's database run isn't).
+// of an image (the install's database run isn't). It is called before the run is
+// ended, as SaveScanResult is for a scan that succeeded, so whoever sees the run
+// final (ScanWait, the pages, the API) finds the image's row current.
 func (s *Service) recordTry(ctx context.Context, image, status, reason string) {
 	if image == "" {
 		return
