@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -245,8 +246,8 @@ func TestProjectSettingsPage(t *testing.T) {
 		}
 	}
 	// Every section is capped at one width, and the closed Delete panel says what it needs first.
-	if n := strings.Count(body, `class="cv-narrow flex flex-col gap-2"`) + strings.Count(body, `class="cv-danger cv-narrow flex flex-col gap-2"`); n != 4 {
-		t.Errorf("%d sections are capped with cv-narrow, want 4", n)
+	if n := strings.Count(body, `class="cv-narrow flex flex-col gap-2"`) + strings.Count(body, `class="cv-danger cv-narrow flex flex-col gap-2"`); n != 5 {
+		t.Errorf("%d sections are capped with cv-narrow, want 5", n)
 	}
 	if !strings.Contains(got, "The project has to be empty first: no app is deleted for you. Delete project…") || strings.Contains(got, "Back to the project") {
 		t.Errorf("the Delete section or the lede is off:\n%s", got)
@@ -325,6 +326,8 @@ func TestAddAndDeleteEnvironments(t *testing.T) {
 		{"empty", "", http.StatusUnprocessableEntity, "Enter a name for the environment."},
 		{"taken", "qa", http.StatusConflict, "This project already has an environment called qa."},
 		{"not a label", "Q A", http.StatusUnprocessableEntity, "The name is not a lowercase DNS label"},
+		// The prefix pr- is kept for previews (feature 049).
+		{"reserved prefix", "pr-07", http.StatusUnprocessableEntity, "Names starting with pr- are kept for previews: pr-<pull request number>, such as pr-12."},
 	} {
 		t.Run("add refused: "+tc.name, func(t *testing.T) {
 			resp, body := e.postForm(t, "/projects/shop/environments", url.Values{"environment": {tc.value}})
@@ -333,6 +336,23 @@ func TestAddAndDeleteEnvironments(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("a preview beyond the limit is refused with the open ones", func(t *testing.T) {
+		limit := 1
+		if _, err := e.Svc.SetPreviewSettings(context.Background(), "shop", service.PreviewSettingsInput{Limit: &limit}); err != nil {
+			t.Fatal(err)
+		}
+		if resp, _ := e.postForm(t, "/projects/shop/environments", url.Values{"environment": {"pr-3"}}); resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("add pr-3 = %d, want 303", resp.StatusCode)
+		}
+		resp, body := e.postForm(t, "/projects/shop/environments", url.Values{"environment": {"pr-4"}})
+		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), "Project shop has 1 open previews (pr-3), its limit; close one or raise the limit.") {
+			t.Errorf("add pr-4 = %d:\n%s", resp.StatusCode, text(body))
+		}
+		if resp, _ := e.postForm(t, "/projects/shop/environments/pr-3/delete", nil); resp.StatusCode != http.StatusSeeOther {
+			t.Errorf("delete pr-3 = %d, want 303", resp.StatusCode)
+		}
+	})
 
 	t.Run("delete an empty environment", func(t *testing.T) {
 		resp, _ := e.postForm(t, "/projects/shop/environments/qa/delete", nil)

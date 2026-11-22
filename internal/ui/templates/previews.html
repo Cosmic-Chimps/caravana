@@ -1,0 +1,143 @@
+{{/* Previews (feature 049): the workspace page /previews, the handoff's PreviewsScreen. Its open tab lists
+     the open previews of every project as one live region; its setup tab holds each project's preview
+     settings (a plain post). Every time is a <time>; a clock time is UTC with localtime.js adding the local
+     one. The values are contracts/previews-screen.md's. Takes a previewsPage. */}}
+
+{{define "content"}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Previews</h1>
+    <p class="cv-lede">Every pull request gets its own copy of its apps, at its own address. Closed pull requests clean up after themselves.</p>
+  </div>
+</header>
+{{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{if .Open}}
+<div class="cv-pvtop">
+  <nav class="cv-seg" aria-label="Previews">{{range .Tabs}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>
+  {{/* The region's own box is display: contents, so the count line sits beside the tabs and the panel under them. */}}
+  <div id="previews-list" class="cv-pvregion" hx-get="{{.Open.RefreshHref}}" hx-trigger="sse:apps, sse:deployments, sse:copies, sse:sync" hx-swap="innerHTML">{{template "previews-region" .Open}}</div>
+</div>
+{{end}}
+{{with .Setup}}
+<div class="cv-pvbars">
+  <nav class="cv-seg" aria-label="Previews">{{range $.Tabs}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>
+  <nav class="cv-seg" aria-label="Project">{{range .Projects}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>
+</div>
+{{template "previews-setup" .}}
+{{end}}
+{{end}}
+
+{{/* previews-region: the count line and the list of open previews (or the empty state), what
+     /parts/previews draws alone. Takes a previewsRegion. */}}
+{{define "previews-region"}}
+{{with .Count}}<p class="cv-pvcount">{{.}}</p>{{end}}
+<div class="cv-panel cv-pvpanel">
+  {{if .Rows}}
+  <ul class="cv-pvlist" aria-label="Open previews">
+  {{range .Rows}}{{$row := .}}
+  <li class="cv-pv">
+    <div class="cv-pvrow">
+      <span class="cv-pvmark"><span class="cv-mark cv-mark-lg cv-mark-{{.Pill.Kind}}" aria-hidden="true"></span></span>
+      <div class="cv-pvwhat">
+        <span class="cv-pvname">{{if .Branch}}<span class="cv-pvnum">{{.Number}}</span><span class="cv-pvbranch" title="{{.Branch}}">{{.Branch}}</span>{{else}}<span class="cv-pvbranch" title="{{.Number}}">{{.Number}}</span>{{end}}</span>
+        <span class="cv-pvmeta"><span class="cv-pvmetatext" title="{{.MetaTitle}}">{{template "sentence" .Meta}}{{with .When}} · {{template "time" .}}{{end}}</span>{{with .Run}}<span class="cv-pvrun"> · <a href="{{.}}" rel="noopener noreferrer" target="_blank">run</a></span>{{end}}</span>
+      </div>
+      <span class="cv-pvstate"><span class="cv-pill cv-pill-{{.Pill.Kind}} cv-pill-quiet cv-pill-sm"><span class="cv-mark cv-mark-{{.Pill.Kind}}" aria-hidden="true"></span>{{.Pill.Word}}</span></span>
+      <div class="cv-pvapps">{{range .Apps}}<a href="{{.Href}}" class="cv-pvchip">{{.Name}}</a>{{else}}<span class="cv-pvnone">no apps yet</span>{{end}}</div>
+      <div class="cv-pvaddr">
+        {{if .Address}}<span class="cv-pvaddr1">{{if .OpenHref}}<a href="{{.OpenHref}}" class="cv-pvhost cv-pvhost-live" title="{{.Address}}" target="_blank" rel="noopener">{{.Address}}</a>{{else}}<span class="cv-pvhost" title="{{.Address}}">{{.Address}}</span>{{end}}{{with .More}}<span class="cv-pvmore"> +{{.}}</span>{{end}}</span>
+        {{else if .Apps}}<span class="cv-pvaddr1"><span class="cv-pvnone">no address</span></span>{{end}}
+        <span class="cv-pvmem">{{.Memory}}{{if and .Address .Password}} · password{{end}}</span>
+      </div>
+      <div class="cv-pvacts">
+        {{with .OpenHref}}<a href="{{.}}" class="cv-btn cv-btn-ghost cv-btn-sm" target="_blank" rel="noopener">{{icon "external-link" 14}}Open<span class="sr-only"> {{$row.Environment}}</span></a>{{else}}<span class="cv-pvslot" aria-hidden="true"></span>{{end}}
+        <a href="{{.LogsHref}}" class="cv-btn cv-btn-ghost cv-btn-sm">{{icon "scroll-text" 14}}Logs<span class="sr-only"> of {{.Environment}}</span></a>
+        <a href="{{.CloseHref}}" class="cv-btn cv-btn-ghost cv-btn-sm">Close…<span class="sr-only"> {{.Environment}}</span></a>
+      </div>
+    </div>
+    {{with .Line}}{{$line := .}}
+    <p class="cv-pvline cv-pvline-{{.Kind}}">
+      {{- if eq .Kind "failed"}}{{template "sentence" .Lead}}{{with .Error}} <span class="cv-pvdetail">{{with $line.ErrorLead}}<span class="cv-detail-lead">{{.}}</span>{{end}}{{.}}</span>{{end}} <a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">See the deploy</a>
+      {{- else if eq .Kind "rolling"}}{{template "sentence" .Lead}}{{with .Started}} · started {{template "time" .}}{{end}}
+      {{- else if .Expired}}It expired {{template "clock" .Closes}}; it closes at the next check.
+      {{- else}}If nothing is deployed to it, it closes {{template "clock" .Closes}}.{{end}}
+    </p>
+    {{end}}
+  </li>
+  {{end}}
+  </ul>
+  {{else}}
+  <div class="cv-empty">
+    <p class="cv-empty-title">No previews open.</p>
+    <p class="cv-empty-text">A pull request gets one when CI deploys it with caravana-action's preview mode, and loses it when it closes.</p>
+    <a href="/previews?tab=setup" class="cv-btn cv-btn-secondary cv-btn-sm">Set up previews</a>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{/* previews-setup: one project's preview settings, one panel of setting rows posting to the
+     project's route. The password input never has a value. Takes a previewsSetup. */}}
+{{define "previews-setup"}}
+{{with .Form}}
+<form method="post" action="{{.Action}}" class="cv-panel cv-pvform" aria-label="Preview settings of {{$.Display}}">
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <span class="cv-setrow-label">Previews for pull requests</span>
+      <p class="cv-setrow-hint">CI opens one for each pull request with caravana-action's preview mode. Set At most to 0 to turn previews off.</p>
+    </div>
+    <div class="cv-setrow-ctl"><span class="cv-pvsay">{{$.State}}</span></div>
+  </div>
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <label class="cv-setrow-label" for="{{.Limit.ID}}">At most</label>
+      <p class="cv-setrow-hint" id="{{.Limit.ID}}-hint">Another one is refused until a preview is closed.</p>
+    </div>
+    <div class="cv-setrow-ctl">
+      <div class="cv-pvinline">
+        <input class="cv-field cv-field-mono cv-pvnumber" id="{{.Limit.ID}}" type="text" inputmode="numeric" name="limit" value="{{.Limit.Value}}" autocomplete="off" maxlength="2" aria-describedby="{{.Limit.ID}}-hint{{if .Limit.Error}} {{.Limit.ID}}-error{{end}}"{{if .Limit.Error}} aria-invalid="true"{{end}}{{if .Limit.Alert}} autofocus{{end}}>
+        <span class="cv-pvsay">previews at once{{$.Budget}}</span>
+      </div>
+      {{template "field-error" .Limit}}
+    </div>
+  </div>
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <label class="cv-setrow-label" for="{{.Expire.ID}}">Close after</label>
+      <p class="cv-setrow-hint" id="{{.Expire.ID}}-hint">Counted from the preview's newest deploy, so a pull request that keeps getting pushes stays open.</p>
+    </div>
+    <div class="cv-setrow-ctl">
+      <div class="cv-pvinline">
+        <input class="cv-field cv-field-mono cv-pvnumber" id="{{.Expire.ID}}" type="text" inputmode="numeric" name="expireAfterDays" value="{{.Expire.Value}}" autocomplete="off" maxlength="2" aria-describedby="{{.Expire.ID}}-hint{{if .Expire.Error}} {{.Expire.ID}}-error{{end}}"{{if .Expire.Error}} aria-invalid="true"{{end}}{{if .Expire.Alert}} autofocus{{end}}>
+        <span class="cv-pvsay">days without a deploy</span>
+      </div>
+      {{template "field-error" .Expire}}
+    </div>
+  </div>
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <label class="cv-setrow-label" for="{{.Password.ID}}">Password</label>
+      <p class="cv-setrow-hint" id="{{.Password.ID}}-hint">{{if .PasswordSet}}Every preview address asks for it, user <span class="cv-inline-mono">team</span>. A new one applies to every open preview at once.{{else}}Previews are public. With a password, every preview address asks for it, user <span class="cv-inline-mono">team</span>.{{end}}</p>
+    </div>
+    <div class="cv-setrow-ctl">
+      <div class="cv-fld cv-pvpass">
+        <input class="cv-field cv-field-mono" id="{{.Password.ID}}" type="password" name="password" autocomplete="new-password" minlength="12" maxlength="128"{{if .PasswordSet}} placeholder="Leave empty to keep it"{{end}} aria-describedby="{{.Password.ID}}-hint{{if .Password.Error}} {{.Password.ID}}-error{{end}}"{{if .Password.Error}} aria-invalid="true"{{end}}{{if .Password.Alert}} autofocus{{end}}>
+        {{template "field-error" .Password}}
+      </div>
+      {{if .PasswordSet}}
+      <div class="cv-fld">
+        <label class="cv-check" for="{{.Remove.ID}}"><input type="checkbox" id="{{.Remove.ID}}" name="removePassword" value="1"{{if .RemoveOn}} checked{{end}}{{if .Remove.Error}} aria-invalid="true" aria-describedby="{{.Remove.ID}}-error"{{end}}><span>Remove the password</span></label>
+        {{template "field-error" .Remove}}
+      </div>
+      {{end}}
+    </div>
+  </div>
+  <div class="cv-setrow cv-pvsave">
+    <div class="cv-setrow-text"></div>
+    <div class="cv-setrow-ctl"><button type="submit" class="cv-btn cv-btn-primary">Save preview settings</button></div>
+  </div>
+  {{/* The post goes back to this page; the hidden field is last so the first row keeps its first-child style. */}}
+  <input type="hidden" name="from" value="previews">
+</form>
+{{end}}
+{{end}}

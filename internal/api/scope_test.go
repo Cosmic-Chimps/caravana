@@ -27,6 +27,18 @@ var allowedForDeployTokens = []string{
 	"POST /v1/apps",                                                     // createApp
 	"POST /v1/projects/{project}/environments/{environment}/apps",       // createEnvironmentApp
 	"GET /v1/projects/{project}/environments/{environment}/apps/{name}", // getEnvironmentApp
+	// Previews (feature 049), each narrower than "its own app": see TestScopedTokenPreviewRoutes.
+	"POST /v1/projects/{project}/environments",                 // createEnvironment, a preview name in the token's project
+	"DELETE /v1/projects/{project}/environments/{environment}", // deleteEnvironment, a preview of the token's project
+	"DELETE /v1/apps/{id}",                                     // deleteApp, the token's own app inside a preview
+}
+
+// previewScoped are the routes of allowedForDeployTokens that are not "the token's own app
+// anywhere": the generic walk skips them and TestScopedTokenPreviewRoutes has their shapes.
+var previewScoped = []string{
+	"POST /v1/projects/{project}/environments",
+	"DELETE /v1/projects/{project}/environments/{environment}",
+	"DELETE /v1/apps/{id}",
 }
 
 // scopedToken makes a deploy token for app name in project and returns the
@@ -123,6 +135,13 @@ func TestScopedTokenWalksEveryRoute(t *testing.T) {
 	for _, rt := range protectedRoutes(t) {
 		key := rt.method + " " + rt.path
 		t.Run(key, func(t *testing.T) {
+			if slices.Contains(previewScoped, key) {
+				// Not the token's own app in just any place: TestScopedTokenPreviewRoutes.
+				if status, raw := send(rt, own); !isScopeError(status, raw) {
+					t.Errorf("%s for an app in staging = %d %s, want 403 token_scope", key, status, raw)
+				}
+				return
+			}
 			if !slices.Contains(allowedForDeployTokens, key) {
 				if status, raw := send(rt, own); !isScopeError(status, raw) {
 					t.Errorf("%s with a deploy token for its own app = %d %s, want 403 token_scope", key, status, raw)
@@ -305,4 +324,66 @@ func TestCreateTokenScopeErrors(t *testing.T) {
 	if status != http.StatusCreated || strings.Contains(string(raw), `"scope"`) {
 		t.Errorf("a null scope = %d %s, want a full token without a scope", status, raw)
 	}
+}
+
+// TestScopedTokenPreviewRoutes is the walk's other half for the three calls a
+// deploy token may make only for a preview of its own project (spec 049 D5): its
+// own project's pr-<n> is allowed, everything else is 403 token_scope.
+func TestScopedTokenPreviewRoutes(t *testing.T) {
+	e := newTestEnv(t, "")
+	shopProject(t, e)
+	if status, _, raw := call(t, http.MethodPost, e.URL+"/v1/projects", "application/json", `{"name": "other"}`); status != http.StatusCreated {
+		t.Fatalf("create project other = %d %s", status, raw)
+	}
+	auth := scopedToken(t, e, "shop", "web")
+	send := func(method, path, body string) (int, string) {
+		status, _, raw := callWith(t, auth, method, e.RawURL+path, "application/json", body)
+		return status, string(raw)
+	}
+	denied := func(what, method, path, body string) {
+		t.Helper()
+		status, raw := send(method, path, body)
+		if status != http.StatusForbidden || !strings.Contains(raw, `"token_scope"`) {
+			t.Errorf("%s = %d %s, want 403 token_scope", what, status, raw)
+		}
+	}
+	allowed := func(what, method, path, body string, want int) {
+		t.Helper()
+		if status, raw := send(method, path, body); status != want {
+			t.Errorf("%s = %d %s, want %d", what, status, raw, want)
+		}
+	}
+
+	// Opening a preview: only pr-<n>, only in the token's project.
+	for _, name := range []string{"qa", "staging", "pr-07", "pr-", "pr-12-old", "PR-12", ""} {
+		denied("create environment "+name, http.MethodPost, "/v1/projects/shop/environments", `{"name": "`+name+`"}`)
+	}
+	for what, body := range map[string]string{"no name": `{}`, "not JSON": `not json`, "a duplicated name": `{"name": "pr-1", "name": "pr-2"}`} {
+		denied("create environment with "+what, http.MethodPost, "/v1/projects/shop/environments", body)
+	}
+	denied("create pr-12 in another project", http.MethodPost, "/v1/projects/other/environments", `{"name": "pr-12"}`)
+	denied("create pr-12 in Default", http.MethodPost, "/v1/projects/default/environments", `{"name": "pr-12"}`)
+	allowed("create pr-12", http.MethodPost, "/v1/projects/shop/environments", `{"name": "pr-12"}`, http.StatusCreated)
+
+	// Its own app in the preview, and the environment closes after it.
+	allowed("create the app in pr-12", http.MethodPost, "/v1/projects/shop/environments/pr-12/apps?deploy=false", shopBody("web"), http.StatusCreated)
+	allowed("delete the environment while it has the app", http.MethodDelete, "/v1/projects/shop/environments/pr-12", "", http.StatusConflict)
+	denied("delete another app of pr-12", http.MethodDelete, "/v1/apps/shop--pr-12--other", "")
+	denied("delete the app of another project", http.MethodDelete, "/v1/apps/other--pr-12--web", "")
+	denied("delete Default's web", http.MethodDelete, "/v1/apps/web", "")
+	denied("delete the app in staging", http.MethodDelete, "/v1/apps/shop--staging--web", "")
+	denied("delete an ID that is no place", http.MethodDelete, "/v1/apps/a--b", "")
+	allowed("delete its app in pr-12", http.MethodDelete, "/v1/apps/shop--pr-12--web", "", http.StatusNoContent)
+
+	// Closing the environment: preview names of its own project only.
+	denied("delete staging", http.MethodDelete, "/v1/projects/shop/environments/staging", "")
+	denied("delete production", http.MethodDelete, "/v1/projects/shop/environments/production", "")
+	denied("delete pr-07", http.MethodDelete, "/v1/projects/shop/environments/pr-07", "")
+	denied("delete another project's pr-12", http.MethodDelete, "/v1/projects/other/environments/pr-12", "")
+	allowed("delete pr-12", http.MethodDelete, "/v1/projects/shop/environments/pr-12", "", http.StatusNoContent)
+
+	// What stays the owner's.
+	denied("getPreviews", http.MethodGet, "/v1/projects/shop/previews", "")
+	denied("putPreviewSettings", http.MethodPut, "/v1/projects/shop/previews/settings", `{"limit": 20}`)
+	denied("closePreview", http.MethodDelete, "/v1/projects/shop/previews/pr-12", "")
 }

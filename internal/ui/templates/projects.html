@@ -117,6 +117,27 @@
     <div><button type="submit" class="cv-btn cv-btn-primary">Create project</button></div>
   </form>
 </section>
+{{else if .Close}}
+{{with .Close}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">Close <span class="cv-inline-mono">{{.Environment}}</span>?</h1>
+  </header>
+  {{if .Refusal}}
+  <div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .Refusal}}</span></div>
+  {{else}}
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    <p class="text-base text-fg-1">This deletes {{if .Apps}}every app in the preview and then the environment{{else}}the environment, which has no apps{{end}}. Each app's copies, volumes and secrets go with it.</p>
+    {{with .Apps}}<ul class="cv-env-apps">{{range .}}<li><a href="{{.Href}}" class="cv-app-name">{{.Name}}</a></li>{{end}}</ul>{{end}}
+    <p class="text-base text-fg-1">A pull request that is still open gets a new preview at its next push.</p>
+  </div>
+  {{end}}
+  <div class="cv-actions">
+    {{if not .Refusal}}<form method="post" action="{{.Action}}">{{if .From}}<input type="hidden" name="from" value="previews">{{end}}<button type="submit" class="cv-btn cv-btn-danger">Close {{.Environment}}</button></form>{{end}}
+    <a href="{{.Back}}" class="cv-btn cv-btn-secondary">{{if .Refusal}}Back to {{if .From}}previews{{else}}settings{{end}}{{else}}Cancel{{end}}</a>
+  </div>
+</section>
+{{end}}
 {{else if .Screen}}
 {{with .Screen}}
 {{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
@@ -168,11 +189,14 @@
       {{range .Envs}}{{$env := .Name}}
       <div class="cv-row cv-env-row" role="listitem">
         <div class="cv-env-head">
-          <h3 class="cv-data text-fg-1">{{.Name}}</h3>
+          <h3 class="cv-data text-fg-1">{{.Name}}{{with .Preview}} <span class="cv-data-muted">· preview · expires {{template "clock" .Expires}}</span>{{end}}</h3>
           {{if .Offer}}
-          <form method="post" action="{{.Action}}">
-            <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm"{{if .Reason}} disabled aria-describedby="env-{{.Name}}-reason"{{end}}>Delete {{.Name}}</button>
-          </form>
+          <span class="cv-actions">
+            {{with .Preview}}<a href="{{.CloseHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Close preview…</a>{{end}}
+            <form method="post" action="{{.Action}}">
+              <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm"{{if .Reason}} disabled aria-describedby="env-{{.Name}}-reason"{{end}}>Delete {{.Name}}</button>
+            </form>
+          </span>
           {{end}}
         </div>
         {{with .Reason}}<p id="env-{{$env}}-reason" class="cv-data-muted cv-hint">{{.}}</p>{{end}}
@@ -183,6 +207,16 @@
       {{end}}
     </div>
   </section>
+
+  {{with .Previews}}
+  <section id="previews" aria-labelledby="previews-title" class="cv-narrow flex flex-col gap-2">
+    <h2 id="previews-title" class="cv-label">Previews</h2>
+    <div class="cv-panel p-4 flex flex-col gap-3">
+      <p class="text-base text-fg-2">{{template "sentence" .Sentence}}</p>
+      <div><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Change on the Previews page</a></div>
+    </div>
+  </section>
+  {{end}}
 
   <section id="add-environment" aria-labelledby="add-env-title" class="cv-narrow flex flex-col gap-2">
     <h2 id="add-env-title" class="cv-label">Add environment</h2>

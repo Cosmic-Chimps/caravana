@@ -1937,6 +1937,35 @@ unchanged.
 - Not in 048: DNS-01 and wildcard certificates, other DNS providers, records that follow a change of the installation's
   address, CNAME records.
 
+Feature 049 (`specs/049-previews`, CodeAlta task `rg2u`, worktree branch `alta/dreamy-glow-f7vh`): a preview is an environment
+named `pr-<n>` (`app.PreviewNumber`; the prefix is reserved), opened and closed by a deploy token, with its own copy of the app.
+`plan.md` D1–D12 are the decisions; operator doc: `docs/previews.md`. Migration 0039 (merged as 0039: 048 took 0038), no new module, no policy change.
+- Deploy tokens: `scopeRules` are functions of the request and the scope, and gained three: create `pr-<n>` in the token's
+  project, delete a `pr-<n>` environment of it and delete its own app inside one. `closePreview`, `getPreviews` and
+  `putPreviewSettings` stay denied to them.
+- Per project (`projects.preview_limit` 5, `preview_expire_days` 7, `preview_password_hash`): the limit is checked in the same
+  transaction as the insert (`*PreviewLimitError`, 409 `preview_limit`), expiry is computed from the newest deploy (never
+  stored) and a reaper (`SetPreviewReapGap`, 5 minutes) closes the expired with `ClosePreview` (every app by `DeleteApp`, then
+  the environment). The preview password is one bcrypt hash: the deploy path turns `teamOnly` on for every domain of a preview
+  (one warning) and the Team-only rows take the project's hash; changing it rewrites them with no deploy, removing it is 409
+  `previews_open` while a preview is open, and `rotateTeamPassword` there is 409 `preview_password`.
+- API 0.55.0 (0.54.0 is 048): `getPreviews`, `putPreviewSettings`, `closePreview`, `Environment.preview`.
+- Console: the handoff's Previews page (task `64ph`, built through the designer cycle, `contracts/previews-screen.md` with its
+  rulings and last look): `/previews` and `/parts/previews` (`internal/ui/previewspage.go`, `templates/previews.html`), the
+  sidebar's Previews item after Projects. The open tab lists every project's open previews problems first, one aligned row each
+  (`#142` and the branch when the origin names one, never a `refs/pull/…` ref; the who-words without the ref; the console's
+  status word; app chips; the address, a link when healthy; reserved memory; Open, Logs, Close…; one line: the failed
+  deployment's error, the rollout, or "If nothing is deployed to it, it closes <clock>."). `service.PreviewApp.Summary` carries
+  the app summary for `appStatusView` (Go only, no API change). The setup tab is the settings form's one place (limit, days,
+  password; refusals at their field, the password never drawn back; the post's hidden `from=previews` returns there); the
+  project settings page keeps one sentence and a link, and each preview row's "preview · expires <clock>" and Close preview…
+  (`?from=previews` brings the confirmation back to the Previews page).
+- Lab: gate step `previews` (`gate_previews_test.go`, after `deploy-from-ci`), which also runs caravana-action's preview mode when
+  `../caravana-action` has it (`CARAVANA_ACTION_DIR` points at it from a worktree; its preview mode is `0a99ae4` on the
+  action's unpushed branch `preview-mode`). It passed in the lab on 2026-11-22 (111 s, run with
+  `-run 'TestLab/^(api-needs-token|previews)$'`). The action prints `::add-mask::<value>` for each preview secret, so a
+  leak check skips those lines, as `deploy-from-ci` does for the token.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

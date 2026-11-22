@@ -115,6 +115,9 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/projects/{project}/environments/{environment}/apps", s.listEnvironmentApps, false, false},
 		{http.MethodPost, "/v1/projects/{project}/environments/{environment}/apps", s.createEnvironmentApp, false, false},
 		{http.MethodGet, "/v1/projects/{project}/environments/{environment}/apps/{name}", s.getEnvironmentApp, false, false},
+		{http.MethodGet, "/v1/projects/{project}/previews", s.getPreviews, false, false},
+		{http.MethodPut, "/v1/projects/{project}/previews/settings", s.putPreviewSettings, false, false},
+		{http.MethodDelete, "/v1/projects/{project}/previews/{environment}", s.closePreview, false, false},
 		{http.MethodGet, "/v1/apps/{id}", s.getApp, false, false},
 		{http.MethodDelete, "/v1/apps/{id}", s.deleteApp, false, false},
 		{http.MethodGet, "/v1/apps/{id}/copies", s.listCopies, false, false},
@@ -420,6 +423,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := scansError(err); e != nil {
+		return e
+	}
+	if e := previewsError(err); e != nil {
 		return e
 	}
 	switch {

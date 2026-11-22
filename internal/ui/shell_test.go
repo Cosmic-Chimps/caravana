@@ -43,8 +43,8 @@ func navOf(t *testing.T, body string) []string {
 }
 
 // The sidebar has exactly the handoff's order on every page (feature 027.5):
-// Workspace holds Home, Projects, Logs, Requests, Monitoring and Schedules, Configure holds
-// Domains, then Settings. It links nothing that has no page yet, and marks the right
+// Workspace holds Home, Projects, Previews (feature 049), Logs, Requests, Monitoring and Schedules,
+// Configure holds Domains, then Settings. It links nothing that has no page yet, and marks the right
 // one: Home on /apps, Projects on the projects and on every page of an app, Schedules
 // on /schedules (feature 022), Settings on /settings. The top bar
 // has New app, and the crumbs say where the page is (contracts/page1-shell.md).
@@ -74,6 +74,8 @@ func TestShellOnEveryPage(t *testing.T) {
 		{"/settings/backup-storage", "Settings", "Settings /Backup storage"},
 		{"/settings/notifications", "Settings", "Settings /Notifications"},
 		{"/settings/tokens", "Settings", "Settings /API tokens"},
+		{"/previews", "Previews", "Previews"},
+		{"/previews?tab=setup&project=shop", "Previews", "Previews"},
 		{"/schedules", "Schedules", "Schedules"},
 		{"/schedules/new", "Schedules", "Schedules /New schedule"},
 		{"/domains", "Domains", "Domains"},
@@ -88,7 +90,7 @@ func TestShellOnEveryPage(t *testing.T) {
 				t.Fatalf("GET %s = %d:\n%s", tc.path, resp.StatusCode, text(body))
 			}
 
-			want := []string{"Home=/apps", "Projects=/projects", "Logs=/logs", "Requests=/requests", "Monitoring=/monitoring", "Schedules=/schedules", "Domains=/domains", "Settings=/settings"}
+			want := []string{"Home=/apps", "Projects=/projects", "Previews=/previews", "Logs=/logs", "Requests=/requests", "Monitoring=/monitoring", "Schedules=/schedules", "Domains=/domains", "Settings=/settings"}
 			for i, item := range want {
 				if strings.HasPrefix(item, tc.active+"=") {
 					want[i] += "*"
@@ -103,7 +105,7 @@ func TestShellOnEveryPage(t *testing.T) {
 				strings.Index(side, "Domains") < c || strings.Index(side, "Schedules") > c {
 				t.Errorf("the sidebar's groups are not Workspace, then Configure with Domains: %s", side)
 			}
-			for _, absent := range []string{"Deploys", "Previews", "Backups"} {
+			for _, absent := range []string{"Deploys", "Backups"} {
 				if strings.Contains(side, absent) {
 					t.Errorf("the sidebar links %q, which has no page yet: %s", absent, side)
 				}

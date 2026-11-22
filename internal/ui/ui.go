@@ -194,6 +194,8 @@ func (s *server) routeTable() []route {
 		{"GET", "/parts/platform", s.requirePart(s.partPlatform)},
 		{"GET", "/apps", s.requireSession(s.showApps)},
 		{"GET", "/apps/new", s.requireSession(s.showNewApp)},
+		{"GET", "/previews", s.requireSession(s.showPreviews)},
+		{"GET", "/parts/previews", s.requirePart(s.partPreviews)},
 		{"GET", "/projects", s.requireSession(s.showProjects)},
 		{"GET", "/projects/new", s.requireSession(s.showNewProject)},
 		{"POST", "/projects", s.protected(s.requireSession(s.createProject))},
@@ -205,6 +207,9 @@ func (s *server) routeTable() []route {
 		{"POST", "/projects/{project}/delete", s.protected(s.requireSession(s.deleteProject))},
 		{"POST", "/projects/{project}/environments", s.protected(s.requireSession(s.addEnvironment))},
 		{"POST", "/projects/{project}/environments/{environment}/delete", s.protected(s.requireSession(s.deleteEnvironment))},
+		{"POST", "/projects/{project}/previews/settings", s.protected(s.requireSession(s.savePreviewSettings))},
+		{"GET", "/projects/{project}/previews/{environment}/close", s.requireSession(s.showPreviewClose)},
+		{"POST", "/projects/{project}/previews/{environment}/close", s.protected(s.requireSession(s.closePreview))},
 		{"POST", "/apps", s.protected(s.requireSession(s.createApp))},
 		{"POST", "/apps/new/github", s.protected(s.requireSession(s.createFromGitHub))},
 		{"GET", "/apps/new/template/{name}", s.requireSession(s.showTemplate)},
@@ -394,7 +399,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "requests", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "previews", "promote", "stop", "terminal", "schedules", "domains", "logs", "requests", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which

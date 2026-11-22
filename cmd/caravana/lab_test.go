@@ -151,6 +151,9 @@ func startLab(t *testing.T) labEnv {
 		// restore starts within seconds of its slot (feature 036).
 		svc.SetBackupScanGap(10 * time.Second)
 		svc.SetScheduleLimitForTests(labRunLimit)
+		// The preview reaper looks every 10 s instead of every 5 minutes, so the previews step sees
+		// an expired preview closed in seconds (feature 049); no preview expires by itself in a day.
+		svc.SetPreviewReapGap(10 * time.Second)
 		// The domain checks: fake DNS, the real handshake with Traefik, and the watcher's gaps
 		// short enough for the steps (60 s while nobody looks, 10 s while a page is open).
 		svc.SetEdge(labResolver(), edge.TLSDialer{})
@@ -238,6 +241,11 @@ func startLab(t *testing.T) labEnv {
 				currentMu.Lock()
 				defer currentMu.Unlock()
 				return current.RunDailyScansForTests(ctx)
+			},
+			SetPreviewExpiry: func(d time.Duration) {
+				currentMu.Lock()
+				defer currentMu.Unlock()
+				current.SetPreviewExpiryForTests(d)
 			},
 			DropFinding: func(ctx context.Context, image, advisory string) (int, error) {
 				currentMu.Lock()

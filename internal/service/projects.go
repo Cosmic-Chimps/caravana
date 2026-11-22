@@ -54,6 +54,8 @@ type Environment struct {
 	Name     string
 	Position int
 	Apps     int
+	// Preview is set for a preview environment (pr-<n>, feature 049).
+	Preview *PreviewInfo
 }
 
 // Project is a group of environments, which hold apps. ID is its name: the
@@ -83,6 +85,9 @@ func (s *Service) projectOf(ctx context.Context, rec store.ProjectRecord) (Proje
 		Environments: make([]Environment, 0, len(envs))}
 	for _, e := range envs {
 		p.Environments = append(p.Environments, toEnvironment(e))
+	}
+	if err := s.withPreviews(ctx, rec, &p); err != nil {
+		return Project{}, err
 	}
 	return p, nil
 }
@@ -191,13 +196,20 @@ func (s *Service) DeleteProject(ctx context.Context, id string) error {
 }
 
 // CreateEnvironment adds an empty environment after the project's others.
-// name is a label without "--" (a *app.FieldError on "name"); an unknown
-// project is ErrProjectNotFound and a taken name ErrEnvironmentExists.
+// name is a label without "--" that doesn't start with the reserved "pr-"
+// unless it is a preview name, pr-<n> (a *app.FieldError on "name"); an unknown
+// project is ErrProjectNotFound and a taken name ErrEnvironmentExists. A
+// preview is counted against the project's limit, with any token, in the same
+// transaction that makes it (a *PreviewLimitError, ErrPreviewLimit).
 func (s *Service) CreateEnvironment(ctx context.Context, project, name string) (Environment, error) {
-	if err := app.ValidName("name", name); err != nil {
+	if err := app.ValidEnvironmentName("name", name); err != nil {
 		return Environment{}, err
 	}
-	rec, err := s.store.InsertEnvironment(ctx, project, name)
+	insert := s.store.InsertEnvironment
+	if app.IsPreviewEnvironment(name) {
+		insert = s.store.InsertPreviewEnvironment
+	}
+	rec, err := insert(ctx, project, name)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		return Environment{}, fmt.Errorf("%w: %q", ErrProjectNotFound, project)
@@ -207,7 +219,15 @@ func (s *Service) CreateEnvironment(ctx context.Context, project, name string) (
 		return Environment{}, err
 	}
 	s.publish(Change{What: ChangeApps})
-	return toEnvironment(rec), nil
+	env := toEnvironment(rec)
+	if n, ok := app.PreviewNumber(name); ok {
+		// Made just now, so it has no deployment: its clock is its creation.
+		if proj, err := s.store.GetProject(ctx, project); err == nil {
+			info := s.previewInfo(proj, store.PreviewActivity{Environment: name, Number: n, CreatedAt: rec.CreatedAt})
+			env.Preview = &info
+		}
+	}
+	return env, nil
 }
 
 // DeleteEnvironment deletes an environment. Default's production is

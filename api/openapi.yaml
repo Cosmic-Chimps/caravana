@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.54.0
+  version: 0.55.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -1660,7 +1660,15 @@ paths:
     post:
       operationId: createEnvironment
       summary: Add an environment to a project.
-      description: It starts empty and is listed after the project's other environments.
+      description: |
+        It starts empty and is listed after the project's other environments.
+
+        The prefix `pr-` is kept for previews: a name that starts with it must be
+        `pr-<pull request number>` (`pr-12`, no leading zero, at most nine digits), else
+        `422 invalid_field` on `name`. A preview environment counts against the project's
+        preview limit (`getPreviews`, `putPreviewSettings`): beyond it the answer is
+        `409 preview_limit` on `name`, whatever the token. A deploy token may call this for its
+        own project, and only with a preview name.
       tags: [projects]
       requestBody:
         required: true
@@ -1703,7 +1711,8 @@ paths:
       summary: Delete an environment.
       description: |
         Refused while any app is in it (`409 not_empty`, the message names them), and for
-        `production` of project `default` (`409 protected`).
+        `production` of project `default` (`409 protected`). A deploy token may call this for a
+        preview environment (`pr-<n>`) of its own project.
       tags: [projects]
       responses:
         "204":
@@ -1718,6 +1727,118 @@ paths:
           $ref: "#/components/responses/PlaceInUse"
         "500":
           $ref: "#/components/responses/Internal"
+
+  /v1/projects/{project}/previews:
+    parameters:
+      - $ref: "#/components/parameters/ProjectName"
+    get:
+      operationId: getPreviews
+      summary: Read a project's preview settings and its open previews.
+      description: |
+        A preview is an environment named `pr-<n>`, with the apps in it. `previews` is sorted by
+        pull request number and `apps` by ID; `lastDeployment` is absent for an app never
+        deployed. No answer holds the preview password or its hash. Deploy tokens can't call this.
+      tags: [projects]
+      responses:
+        "200":
+          description: The settings and the open previews.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreviewList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/projects/{project}/previews/settings:
+    parameters:
+      - $ref: "#/components/parameters/ProjectName"
+    put:
+      operationId: putPreviewSettings
+      summary: Change a project's preview settings.
+      description: |
+        Every field is optional and an absent one keeps its value. `limit` (0 to 20, 0 turns
+        previews off) is how many previews may be open; `expireAfterDays` (1 to 30) is how long
+        a preview may sit idle; `password` sets or changes the one password every preview
+        domain of the project shares (12 to 128 printable characters, and at most 72 bytes,
+        the limit of the bcrypt hash that keeps it); `removePassword` removes it. A bad value
+        is `422 invalid_field` naming it, `password` together with `removePassword` is 422 on
+        `removePassword`. A changed password applies to the open previews at once, with no
+        deploy; setting it the first time with previews open protects them at their next deploy,
+        and a warning says which. `removePassword` while the project has open previews is
+        `409 previews_open` on `removePassword`, the message naming them. The password is never
+        in an answer. Deploy tokens can't call this.
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PreviewSettingsRequest"
+      responses:
+        "200":
+          description: The settings as saved, and any warnings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreviewSettingsResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
+        "409":
+          $ref: "#/components/responses/PreviewConflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/PreviewSettingsInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/projects/{project}/previews/{environment}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectName"
+      - $ref: "#/components/parameters/EnvironmentName"
+    delete:
+      operationId: closePreview
+      summary: "Close a preview: delete its apps, then the environment."
+      description: |
+        Deletes every app of the preview as `deleteApp` does, then the environment. An
+        environment that isn't a preview (`pr-<n>`) is `409 not_a_preview` on `environment`
+        and nothing is deleted. An app created meanwhile makes the last step `409 not_empty`;
+        an app that can't be deleted answers as `deleteApp` does (502 when Nomad refuses) and
+        the preview stays with what is left, so the same call can be made again. Caravana
+        makes this call itself for a preview that expired. Deploy tokens can't call this; they
+        delete their own app and the environment with `deleteApp` and `deleteEnvironment`.
+      tags: [projects]
+      responses:
+        "204":
+          description: Closed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
+        "409":
+          $ref: "#/components/responses/PreviewConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
 
   /v1/projects/{project}/environments/{environment}/apps:
     parameters:
@@ -1883,6 +2004,9 @@ paths:
         Stops and purges the app's Nomad job, deletes its secrets, then erases the app, its
         deployments and its webhook token. If Nomad can't stop the job or the secrets can't be
         deleted, the app is kept and the call can be made again. Not reversible; the ID can be used for a new app afterwards.
+
+        A deploy token may delete its own app only when the app is in a preview environment
+        (`pr-<n>`); in any other environment it is `403 token_scope`.
       tags: [apps]
       responses:
         "204":
@@ -5415,6 +5539,13 @@ paths:
         A body on an app that keeps its Compose file (`composeKept`) drops the file, since the
         file no longer matches the app: the deploy goes on, and the deployment's `warnings`
         say so. Without a body, and for a webhook, the kept file is unchanged.
+
+        In a preview environment of a project that has a preview password
+        (`putPreviewSettings`), every domain is made Team only with that password: the stored app
+        says so, the deployment gets one warning on the first changed field
+        (`services[0].domains[0].teamOnly`), and no `teamPasswords` entry is made for them. The
+        same holds for every deploy path (`deployCompose`, `createApp`, `redeployDeployment`,
+        `promoteApp`, the webhook).
       tags: [deployments]
       parameters:
         - $ref: "#/components/parameters/IfMatch"
@@ -9539,6 +9670,138 @@ components:
           type: integer
           minimum: 0
           description: How many apps are in it now.
+        preview:
+          $ref: "#/components/schemas/EnvironmentPreview"
+
+    EnvironmentPreview:
+      type: object
+      additionalProperties: false
+      required: [number, expiresAt]
+      description: |
+        Only on a preview environment (`pr-<n>`). `expiresAt` is the later of the preview's
+        creation and the newest deployment of any app in it, plus the project's
+        `expireAfterDays`; Caravana closes the preview when it passes.
+      properties:
+        number: {type: integer, minimum: 1, description: "The pull request number."}
+        expiresAt: {type: string, format: date-time}
+
+    PreviewSettings:
+      type: object
+      additionalProperties: false
+      required: [limit, expireAfterDays, passwordSet]
+      properties:
+        limit:
+          type: integer
+          minimum: 0
+          maximum: 20
+          description: How many previews may be open at once. 0 means no previews.
+        expireAfterDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+          description: Days a preview may sit idle before Caravana closes it.
+        passwordSet:
+          type: boolean
+          description: |
+            Whether the domains of the project's previews are Team only with one shared
+            password. When false they are public.
+
+    PreviewSettingsRequest:
+      type: object
+      additionalProperties: false
+      description: Every field is optional; an absent one keeps its value.
+      properties:
+        limit:
+          type: integer
+          description: 0 to 20.
+        expireAfterDays:
+          type: integer
+          description: 1 to 30.
+        password:
+          type: string
+          writeOnly: true
+          description: |
+            Sets or changes the preview password: 12 to 128 printable characters, at most 72
+            bytes. Never in an answer.
+        removePassword:
+          type: boolean
+          description: Removes the password. Refused while previews are open.
+
+    PreviewSettingsResult:
+      type: object
+      additionalProperties: false
+      required: [limit, expireAfterDays, passwordSet, warnings]
+      description: The settings as saved, with what to know about the change.
+      properties:
+        limit: {type: integer}
+        expireAfterDays: {type: integer}
+        passwordSet: {type: boolean}
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
+
+    PreviewDeployment:
+      type: object
+      additionalProperties: false
+      required: [id, status, createdAt, trigger]
+      properties:
+        id: {type: string}
+        status: {type: string}
+        createdAt: {type: string, format: date-time}
+        trigger: {type: string}
+        tokenName: {type: string, description: "The deploy token that made it, when one did."}
+        origin:
+          $ref: "#/components/schemas/Origin"
+
+    PreviewApp:
+      type: object
+      additionalProperties: false
+      required: [id, name, state, addresses, memoryMB]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        state:
+          type: string
+          description: The app's state, as `listApps` gives it.
+        addresses:
+          type: array
+          items: {type: string}
+          description: The hosts of the app's domains.
+        memoryMB:
+          type: integer
+          description: |
+            What the app reserves: each service's memory reservation, with the default
+            applied, times the copies it wants.
+        lastDeployment:
+          $ref: "#/components/schemas/PreviewDeployment"
+
+    Preview:
+      type: object
+      additionalProperties: false
+      required: [environment, number, createdAt, expiresAt, apps]
+      properties:
+        environment: {type: string, examples: [pr-12]}
+        number: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        apps:
+          type: array
+          items:
+            $ref: "#/components/schemas/PreviewApp"
+
+    PreviewList:
+      type: object
+      additionalProperties: false
+      required: [project, settings, previews]
+      properties:
+        project: {type: string}
+        settings:
+          $ref: "#/components/schemas/PreviewSettings"
+        previews:
+          type: array
+          items:
+            $ref: "#/components/schemas/Preview"
 
     Project:
       type: object
@@ -12249,7 +12512,7 @@ components:
                 `placement_impossible`, `server_moving`, `server_not_ready`, `no_other_server`,
                 `image_vulnerable`, `scanner_not_installed`, `addon_busy`, `addon_not_found`,
                 `dns_record_exists`, `dns_address_unknown`, `dns_provider_refused`, `dns_provider_unavailable`,
-                `dns_zone_not_found`.
+                `dns_zone_not_found`, `preview_limit`, `previews_open`, `not_a_preview`, `preview_password`.
               examples: [invalid_field]
             message:
               type: string
@@ -12487,7 +12750,8 @@ components:
       description: |
         `project_exists` or `environment_exists`, with `field` `name`: the name is taken
         (project names are unique in the installation, environment names in their project).
-        Nothing was changed.
+        `preview_limit` (`createEnvironment`, `field` `name`): the project already has as many
+        open previews as its limit; the message names them. Nothing was changed.
       content:
         application/json:
           schema:
@@ -12501,10 +12765,31 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    PreviewConflict:
+      description: |
+        `previews_open` (`putPreviewSettings`, `field` `removePassword`): the password can't be
+        removed while previews are open; the message names them. `not_a_preview`
+        (`closePreview`, `field` `environment`): the environment isn't named `pr-<n>`.
+        `not_empty` (`closePreview`): an app was created while it closed. Nothing more was
+        changed than the message says.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PreviewSettingsInvalid:
+      description: |
+        `invalid_field`, `field` naming it: `limit` (not 0 to 20), `expireAfterDays` (not 1 to
+        30), `password` (not 12 to 128 printable characters, or over 72 bytes) or
+        `removePassword` (given together with `password`). Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     PlaceInvalid:
       description: |
-        `invalid_field`: `field` is `name` (not a lowercase label, or it holds `--`) or
-        `displayName` (empty, not printable, or over 100 characters). Nothing was changed.
+        `invalid_field`: `field` is `name` (not a lowercase label, or it holds `--`, or it starts
+        with `pr-` without being a preview name) or `displayName` (empty, not printable, or over
+        100 characters). Nothing was changed.
       content:
         application/json:
           schema:
@@ -12898,7 +13183,9 @@ components:
     DomainConflict:
       description: |
         `not_team_only`: the domain isn't Team only, so it has no password. `app_stopped`: the
-        app is stopped; start it first. Nothing was changed.
+        app is stopped; start it first. `preview_password` (`field` `host`): the domain is in a
+        preview and uses its project's preview password; change that one with
+        `putPreviewSettings`. Nothing was changed.
       content:
         application/json:
           schema:

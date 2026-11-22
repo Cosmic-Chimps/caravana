@@ -313,6 +313,8 @@ func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger)
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
+	// A preview of a project with a preview password is Team only (spec 049 D6).
+	a, previewWarnings := s.applyPreviewTeamOnly(ctx, a)
 	if err := s.checkConsoleDomain(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
@@ -326,7 +328,7 @@ func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger)
 		return store.DeploymentRecord{}, err
 	}
 	s.appChanged(a.ID)
-	return s.deploy(ctx, a, trigger)
+	return s.deploy(ctx, a, trigger, made{warnings: previewWarnings})
 }
 
 // ErrAppNotDefined is the refusal of a deploy "as stored" of an app that has
