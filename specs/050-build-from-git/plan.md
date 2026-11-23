@@ -180,3 +180,17 @@ everything up to 049 is merged). Numbers: API **0.56.0**, migration **0040**. La
   it keeps per-task output when a test sets it (`SetTaskLogs`), and `VolumeCreate.Parameters` records the mkdir
   parameters besides the mode. `deploytest.PlayBuilds` plays Git and BuildKit for every build job.
 
+
+## Deviations (phase E: the lab steps)
+
+- **No feature code changed.** The first gate runs found only test-side problems (research R3): the lab's Git server had to
+  speak smart HTTP, because `git clone --depth 1` (what the build job runs, as every real host supports) is refused by a dumb-HTTP
+  server (lab, observed); the Git server renders `authorized_keys` a few seconds after its variable changes, so the step waits for
+  the deploy key to log in before it deploys; and a deployment's origin `ref` is `refs/heads/<branch>`, as GitHub's.
+- **The Git server is `git-http-backend` behind busybox `httpd`** at `/cgi-bin/git/app.git`, not a dumb server at `/app.git` (D12
+  said 8098 over `/srv/git`); the public repository the steps use is `http://127.0.0.1:<port>/cgi-bin/git/app.git`.
+- **The two steps run on their own jobs and ports** (`lab_git_test.go`'s `buildLab`): the gate step `gate-gitserver` (SSH 2222,
+  HTTP 8098) and `gate-regbuild` (5001), the console step `gate-gitserver-console` (2223, 8099) and `gate-regbuild-console` (5002);
+  `gateRegistryJobOn` is the private-registry step's job under another ID and address.
+- **Lab results** (2026-11-23, each run alone): `TestLab/^(api-needs-token|build-from-git)$` passed in 125 s;
+  `TestConsoleLab/^console-(sign-in|build)$` passed in 39 s. Both leave only `traefik` and `whoami` in the lab.

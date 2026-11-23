@@ -186,6 +186,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"terminal", false, g.terminalStep},
 		{"deploy-from-ci", false, g.deployFromCIStep},
 		{"previews", false, g.previewsStep},
+		{"build-from-git", false, g.buildFromGitStep},
 		{"private-registry", false, g.privateRegistryStep},
 		{"templates", false, g.templatesStep},
 		{"secret-references", false, g.secretRefsStep},
@@ -1427,8 +1428,15 @@ const gateRegistryHost = "127.0.0.1:15000"
 // password is in this job's env, which is fine for a throwaway one: the job is
 // the gate's, not an app, and it lives only for the step.
 func gateRegistryJob(user, pass, user2, pass2 string) *api.Job {
+	return gateRegistryJobOn("gate-registry", gateRegistryHost, user, pass, user2, pass2)
+}
+
+// gateRegistryJobOn is that registry under another job ID and address: the
+// build steps run their own (feature 050), on ports the private-registry step
+// doesn't use, so they never wait on or clash with it.
+func gateRegistryJobOn(id, addr, user, pass, user2, pass2 string) *api.Job {
 	return &api.Job{
-		ID: new("gate-registry"), Name: new("gate-registry"), Type: new("service"), Datacenters: []string{"*"},
+		ID: new(id), Name: new(id), Type: new("service"), Datacenters: []string{"*"},
 		TaskGroups: []*api.TaskGroup{{
 			Name:     new("registry"),
 			Networks: []*api.NetworkResource{{Mode: "host"}},
@@ -1450,7 +1458,7 @@ func gateRegistryJob(user, pass, user2, pass2 string) *api.Job {
 						"REGISTRY_AUTH":                "htpasswd",
 						"REGISTRY_AUTH_HTPASSWD_REALM": "gate",
 						"REGISTRY_AUTH_HTPASSWD_PATH":  "/alloc/data/htpasswd",
-						"REGISTRY_HTTP_ADDR":           gateRegistryHost,
+						"REGISTRY_HTTP_ADDR":           addr,
 					},
 					Config:    map[string]any{"image": "registry:2", "network_mode": "host"},
 					Resources: &api.Resources{CPU: new(100), MemoryMB: new(128)},

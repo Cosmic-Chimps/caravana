@@ -38,3 +38,29 @@ gitlab.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCsj2bNKTBSpIYDEGk9KxsGh3mySTRgM
 ```
 
 An SSH repository on another host must give `hostKey`; a host with a port is written `[host]:port` in known_hosts.
+
+## R3 The lab steps' Git server and what the first runs showed (lab, observed 2026-11-23)
+
+Ubuntu 26.04 VM, 2 GiB, the build settings lowered to 768 MB / 1000 MHz / 10 minutes / 1 at once / 2048 MB cache.
+
+- **A shallow clone needs smart HTTP.** `git clone --depth 1` against a dumb-HTTP server (busybox `httpd` over a bare
+  repository with `update-server-info`) fails with `fatal: dumb http transport does not support shallow
+  capabilities`, and the build says "the repository could not be read". Real Git hosts speak smart HTTP, so the
+  build job is unchanged; the lab's Git server runs `git-http-backend` (Alpine's `git-daemon` package) as a CGI of the
+  same `httpd` (`/cgi-bin/git/app.git`, `safe.directory '*'`, `GIT_HTTP_EXPORT_ALL=1`). Its sshd serves the same repository
+  over SSH to the test's own key and, as a second key, the deploy key.
+- **The SSH clone works as designed** with the stored deploy key (`secrets/deploy_key` rendered from the job's own
+  variable, readable by the `source` task), `StrictHostKeyChecking=yes` and the `hostKey` of the server written for
+  `[127.0.0.1]:2222`. The first attempt was refused `Permission denied (publickey)` only because the Git server renders its
+  `authorized_keys` template a few seconds after the variable changes; the step now waits for the key to log in (`git
+  ls-remote`) before it deploys.
+- **Template permissions and the cache volume** need nothing more than the plan's: the rootless `build` task (uid 1000)
+  reads `secrets/docker/config.json` (0444) and pushes to the htpasswd registry (`[auth] sharing credentials`), and writes
+  its `--export-cache type=local` into the `uid=1000,gid=1000` host volume `<app>_caravana-build`.
+- **Timings.** With the BuildKit, Git and busybox images already on the VM a build is queued 6 s, runs 9 s (clone, build,
+  push) and the deployment is healthy about 20 s after the request; the first build of a run pulls the two images (about
+  one minute more). The whole gate step (four builds, a rollout each but the broken one) took 125 s.
+- **The origin's `ref` is `refs/heads/<branch>`**, as GitHub's `GITHUB_REF` is (the console draws the branch name); its
+  `repository` is `host/path` without `.git` or the scheme.
+- **The registry on the VM's loopback** is reached by Nomad's docker driver and by BuildKit over plain HTTP (the gate step's
+  `127.0.0.1:5001` and the console step's `127.0.0.1:5002`), each with an htpasswd user saved as a registry entry.

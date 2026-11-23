@@ -36,4 +36,4 @@
 
 ## Phase E: lab
 
-- [ ] T010 Gate step `build-from-git` and console step `console-build` (D12), each run alone in the lab.
+- [x] T010 Gate step `build-from-git` and console step `console-build` (D12), each run alone in the lab.

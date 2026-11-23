@@ -129,6 +129,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-secret-providers", c.secretProviders},
 		{"console-dns-providers", c.dnsProviders},
 		{"console-security", c.consoleSecurity},
+		{"console-build", c.consoleBuild},
 		{"console-delete", c.deleteApp},
 	}
 	for _, s := range steps {

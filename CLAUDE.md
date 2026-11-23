@@ -2013,7 +2013,11 @@ repository on the host. `plan.md` D1–D12 are the decisions and its Deviations 
   service are `buildRefusal`; `fieldMessage` names the build fields. The SSH host key has no field on New app's tab: it is in Configure's
   Build panel.
 - Tests: `service`, `api` and `ui` have sentinel tests for a token, a private key and push credentials (rows, log, answers, pages, jobs); `internal/ui/build_test.go` plays Git and BuildKit with `deploytest.PlayBuilds`. The lab steps are the gate's
-  `build-from-git` (`cmd/caravana/gate_build_test.go`) and `TestConsoleLab`'s `console-build`, both to come in phase E.
+  `build-from-git` (`cmd/caravana/gate_build_test.go`: a public build over smart HTTP, a push webhook, a broken Dockerfile that
+  leaves v2 live, a deploy key over SSH, the private key in no answer, log, job, export or SQLite file, the delete) and
+  `TestConsoleLab`'s `console-build` (`console_build_test.go`), sharing `lab_git_test.go`'s Git server and registry jobs; they passed
+  in the lab on 2026-11-23 (125 s and 39 s, each run alone; the steps lower the build settings for the 2 GiB VM). A shallow clone
+  needs smart HTTP (research R3).
 - Not in 050: Compose `build:`, more than one built service, polling a repository, build arguments and secrets, multi-architecture
   images, a registry run by Caravana, Git providers as installation-wide accounts, a pool of build servers.
 
