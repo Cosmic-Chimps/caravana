@@ -129,6 +129,13 @@ func (s *Service) keepDigests(ctx context.Context) ([]string, error) {
 	if installed {
 		helpers = append(helpers, s.deployer.ScanImage())
 	}
+	// The builder and the Git image (feature 050) run only during a build: keep them while an app builds.
+	for _, rec := range apps {
+		if _, built := rec.App.BuiltService(); built {
+			helpers = append(helpers, s.deployer.BuildImages()...)
+			break
+		}
+	}
 	return keepFrom(apps, deps, helpers, settings.KeepDeployments)
 }
 

@@ -340,6 +340,8 @@ func (s *Service) setStopped(ctx context.Context, appID string, trigger app.Trig
 	defer cancel()
 	backups := deploy.BackupJobIDs(rec.App)
 	if stop {
+		// A build going for the app ends with it (feature 050): its deployment would be refused anyway.
+		s.cancelBuild(appID, errBuildStopped)
 		// The schedules' runs going stop with the app, once the app is stopped:
 		// each is told why before its job is stopped, so the watcher records it
 		// stopped and not failed, and an app Nomad refused to stop keeps its runs.

@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -32,8 +34,15 @@ type WebhookToken struct {
 // WebhookResult is what a webhook call did. Changed is false when nothing
 // changed and nothing was deployed; Deployment is then the live one.
 type WebhookResult struct {
-	Changed    bool
+	Changed bool
+	// Deployment is the deployment the call made, or the live one when nothing
+	// changed. It is the zero record when a skipped call found the app with no
+	// deployment at all.
 	Deployment store.DeploymentRecord
+	// Skipped says why a push to an app that builds from Git built nothing: a
+	// sentence such as "a push to refs/heads/dev, not main". Empty otherwise
+	// (feature 050).
+	Skipped string
 }
 
 // WebhookPath is the webhook path of an app, without the token.
@@ -130,13 +139,79 @@ func (s *Service) WebhookRedeploy(ctx context.Context, appID string) (WebhookRes
 	return WebhookResult{Changed: true, Deployment: rec}, nil
 }
 
+// WebhookPush is WebhookRedeploy for a call that came with a push body (feature
+// 050, plan D6): the repository's push webhook. For an app with no built
+// service the body is ignored and it is WebhookRedeploy. For one with a built
+// service, a ping, an event that is no push, a deleted branch and a push to
+// another ref build nothing (Skipped says why, Changed is false); a push of the
+// commit the live deployment was built from builds nothing either; any other
+// call builds the branch's newest commit, whatever the body names. Call it only
+// after CheckWebhookToken.
+func (s *Service) WebhookPush(ctx context.Context, appID string, header http.Header, body []byte) (WebhookResult, error) {
+	stored, err := s.store.GetApp(ctx, appID)
+	if err != nil {
+		return WebhookResult{}, err
+	}
+	i, built := stored.App.BuiltService()
+	if !built {
+		return s.WebhookRedeploy(ctx, appID)
+	}
+	// A stopped app answers the same refusal whatever the call says.
+	if err := s.refuseIfStopped(ctx, appID); err != nil {
+		return WebhookResult{}, err
+	}
+	push := PushEvent(header, body)
+	branch := stored.App.Services[i].Build.Defaults().Branch
+	if why := push.SkipReason(branch); why != "" {
+		return s.skippedWebhook(ctx, appID, why)
+	}
+	if push.Commit != "" {
+		if live, err := s.store.LatestHealthyDeployment(ctx, appID); err == nil && builtFrom(live, push.Commit) {
+			return WebhookResult{Changed: false, Deployment: live}, nil
+		}
+	}
+	rec, err := s.Redeploy(ctx, appID, app.TriggerWebhook)
+	if err != nil {
+		return WebhookResult{}, err
+	}
+	return WebhookResult{Changed: true, Deployment: rec}, nil
+}
+
+// skippedWebhook answers a call that builds nothing with the app's newest
+// deployment, when it has one.
+func (s *Service) skippedWebhook(ctx context.Context, appID, why string) (WebhookResult, error) {
+	res := WebhookResult{Skipped: why}
+	recent, err := s.store.ListDeployments(ctx, appID, 1)
+	if err != nil {
+		return WebhookResult{}, err
+	}
+	if len(recent) == 1 {
+		res.Deployment = recent[0]
+	}
+	return res, nil
+}
+
+// builtFrom says the deployment was made from commit: its origin's commit is
+// the same, or one is the abbreviation of the other (at least 7 characters).
+func builtFrom(rec store.DeploymentRecord, commit string) bool {
+	if rec.Deployment.Origin == nil || rec.Deployment.Origin.Commit == "" || commit == "" {
+		return false
+	}
+	have := strings.ToLower(rec.Deployment.Origin.Commit)
+	return strings.HasPrefix(have, commit) || strings.HasPrefix(commit, have)
+}
+
 // unchanged reports whether a redeploy would run exactly what Nomad already
 // runs, and returns that deployment. Any doubt (an error, no healthy
 // deployment) means "changed": Redeploy then resolves again and records any
-// failure the usual way.
+// failure the usual way. An app with a built service is never "unchanged"
+// without a push body that says so (WebhookPush): its image is built, not looked up.
 func (s *Service) unchanged(ctx context.Context, appID string) (store.DeploymentRecord, bool) {
 	stored, err := s.store.GetApp(ctx, appID)
 	if err != nil {
+		return store.DeploymentRecord{}, false
+	}
+	if _, built := stored.App.BuiltService(); built {
 		return store.DeploymentRecord{}, false
 	}
 	live, err := s.store.LatestHealthyDeployment(ctx, appID)

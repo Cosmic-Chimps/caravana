@@ -58,6 +58,9 @@ type DeploymentRecord struct {
 	// SourceEnvironment is the environment SourceApp is in ("" when SourceApp
 	// is), which is what "promoted from staging" says.
 	SourceEnvironment string
+	// Build is the deployment's build (without its log: GetBuild has it); nil
+	// when the deployment didn't build (feature 050).
+	Build *BuildRecord
 	// Place is where the deployment's app is: the stored place, read with the
 	// record so a list of deployments across apps names project and
 	// environment without a lookup per row.
@@ -86,6 +89,13 @@ type DeploymentUpdate struct {
 // d.Origin, d.TokenName and d.Refresh, when set, are recorded too. None of them changes afterwards. source may name a deployment of another app
 // (a promotion); the record then has SourceApp.
 func (s *Store) CreateDeployment(ctx context.Context, appID string, d app.Deployment, definition *app.App, file *compose.Request, source string) (DeploymentRecord, error) {
+	return s.createDeployment(ctx, appID, d, definition, file, source, nil)
+}
+
+// createDeployment is CreateDeployment, and with a build also writes the
+// deployment's queued build row in the same transaction, so a deployment that
+// waits for its build is never without it.
+func (s *Store) createDeployment(ctx context.Context, appID string, d app.Deployment, definition *app.App, file *compose.Request, source string, build *BuildRecord) (DeploymentRecord, error) {
 	if d.ID == "" {
 		return DeploymentRecord{}, errors.New("create deployment: ID is required")
 	}
@@ -143,6 +153,11 @@ func (s *Store) CreateDeployment(ctx context.Context, appID string, d app.Deploy
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		d.ID, appID, string(d.Trigger), string(digests), string(StatusPending), def, kept, src, origin, tokenName, refresh, now, now); err != nil {
 		return DeploymentRecord{}, fmt.Errorf("create deployment %q: %w", d.ID, err)
+	}
+	if build != nil {
+		if err := insertBuild(ctx, tx, *build, d.ID, appID, s.now()); err != nil {
+			return DeploymentRecord{}, fmt.Errorf("create deployment %q: %w", d.ID, err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return DeploymentRecord{}, fmt.Errorf("create deployment %q: %w", d.ID, err)
@@ -219,6 +234,30 @@ func (s *Store) UpdateDeployment(ctx context.Context, id string, u DeploymentUpd
 		return DeploymentRecord{}, fmt.Errorf("update deployment %q: %w", id, err)
 	}
 	return s.GetDeployment(ctx, id)
+}
+
+// SetDeploymentOrigin records where a deployment came from when it didn't say
+// at creation: a deployment of a built service knows its commit only once the
+// build has cloned it (feature 050). A deployment that already has an origin
+// keeps it (the CI's wins), and nothing happens; an unknown deployment is
+// ErrNotFound.
+func (s *Store) SetDeploymentOrigin(ctx context.Context, id string, origin app.Origin) error {
+	doc, err := json.Marshal(origin)
+	if err != nil {
+		return fmt.Errorf("set origin of deployment %q: %w", id, err)
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE deployments SET origin = ? WHERE id = ? AND origin IS NULL`, string(doc), id)
+	if err != nil {
+		return fmt.Errorf("set origin of deployment %q: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if ok, err := exists(ctx, s.db, "SELECT 1 FROM deployments WHERE id = ?", id); err != nil {
+			return fmt.Errorf("set origin of deployment %q: %w", id, err)
+		} else if !ok {
+			return fmt.Errorf("deployment %q: %w", id, ErrNotFound)
+		}
+	}
+	return nil
 }
 
 // ListDeployments returns an app's newest deployments, newest first: at most
@@ -424,7 +463,7 @@ func (s *Store) queryDeployments(ctx context.Context, query string, args ...any)
 	return out, rows.Err()
 }
 
-const deploymentColumns = "id, app_id, trigger, digests, status, job_version, warnings, error, definition, compose, source_deployment, created_at, updated_at, source_app, source_environment, project, environment, app_name, origin, token_name, registered_at, refresh"
+const deploymentColumns = "id, app_id, trigger, digests, status, job_version, warnings, error, definition, compose, source_deployment, created_at, updated_at, source_app, source_environment, project, environment, app_name, origin, token_name, registered_at, refresh, build"
 
 // deploymentSource is what every read of deployments selects from: the table
 // plus
@@ -432,6 +471,9 @@ const deploymentColumns = "id, app_id, trigger, digests, status, job_version, wa
 //     from (empty when it has no source or the source is the same app), and
 //     source_environment, that app's environment;
 //   - project, environment and app_name, the place of the deployment's app;
+//   - build, the deployment's build as one JSON object without its log
+//     (buildSummaryJSON; NULL when it didn't build), so a list of deployments
+//     carries the Build stage in the same query;
 //   - seq, the table's rowid, which breaks ties between rows created in the same
 //     instant (a derived table has no rowid of its own).
 //
@@ -444,7 +486,8 @@ const deploymentSource = `(SELECT d.*, d.rowid AS seq,
 		WHERE s.id = d.source_deployment AND s.app_id != d.app_id), '') AS source_environment,
 	COALESCE((SELECT a.project FROM apps a WHERE a.id = d.app_id), 'default') AS project,
 	COALESCE((SELECT a.environment FROM apps a WHERE a.id = d.app_id), 'production') AS environment,
-	COALESCE((SELECT a.app_name FROM apps a WHERE a.id = d.app_id), d.app_id) AS app_name
+	COALESCE((SELECT a.app_name FROM apps a WHERE a.id = d.app_id), d.app_id) AS app_name,
+	(SELECT ` + buildSummaryJSON + ` FROM builds b WHERE b.deployment_id = d.id) AS build
 	FROM deployments d)`
 
 // querier is what *sql.DB and *sql.Tx have in common, so the same read works
@@ -474,12 +517,12 @@ func scanDeployment(row interface{ Scan(...any) error }) (DeploymentRecord, erro
 		created, updated                   string
 		jobVersion                         sql.NullInt64
 		definition, kept, source, origin   sql.NullString
-		tokenName, registered              sql.NullString
+		tokenName, registered, build       sql.NullString
 		refresh                            int
 	)
 	if err := row.Scan(&rec.Deployment.ID, &rec.AppID, &trigger, &digests, &status, &jobVersion,
 		&warnings, &rec.Error, &definition, &kept, &source, &created, &updated, &rec.SourceApp, &rec.SourceEnvironment,
-		&rec.Place.Project, &rec.Place.Environment, &rec.Place.Name, &origin, &tokenName, &registered, &refresh); err != nil {
+		&rec.Place.Project, &rec.Place.Environment, &rec.Place.Name, &origin, &tokenName, &registered, &refresh, &build); err != nil {
 		return DeploymentRecord{}, err
 	}
 	rec.Deployment.Trigger = app.Trigger(trigger)
@@ -522,6 +565,11 @@ func scanDeployment(row interface{ Scan(...any) error }) (DeploymentRecord, erro
 	}
 	rec.Source = source.String
 	var err error
+	if build.Valid {
+		if rec.Build, err = decodeBuildSummary(build.String); err != nil {
+			return DeploymentRecord{}, err
+		}
+	}
 	if rec.CreatedAt, err = parseTime(created); err != nil {
 		return DeploymentRecord{}, err
 	}

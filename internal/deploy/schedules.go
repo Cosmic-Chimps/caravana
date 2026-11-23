@@ -158,6 +158,8 @@ type RunState struct {
 	Found bool
 	// AllocID is the newest allocation's ID; empty until Nomad has placed one.
 	AllocID string
+	// NodeID is the Nomad node the allocation is on; empty until placed.
+	NodeID string
 	// ClientStatus is pending, running, complete, failed or lost, as the
 	// allocation says; empty without an allocation.
 	ClientStatus string
@@ -223,7 +225,7 @@ func (d *Deployer) ScheduleRunState(ctx context.Context, jobID, task string) (Ru
 	if a == nil {
 		return st, nil
 	}
-	st.AllocID, st.ClientStatus, st.DesiredStatus = a.ID, a.ClientStatus, a.DesiredStatus
+	st.AllocID, st.NodeID, st.ClientStatus, st.DesiredStatus = a.ID, a.NodeID, a.ClientStatus, a.DesiredStatus
 	switch a.ClientStatus {
 	case api.AllocClientStatusComplete, api.AllocClientStatusFailed, api.AllocClientStatusLost:
 		st.Terminal = true

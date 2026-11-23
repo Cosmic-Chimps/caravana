@@ -12,15 +12,15 @@
 
 ## Phase B: store, deploy, service
 
-- [ ] T003 Migration `0040_builds.sql`; store `builds` (insert, update, get by deployment, prune logs, open builds for
+- [x] T003 Migration `0040_builds.sql`; store `builds` (insert, update, get by deployment, prune logs, open builds for
       recovery), `build_settings`, the `Build` summary on `DeploymentRecord` (D7); tests.
-- [ ] T004 `internal/deploy/build.go` and the `deploytest` fake (D4): variable, cache volume, register, state,
+- [x] T004 `internal/deploy/build.go` and the `deploytest` fake (D4): variable, cache volume, register, state,
       result, log, stop, purge, list; `GitAccess` variable helpers (D3); tests with the fakes.
-- [ ] T005 `internal/service/build.go` and `gitaccess.go`: the split of `deployWarned`, the build flow (D5), newest
+- [x] T005 `internal/service/build.go` and `gitaccess.go`: the split of `deployWarned`, the build flow (D5), newest
       wins, the queue, the timeout, failure words, origin, recovery at `Start`, cancel on stop and delete, the cache
       volume's life, `checkBuild` (D2, D3), settings (D8), `cmd/caravana` flags; tests including a sentinel token and
       key in no record, log line or error.
-- [ ] T006 `PushEvent` and the webhook (D6); tests with GitHub, Gitea and GitLab bodies.
+- [x] T006 `PushEvent` and the webhook (D6); tests with GitHub, Gitea and GitLab bodies.
 
 ## Phase C: API
 

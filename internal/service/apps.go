@@ -313,12 +313,19 @@ func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger)
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
+	a = withBuildDefaults(a)
 	// A preview of a project with a preview password is Team only (spec 049 D6).
 	a, previewWarnings := s.applyPreviewTeamOnly(ctx, a)
 	if err := s.checkConsoleDomain(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
 	if err := s.checkPlace(ctx, a.ID); err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	// A new built app is created with its first build: it needs its Git access and registry entry
+	// (feature 050), and a deploy key or token can't exist before the app does, so only a public
+	// repository can be created this way (the console's "Create, then add access" is CreateAppOnly).
+	if err := s.checkBuild(ctx, a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
 	// Only names are stored, as saveApp does; the values go to the secret store, in deploy.
@@ -353,6 +360,7 @@ func (s *Service) CreateAppOnly(ctx context.Context, a app.App) (store.AppRecord
 		if err := s.deployer.Validate(a); err != nil {
 			return store.AppRecord{}, err
 		}
+		a = withBuildDefaults(a)
 		if err := s.checkConsoleDomain(a); err != nil {
 			return store.AppRecord{}, err
 		}
@@ -458,6 +466,9 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 		return err
 	}
 
+	// A build going for the app ends first: its job holds the cache volume (feature 050).
+	s.cancelBuild(id, errBuildDeleted)
+
 	state := s.stateOf(id)
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -475,6 +486,11 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 	}
 	if err := s.deployer.DeleteVolumes(ctx, id); err != nil {
 		return fmt.Errorf("delete the volumes of app %q: %w", id, err)
+	}
+	// The Git access of its built services goes too (feature 050); its build cache went with the
+	// volumes, and its build jobs with the other jobs.
+	if err := s.deployer.DeleteGitAccessOfApp(ctx, id); err != nil {
+		return fmt.Errorf("delete the Git access of app %q: %w", id, err)
 	}
 	// The secrets go before the app's record, so a failure here keeps the app
 	// and the delete can be tried again (the purge above is safe to repeat).

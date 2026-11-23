@@ -23,9 +23,13 @@ func ScanJobID(runID string) string { return "_scan-" + runID }
 // "_", so it is no app's volume (<app>_<volume>).
 const ScanVolume = "caravana-scanner"
 
-// OwnVolume says name is one of Caravana's own host volumes, which belong to no
-// app (today only ScanVolume). Clean-up never lists one as an orphan.
-func OwnVolume(name string) bool { return name == ScanVolume }
+// OwnVolume says name is one of Caravana's own host volumes: the scanner's
+// database (ScanVolume), which belongs to no app, or an app's build cache
+// (BuildCacheVolume, <app>_caravana-build), which no service declares. Clean-up
+// never lists one as an orphan.
+func OwnVolume(name string) bool {
+	return name == ScanVolume || strings.HasSuffix(name, "_"+BuildCacheVolumeName)
+}
 
 // ScanResultFile is where the task writes its result, relative to the
 // allocation's directory (the task sees it as /alloc/data/scan.txt).

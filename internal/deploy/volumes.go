@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -174,11 +175,19 @@ func (d *Deployer) volumeNodeAllowed(ctx context.Context, i int, svc app.Service
 // of the "default" pool that satisfies the constraints (the service's
 // placement rules, spec 042; none for a service without any).
 func (d *Deployer) createVolume(ctx context.Context, name, nodeID string, constraints []*api.Constraint) (*api.HostVolume, error) {
+	return d.createVolumeWith(ctx, name, nodeID, constraints, nil)
+}
+
+// createVolumeWith is createVolume with more parameters for the mkdir plugin
+// (its "uid" and "gid"), added to the mode.
+func (d *Deployer) createVolumeWith(ctx context.Context, name, nodeID string, constraints []*api.Constraint, params map[string]string) (*api.HostVolume, error) {
+	parameters := map[string]string{"mode": volumeMode}
+	maps.Copy(parameters, params)
 	vol := &api.HostVolume{
 		Namespace:  "default",
 		Name:       name,
 		PluginID:   "mkdir",
-		Parameters: map[string]string{"mode": volumeMode},
+		Parameters: parameters,
 		RequestedCapabilities: []*api.HostVolumeCapability{{
 			AccessMode:     api.HostVolumeAccessModeSingleNodeSingleWriter,
 			AttachmentMode: api.HostVolumeAttachmentModeFilesystem,

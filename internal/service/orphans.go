@@ -38,7 +38,10 @@ type VolumeNotOrphanError struct{ Volume, App string }
 
 func (e *VolumeNotOrphanError) Error() string {
 	if e.App == "" && nomadjob.OwnVolume(e.Volume) {
-		return "The volume " + e.Volume + " is Caravana's own (the image scanner's database): remove the image scanner in Operator › Security to delete it."
+		if e.Volume == nomadjob.ScanVolume {
+			return "The volume " + e.Volume + " is Caravana's own (the image scanner's database): remove the image scanner in Operator › Security to delete it."
+		}
+		return "The volume " + e.Volume + " is Caravana's own (an app's build cache): it is deleted with the app."
 	}
 	return "App " + e.App + " declares the volume " + e.Volume + ": delete it with the app, or drop it from the definition first."
 }

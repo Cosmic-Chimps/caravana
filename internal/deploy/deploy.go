@@ -202,6 +202,21 @@ func New(nomad *api.Client, reg *registry.Client, s nomadjob.Settings) *Deployer
 // (nomadjob.Settings.HelperImages): the clean-up of a server's images keeps them.
 func (d *Deployer) HelperImages() []string { return d.settings.HelperImages() }
 
+// BuildImages are the images of a build job's two tasks (feature 050), pinned by digest.
+func (d *Deployer) BuildImages() []string { return d.settings.BuildImages() }
+
+// BuildJob builds the job of build spec.BuildID with this deployer's settings (the builder's
+// and the Git image among them). See nomadjob.BuildJob.
+func (d *Deployer) BuildJob(spec nomadjob.BuildSpec) *api.Job {
+	if spec.BuilderImage == "" {
+		spec.BuilderImage = d.settings.BuildImages()[0]
+	}
+	if spec.GitImage == "" {
+		spec.GitImage = d.settings.BuildImages()[1]
+	}
+	return nomadjob.BuildJob(spec)
+}
+
 // ScanImage is the image scanner's image (feature 044), pinned by digest.
 func (d *Deployer) ScanImage() string { return d.settings.ScanImage() }
 
@@ -225,11 +240,27 @@ func (d *Deployer) Validate(a app.App) error {
 // with both a tag and a digest gives a warning: the tag has no effect. The
 // first failure stops it and is an *ImageError.
 func (d *Deployer) Resolve(ctx context.Context, a app.App) (map[string]string, []app.Warning, error) {
+	return d.ResolveWith(ctx, a, nil)
+}
+
+// ResolveWith is Resolve for an app some of whose services were built (feature
+// 050): prepinned says, by service name, the image a build pushed, already
+// pinned ("repo@sha256:…"), which is used as it is. A built service that has no
+// entry there is a field error: its image is a repository to push to, with no
+// tag to look up.
+func (d *Deployer) ResolveWith(ctx context.Context, a app.App, prepinned map[string]string) (map[string]string, []app.Warning, error) {
 	timing := d.Timing.withDefaults()
 	digests := make(map[string]string, len(a.Services))
 	var warnings []app.Warning
 	for i, svc := range a.Services {
 		field := fmt.Sprintf("services[%d].image", i)
+		if image, ok := prepinned[svc.Name]; ok {
+			digests[svc.Name] = image
+			continue
+		}
+		if svc.Build != nil {
+			return nil, nil, app.NewFieldError(field, "service %q is built from source: its image is what the build pushed, so it can't be looked up", svc.Name)
+		}
 		ref, err := registry.Parse(svc.Image)
 		if err != nil {
 			return nil, nil, app.NewFieldError(field, "%v", err)

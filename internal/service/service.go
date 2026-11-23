@@ -174,6 +174,9 @@ type Service struct {
 	moveRuns   map[string]*moveRun
 	move       moveTiming
 
+	// Builds from Git (feature 050), see build.go.
+	build buildState
+
 	// Image scanning (feature 044), see scanner.go and addons.go.
 	scan scanState
 
@@ -277,6 +280,7 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		moveRuns: map[string]*moveRun{},
 		move:     defaultMoveTiming(),
 
+		build:      newBuildState(),
 		scan:       newScanState(),
 		cleanupGap: defaultCleanupGap,
 		dnsGap:     defaultDNSPassGap,
@@ -400,6 +404,11 @@ func (s *Service) Start(ctx context.Context) error {
 		return err
 	}
 	s.recordVersion(ctx) // a failure is logged: the history is not worth stopping for
+	// A build the last process left has nobody to finish it, and its pending
+	// deployment must not be resumed as a rollout: settle both first.
+	if err := s.recoverBuilds(ctx); err != nil {
+		return err
+	}
 	if err := s.resume(ctx); err != nil {
 		return err
 	}

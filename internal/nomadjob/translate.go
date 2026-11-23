@@ -51,6 +51,11 @@ type Settings struct {
 	// (Grype, feature 044). It must be pinned by digest. Empty means
 	// DefaultScannerImage.
 	ScannerImage string
+	// BuilderImage is the rootless BuildKit image that builds a built service's
+	// image, and GitImage the one that clones its repository (feature 050).
+	// Both must be pinned by digest. Empty means DefaultBuilderImage and
+	// DefaultGitImage.
+	BuilderImage, GitImage string
 }
 
 // HelperImages are the images of the helper tasks and jobs these settings give an app (the names
@@ -235,6 +240,12 @@ func (s Settings) Validate() error {
 	}
 	if s.ScannerImage != "" && !pinnedImageRE.MatchString(s.ScannerImage) {
 		return app.NewFieldError("settings.scannerImage", "%q must be an image pinned by digest (repo@sha256:...), without a tag", s.ScannerImage)
+	}
+	if s.BuilderImage != "" && !pinnedImageRE.MatchString(s.BuilderImage) {
+		return app.NewFieldError("settings.builderImage", "%q must be an image pinned by digest (repo@sha256:...), without a tag", s.BuilderImage)
+	}
+	if s.GitImage != "" && !pinnedImageRE.MatchString(s.GitImage) {
+		return app.NewFieldError("settings.gitImage", "%q must be an image pinned by digest (repo@sha256:...), without a tag", s.GitImage)
 	}
 	return nil
 }

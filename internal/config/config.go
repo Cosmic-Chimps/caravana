@@ -135,6 +135,8 @@ var (
 	backupImageSetting   = setting{"CARAVANA_BACKUP_IMAGE", "backup-image"}
 	sqliteImageSetting   = setting{"CARAVANA_SQLITE_IMAGE", "sqlite-image"}
 	scannerImageSetting  = setting{"CARAVANA_SCANNER_IMAGE", "scanner-image"}
+	builderImageSetting  = setting{"CARAVANA_BUILDER_IMAGE", "builder-image"}
+	gitImageSetting      = setting{"CARAVANA_GIT_IMAGE", "git-image"}
 	volumeTimeoutSetting = setting{"CARAVANA_VOLUME_BACKUP_TIMEOUT", "volume-backup-timeout"}
 	publicURLSetting     = setting{"CARAVANA_PUBLIC_URL", "public-url"}
 	resolveAfterSetting  = setting{"CARAVANA_NOTIFY_RESOLVE_AFTER", "notify-resolve-after"}
@@ -166,6 +168,8 @@ var translatorSettings = map[string]setting{
 	"settings.backupImage":        backupImageSetting,
 	"settings.sqliteImage":        sqliteImageSetting,
 	"settings.scannerImage":       scannerImageSetting,
+	"settings.builderImage":       builderImageSetting,
+	"settings.gitImage":           gitImageSetting,
 }
 
 // Load reads the configuration. args are the command-line arguments without
@@ -191,6 +195,8 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	backupImage := fs.String(backupImageSetting.flag, envOr(backupImageSetting, ""), "image that uploads and downloads backups (rclone), pinned by digest; empty means the built-in one")
 	sqliteImage := fs.String(sqliteImageSetting.flag, envOr(sqliteImageSetting, ""), "image of the caravana-sqlite sidecar that makes and checks copies of a SQLite database (sqlite3), pinned by digest; empty means the built-in one")
 	scannerImage := fs.String(scannerImageSetting.flag, envOr(scannerImageSetting, ""), "image of the vulnerability scanner (Grype) that scans deployed images, pinned by digest; empty means the built-in one")
+	builderImage := fs.String(builderImageSetting.flag, envOr(builderImageSetting, ""), "image of the rootless BuildKit that builds a service's image from a Git repository, pinned by digest; empty means the built-in one")
+	gitImage := fs.String(gitImageSetting.flag, envOr(gitImageSetting, ""), "image that clones a Git repository for a build, pinned by digest; empty means the built-in alpine/git")
 	volumeTimeout := fs.String(volumeTimeoutSetting.flag, envOr(volumeTimeoutSetting, "30m"), "longest a volume backup or restore may take, as a duration such as 30m; the service stays stopped meanwhile")
 	publicURL := fs.String(publicURLSetting.flag, envOr(publicURLSetting, ""), "the console's own address, such as https://caravana.example.com, used for links in notifications; empty means no links")
 	resolveAfter := fs.String(resolveAfterSetting.flag, envOr(resolveAfterSetting, "5m"), "how long a problem must be gone before a notification says it is resolved, as a duration such as 5m; at least 10s")
@@ -213,7 +219,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	c := Config{
 		Listen:        *listen,
 		DataDir:       *dataDir,
-		Settings:      nomadjob.Settings{Entrypoint: *entrypoint, CertResolver: *certResolver, NamesImage: *namesImage, BackupImage: *backupImage, SQLiteImage: *sqliteImage, ScannerImage: *scannerImage},
+		Settings:      nomadjob.Settings{Entrypoint: *entrypoint, CertResolver: *certResolver, NamesImage: *namesImage, BackupImage: *backupImage, SQLiteImage: *sqliteImage, ScannerImage: *scannerImage, BuilderImage: *builderImage, GitImage: *gitImage},
 		NomadAddr:     *nomadAddr,
 		WebhookListen: *webhookListen,
 		NomadToken:    Secret(getenv(nomadTokenEnv)),

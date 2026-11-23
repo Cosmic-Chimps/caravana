@@ -140,6 +140,7 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	if err := s.deployer.Validate(a); err != nil {
 		return DeployResult{}, err
 	}
+	a = withBuildDefaults(a) // what is stored says what runs (feature 050)
 	// The domains of a preview of a project with a preview password are Team only (spec 049 D6):
 	// the app that is stored and deployed says so, and the deploy warns once.
 	a, previewWarnings := s.applyPreviewTeamOnly(ctx, a)
@@ -166,6 +167,14 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	if err := s.checkBackups(ctx, a); err != nil {
 		return DeployResult{}, err
 	}
+	// A built service needs its Git access, its SSH host's key and a registry entry to push to
+	// (feature 050), checked before anything is saved. A redeploy of a past version or a
+	// promotion (pin) deploys a digest and builds nothing.
+	if pin == nil {
+		if err := s.checkBuild(ctx, a); err != nil {
+			return DeployResult{}, err
+		}
+	}
 	// A host under a zone with a DNS provider gets its record (feature 048): a
 	// hand-made record pointing elsewhere, or a provider that can't be asked,
 	// refuses the deploy here, before anything is saved. Last of the checks,
@@ -176,9 +185,11 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	}
 	m.dns = plan
 	m.warnings = append(m.warnings, PlainBackupPasswords(a)...)
+	var oldApp *app.App // the stored app this deploy replaces, nil for a new one
 	if old, err := s.store.GetApp(ctx, a.ID); err == nil {
 		m.warnings = append(m.warnings, unmountedVolumes(old.App, a, s.droppedVolumeServers(ctx, old.App, a))...)
 		m.warnings = append(m.warnings, RemovedSecrets(old.App, a)...)
+		oldApp = &old.App
 		if old.Compose != nil && m.file == nil {
 			m.warnings = append(m.warnings, app.Warning{Message: droppedFileWarning})
 		}
@@ -189,6 +200,10 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 		return DeployResult{}, err
 	}
 	s.appChanged(a.ID)
+	if oldApp != nil {
+		// An app that stops building no longer needs its build cache (feature 050).
+		m.warnings = append(m.warnings, s.dropBuildCache(ctx, *oldApp, a)...)
+	}
 	return s.deployWarned(ctx, a, trigger, m, pin)
 }
 
@@ -351,6 +366,11 @@ func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigge
 	if err := s.deployer.Validate(rec.App); err != nil {
 		return store.DeploymentRecord{}, err
 	}
+	// The source of a built service needs its Git access and its registry entry still
+	// (feature 050): refused before a deployment is recorded.
+	if err := s.checkBuild(ctx, rec.App); err != nil {
+		return store.DeploymentRecord{}, err
+	}
 	// An app saved before the console's address was refused as a domain is
 	// refused here too, on its next redeploy (and so on its webhook's).
 	if err := s.checkConsoleDomain(rec.App); err != nil {
@@ -380,6 +400,12 @@ func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger, m 
 // Compose file's changed meanings) come first in the record, and its Compose
 // file is the one the deployment records. pin is set for a redeploy of a past
 // deployment.
+//
+// It makes the deployment's record and then deploys it (deployRecorded). A
+// deployment of an app with a built service and no pinned version has to build
+// first (feature 050): the record is made with its queued build, the call
+// answers at once, and the build and the rest of the deploy run in the
+// background (startBuild).
 func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigger, m made, pin *pinned) (DeployResult, error) {
 	dep := app.Deployment{ID: newDeploymentID(), Trigger: trigger, Digests: map[string]string{}, Origin: originFrom(ctx), TokenName: tokenNameFrom(ctx)}
 	source := ""
@@ -387,12 +413,38 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 		source = pin.source
 		dep.Refresh = pin.refresh
 	}
-	rec, err := s.store.CreateDeployment(ctx, a.ID, dep, &a, m.file, source)
+	builtAt, builds := -1, false
+	if pin == nil {
+		builtAt, builds = a.BuiltService()
+	}
+	var rec store.DeploymentRecord
+	var buildID string
+	var err error
+	if builds {
+		b := s.newBuildRecord(a, builtAt)
+		buildID = b.ID
+		rec, err = s.store.CreateDeploymentWithBuild(ctx, a.ID, dep, &a, m.file, source, b)
+	} else {
+		rec, err = s.store.CreateDeployment(ctx, a.ID, dep, &a, m.file, source)
+	}
 	if err != nil {
 		return DeployResult{}, err
 	}
 	s.deploymentChanged(a.ID)
 	state := s.markLatest(a.ID, dep.ID)
+	if builds {
+		s.startBuild(state, a, builtAt, rec, m, buildID)
+		return DeployResult{DeploymentRecord: rec}, nil
+	}
+	return s.deployRecorded(ctx, state, rec, a, m, pin, nil)
+}
+
+// deployRecorded deploys the recorded deployment rec of a: from the app's lock to the
+// watcher. built is the image a build pushed (nil for an app that didn't build). state is
+// the app's state as markLatest returned it, so a delete that comes meanwhile is seen.
+func (s *Service) deployRecorded(ctx context.Context, state *appState, rec store.DeploymentRecord, a app.App, m made, pin *pinned, built *builtImage) (DeployResult, error) {
+	dep := rec.Deployment
+	var err error
 
 	// From here on the deploy finishes even if the client goes away:
 	// WithoutCancel keeps the request's values but drops its cancellation.
@@ -424,7 +476,7 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	)
 	if pin != nil {
 		digests = pin.digests
-	} else if digests, warnings, err = s.deployer.Resolve(ctx, a); err != nil {
+	} else if digests, warnings, err = s.deployer.ResolveWith(ctx, a, built.prepinned()); err != nil {
 		return asResult(s.fail(rec, err))
 	}
 	if latest := s.latestOf(a.ID); latest != dep.ID {

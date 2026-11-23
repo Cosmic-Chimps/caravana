@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -252,6 +253,10 @@ func volumeViews(a app.App, hostVols map[string]deploy.HostVolumeInfo, sizes map
 
 	var unmounted []string
 	for name := range hostVols {
+		// Caravana's own volumes of the app (the build cache) are no service's, and no unmounted data.
+		if strings.HasPrefix(name, app.ReservedVolumePrefix) {
+			continue
+		}
 		if _, ok := index[name]; !ok {
 			unmounted = append(unmounted, name)
 		}

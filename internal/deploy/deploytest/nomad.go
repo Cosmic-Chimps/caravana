@@ -104,6 +104,7 @@ type Nomad struct {
 	// Task output, by copy ID and stream. logChanged is closed, then
 	// replaced, on every write (and on Down), like allocChanged.
 	logs         map[logKey][]byte
+	taskLogs     map[taskLogKey][]byte
 	logChanged   chan struct{}
 	logFrameSize int // 0 = one frame per read
 	logRequests  []LogRequest
@@ -178,6 +179,9 @@ type hostVolume struct {
 // logKey names one output file: a copy's stdout or stderr.
 type logKey struct{ copyID, stream string }
 
+// taskLogKey names one task's output file, for tests that set tasks apart.
+type taskLogKey struct{ copyID, task, stream string }
+
 // LogRequest is one request the fake answered for task output.
 type LogRequest struct {
 	Copy, Task, Stream, Origin string
@@ -199,6 +203,7 @@ func New(t testing.TB) *Nomad {
 		allocChanged: make(chan struct{}),
 
 		logs:       map[logKey][]byte{},
+		taskLogs:   map[taskLogKey][]byte{},
 		logChanged: make(chan struct{}),
 
 		vars:    map[string]map[string]string{},
@@ -1174,7 +1179,8 @@ func (n *Nomad) FinishRun(jobID string, ok bool, failedTask, stdout, stderr stri
 // plays one's life with StartRun (running), FinishRunExit (ended with an exit
 // code), OOMRun, FailRunStart and SetRunLogs. Each works on the run's newest
 // copy, or makes it ("<job>-alloc"): the service's task is the job's first
-// task, the others (the names sidecar) just end. Deregistering a run (Stops,
+// task without a lifecycle hook (a build job's `build`, not its prestart
+// `source`), the others (the names sidecar) just end. Deregistering a run (Stops,
 // Purged) ends its copy with the exit code 143 a killed task has.
 
 // runCopy is how a test ends or advances a run: the copy's status and what its
@@ -1204,8 +1210,15 @@ func (n *Nomad) setRunCopy(jobID string, c runCopy) {
 		job.Status = new("running")
 	}
 	states := map[string]*api.TaskState{}
+	main := 0 // the service's task: the first one that isn't a prestart or poststart helper
 	for i, t := range group.Tasks {
-		if i > 0 {
+		if t.Lifecycle == nil {
+			main = i
+			break
+		}
+	}
+	for i, t := range group.Tasks {
+		if i != main {
 			states[t.Name] = &api.TaskState{State: "dead"}
 			continue
 		}
@@ -1307,6 +1320,9 @@ func (n *Nomad) HostVolumes() []string {
 // joined by "; " ("" for none), so a test compares requests with ==.
 type VolumeCreate struct {
 	Name, NodeID, NodePool, Constraints string
+	// Parameters is the plugin parameters besides the mode, as "key=value"
+	// joined by "; ", sorted ("" for none).
+	Parameters string
 }
 
 // SetVolumeNodes sets the nodes Nomad places a new volume on when the request
@@ -1387,7 +1403,14 @@ func (n *Nomad) hostVolume(w http.ResponseWriter, r *http.Request) {
 				constraints = append(constraints, c.LTarget+" "+c.Operand+" "+c.RTarget)
 			}
 		}
-		n.volumeCreates = append(n.volumeCreates, VolumeCreate{Name: v.Name, NodeID: v.NodeID, NodePool: v.NodePool, Constraints: strings.Join(constraints, "; ")})
+		var params []string
+		for _, k := range slices.Sorted(maps.Keys(v.Parameters)) {
+			if k != "mode" {
+				params = append(params, k+"="+v.Parameters[k])
+			}
+		}
+		n.volumeCreates = append(n.volumeCreates, VolumeCreate{Name: v.Name, NodeID: v.NodeID, NodePool: v.NodePool,
+			Constraints: strings.Join(constraints, "; "), Parameters: strings.Join(params, "; ")})
 		if v.NodeID == "" {
 			nodes := n.volumeNodes
 			if len(nodes) == 0 {
@@ -1559,6 +1582,27 @@ func (n *Nomad) wakeLogs() {
 	n.logChanged = make(chan struct{})
 }
 
+// outputOf is the output a log request reads: the task's own when a test set
+// one (SetTaskLogs), else the copy's. n.mu must be held.
+func (n *Nomad) outputOf(copyID, task, stream string) []byte {
+	if out, ok := n.taskLogs[taskLogKey{copyID, task, stream}]; ok {
+		return out
+	}
+	return n.logs[logKey{copyID, stream}]
+}
+
+// SetTaskLogs sets what one task of a copy printed, replacing what was there.
+// A request for that task's output reads it, while a task without any reads the
+// copy's (WriteLog, SetRunLogs): the fake keeps output per copy unless a test
+// needs the tasks apart, as a build job's source and build tasks are.
+func (n *Nomad) SetTaskLogs(copyID, task string, stdout, stderr []byte) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.taskLogs[taskLogKey{copyID, task, "stdout"}] = append([]byte(nil), stdout...)
+	n.taskLogs[taskLogKey{copyID, task, "stderr"}] = append([]byte(nil), stderr...)
+	n.wakeLogs()
+}
+
 // WriteLog appends text to a copy's output. stream is "stdout" or "stderr".
 // Streams that follow the output send it at once; text is written as given,
 // so a line ends only where text has its own newline.
@@ -1629,8 +1673,7 @@ func (n *Nomad) serveLogs(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	n.logRequests = append(n.logRequests, req)
-	key := logKey{id, req.Stream}
-	size := len(n.logs[key])
+	size := len(n.outputOf(id, req.Task, req.Stream))
 	var pos int
 	switch req.Origin {
 	case "end":
@@ -1672,7 +1715,8 @@ func (n *Nomad) serveLogs(w http.ResponseWriter, r *http.Request, id string) {
 	for {
 		n.mu.Lock()
 		down, frameSize := n.down, n.logFrameSize
-		data := append([]byte(nil), n.logs[key][min(pos, len(n.logs[key])):]...)
+		out := n.outputOf(id, req.Task, req.Stream)
+		data := append([]byte(nil), out[min(pos, len(out)):]...)
 		changed := n.logChanged
 		n.mu.Unlock()
 		if down {

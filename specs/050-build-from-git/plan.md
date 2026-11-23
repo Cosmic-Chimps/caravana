@@ -158,3 +158,25 @@ everything up to 049 is merged). Numbers: API **0.56.0**, migration **0040**. La
   page, log line, job, export or the SQLite file; delete the app: the variable and the cache volume are gone.
   `TestConsoleLab` gets a step `console-build` (New app's form with a public repository, the history's Build stage and
   the log page).
+
+## Deviations (phase B: store, deploy, service)
+
+- **The build row is made with the deployment.** `store.CreateDeploymentWithBuild` writes both in one transaction, so
+  a deployment that waits for its build is never without it (and recovery never sees a pending deployment it can't
+  tell from a plain one). `deployWarned` branches on a built service (`pin == nil`), so `CreateApp`, `Redeploy`, the
+  webhook and the console's deploy all build; a pinned redeploy (rollback, promotion, Refresh secrets) never does and
+  skips `checkBuild`.
+- **A loopback registry is pushed to over plain HTTP whether or not an entry covers it** (`PushInsecure` follows the
+  host, not the entry): the lab's htpasswd registry (D12) has both. D2's wording said "without an entry".
+- **`Deployer.ResolveWith(ctx, app, prepinned)`** is the smallest change to `Resolve` (which calls it with none): a
+  built service with no pre-pinned image is a field error rather than a lookup of a repository with no tag.
+- **Nomad's job state gained `RunState.NodeID`**; the build row's `node` is that node's ID (the console names it).
+- **Own volumes.** `nomadjob.OwnVolume` also says `<app>_caravana-build` is Caravana's (no orphan listing), and the
+  volumes panel leaves `caravana-*` out. Clean-up keeps the builder and Git images while an app builds.
+- **A cache made on the proxy's server is made again** when another server appears (`ensureBuildCache`): a job that
+  mounts a host volume can only run where the volume is, and it is only a cache.
+- **The slot is given back before the deploy that follows a build**, so a queued build doesn't wait for a rollout.
+- **Fakes.** The fake Nomad's run "service task" is the first task without a lifecycle hook (a build job's `build`),
+  it keeps per-task output when a test sets it (`SetTaskLogs`), and `VolumeCreate.Parameters` records the mkdir
+  parameters besides the mode. `deploytest.PlayBuilds` plays Git and BuildKit for every build job.
+

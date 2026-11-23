@@ -409,3 +409,36 @@ func TestBuiltinKnownHostsMatchTheModel(t *testing.T) {
 		}
 	}
 }
+
+func TestOwnVolumeIncludesTheBuildCache(t *testing.T) {
+	for name, want := range map[string]bool{
+		ScanVolume:                          true,
+		"shop_caravana-build":               true,
+		"blog--staging--web_caravana-build": true,
+		"shop_data":                         false,
+		"caravana-build":                    false, // no app before it: not an app's cache
+		"shop_caravana-build-old":           false,
+	} {
+		if got := OwnVolume(name); got != want {
+			t.Errorf("OwnVolume(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestSettingsPinTheBuildImages(t *testing.T) {
+	s := Settings{Entrypoint: "websecure", DefaultCPUMHz: 100, DefaultMemoryMB: 64, DefaultMemoryMaxMB: 256, BuilderImage: "moby/buildkit:latest"}
+	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "settings.builderImage") {
+		t.Errorf("a builder image with a tag only: %v", err)
+	}
+	s.BuilderImage, s.GitImage = "", "alpine/git:latest"
+	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "settings.gitImage") {
+		t.Errorf("a Git image with a tag only: %v", err)
+	}
+	s.GitImage = ""
+	if err := s.Validate(); err != nil {
+		t.Errorf("defaults: %v", err)
+	}
+	if got := (Settings{BuilderImage: "a@sha256:" + strings.Repeat("a", 64)}).BuildImages(); got[0] != "a@sha256:"+strings.Repeat("a", 64) || got[1] != DefaultGitImage {
+		t.Errorf("BuildImages = %v", got)
+	}
+}

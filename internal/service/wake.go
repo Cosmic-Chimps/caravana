@@ -8,6 +8,8 @@ const (
 	copiesKey  = "copies"  // some copy changed (the Logs followers relist)
 	runsKey    = "runs"    // a schedule run's job or copy changed
 	backupsKey = "backups" // a backup or restore job or copy changed
+	// buildJobsKey: a build's job or copy changed (feature 050).
+	buildJobsKey = "build-jobs"
 )
 
 func rolloutKey(appID string) string { return "rollout/" + appID }

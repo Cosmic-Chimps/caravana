@@ -129,6 +129,15 @@ func TestLoad(t *testing.T) {
 			env:  map[string]string{"CARAVANA_SCANNER_IMAGE": "ghcr.io/acme/grype@sha256:" + strings.Repeat("d", 64)},
 			want: func(c *Config) { c.Settings.ScannerImage = "ghcr.io/acme/grype@sha256:" + strings.Repeat("e", 64) }},
 		{name: "scanner image with a tag", args: []string{"-scanner-image", "anchore/grype:v0.117.0"}, wantErr: []string{"CARAVANA_SCANNER_IMAGE / -scanner-image", "pinned by digest"}},
+		{name: "builder image pinned", env: map[string]string{"CARAVANA_BUILDER_IMAGE": "moby/buildkit:v0.26.2-rootless@sha256:" + strings.Repeat("a", 64)},
+			want: func(c *Config) {
+				c.Settings.BuilderImage = "moby/buildkit:v0.26.2-rootless@sha256:" + strings.Repeat("a", 64)
+			}},
+		{name: "git image flag beats env", args: []string{"-git-image", "alpine/git@sha256:" + strings.Repeat("b", 64)},
+			env:  map[string]string{"CARAVANA_GIT_IMAGE": "alpine/git@sha256:" + strings.Repeat("c", 64)},
+			want: func(c *Config) { c.Settings.GitImage = "alpine/git@sha256:" + strings.Repeat("b", 64) }},
+		{name: "builder image with only a tag", args: []string{"-builder-image", "moby/buildkit:v0.26.2-rootless"}, wantErr: []string{"CARAVANA_BUILDER_IMAGE / -builder-image", "pinned by digest"}},
+		{name: "git image with only a tag", env: map[string]string{"CARAVANA_GIT_IMAGE": "alpine/git:latest"}, wantErr: []string{"CARAVANA_GIT_IMAGE / -git-image", "pinned by digest"}},
 		{name: "volume backup timeout from env", env: map[string]string{"CARAVANA_VOLUME_BACKUP_TIMEOUT": "2h"},
 			want: func(c *Config) { c.VolumeBackupTimeout = 2 * time.Hour }},
 		{name: "volume backup timeout flag beats env", args: []string{"-volume-backup-timeout", "45m"},

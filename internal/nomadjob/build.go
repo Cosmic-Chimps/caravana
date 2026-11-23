@@ -110,8 +110,8 @@ type BuildSpec struct {
 	// Image is the repository the build pushes to: the service's image, without
 	// a tag or digest. The image pushed is Image:git-<commit12>.
 	Image string
-	// PushInsecure pushes over plain HTTP: a registry on the node's loopback
-	// that no registry entry covers.
+	// PushInsecure pushes over plain HTTP: a registry on the node's loopback,
+	// with credentials or without.
 	PushInsecure bool
 	// PushCredentials says the job's variable has BuildItemDockerConfig.
 	PushCredentials bool
@@ -255,6 +255,29 @@ func BuildJob(spec BuildSpec) *api.Job {
 	}
 	j.TaskGroups = []*api.TaskGroup{g}
 	return j
+}
+
+// BuildImages are the images of a build's two tasks under these settings: the
+// builder and the Git image. Clean-up keeps them while an app has a built
+// service, so a build never waits on a pull it could have avoided.
+func (s Settings) BuildImages() []string {
+	return []string{s.builderImage(), s.gitImage()}
+}
+
+// builderImage is the builder image these settings use.
+func (s Settings) builderImage() string {
+	if s.BuilderImage == "" {
+		return DefaultBuilderImage
+	}
+	return s.BuilderImage
+}
+
+// gitImage is the Git image these settings use.
+func (s Settings) gitImage() string {
+	if s.GitImage == "" {
+		return DefaultGitImage
+	}
+	return s.GitImage
 }
 
 func (s BuildSpec) builderImage() string {

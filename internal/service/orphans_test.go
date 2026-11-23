@@ -38,6 +38,7 @@ func TestClassifyOrphans(t *testing.T) {
 		stub("Bad_Name_x"),              // the first part isn't an app ID
 		stub("shop_uploads_extra"),      // a different name from a declared one
 		stub(nomadjob.ScanVolume),       // Caravana's own (the image scanner, 044): never an orphan
+		stub("shop_caravana-build"),     // Caravana's own (an app's build cache, 050): never an orphan
 	}, apps)
 
 	type want struct {
