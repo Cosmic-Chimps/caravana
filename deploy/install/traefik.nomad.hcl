@@ -72,28 +72,52 @@ job "traefik" {
         destination = "/acme"
       }
 
-      # The one route not made from Nomad service tags: the console domain, to Caravana's
+      # The one route not made from Nomad service tags: the console's domains, to Caravana's
       # listener on loopback (console, API and webhooks). Traefik runs in the host's network,
       # so 127.0.0.1 is the host's loopback, which Caravana trusts as its proxy. The installer
       # adds the domain only once the admin exists. The router's priority is far above any
       # app's (Traefik's default is the rule's length), so an app that was given the console's
       # domain can never take the console's requests; Caravana also refuses such a domain.
+      #
+      # Feature 051 (change the console's address from the console): the domains are the item
+      # "hosts" of the variable nomad/jobs/traefik/traefik, a space-separated list Caravana
+      # writes (the current domain, a new one being checked, and the old ones that still
+      # redirect). Traefik's job may read its own group's variable with no policy line. Without
+      # that variable, or while it has no hosts, the route is var.console_domain, as the
+      # installer set it, so a host that never changes its address behaves as before. noop: the
+      # file is rewritten without restarting the task and the file provider watches the
+      # directory, so a change of address never costs a gap on 80 and 443. One router per host
+      # (caravana, caravana-1, ...), so each gets its own certificate and a domain whose
+      # certificate isn't issued yet can't hold up the current one. The HCL interpolations
+      # (${...}) are replaced when the job is registered; the {{ }} ones when the file is rendered.
       template {
         destination = "local/dynamic/caravana.yml"
-        data        = var.console_domain == "" ? "{}\n" : <<-YAML
+        change_mode = "noop"
+        data        = <<-YAML
+          {{- $hosts := "" }}
+          {{- if nomadVarExists "nomad/jobs/traefik/traefik" }}
+          {{- with nomadVar "nomad/jobs/traefik/traefik" }}{{ $hosts = index . "hosts" }}{{ end }}
+          {{- end }}
+          {{- if eq $hosts "" }}{{ $hosts = "${var.console_domain}" }}{{ end }}
+          {{- if eq $hosts "" }}
+          {}
+          {{- else }}
           http:
             routers:
-              caravana:
-                rule: "Host(`${var.console_domain}`)"
+          {{- range $i, $host := split " " $hosts }}
+              caravana{{ if $i }}-{{ $i }}{{ end }}:
+                rule: "Host(`{{ $host }}`)"
                 priority: 10000
                 entryPoints: [websecure]
                 tls: ${local.resolver}
                 service: caravana
+          {{- end }}
             services:
               caravana:
                 loadBalancer:
                   servers:
                     - url: "http://127.0.0.1:7070"
+          {{- end }}
           YAML
       }
 

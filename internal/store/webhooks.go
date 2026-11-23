@@ -70,3 +70,12 @@ func (s *Store) DeleteWebhookToken(ctx context.Context, appID string) error {
 	}
 	return nil
 }
+
+// CountWebhookTokens counts the apps that have a webhook token.
+func (s *Store) CountWebhookTokens(ctx context.Context) (int, error) {
+	var n int
+	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM webhook_tokens").Scan(&n); err != nil {
+		return 0, fmt.Errorf("count webhook tokens: %w", err)
+	}
+	return n, nil
+}

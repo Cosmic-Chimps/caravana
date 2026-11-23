@@ -107,8 +107,23 @@ func (n *Nomad) SetNodeScheduling(drain bool, eligibility string) {
 
 // SetTraefikJob registers a job "traefik" whose one task runs image with args, as
 // the installer's Traefik job does. With "--accesslog=true" among args it writes
-// the access log (feature 047).
+// the access log (feature 047). The job has no template for the console's route, as
+// one the installer made before feature 051 has none; SetTraefikConsoleRoute adds it.
 func (n *Nomad) SetTraefikJob(image string, args ...string) {
+	n.AddForeignJob(traefikJob(image, args, nil))
+}
+
+// SetTraefikConsoleRoute registers the job "traefik" as the installer's does since feature 051:
+// its task has a template that reads the console's hosts from the variable
+// nomad/jobs/traefik/traefik, so the console's address can change without a restart.
+func (n *Nomad) SetTraefikConsoleRoute(image string, args ...string) {
+	n.AddForeignJob(traefikJob(image, args, []*api.Template{{
+		DestPath:     new("local/dynamic/caravana.yml"),
+		EmbeddedTmpl: new(`{{ with nomadVar "nomad/jobs/traefik/traefik" }}{{ index . "hosts" }}{{ end }}`),
+	}}))
+}
+
+func traefikJob(image string, args []string, templates []*api.Template) *api.Job {
 	config := map[string]any{"image": image}
 	if len(args) > 0 {
 		list := make([]any, len(args))
@@ -117,13 +132,13 @@ func (n *Nomad) SetTraefikJob(image string, args ...string) {
 		}
 		config["args"] = list
 	}
-	n.AddForeignJob(&api.Job{
+	return &api.Job{
 		ID: new("traefik"), Name: new("traefik"),
 		TaskGroups: []*api.TaskGroup{{
 			Name:  new("traefik"),
-			Tasks: []*api.Task{{Name: "traefik", Driver: "docker", Config: config}},
+			Tasks: []*api.Task{{Name: "traefik", Driver: "docker", Config: config, Templates: templates}},
 		}},
-	})
+	}
 }
 
 // SetHostStats sets what GET /v1/client/stats answers (Uptime included).

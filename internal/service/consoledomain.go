@@ -42,10 +42,16 @@ func (s *Service) checkConsoleDomain(a app.App) error {
 				return app.NewFieldError(fmt.Sprintf("services[%d].domains[%d].host", i, j),
 					"%s is the console's own address (CARAVANA_PUBLIC_URL): an app can't use it, or the console would stop answering. Use another domain.", dom.Host)
 			}
+			// A domain the console is moving to, or an old one that still redirects, is routed to
+			// Caravana too (feature 051).
+			if h := strings.TrimSuffix(strings.ToLower(dom.Host), "."); s.consoleReserved(h) {
+				return app.NewFieldError(fmt.Sprintf("services[%d].domains[%d].host", i, j),
+					"%s is a console address: the console is changing to it, or it was the console's address and still redirects to the new one. An app can't use it. Use another domain.", dom.Host)
+			}
 			// The pair a wwwRedirect redirects is routed by the app as well.
-			if dom.WWWRedirect && dom.RedirectPair() == console {
+			if pair := dom.RedirectPair(); dom.WWWRedirect && (pair == console || s.consoleReserved(pair)) {
 				return app.NewFieldError(fmt.Sprintf("services[%d].domains[%d].wwwRedirect", i, j),
-					"%s is the console's own address (CARAVANA_PUBLIC_URL): redirecting it would stop the console answering.", console)
+					"%s is the console's own address (CARAVANA_PUBLIC_URL): redirecting it would stop the console answering.", pair)
 			}
 		}
 	}

@@ -54,3 +54,47 @@ func TestCleanIssuer(t *testing.T) {
 		}
 	}
 }
+
+func TestValidConsoleDomain(t *testing.T) {
+	cases := []struct {
+		in string
+		ok bool
+	}{
+		{"console.example.com", true},
+		{"a-b.c1.example.co.uk", true},
+		{"1-2-3-4.sslip.io", true},
+		{"caravana.test", true},
+		{strings.Repeat("a", 63) + ".com", true},
+		{"", false},
+		{"localhost", false},
+		{"console", false}, // one label
+		{"Console.Example.com", false},
+		{"console.example.com.", false},
+		{"a b.test", false},
+		{"a\nb.test", false},
+		{"a.test\n", false},
+		{"-a.test", false},
+		{"a-.test", false},
+		{"a..test", false},
+		{".a.test", false},
+		{strings.Repeat("a", 64) + ".com", false},
+		{strings.Repeat("a.", 127) + "co", false}, // 256 bytes
+		{"1.2.3.4", false},
+		{"[::1]", false},
+		{"::1", false},
+		{"a.test:8443", false},
+		{"a.test/x", false},
+		{"https://a.test", false},
+		{"a$(x).test", false},
+		{"a\"b.test", false},
+		{"a'b.test", false},
+		{"a_b.test", false},
+		{"é.test", false},
+		{"a.test\x00", false},
+	}
+	for _, c := range cases {
+		if got := ValidConsoleDomain(c.in); got != c.ok {
+			t.Errorf("ValidConsoleDomain(%q) = %v, want %v", c.in, got, c.ok)
+		}
+	}
+}

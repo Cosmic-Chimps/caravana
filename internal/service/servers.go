@@ -120,6 +120,12 @@ type NodeReport struct {
 	// Space is what the server's Docker and its host volume directories hold (feature 045); nil for an
 	// agent that doesn't say, or whose Docker didn't answer.
 	Space *NodeSpace `json:"space,omitempty"`
+	// RunsConsole says this agent runs beside Caravana on the server that holds the console (feature
+	// 051): only such an agent is handed a change of the console's address.
+	RunsConsole bool `json:"runsConsole,omitempty"`
+	// ConsoleAddress is the outcome of the last console address request this agent handled; nil when
+	// it handled none.
+	ConsoleAddress *NodeConsoleOutcome `json:"consoleAddress,omitempty"`
 }
 
 // JoinRequest is the body of POST /v1/join.
@@ -160,6 +166,12 @@ type NodeAnswer struct {
 	Issuer string
 	// Clean is the clean-up this server's agent is asked to run (feature 045); nil for none.
 	Clean *CleanRequest
+	// ConsoleURL is the console's public URL, https://host[:port], for every agent to follow (feature
+	// 051); empty when there is none.
+	ConsoleURL string
+	// ConsoleAddress is the change of the console's address this agent is asked to apply; nil for none.
+	// It is only ever sent to an agent that reported runsConsole.
+	ConsoleAddress *NodeConsoleAddress
 }
 
 // ServerJoin is a join command that was just made (addServer's answer). Token is the only place the
@@ -657,6 +669,9 @@ func validateReport(r NodeReport) error {
 			return app.NewFieldError("reach", "has an index outside 1 to %d", mesh.MaxIndex)
 		}
 	}
+	if err := validateConsoleOutcome(r.ConsoleAddress); err != nil {
+		return err
+	}
 	return validateSpace(r.Space)
 }
 
@@ -737,6 +752,7 @@ func (s *Service) NodeSync(ctx context.Context, nodeToken string, report NodeRep
 	}
 	ans.Issuer = s.noteIssuer(cur.Name, ans.Role == "server", report.Issuer, now)
 	ans.Clean = s.cleanupHandoff(ctx, cur, report, now)
+	ans.ConsoleURL, ans.ConsoleAddress = s.consoleHandoff(ctx, report, now)
 	return ans, nil
 }
 

@@ -828,6 +828,10 @@ run_traefik() {
     # write it yet.
     grep -q 'accesslog' <<<"$spec" ||
       echo "  Traefik is restarted once for its access log (a few seconds without HTTP)"
+    # Feature 051: the console's address can change from the console, because the console's route
+    # reads its domains from a Nomad Variable. An existing Traefik job doesn't name it yet.
+    grep -q 'nomad/jobs/traefik/traefik' <<<"$spec" ||
+      echo "  Traefik is restarted once for the console address (a few seconds without HTTP)"
   fi
   local out
   out="$(nomad_cli job run -detach \

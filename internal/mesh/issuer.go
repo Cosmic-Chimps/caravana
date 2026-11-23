@@ -56,3 +56,12 @@ func validIssuerHost(host string) bool {
 	last := host[strings.LastIndexByte(host, '.')+1:]
 	return strings.Trim(last, "0123456789") != "" // a name whose last label is all digits is an address in disguise
 }
+
+// ValidConsoleDomain says whether s is a domain the console's address may be changed to (feature 051):
+// lower case letters, digits, dashes and dots, labels of 1 to 63 bytes without a dash at either end,
+// at least one dot, at most 253 bytes, and not an IP address (nor a name whose last label is all
+// digits). It is the installer's host-name rule (install.sh's is_hostname) in lower case, and the
+// console and the node agent share it, so the console never sends a domain the agent would refuse.
+func ValidConsoleDomain(s string) bool {
+	return s != "localhost" && s == strings.ToLower(s) && validIssuerHost(s)
+}

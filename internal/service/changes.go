@@ -8,21 +8,22 @@ type ChangeKind string
 
 // The kinds of change notice (research R5, data-model "Who publishes what").
 const (
-	ChangeApps        ChangeKind = "apps"        // the list of apps or an app's status in it
-	ChangeActivity    ChangeKind = "activity"    // the recent deployments across apps
-	ChangeApp         ChangeKind = "app"         // one app's header and settings
-	ChangeDeployments ChangeKind = "deployments" // one app's deployment list
-	ChangeCopies      ChangeKind = "copies"      // one app's running copies
-	ChangeDeleted     ChangeKind = "deleted"     // one app is gone
-	ChangeAttention   ChangeKind = "attention"   // what needs the owner, across apps
-	ChangeActions     ChangeKind = "actions"     // one app's list of actions (stop, start, restart, run); never their content
-	ChangeSchedules   ChangeKind = "schedules"   // an app's schedules or their runs; never a run's output
-	ChangeDomains     ChangeKind = "domains"     // a domain's state from its checks; never a password or a hash
-	ChangeMetrics     ChangeKind = "metrics"     // the sampler wrote a tick; never a number
-	ChangeHost        ChangeKind = "host"        // a host event was recorded (a boot, a new Caravana version); never its detail
-	ChangeServers     ChangeKind = "servers"     // a server was added, joined, became ready, was removed or got a role; never a token, key or address
-	ChangeScans       ChangeKind = "scans"       // the image scanner, a queue or a scan's result moved; never a finding
-	ChangeUpdates     ChangeKind = "updates"     // what is waiting changed: the OS's files, a release or package check, the check setting; never a name or a count
+	ChangeApps           ChangeKind = "apps"           // the list of apps or an app's status in it
+	ChangeActivity       ChangeKind = "activity"       // the recent deployments across apps
+	ChangeApp            ChangeKind = "app"            // one app's header and settings
+	ChangeDeployments    ChangeKind = "deployments"    // one app's deployment list
+	ChangeCopies         ChangeKind = "copies"         // one app's running copies
+	ChangeDeleted        ChangeKind = "deleted"        // one app is gone
+	ChangeAttention      ChangeKind = "attention"      // what needs the owner, across apps
+	ChangeActions        ChangeKind = "actions"        // one app's list of actions (stop, start, restart, run); never their content
+	ChangeSchedules      ChangeKind = "schedules"      // an app's schedules or their runs; never a run's output
+	ChangeDomains        ChangeKind = "domains"        // a domain's state from its checks; never a password or a hash
+	ChangeMetrics        ChangeKind = "metrics"        // the sampler wrote a tick; never a number
+	ChangeHost           ChangeKind = "host"           // a host event was recorded (a boot, a new Caravana version); never its detail
+	ChangeServers        ChangeKind = "servers"        // a server was added, joined, became ready, was removed or got a role; never a token, key or address
+	ChangeScans          ChangeKind = "scans"          // the image scanner, a queue or a scan's result moved; never a finding
+	ChangeUpdates        ChangeKind = "updates"        // what is waiting changed: the OS's files, a release or package check, the check setting; never a name or a count
+	ChangeConsoleAddress ChangeKind = "consoleaddress" // the console's address change moved (a check, a switch, an outcome); never more than that
 )
 
 // Change is a notice that something changed. It says what, never the new

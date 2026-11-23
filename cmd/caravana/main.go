@@ -190,7 +190,7 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	// active requests, and a stream never finishes by itself.
 	streamCtx, endStreams := context.WithCancel(context.Background())
 	defer endStreams()
-	servers := []*http.Server{newServer(cfg.Listen, httpx.LogRequests(log, root(apiHandler, pages)), streamCtx)}
+	servers := []*http.Server{newServer(cfg.Listen, httpx.LogRequests(log, root(apiHandler, pages, svc)), streamCtx)}
 	if cfg.WebhookListen != "" {
 		// The webhook-only listener: just POST /v1/webhooks/{id}, so it can be
 		// exposed while the API above stays private.
@@ -228,14 +228,31 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	return 0
 }
 
+// oldConsole says where a request for a domain the console used to have goes (feature 051):
+// *service.Service is one.
+type oldConsole interface {
+	ConsoleRedirect(host, requestURI string) (location string, ok bool)
+}
+
 // root sends /v1 and /.well-known (the cluster's discovery documents) to the API and everything else
 // to the pages. It decides on the cleaned path, not by a ServeMux: a mux would redirect "//v1/health"
 // to "/v1/health", and the API never redirects (it answers those with a JSON 404).
-func root(apiHandler, pages http.Handler) http.Handler {
+//
+// A request for an old console domain whose redirect window hasn't ended is answered with 308 to the
+// same path on the new address, except the API and the discovery documents, which are served as before:
+// CI's tokens and Git hosts' webhooks don't follow a redirect to another host, and joined servers and
+// Bella read the issuer's documents there. old may be nil.
+func root(apiHandler, pages http.Handler, old oldConsole) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p := path.Clean(r.URL.Path); p == "/v1" || strings.HasPrefix(p, "/v1/") || strings.HasPrefix(p, "/.well-known/") {
 			apiHandler.ServeHTTP(w, r)
 			return
+		}
+		if old != nil {
+			if to, ok := old.ConsoleRedirect(r.Host, r.URL.RequestURI()); ok {
+				http.Redirect(w, r, to, http.StatusPermanentRedirect)
+				return
+			}
 		}
 		pages.ServeHTTP(w, r)
 	})

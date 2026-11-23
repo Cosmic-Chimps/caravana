@@ -2,36 +2,36 @@
 
 ## Phase A — service, store, Traefik route, redirect
 
-- [ ] T001 Migration `internal/store/migrations/0041_console_address.sql`: table `console_address_changes` (id TEXT
+- [x] T001 Migration `internal/store/migrations/0041_console_address.sql`: table `console_address_changes` (id TEXT
   PRIMARY KEY, domain, old_domain, redirect_days INTEGER, status with a CHECK of the nine states, checks TEXT JSON,
   reason, dns_record_created INTEGER, created_at, ready_at, switch_at, settled_at, redirect_until) and a partial unique
   index allowing one row with status in (checking, ready, switching). Store methods: insert, get, update status/checks,
   open change, newest change, old domains whose `redirect_until` is after a time; store tests.
-- [ ] T002 `deploy`: `ConsoleRouteSupported(ctx)` (the `traefik` job's task templates name
+- [x] T002 `deploy`: `ConsoleRouteSupported(ctx)` (the `traefik` job's task templates name
   `nomad/jobs/traefik/traefik`), `SetConsoleHosts(ctx, hosts []string)` (writes item `hosts`, space-separated, to that
   variable; an empty list deletes the variable). `deploytest` fakes for both.
-- [ ] T003 `deploy/install/traefik.nomad.hcl`: the `caravana.yml` template per plan D2 (variable first, then
+- [x] T003 `deploy/install/traefik.nomad.hcl`: the `caravana.yml` template per plan D2 (variable first, then
   `var.console_domain`; one router per host `caravana`, `caravana-1`…; one service `caravana`; `change_mode = "noop"`;
   `{}` with no host). Comment why. `install.sh`'s `run_traefik` says "Traefik is restarted once for the console address
   (a few seconds without HTTP)" when the running job's spec lacks `nomad/jobs/traefik/traefik`.
-- [ ] T004 `service/consoleaddress.go`: `ConsoleAddress(ctx)`, `StartConsoleAddressChange(ctx, domain, days,
+- [x] T004 `service/consoleaddress.go`: `ConsoleAddress(ctx)`, `StartConsoleAddressChange(ctx, domain, days,
   createRecord)`, `ConsoleAddressChange(ctx, id)`, `CancelConsoleAddressChange`, `SwitchConsoleAddress`; the checks
   (plan D4) with seams for tests (route probe; `edge` already has Resolver/Dialer); the check goroutine on the process
   context; the hosts reconcile (plan D2) after every state change; typed errors mapped later in `internal/api`.
-- [ ] T005 The pass (every minute, `SetConsoleAddressPassGap` for tests) and start: `checking` → `check_failed`
+- [x] T005 The pass (every minute, `SetConsoleAddressPassGap` for tests) and start: `checking` → `check_failed`
   "Caravana restarted during the check"; `switching` whose domain is the public URL's host → `applied` (with
   `redirect_until`); `switching` over 5 minutes → `lost`; drop ended old domains from the route.
-- [ ] T006 Settle from the agent: `NodeSync` records `runsConsole` reports (time of the last one), sends
+- [x] T006 Settle from the agent: `NodeSync` records `runsConsole` reports (time of the last one), sends
   `consoleAddress` to such an agent while a change is switching, sends `consoleURL` to every agent, and settles a
   switching change from a `failed`/`refused` outcome with its ID (an `applied` outcome is settled at start, or by the
   pass when the public URL matches; an `applied` whose public URL doesn't match is `failed` "Caravana restarted, but its
   public URL isn't https://<domain>").
-- [ ] T007 The outer handler (where `root` sends `/.well-known/` to the API): for a host in the old domains (cached,
+- [x] T007 The outer handler (where `root` sends `/.well-known/` to the API): for a host in the old domains (cached,
   refreshed on change), `/v1/` and `/.well-known/` pass through, anything else 308 to the public URL + path + query.
   Tests.
-- [ ] T008 D12: an app domain equal to the current, the open change's or an old console domain is `domain_taken`
+- [x] T008 D12: an app domain equal to the current, the open change's or an old console domain is `domain_taken`
   (where the console's own domain is refused today). Tests.
-- [ ] T009 A `service` test: password sign-in at the new domain works with password sign-in off and passkeys only on
+- [x] T009 A `service` test: password sign-in at the new domain works with password sign-in off and passkeys only on
   the old domain (033's rule).
 
 ## Phase B — the agent

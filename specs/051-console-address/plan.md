@@ -95,3 +95,42 @@ redirects its pages and serves its `/v1/` and `/.well-known/`.
 - R1 The template: how `nomadVar` exposes one item (`index . "hosts"`), `split`, and that a `noop` re-render is
   picked up by the file provider with no restart. Verified on install-test's VM in phase D (the dev lab's Traefik has
   no console route).
+
+## Deviations (phase A)
+
+- **D12 wording.** An app domain equal to a pending or old console domain is refused with the existing
+  console-domain `*app.FieldError` (400 `invalid_field` on the domain's field), the same refusal the current
+  domain already gets in `checkConsoleDomain`, not a 409 `domain_taken`: `DomainTakenError` carries the other
+  *app's* ID and every page words it "is already a domain of <app>". `domain_taken` (409, field `domain`) is the
+  answer the other way round: the change's new domain is an app's (`StartConsoleAddressChange`). The pending and
+  old hosts come from an in-memory cache (`consoleRouted`, refreshed by every reconcile and by Start) so the
+  synchronous app checks need no store read.
+- **One host-name rule.** `mesh.ValidConsoleDomain` (lower case `validIssuerHost` without `localhost`) is the rule
+  the service checks `domain` with and the agent will check the answer with (phase B), as `mesh.CleanIssuer` is for
+  the issuer. The installer's `is_hostname` is the same rule in upper and lower case.
+- **The agent is found from the stored reports.** `consoleAgentSeen` reads each server's last report and its
+  `SeenAt` (a report with `runsConsole` heard from in the last 10 minutes), so a restart of Caravana doesn't forget
+  it. No in-memory state. `ConsoleAddressView.CannotChange` never mentions the agent: its sentence is for an
+  installation that can't change at all (no https public URL, no Traefik, Traefik job from before this feature);
+  the missing agent is `Agent: false` and the switch's `ConsoleNoAgentError` (`errors.Is(err, ErrNoAgent)`, 409
+  `no_agent`).
+- **The variable is the route only once the feature was used.** A host that never had a change writes nothing
+  (the Traefik job's `console_domain` rules). With a change open or applied the variable holds the hosts: the
+  current one first, the open change's domain and, while it is *switching*, also its old domain (after the agent's
+  restart the current host is the new one and the old one must keep answering until the change is settled), then
+  each old domain whose window hasn't ended. After a cancelled, failed or lost change with nothing ever applied the
+  variable is deleted again. After an applied change it always stays, even with 0 days, because the job's own
+  `console_domain` is still the old domain until the installer runs again.
+- **The route template** also falls back to `var.console_domain` when the variable has no `hosts` item, and renders
+  `{}` with neither; `cmd/caravana/install_test.go` renders the template through Go's `text/template` with fakes of
+  `nomadVarExists`, `nomadVar` and `split` (the priority test now looks for `{{ $host }}` in the rule).
+- **A long reason from the agent isn't refused.** The report check validates the ID and the state only; a reason is
+  cleaned to one printable line and cut at 300 bytes when it is kept (`cleanConsoleReason`), so an agent can't be
+  stuck on a 422 it would repeat at every sync.
+- **`redirectDays`** is an `int` the caller fills (`DefaultConsoleRedirectDays` = 30 when the owner said nothing),
+  because 0 is a real choice ("Don't keep it").
+- **The check goroutine** counts its poll and limit in real time (`time.After`, `time.Now`), not the service's
+  clock, which tests move; `consoleAddr.poll` and `.limit` are the fields tests shorten.
+- **Not done in phase A, for B and C.** `internal/api/nodecalls.go`'s `syncNode` answer doesn't carry `consoleURL`
+  and `consoleAddress` yet (phase B adds them with the agent, with `api/openapi.yaml`); no route, no page, no
+  `docs/console-address.md`.

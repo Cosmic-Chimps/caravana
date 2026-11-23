@@ -186,6 +186,9 @@ type Service struct {
 	spaceMu  sync.Mutex
 	deleting map[string]bool
 
+	// Console address (feature 051), see consoleaddress.go.
+	consoleAddr consoleAddressState
+
 	// Previews (feature 049), see previews.go.
 	previewGap    time.Duration // between two passes of the reaper
 	previewExpiry atomic.Int64  // when positive, how long every preview may sit idle, in nanoseconds (the lab's shortcut)
@@ -287,6 +290,8 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		deleting:   map[string]bool{},
 
 		previewGap: defaultPreviewReapGap,
+
+		consoleAddr: newConsoleAddressState(),
 	}
 	// Copies show the deployment's version where Nomad's is a scale step's
 	// (feature 043, see autoscale.go).
@@ -427,6 +432,9 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.recoverScans(ctx); err != nil {
 		return err
 	}
+	// A change of the console's address that a previous process left is settled before anything serves,
+	// and the route's cache the redirect and the app checks read is filled (feature 051).
+	s.consoleAddressPass(ctx)
 	// Nomad's events, first: they wake the watchers below.
 	s.backupWatcher.Add(1)
 	go func() {
@@ -549,6 +557,14 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runPreviewReaper(ctx, previewGap)
+	}()
+	// The console address pass keeps Traefik's console route right and settles a change the agent
+	// reported (feature 051); the first one ran above.
+	consoleGap := s.consoleAddr.passGap // read here: tests set the field after Start
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runConsoleAddressPass(ctx, consoleGap)
 	}()
 	return nil
 }
