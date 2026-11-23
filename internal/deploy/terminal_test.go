@@ -102,6 +102,25 @@ func TestOpenTerminal(t *testing.T) {
 		}
 	})
 
+	t.Run("a line typed at once sees the starting size", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		id := execCopy(nomad, "running")
+		// The input is there before Nomad's client starts, so without holding
+		// it back it races the starting size; try often enough to lose the race.
+		for i := range 50 {
+			sizes := make(chan TerminalSize, 1)
+			sizes <- TerminalSize{Cols: 100, Rows: 30}
+			out := &lockedBuffer{}
+			code, err := d.OpenTerminal(ctx, id, "web", []string{"/bin/sh"}, strings.NewReader("stty size\rexit 0\r"), out, sizes)
+			if err != nil || code != 0 {
+				t.Fatalf("run %d: OpenTerminal = %d, %v; want 0, nil", i, code, err)
+			}
+			if !strings.Contains(out.String(), "stty size\r\n30 100\r\n") {
+				t.Fatalf("run %d: output %q, want the starting size 30 100", i, out.String())
+			}
+		}
+	})
+
 	t.Run("end of input ends the shell", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		id := execCopy(nomad, "running")
