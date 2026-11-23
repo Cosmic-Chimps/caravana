@@ -24,7 +24,7 @@
 
 ## Phase C: API
 
-- [ ] T007 `internal/api`: the routes and codes of `contracts/api.md`, error mapping, `Deployment.build`,
+- [x] T007 `internal/api`: the routes and codes of `contracts/api.md`, error mapping, `Deployment.build`,
       `WebhookResult.skipped`, `X-Gitlab-Token`; `api/openapi.yaml` 0.56.0 (contract and parity tests); the scope walk;
       MCP contract test still passes.
 

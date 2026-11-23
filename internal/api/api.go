@@ -195,6 +195,13 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/apps/{id}/deployments/{deploymentId}/redeploy", s.redeployDeployment, false, false},
 		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}/jobspec", s.exportDeployment, false, false},
 		{http.MethodGet, "/v1/apps/{id}/jobspec", s.exportApp, false, false},
+		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}/build", s.getDeploymentBuild, false, false},
+		{http.MethodGet, "/v1/apps/{id}/services/{service}/git-access", s.getGitAccess, false, false},
+		{http.MethodPost, "/v1/apps/{id}/services/{service}/git-access/deploy-key", s.createDeployKey, false, false},
+		{http.MethodPut, "/v1/apps/{id}/services/{service}/git-access/token", s.putGitToken, false, false},
+		{http.MethodDelete, "/v1/apps/{id}/services/{service}/git-access", s.deleteGitAccess, false, false},
+		{http.MethodGet, "/v1/builds/settings", s.getBuildSettings, false, false},
+		{http.MethodPut, "/v1/builds/settings", s.putBuildSettings, false, false},
 		{http.MethodGet, "/v1/apps/{id}/scan", s.getAppScan, false, false},
 		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}/scan", s.getDeploymentScan, false, false},
 		{http.MethodPost, "/v1/apps/{id}/webhook", s.createWebhookToken, false, false},
@@ -426,6 +433,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := previewsError(err); e != nil {
+		return e
+	}
+	if e := buildError(err); e != nil {
 		return e
 	}
 	switch {

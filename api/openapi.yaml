@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.55.0
+  version: 0.56.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -4315,6 +4315,260 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /v1/apps/{id}/deployments/{deploymentId}/build:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - name: deploymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    get:
+      operationId: getDeploymentBuild
+      summary: Read the build of one deployment, with its output.
+      description: |
+        The build a deployment made its image with (`Deployment.build` has the summary): the
+        repository and branch, the commit it cloned, the image it pushed and the digest the
+        deployment pins, and `log`, the last 64 KiB of the build's output (`logCut` is true when
+        it was longer), masked of the values of the repository token and the registry password.
+        While the build runs, the output is read from Nomad as it is now. `log` is empty once
+        the output was pruned (Caravana keeps it for an app's newest 50 builds). The answer is
+        sent with `Cache-Control: no-store`: a Dockerfile can print anything.
+        404 `build_not_found` when the deployment didn't build.
+      tags: [builds]
+      responses:
+        "200":
+          description: The build.
+          headers:
+            Cache-Control:
+              description: Always `no-store`.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Build"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: No such app or deployment (`not_found`), or the deployment didn't build (`build_not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/apps/{id}/services/{service}/git-access:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - $ref: "#/components/parameters/ServiceName"
+    get:
+      operationId: getGitAccess
+      summary: Read how a built service's build reads its repository.
+      description: |
+        `kind` is `none` (nothing stored), `deploy-key` (with the `publicKey` to add to the
+        repository's deploy keys and its `fingerprint`) or `token` (with its `username`). The
+        private key and the token are kept in the cluster's secret store and never answered.
+        `none` is also the answer for a service that isn't built. 502 `secret_store_unavailable`
+        when Nomad's variables can't be read.
+      tags: [builds]
+      responses:
+        "200":
+          description: The Git access.
+          headers:
+            Cache-Control:
+              description: Always `no-store`.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitAccess"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: No such app, or the app has no such service (`not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+    delete:
+      operationId: deleteGitAccess
+      summary: Forget a built service's deploy key or token.
+      description: |
+        404 `git_access_not_found` when the service has none. A build of this service that needs
+        one is refused (`git_access_missing`) until a new one is made.
+      tags: [builds]
+      responses:
+        "204":
+          description: The service has no Git access now.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          description: No such app or service (`not_found`), or the service has no Git access (`git_access_not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/apps/{id}/services/{service}/git-access/deploy-key:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - $ref: "#/components/parameters/ServiceName"
+    post:
+      operationId: createDeployKey
+      summary: Make a deploy key for a built service.
+      description: |
+        Makes an ed25519 key pair, keeps the private key in the cluster's secret store and
+        answers with the public key (`ssh-ed25519 AAAA… caravana <app>/<service>`) and its
+        fingerprint, to add to the repository's deploy keys (read-only is enough). It replaces
+        any key or token the service had. 400 `invalid_field` on `service` when the service
+        isn't built from a Git repository.
+      tags: [builds]
+      responses:
+        "201":
+          description: The new key's public half.
+          headers:
+            Cache-Control:
+              description: Always `no-store`.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitAccess"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          description: No such app, or the app has no such service (`not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/apps/{id}/services/{service}/git-access/token:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - $ref: "#/components/parameters/ServiceName"
+    put:
+      operationId: putGitToken
+      summary: Keep a token for a built service's repository.
+      description: |
+        Keeps `token` (and `username`, `x-access-token` when left out) in the cluster's secret
+        store, replacing any key or token the service had. The token is write-only: no answer
+        holds it. 400 `invalid_field` on `token` or `username` when empty, too long or not
+        printable, and on `service` when the service isn't built from a Git repository.
+      tags: [builds]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitTokenRequest"
+      responses:
+        "200":
+          description: The Git access, of kind `token`.
+          headers:
+            Cache-Control:
+              description: Always `no-store`.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitAccess"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          description: No such app, or the app has no such service (`not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/builds/settings:
+    get:
+      operationId: getBuildSettings
+      summary: Read the limits for builds.
+      tags: [builds]
+      responses:
+        "200":
+          description: The settings (their defaults before the owner saved any).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+    put:
+      operationId: putBuildSettings
+      summary: Change the limits for builds.
+      description: |
+        Every field is required. A value out of its range is 400 `invalid_field` naming it. A
+        change reaches the next build; a build that is going keeps what it started with.
+      tags: [builds]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuildSettings"
+      responses:
+        "200":
+          description: The settings as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/scans:
     get:
       operationId: listImageScans
@@ -5523,6 +5777,13 @@ paths:
         no services yet (`defined: false`, made by `createApp` with `deploy=false`) is
         `409 app_not_defined` and nothing is recorded. A body gives it its definition.
 
+        An app with a built service (`services[].build`) and no pinned version builds first:
+        the answer is 202 with the deployment `pending` and its `build` `queued`, at once, and
+        the clone, the build and the push happen in the background. Follow the deployment at the
+        `Location`; its `build` says how the build goes and `getDeploymentBuild` has its output.
+        The images of its other services resolve as usual. A newer deploy of the app cancels a
+        build that is going. A failed build makes the deployment `failed`.
+
         Every image tag is resolved to a digest, the app becomes a new Nomad job version, and
         the response comes back as soon as Nomad has accepted it. Follow the rollout by
         reading the deployment at the `Location` header until its status is final
@@ -6119,12 +6380,23 @@ paths:
         time. An app that has no services yet is `409 app_not_defined` and nothing is
         recorded: the webhook never chooses an image, so it can't give an app its definition.
 
-        Any request body is accepted and ignored (up to 1 MiB), whatever its content type.
+        An app with no service built from a Git repository accepts any request body and ignores
+        it (up to 1 MiB), whatever its content type. For an app with a built service the
+        webhook is also the repository's push webhook: the token may come in `X-Gitlab-Token`
+        (GitLab's secret token field, read when neither `token` nor `Authorization` is sent), and
+        the body (GitHub, Gitea, Forgejo and GitLab push events, up to 1 MiB) says what moved. A
+        ping, an event that is no push, a deleted branch and a push to another ref than the
+        service's `build.branch` build nothing: the answer is 200 with `changed: false`, the
+        reason in `skipped` and the app's newest deployment, or 204 with no body when the app has
+        no deployment yet. A push of the commit the live deployment was built from builds nothing
+        either (200, `changed: false`, no `skipped`). Any other call builds the branch's newest
+        commit and answers 202 with the deployment in `pending`, as `deployApp` does.
         Every authorization failure, including an unknown app, gets the same 401.
       tags: [webhooks]
       security:
         - webhookBearer: []
         - webhookQuery: []
+        - webhookGitlab: []
       parameters:
         - $ref: "#/components/parameters/OriginCommit"
         - $ref: "#/components/parameters/OriginRef"
@@ -6138,13 +6410,15 @@ paths:
             schema: {}
       responses:
         "200":
-          description: Nothing changed; the app's live (latest healthy) deployment.
+          description: |
+            Nothing changed; the app's live (latest healthy) deployment. For a push that built
+            nothing, `skipped` says why and the deployment is the app's newest.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/WebhookResult"
         "202":
-          description: Nomad accepted the redeploy; follow the Location on the main API.
+          description: Nomad accepted the redeploy, or, for an app that builds, the build was queued; follow the Location on the main API.
           headers:
             Location:
               $ref: "#/components/headers/DeploymentLocation"
@@ -6152,6 +6426,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WebhookResult"
+        "204":
+          description: A push that built nothing (`skipped` in the 200 answer) to an app that has no deployment to show.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
@@ -6464,6 +6740,12 @@ paths:
 
 components:
   parameters:
+    ServiceName:
+      name: service
+      in: path
+      required: true
+      description: The service's name in the app (`web`). A name the app has no service by is 404 `not_found`.
+      schema: {type: string, minLength: 1}
     AddonName:
       name: name
       in: path
@@ -6739,6 +7021,11 @@ components:
       in: query
       name: token
       description: "The app's webhook token as `?token=cvwh_…`, for senders that only take a URL."
+    webhookGitlab:
+      type: apiKey
+      in: header
+      name: X-Gitlab-Token
+      description: "The app's webhook token as `X-Gitlab-Token: cvwh_…`, GitLab's secret token field. Read only when neither `token` nor `Authorization` is sent."
 
   headers:
     AppETag:
@@ -6883,6 +7170,8 @@ components:
             $ref: "#/components/schemas/Identity"
         dns:
           $ref: "#/components/schemas/ServiceDNS"
+        build:
+          $ref: "#/components/schemas/ServiceBuild"
         placement:
           $ref: "#/components/schemas/Placement"
         ports:
@@ -7246,6 +7535,223 @@ components:
         error:
           type: string
           description: One sentence in Caravana's words for an `incomplete` move; empty otherwise.
+
+    ServiceBuild:
+      type: object
+      additionalProperties: false
+      required: [repository]
+      description: |
+        Builds the service's image from a Git repository on the host, at every deploy that
+        doesn't pin a version (`deployApp`, `deployCompose`, the webhook, a push). The service's
+        `image` is then the repository the build pushes to, with no tag or digest
+        (`ghcr.io/acme/web`), and the registry entry that covers it (`putRegistry`) must have
+        credentials that may push. The build clones the branch's newest commit, builds the
+        Dockerfile and pushes `<image>:git-<commit12>`; the deployment pins the digest the
+        registry has. One service of an app may be built. `redeployDeployment` and `promoteApp`
+        never build: they deploy images already built. A promotion takes the source's `build`.
+        The defaults below are written into the stored app.
+      properties:
+        repository:
+          type: string
+          description: |
+            `https://host/path[.git]`, `ssh://user@host[:port]/path` or `user@host:path`.
+            `http://` only for a loopback host. No credentials, query or fragment in it.
+          examples: ["https://github.com/acme/web.git"]
+        branch:
+          type: string
+          default: main
+        path:
+          type: string
+          default: "."
+          description: The folder of the repository that is the build context.
+        dockerfile:
+          type: string
+          default: Dockerfile
+          description: The Dockerfile's path relative to `path`.
+        access:
+          type: string
+          enum: [public, deploy-key, token]
+          default: public
+          description: |
+            How the build reads the repository. `deploy-key` needs an SSH repository and `token`
+            an HTTPS one, and a stored key or token of that kind (`createDeployKey`,
+            `putGitToken`): a deploy without one is 409 `git_access_missing`.
+        hostKey:
+          type: string
+          description: |
+            An SSH host's public key as `<type> <base64>` (the output of `ssh-keyscan -t ed25519
+            <host>` without the host). Required for an SSH repository on a host other than
+            github.com and gitlab.com (422 `git_host_key_unknown`), optional for those.
+
+    BuildSummary:
+      type: object
+      additionalProperties: false
+      required: [id, service, status, repository, branch, queuedAt]
+      description: |
+        The build a deployment made its image with. Present only on a deployment that built. A
+        failed build makes the deployment `failed`, with `error` "build failed: <reason>" and the
+        last lines of the output.
+      properties:
+        id:
+          type: string
+        service:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, cancelled]
+        repository:
+          type: string
+        branch:
+          type: string
+        commit:
+          type: string
+          description: The commit cloned; absent until the clone, and when it failed.
+        author:
+          type: string
+        subject:
+          type: string
+          description: The commit message's first line.
+        image:
+          type: string
+          description: The image the build pushed, `<repository>:git-<commit12>`.
+          examples: ["ghcr.io/acme/web:git-4e0a77c1b2d3"]
+        digest:
+          type: string
+          description: The manifest digest the registry has, which the deployment pins.
+        error:
+          type: string
+          description: Why a failed build failed, in Caravana's words, then the last lines of the output.
+        queuedAt: {type: string, format: date-time}
+        startedAt:
+          type: string
+          format: date-time
+          description: Absent until the build starts.
+        endedAt:
+          type: string
+          format: date-time
+          description: Absent until the build ends.
+
+    Build:
+      type: object
+      additionalProperties: false
+      required: [id, service, status, repository, branch, queuedAt, log, logCut]
+      description: |
+        A build with its output: every field of `BuildSummary`, and the output.
+      properties:
+        id:
+          type: string
+        service:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, cancelled]
+        repository:
+          type: string
+        branch:
+          type: string
+        commit:
+          type: string
+          description: The commit cloned; absent until the clone, and when it failed.
+        author:
+          type: string
+        subject:
+          type: string
+          description: The commit message's first line.
+        image:
+          type: string
+          description: The image the build pushed, `<repository>:git-<commit12>`.
+          examples: ["ghcr.io/acme/web:git-4e0a77c1b2d3"]
+        digest:
+          type: string
+          description: The manifest digest the registry has, which the deployment pins.
+        error:
+          type: string
+          description: Why a failed build failed, in Caravana's words, then the last lines of the output.
+        queuedAt: {type: string, format: date-time}
+        startedAt:
+          type: string
+          format: date-time
+          description: Absent until the build starts.
+        endedAt:
+          type: string
+          format: date-time
+          description: Absent until the build ends.
+        log:
+          type: string
+          description: The last 64 KiB of the build's output, masked of secrets; empty once pruned.
+        logCut:
+          type: boolean
+          description: True when the output was longer than what is kept.
+
+    GitAccess:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      description: What is safe to show of a service's Git access. Never the private key or the token.
+      properties:
+        kind:
+          type: string
+          enum: [none, deploy-key, token]
+        publicKey:
+          type: string
+          description: A deploy key's public half, an `authorized_keys` line ending `caravana <app>/<service>`.
+        fingerprint:
+          type: string
+          description: The public key's SHA256 fingerprint, as the repository host shows it.
+          examples: ["SHA256:3n4Xq…"]
+        username:
+          type: string
+          description: A token's user name.
+        createdAt:
+          type: string
+          format: date-time
+          description: Absent for `none`.
+
+    GitTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        username:
+          type: string
+          maxLength: 255
+          default: x-access-token
+        token:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+
+    BuildSettings:
+      type: object
+      additionalProperties: false
+      required: [memoryMB, cpuMHz, timeoutMinutes, concurrency, cacheMB]
+      properties:
+        memoryMB:
+          type: integer
+          minimum: 512
+          maximum: 16384
+          description: Memory a build reserves.
+        cpuMHz:
+          type: integer
+          minimum: 500
+          maximum: 32000
+          description: CPU a build reserves.
+        timeoutMinutes:
+          type: integer
+          minimum: 5
+          maximum: 180
+          description: A build that takes longer is stopped and fails.
+        concurrency:
+          type: integer
+          minimum: 1
+          maximum: 4
+          description: Builds that run at once in the installation; the others wait queued.
+        cacheMB:
+          type: integer
+          minimum: 0
+          maximum: 102400
+          description: How big an app's build cache may grow before it is emptied. 0 means no cache.
 
     ServiceScale:
       type: object
@@ -12206,6 +12712,8 @@ components:
             0.12.0.
         origin:
           $ref: "#/components/schemas/Origin"
+        build:
+          $ref: "#/components/schemas/BuildSummary"
         tokenName:
           type: string
           description: |
@@ -12469,6 +12977,11 @@ components:
           description: "True when the call started a deployment; false when nothing changed."
         deployment:
           $ref: "#/components/schemas/Deployment"
+        skipped:
+          type: string
+          description: |
+            Why a push to an app that builds from Git built nothing, such as "a push to
+            refs/heads/dev, not main", "the branch was deleted" or "a ping". Absent otherwise.
 
     Warning:
       type: object
@@ -12512,7 +13025,9 @@ components:
                 `placement_impossible`, `server_moving`, `server_not_ready`, `no_other_server`,
                 `image_vulnerable`, `scanner_not_installed`, `addon_busy`, `addon_not_found`,
                 `dns_record_exists`, `dns_address_unknown`, `dns_provider_refused`, `dns_provider_unavailable`,
-                `dns_zone_not_found`, `preview_limit`, `previews_open`, `not_a_preview`, `preview_password`.
+                `dns_zone_not_found`, `preview_limit`, `previews_open`, `not_a_preview`, `preview_password`,
+                `git_access_missing`, `git_host_key_unknown`, `build_registry_missing`, `build_not_found`,
+                `git_access_not_found`.
               examples: [invalid_field]
             message:
               type: string
@@ -13007,7 +13522,10 @@ components:
         says where); nothing was saved or recorded, and Caravana never changes a record it
         didn't make. Or `dns_address_unknown`: a domain needs a DNS record and this
         installation's public address isn't known (set `CARAVANA_PUBLIC_URL` to an address
-        that resolves); nothing was saved or recorded.
+        that resolves); nothing was saved or recorded. Or `git_access_missing` (`field`
+        `services[0].build.access`): a built service's `build.access` names a deploy key or a
+        token and none of that kind is stored (`createDeployKey`, `putGitToken`); nothing was
+        saved or recorded.
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"
@@ -13055,6 +13573,12 @@ components:
         with a known fix. The message names the advisory, the package and the versions that fix it
         ("web's image has CVE-2022-37434 (critical) in zlib 1.2.11-r3, fixed in 1.2.12-r2"), and the
         deployment record (see `Location`) is `failed`. Deploy a rebuilt image, or turn the gate off.
+
+        On a deploy of a built service (`services[].build`), also `git_host_key_unknown` (`field`
+        `services[0].build.hostKey`): an SSH repository on a host Caravana has no key for, and
+        `build_registry_missing` (`field` `services[0].image`): no registry entry covers the image
+        the build pushes to, so add one with credentials that may push (`putRegistry`). Nothing was
+        saved or recorded.
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"
@@ -13278,6 +13802,8 @@ tags:
     description: Projects, their environments, and the apps in each.
   - name: deployments
     description: Deploying apps and following their rollouts.
+  - name: builds
+    description: Building an app's image from a Git repository on the host, and the access its build reads the repository with.
   - name: webhooks
     description: Webhook tokens, and the webhook that redeploys an app.
   - name: registries

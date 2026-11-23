@@ -66,6 +66,9 @@ type deploymentJSON struct {
 	// Progress is only set while the deployment runs, and only by the reads
 	// that look it up (getDeployment, and the newest running one in listDeployments).
 	Progress *progressJSON `json:"progress,omitempty"`
+	// Build is the build the deployment made its image with (feature 050); absent on a
+	// deployment that didn't build.
+	Build *buildSummaryJSON `json:"build,omitempty"`
 	// TeamPasswords is set only in the answer of the deploy that turned a
 	// domain Team only (feature 023): host → its password, shown this once.
 	TeamPasswords map[string]string `json:"teamPasswords,omitempty"`
@@ -137,6 +140,7 @@ func toDeploymentJSON(rec store.DeploymentRecord) deploymentJSON {
 	d.TokenName = rec.Deployment.TokenName
 	d.SecretsRefreshed = rec.Deployment.Refresh
 	d.RegisteredAt = rec.RegisteredAt
+	d.Build = toBuildSummaryJSON(rec.Build)
 	// Never null in the JSON: clients can always iterate them.
 	if d.Digests == nil {
 		d.Digests = map[string]string{}
