@@ -197,7 +197,10 @@ func (s *Service) TestBackupDestination(ctx context.Context, name string) (store
 	default:
 		out.Message = "could not run the check: " + res.Message
 	}
-	out.Message = strings.ReplaceAll(out.Message, dest.SecretAccessKey, "***")
+	// An empty key (its variable is gone) would put "***" between every letter.
+	if dest.SecretAccessKey != "" {
+		out.Message = strings.ReplaceAll(out.Message, dest.SecretAccessKey, "***")
+	}
 	if err := s.store.SaveBackupDestinationTest(ctx, name, out); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return store.DestinationTest{}, fmt.Errorf("%w: %q", ErrDestinationNotFound, name)

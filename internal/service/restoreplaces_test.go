@@ -328,6 +328,16 @@ func TestTestBackupDestination(t *testing.T) {
 			t.Errorf("TestBackupDestination = %+v, %v", res, err)
 		}
 	})
+	t.Run("a key that is gone leaves the message as rclone said it", func(t *testing.T) {
+		e := newEnv(t)
+		saveDestination(t, e, "main", "SK")
+		e.nomad.SetVariable("caravana/backup-destinations/main", map[string]string{"secretAccessKey": ""})
+		check(e, false, "caravana-check: failed list\n", "ERROR: InvalidAccessKeyId\n")
+		res, err := e.svc.TestBackupDestination(ctx, "main")
+		if err != nil || res.OK || !strings.Contains(res.Message, "InvalidAccessKeyId") || strings.Contains(res.Message, "*") {
+			t.Errorf("TestBackupDestination = %+v, %v; want rclone's words untouched", res, err)
+		}
+	})
 	t.Run("an unknown name, and Nomad failing", func(t *testing.T) {
 		e := newEnv(t)
 		saveDestination(t, e, "main", "SK")
