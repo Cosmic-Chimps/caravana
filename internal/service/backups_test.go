@@ -65,7 +65,7 @@ func TestBackupDestination(t *testing.T) {
 	if _, err := e.svc.SetBackupDestination(ctx, DestinationInput{Endpoint: "http://10.0.0.6:9000", Region: "us-east-1", Bucket: "backups2", AccessKeyID: "AK"}); err != nil {
 		t.Fatalf("second save without the secret: %v", err)
 	}
-	if secret, _ := e.svc.deployer.BackupSecret(ctx); secret != "SK-"+marker {
+	if secret, _ := e.svc.deployer.BackupSecret(ctx, got.SecretPath); secret != "SK-"+marker {
 		t.Errorf("secret after a save without one = %q, want it kept", secret)
 	}
 }

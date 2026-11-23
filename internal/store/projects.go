@@ -44,6 +44,11 @@ type ProjectRecord struct {
 	PreviewLimit        int
 	PreviewExpireDays   int
 	PreviewPasswordHash string
+
+	// BackupDestination is the name of the backup destination the project's
+	// backups go to when a policy names none (feature 052); "" means the
+	// installation's default.
+	BackupDestination string
 }
 
 // EnvironmentRecord is a stored environment of a project.
@@ -95,16 +100,17 @@ func (s *Store) GetProject(ctx context.Context, id string) (ProjectRecord, error
 }
 
 // projectColumns is what scanProject reads.
-const projectColumns = "id, display_name, created_at, updated_at, preview_limit, preview_expire_days, preview_password_hash"
+const projectColumns = "id, display_name, created_at, updated_at, preview_limit, preview_expire_days, preview_password_hash, backup_destination"
 
 func scanProject(row interface{ Scan(...any) error }) (ProjectRecord, error) {
 	var rec ProjectRecord
 	var created, updated string
-	var hash sql.NullString
-	if err := row.Scan(&rec.ID, &rec.DisplayName, &created, &updated, &rec.PreviewLimit, &rec.PreviewExpireDays, &hash); err != nil {
+	var hash, backupDest sql.NullString
+	if err := row.Scan(&rec.ID, &rec.DisplayName, &created, &updated, &rec.PreviewLimit, &rec.PreviewExpireDays, &hash, &backupDest); err != nil {
 		return ProjectRecord{}, err
 	}
 	rec.PreviewPasswordHash = hash.String
+	rec.BackupDestination = backupDest.String
 	var err error
 	if rec.CreatedAt, err = parseTime(created); err != nil {
 		return ProjectRecord{}, fmt.Errorf("project %q: %w", rec.ID, err)

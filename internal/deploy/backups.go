@@ -35,8 +35,11 @@ func (c BackupCredentials) items(engine string) map[string]string {
 	return map[string]string{"DB_USER": c.User, "DB_PASSWORD": c.Password}
 }
 
-// BackupDestination is where backups go: an S3-compatible bucket.
+// BackupDestination is where backups go: an S3-compatible bucket. Name is the
+// destination's name (feature 052); the jobs it feeds print it, so a run says
+// where it went.
 type BackupDestination struct {
+	Name                                                           string
 	Endpoint, Region, Bucket, Prefix, AccessKeyID, SecretAccessKey string
 }
 
@@ -55,17 +58,22 @@ type BackupRun struct {
 	Object  string    // bucket path of the dump, on success
 	Bytes   int64
 	Expired []string // dump files retention deleted, by name ("<ts>.dump", "<ts>.sql.gz", "<ts>.archive.gz")
-	Message string   // why it failed
+	// Destination is the name of the destination the run uploaded to, as the
+	// job's variable named it ("" for a run made before jobs said so).
+	Destination string
+	Message     string // why it failed
 }
 
-// destinationSecretPath is where the destination's secret key is kept: the
-// control plane's own secrets live in Nomad Variables (constitution VII).
-const destinationSecretPath = "caravana/backup-destination"
+// DestinationSecretPath is where a new destination's secret key is kept: a
+// destination's secret key lives in a Nomad Variable that its row names
+// (constitution VII). The destination that existed before feature 052 keeps its
+// key at "caravana/backup-destination", which migration 0042 gives as the secret
+// path of "main".
+func DestinationSecretPath(name string) string { return "caravana/backup-destinations/" + name }
 
-// BackupSecret returns the destination's secret key, or "" when none is
-// kept.
-func (d *Deployer) BackupSecret(ctx context.Context) (string, error) {
-	v, _, err := d.nomad.Variables().Read(destinationSecretPath, (&api.QueryOptions{}).WithContext(ctx))
+// BackupSecret returns the secret key kept at path, or "" when none is kept.
+func (d *Deployer) BackupSecret(ctx context.Context, path string) (string, error) {
+	v, _, err := d.nomad.Variables().Read(path, (&api.QueryOptions{}).WithContext(ctx))
 	if errors.Is(err, api.ErrVariablePathNotFound) {
 		return "", nil
 	}
@@ -75,26 +83,35 @@ func (d *Deployer) BackupSecret(ctx context.Context) (string, error) {
 	return v.Items["secretAccessKey"], nil
 }
 
-// SaveBackupSecret keeps the destination's secret key.
-func (d *Deployer) SaveBackupSecret(ctx context.Context, secret string) error {
-	return d.writeVariable(ctx, destinationSecretPath, map[string]string{"secretAccessKey": secret})
+// SaveBackupSecret keeps a destination's secret key at path.
+func (d *Deployer) SaveBackupSecret(ctx context.Context, path, secret string) error {
+	return d.writeVariable(ctx, path, map[string]string{"secretAccessKey": secret})
 }
 
-// destinationKeys are the variable items that point rclone at dest: the
-// credentials and how to reach the bucket.
-func destinationKeys(dest BackupDestination) map[string]string {
+// DeleteBackupSecret removes the secret key kept at path. One that isn't there
+// is done.
+func (d *Deployer) DeleteBackupSecret(ctx context.Context, path string) error {
+	return d.deleteVariable(ctx, path)
+}
+
+// remoteKeys are the variable items that point rclone's remote at dest: the
+// credentials and how to reach the bucket. remote is the remote's name in
+// upper case, "DEST" for the jobs of a backup; the items are
+// RCLONE_CONFIG_<remote>_*.
+func remoteKeys(remote string, dest BackupDestination) map[string]string {
+	prefix := "RCLONE_CONFIG_" + remote + "_"
 	return map[string]string{
-		"RCLONE_CONFIG_DEST_TYPE":              "s3",
-		"RCLONE_CONFIG_DEST_PROVIDER":          "Other",
-		"RCLONE_CONFIG_DEST_ENDPOINT":          dest.Endpoint,
-		"RCLONE_CONFIG_DEST_REGION":            dest.Region,
-		"RCLONE_CONFIG_DEST_ACCESS_KEY_ID":     dest.AccessKeyID,
-		"RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY": dest.SecretAccessKey,
-		"RCLONE_CONFIG_DEST_FORCE_PATH_STYLE":  "true",
+		prefix + "TYPE":              "s3",
+		prefix + "PROVIDER":          "Other",
+		prefix + "ENDPOINT":          dest.Endpoint,
+		prefix + "REGION":            dest.Region,
+		prefix + "ACCESS_KEY_ID":     dest.AccessKeyID,
+		prefix + "SECRET_ACCESS_KEY": dest.SecretAccessKey,
+		prefix + "FORCE_PATH_STYLE":  "true",
 		// The bucket exists: the owner made it. Without this rclone tries to
 		// create it, which a key limited to one bucket (Cloudflare R2's, say)
 		// may not do, and the upload fails.
-		"RCLONE_CONFIG_DEST_NO_CHECK_BUCKET": "true",
+		prefix + "NO_CHECK_BUCKET": "true",
 	}
 }
 
@@ -108,11 +125,18 @@ func destinationBase(dest BackupDestination) string {
 	return path
 }
 
+// backupDestinationItem is the item that names the destination, which the
+// upload script prints in its done line.
+const backupDestinationItem = "BACKUP_DESTINATION"
+
 // destinationItems are the variable items that point rclone at dest, for
-// the dumps of one service.
+// the dumps of one service, and name the destination.
 func destinationItems(appID, service string, dest BackupDestination) map[string]string {
-	items := destinationKeys(dest)
+	items := remoteKeys("DEST", dest)
 	items["BACKUP_PATH"] = destinationBase(dest) + "/" + appID + "/" + service
+	if dest.Name != "" {
+		items[backupDestinationItem] = dest.Name
+	}
 	return items
 }
 
@@ -120,7 +144,8 @@ func destinationItems(appID, service string, dest BackupDestination) map[string]
 // with a dump engine's backup policy, its job's variable (credentials and destination)
 // and its periodic job, dumping with the service's pinned image from
 // digests; every other backup job of the app is purged with its runs and its
-// variable. creds are by service name. private is the set of registry hosts
+// variable. creds and dests (the destination each service's backups go to) are
+// by service name. private is the set of registry hosts
 // Caravana holds credentials for (as for nomadjob.Translate): a service whose
 // image is on one of them has its pull credentials added to its job's variable,
 // for the dump task's docker auth block. pins lists, by service name, the
@@ -128,7 +153,7 @@ func destinationItems(appID, service string, dest BackupDestination) map[string]
 // task's retention keeps: it is the item BACKUP_PINNED, left out when the
 // service has none.
 func (d *Deployer) SyncBackups(ctx context.Context, a app.App, digests map[string]string,
-	creds map[string]BackupCredentials, dest BackupDestination, private map[string]bool, pins map[string][]string) error {
+	creds map[string]BackupCredentials, dests map[string]BackupDestination, private map[string]bool, pins map[string][]string) error {
 	want := map[string]bool{}
 	for _, svc := range a.Services {
 		// Only the dump engines' backups are Nomad jobs. A volume backup runs
@@ -139,7 +164,7 @@ func (d *Deployer) SyncBackups(ctx context.Context, a app.App, digests map[strin
 		}
 		id := nomadjob.BackupJobID(a.ID, svc.Name)
 		want[id] = true
-		items := destinationItems(a.ID, svc.Name, dest)
+		items := destinationItems(a.ID, svc.Name, dests[svc.Name])
 		maps.Copy(items, creds[svc.Name].items(svc.Backup.Engine))
 		if len(pins[svc.Name]) > 0 {
 			items[backupPinnedItem] = pinList(pins[svc.Name])
@@ -202,43 +227,38 @@ func (d *Deployer) SetBackupPins(ctx context.Context, appID, service string, sta
 	return d.writeVariable(ctx, path, items)
 }
 
-// SetBackupDestination points every backup at dest, from its next run: it
-// rewrites the destination items of each backup job's variable, keeping its
-// credentials, and of each caravana-volumes variable that has a destination,
-// keeping its request and the rest. No job changes, so no app is deployed.
-// A caravana-volumes variable without a destination belongs to a service
-// that isn't backed up: it doesn't get the secret key.
-func (d *Deployer) SetBackupDestination(ctx context.Context, dest BackupDestination) error {
-	metas, _, err := d.nomad.Variables().PrefixList("nomad/jobs/", (&api.QueryOptions{}).WithContext(ctx))
-	if err != nil {
-		return d.volumeError("list backup variables", err)
-	}
-	for _, m := range metas {
-		jobID := strings.TrimPrefix(m.Path, "nomad/jobs/")
-		if appID, service, ok := splitVolumeVariablePath(jobID); ok {
-			items, err := d.readVariable(ctx, m.Path)
-			if err != nil {
-				return err
-			}
-			if _, backedUp := items["BACKUP_PATH"]; !backedUp {
-				continue
-			}
-			maps.Copy(items, destinationItems(appID, service, dest))
-			if err := d.writeVariable(ctx, m.Path, items); err != nil {
-				return err
-			}
-			continue
-		}
-		appID, service, ok := splitBackupJobID(jobID)
-		if !ok {
-			continue
-		}
-		items, err := d.readVariable(ctx, m.Path)
+// PointBackups points service's backups at dest, from their next run: it
+// rewrites the destination items of the service's dump job variable, when it has
+// one, and of its caravana-volumes variable, when that holds a destination,
+// keeping every other item (the credentials, the pins, a volume run's request).
+// No job changes, so nothing is deployed. A caravana-volumes variable without a
+// destination belongs to a service that isn't backed up: it doesn't get the
+// secret key.
+func (d *Deployer) PointBackups(ctx context.Context, appID, service string, dest BackupDestination) error {
+	items := destinationItems(appID, service, dest)
+	for _, path := range []string{
+		nomadjob.BackupVariablePath(nomadjob.BackupJobID(appID, service)),
+		nomadjob.VolumeVariablePath(appID, service),
+	} {
+		have, found, err := d.readVariableIfAny(ctx, path)
 		if err != nil {
 			return err
 		}
-		maps.Copy(items, destinationItems(appID, service, dest))
-		if err := d.writeVariable(ctx, m.Path, items); err != nil {
+		if !found {
+			continue
+		}
+		if _, backedUp := have["BACKUP_PATH"]; !backedUp && path == nomadjob.VolumeVariablePath(appID, service) {
+			continue
+		}
+		merged := maps.Clone(have)
+		maps.Copy(merged, items)
+		if dest.Name == "" {
+			delete(merged, backupDestinationItem)
+		}
+		if maps.Equal(have, merged) {
+			continue // already pointed there: no write
+		}
+		if err := d.writeVariable(ctx, path, merged); err != nil {
 			return err
 		}
 	}
@@ -249,16 +269,6 @@ func (d *Deployer) SetBackupDestination(ctx context.Context, dest BackupDestinat
 func splitBackupJobID(jobID string) (appID, service string, ok bool) {
 	parts := strings.Split(jobID, "_")
 	if len(parts) != 3 || (parts[2] != "backup" && parts[2] != "restore") {
-		return "", "", false
-	}
-	return parts[0], parts[1], true
-}
-
-// splitVolumeVariablePath reads "<app>/<service>/caravana-volumes" (the path
-// after "nomad/jobs/") back.
-func splitVolumeVariablePath(path string) (appID, service string, ok bool) {
-	parts := strings.Split(path, "/")
-	if len(parts) != 3 || parts[2] != nomadjob.VolumeTaskName {
 		return "", "", false
 	}
 	return parts[0], parts[1], true
@@ -309,6 +319,8 @@ func (d *Deployer) BackupRuns(ctx context.Context, appID, service string) ([]Bac
 							run.Object = v
 						case "bytes":
 							run.Bytes, _ = strconv.ParseInt(v, 10, 64)
+						case "dest":
+							run.Destination = v
 						}
 					}
 				case strings.HasPrefix(line, nomadjob.BackupExpiredMarker+" "):

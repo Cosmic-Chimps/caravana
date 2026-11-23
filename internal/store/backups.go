@@ -27,48 +27,6 @@ const (
 	RestoreTriggerSchedule = "schedule"
 )
 
-// BackupDestination is the installation's backup destination without its
-// secret key, which lives in Nomad Variables.
-type BackupDestination struct {
-	Endpoint, Region, Bucket, Prefix, AccessKeyID string
-	UpdatedAt                                     time.Time
-}
-
-// GetBackupDestination returns the destination, or ErrNotFound when none is
-// set.
-func (s *Store) GetBackupDestination(ctx context.Context) (BackupDestination, error) {
-	var d BackupDestination
-	var updated string
-	err := s.db.QueryRowContext(ctx,
-		"SELECT endpoint, region, bucket, prefix, access_key_id, updated_at FROM backup_destination WHERE id = 1",
-	).Scan(&d.Endpoint, &d.Region, &d.Bucket, &d.Prefix, &d.AccessKeyID, &updated)
-	if errors.Is(err, sql.ErrNoRows) {
-		return BackupDestination{}, fmt.Errorf("backup destination: %w", ErrNotFound)
-	}
-	if err != nil {
-		return BackupDestination{}, fmt.Errorf("get backup destination: %w", err)
-	}
-	if d.UpdatedAt, err = parseTime(updated); err != nil {
-		return BackupDestination{}, err
-	}
-	return d, nil
-}
-
-// SetBackupDestination saves the destination, replacing the one there is.
-func (s *Store) SetBackupDestination(ctx context.Context, d BackupDestination) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO backup_destination (id, endpoint, region, bucket, prefix, access_key_id, updated_at)
-		VALUES (1, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (id) DO UPDATE SET endpoint = excluded.endpoint, region = excluded.region,
-			bucket = excluded.bucket, prefix = excluded.prefix, access_key_id = excluded.access_key_id,
-			updated_at = excluded.updated_at`,
-		d.Endpoint, d.Region, d.Bucket, d.Prefix, d.AccessKeyID, formatTime(d.UpdatedAt))
-	if err != nil {
-		return fmt.Errorf("set backup destination: %w", err)
-	}
-	return nil
-}
-
 // enginePostgres is what a record without an engine means: every run made
 // before feature 016. It is the value of app.BackupPostgres; the store doesn't
 // import the app package for one word.
@@ -118,11 +76,17 @@ type BackupRecord struct {
 	Pin string
 	// PinnedAt is when the label was put on the backup; nil when not pinned.
 	PinnedAt *time.Time
+	// Destination is the name of the backup destination the backup went to
+	// ("" for a record made before there was a destination to name).
+	Destination string
+	// Copies are the copies of the backup to other destinations, oldest first.
+	// ListBackups and GetBackup fill them; the other reads leave them nil.
+	Copies []BackupCopy
 }
 
 // backupColumns is the column order scanBackups reads.
 const backupColumns = `app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at,
-	engine, stopped_ms, volumes, trigger, pin, pinned_at`
+	engine, stopped_ms, volumes, trigger, pin, pinned_at, destination`
 
 // SaveBackup creates or updates a backup record. A final record never goes
 // back to running: a later write of running is ignored.
@@ -143,14 +107,15 @@ func (s *Store) SaveBackup(ctx context.Context, b BackupRecord) error {
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO backups (app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at,
-			engine, stopped_ms, volumes, trigger)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			engine, stopped_ms, volumes, trigger, destination)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (app_id, id) DO UPDATE SET status = excluded.status, object = excluded.object,
 			bytes = excluded.bytes, message = excluded.message, expired = excluded.expired,
-			finished_at = excluded.finished_at, stopped_ms = excluded.stopped_ms, volumes = excluded.volumes
+			finished_at = excluded.finished_at, stopped_ms = excluded.stopped_ms, volumes = excluded.volumes,
+			destination = CASE WHEN excluded.destination != '' THEN excluded.destination ELSE backups.destination END
 		WHERE backups.status = 'running' OR excluded.status != 'running'`,
 		b.AppID, b.ID, b.Service, b.JobID, b.Status, b.Object, b.Bytes, b.Message, boolInt(b.Expired),
-		formatTime(b.StartedAt), optionalTime(b.FinishedAt), b.Engine, optionalMillis(b.Stopped), volumes, b.Trigger)
+		formatTime(b.StartedAt), optionalTime(b.FinishedAt), b.Engine, optionalMillis(b.Stopped), volumes, b.Trigger, b.Destination)
 	if err != nil {
 		return fmt.Errorf("save backup %s of %q: %w", b.ID, b.AppID, err)
 	}
@@ -190,10 +155,17 @@ func (s *Store) ListBackups(ctx context.Context, appID string, limit int) ([]Bac
 	if err != nil {
 		return nil, fmt.Errorf("list backups of %q: %w", appID, err)
 	}
-	defer rows.Close()
 	out, err := scanBackups(rows)
+	rows.Close() // done with this result before the next query
 	if err != nil {
 		return nil, fmt.Errorf("list backups of %q: %w", appID, err)
+	}
+	copies, err := s.ListBackupCopies(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Copies = copies[out[i].ID]
 	}
 	return out, nil
 }
@@ -208,7 +180,7 @@ func scanBackups(rows *sql.Rows) ([]BackupRecord, error) {
 		var finished, volumes, pin, pinnedAt sql.NullString
 		var stopped sql.NullInt64
 		if err := rows.Scan(&b.AppID, &b.ID, &b.Service, &b.JobID, &b.Status, &b.Object, &b.Bytes, &b.Message,
-			&expired, &started, &finished, &b.Engine, &stopped, &volumes, &b.Trigger, &pin, &pinnedAt); err != nil {
+			&expired, &started, &finished, &b.Engine, &stopped, &volumes, &b.Trigger, &pin, &pinnedAt, &b.Destination); err != nil {
 			return nil, err
 		}
 		var err error
@@ -267,10 +239,13 @@ type RestoreRecord struct {
 	// Pin is the label a scheduled run asked for ("" for the owner's). It is
 	// kept when the run was refused, so the record says which label was missing.
 	Pin string
+	// Destination is the name of the backup destination the restore read the
+	// backup from ("" for a record made before there was a destination to name).
+	Destination string
 }
 
 // restoreColumns is the column order scanRestores reads.
-const restoreColumns = "id, app_id, service, backup_id, status, message, created_at, finished_at, engine, stopped_ms, trigger, pin"
+const restoreColumns = "id, app_id, service, backup_id, status, message, created_at, finished_at, engine, stopped_ms, trigger, pin, destination"
 
 // SaveRestore creates or updates a restore record.
 func (s *Store) SaveRestore(ctx context.Context, r RestoreRecord) error {
@@ -286,13 +261,13 @@ func (s *Store) SaveRestore(ctx context.Context, r RestoreRecord) error {
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO restores (id, app_id, service, backup_id, status, message, created_at, finished_at, engine, stopped_ms,
-			trigger, pin)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			trigger, pin, destination)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET status = excluded.status, message = excluded.message,
 			finished_at = excluded.finished_at, stopped_ms = excluded.stopped_ms
 		WHERE restores.status = 'running'`,
 		r.ID, r.AppID, r.Service, r.BackupID, r.Status, r.Message, formatTime(r.CreatedAt), optionalTime(r.FinishedAt),
-		r.Engine, optionalMillis(r.Stopped), r.Trigger, pin)
+		r.Engine, optionalMillis(r.Stopped), r.Trigger, pin, r.Destination)
 	if err != nil {
 		return fmt.Errorf("save restore %s of %q: %w", r.ID, r.AppID, err)
 	}
@@ -330,7 +305,7 @@ func scanRestores(rows *sql.Rows) ([]RestoreRecord, error) {
 		var finished, pin sql.NullString
 		var stopped sql.NullInt64
 		if err := rows.Scan(&r.ID, &r.AppID, &r.Service, &r.BackupID, &r.Status, &r.Message, &created, &finished,
-			&r.Engine, &stopped, &r.Trigger, &pin); err != nil {
+			&r.Engine, &stopped, &r.Trigger, &pin, &r.Destination); err != nil {
 			return nil, err
 		}
 		r.Pin = pin.String

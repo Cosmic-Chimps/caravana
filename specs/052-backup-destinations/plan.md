@@ -188,3 +188,27 @@ Spec: `spec.md`. Task `mv6m`. Branch: the worktree branch `alta/robust-monsoon-c
 - **C — API** (T012–T013): D13.
 - **D — console and docs** (T014–T017): D14, docs, changelog, constitution amendment.
 - **E — lab** (T018–T019): D15.
+
+## Deviations (phase A)
+
+- **D2/D4 names.** There is no `UpdateProject` in the service: the project's destination is
+  `Service.SetProjectBackupDestination(ctx, id, name)` (beside `SetProjectDisplayName`; `Project.BackupDestination`
+  carries it). Phase C's `ProjectUpdate.backupDestination` calls it. `Service.SetDefaultBackupDestination(ctx, name)`
+  is new (the default change D6 names; Phase C's "default" flag and a make-default route use it). The refusal for a copy
+  that would meet its own destination (D4 spoke only of a project's default) is one rule, `copyConflict`, for the
+  project's default and the installation's: a field error on `backupDestination` (project) or `name` (default).
+- **D1 store.** `SaveBackupDestination` takes a `BackupDestination` with `Name` and `SecretPath`; an update never changes
+  the default or the secret path and forgets the last test. `BackupDestination.Test *DestinationTest` holds the last
+  test. `DeleteBackupDestination` also refuses the default (`store.ErrDefaultDestination`), as defence in depth.
+  `LatestBackupCopies` returns the newest copy per service and destination whatever its status; B decides what counts.
+  `BackupCopy.Service` is read from the backup by a join.
+- **D2 service.** Sentinel errors are `ErrDestinationNotFound` and `ErrDestinationIsDefault`; `destinationFor(ctx, appID,
+  app.Backup)` is the resolved destination with its secret (D4's `backupPlaces` gives the names). Every change that
+  moves a destination runs `repointBackups`, which joins the errors of the services it couldn't point and goes on.
+- **D5/D6 deploy.** `BackupSecret`/`SaveBackupSecret` take the secret path, `DeleteBackupSecret` is new.
+  `BACKUP_DESTINATION` is left out of the variable when the destination has no name (a test's zero value).
+  `PointBackups` skips the write when nothing changes.
+- **D5 restores in A.** A dump, volume or sqlite restore still reads from the service's destination as it resolves now
+  and records that name in `restores.destination`; B (D11) makes it read from the backup's own place.
+- A migrated `main` is made by the migration with the old secret path, so a new installation's `main` has its key at
+  `caravana/backup-destinations/main`.

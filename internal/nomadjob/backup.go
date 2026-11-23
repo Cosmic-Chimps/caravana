@@ -41,7 +41,9 @@ func BackupVariablePath(jobID string) string { return "nomad/jobs/" + jobID }
 // Output markers. The upload task prints them, and Caravana reads them from
 // its output to record the run (deploy.BackupRuns).
 const (
-	// BackupDoneMarker starts the line "caravana-backup key=<object> bytes=<n>".
+	// BackupDoneMarker starts the line "caravana-backup key=<object> bytes=<n>
+	// dest=<name>" (dest is empty when the job's variable doesn't name the
+	// destination).
 	BackupDoneMarker = "caravana-backup"
 	// BackupExpiredMarker starts each line "caravana-expired <file>".
 	BackupExpiredMarker = "caravana-expired"
@@ -80,7 +82,7 @@ if [ "$BACKUP_GZIP" = 1 ]; then
   src="$src.gz"
 fi
 rclone copyto "$src" "dest:$key"
-echo "` + BackupDoneMarker + ` key=$key bytes=$(stat -c %s "$src")"
+echo "` + BackupDoneMarker + ` key=$key bytes=$(stat -c %s "$src") dest=$(printenv BACKUP_DESTINATION || true)"
 pinned=$(printenv BACKUP_PINNED || true)
 if printf '%s' "$pinned" | grep -q '[^0-9 ]'; then
   echo "old backups were not removed: the list of pinned backups is not valid" >&2

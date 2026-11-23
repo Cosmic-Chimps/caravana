@@ -61,7 +61,7 @@ func TestWriteVolumeVariable(t *testing.T) {
 			name: "a destination and KEEP",
 			dest: &testDest, keep: 4,
 			want: map[string]string{
-				"REQUEST": "", "LIMIT": "1800", "KEEP": "4", "BACKUP_PATH": "backups/caravana/whoami/web",
+				"REQUEST": "", "LIMIT": "1800", "KEEP": "4", "BACKUP_PATH": "backups/caravana/whoami/web", "BACKUP_DESTINATION": "main",
 				"RCLONE_CONFIG_DEST_TYPE": "s3", "RCLONE_CONFIG_DEST_PROVIDER": "Other",
 				"RCLONE_CONFIG_DEST_ENDPOINT": "http://10.0.0.5:9000", "RCLONE_CONFIG_DEST_REGION": "us-east-1",
 				"RCLONE_CONFIG_DEST_ACCESS_KEY_ID": "AK", "RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY": "SK",
@@ -542,7 +542,7 @@ func TestSyncBackupsLeavesVolumeBackupsAlone(t *testing.T) {
 	creds := map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}
 
 	a := backedUp()
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, nil); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, destsOf(a, testDest), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if nomad.Job("shop_db_backup") == nil {
@@ -551,7 +551,7 @@ func TestSyncBackupsLeavesVolumeBackupsAlone(t *testing.T) {
 
 	a.Services[0].Backup = &app.Backup{Engine: app.BackupVolume}
 	a.Services[0].Volumes = []app.Volume{{Name: "data", Path: "/data"}}
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, nil); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, destsOf(a, testDest), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if nomad.Job("shop_db_backup") != nil || nomad.Variable("nomad/jobs/shop_db_backup") != nil {
@@ -562,10 +562,10 @@ func TestSyncBackupsLeavesVolumeBackupsAlone(t *testing.T) {
 	}
 }
 
-// TestSetBackupDestinationReachesVolumeBackups: the new destination goes into
+// TestPointBackupsReachesVolumeBackups: the new destination goes into
 // the variable of every backed-up volume service, keeping its request, and
 // into none that has no destination yet.
-func TestSetBackupDestinationReachesVolumeBackups(t *testing.T) {
+func TestPointBackupsReachesVolumeBackups(t *testing.T) {
 	ctx := context.Background()
 	d, _, nomad := newTestDeployer(t)
 	a := volumeApp(app.BackupVolume)
@@ -578,7 +578,7 @@ func TestSetBackupDestinationReachesVolumeBackups(t *testing.T) {
 
 	moved := testDest
 	moved.Bucket, moved.Prefix, moved.SecretAccessKey = "other", "", "SK2"
-	if err := d.SetBackupDestination(ctx, moved); err != nil {
+	if err := d.PointBackups(ctx, "whoami", "web", moved); err != nil {
 		t.Fatal(err)
 	}
 	got := nomad.Variable(volumeVar)
@@ -587,6 +587,9 @@ func TestSetBackupDestinationReachesVolumeBackups(t *testing.T) {
 	}
 	if got["REQUEST"] != "web-1" || got["ACTION"] != "backup" || got["TS"] != "1" || got["KEEP"] != "4" || got["LIMIT"] != "1800" {
 		t.Errorf("the request or the rest was lost: %v", got)
+	}
+	if err := d.PointBackups(ctx, "other", "web", moved); err != nil {
+		t.Fatal(err)
 	}
 	if other := nomad.Variable("nomad/jobs/other/web/caravana-volumes"); len(other) != 2 || other["BACKUP_PATH"] != "" {
 		t.Errorf("a service without a backup got the destination: %v", other)
@@ -607,5 +610,23 @@ func TestVolumeVariablePathMatchesTheJob(t *testing.T) {
 	}
 	if !found || nomadjob.VolumeVariablePath("whoami", "web") != volumeVar {
 		t.Error("the task reads another variable than the one Caravana writes")
+	}
+}
+
+// BACKUP_DESTINATION is a destination key: a service that loses its volume
+// backup loses it with the rest, and a request never carries it.
+func TestIsDestinationKey(t *testing.T) {
+	for k, want := range map[string]bool{
+		"BACKUP_DESTINATION":                   true,
+		"BACKUP_PATH":                          true,
+		"KEEP":                                 true,
+		"RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY": true,
+		"REQUEST":                              false,
+		"LIMIT":                                false,
+		"PINNED":                               false,
+	} {
+		if got := isDestinationKey(k); got != want {
+			t.Errorf("isDestinationKey(%q) = %v, want %v", k, got, want)
+		}
 	}
 }

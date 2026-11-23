@@ -43,7 +43,7 @@ func (d *Deployer) ArchiveVolume(ctx context.Context, volume, appID string, dest
 	if err := d.purgeJob(ctx, id); err != nil {
 		return "", 0, err
 	}
-	if err := d.writeVariable(ctx, nomadjob.BackupVariablePath(id), destinationKeys(dest)); err != nil {
+	if err := d.writeVariable(ctx, nomadjob.BackupVariablePath(id), remoteKeys("DEST", dest)); err != nil {
 		return "", 0, err
 	}
 	defer func() {

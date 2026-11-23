@@ -153,6 +153,9 @@ func TestVolumeBackupRun(t *testing.T) {
 			got.Trigger != store.BackupTriggerOwner {
 			t.Fatalf("settled record = %+v", got)
 		}
+		if rec.Destination != "main" || got.Destination != "main" {
+			t.Errorf("destination = %q started, %q settled; want main", rec.Destination, got.Destination)
+		}
 		if got.Bytes != 2300 || len(got.Volumes) != 2 || got.Volumes[0] != (store.VolumeArchive{Name: "data", Bytes: 2000, SizeKB: 5000}) {
 			t.Errorf("bytes %d, volumes %+v; want the sum 2300 and both volumes", got.Bytes, got.Volumes)
 		}

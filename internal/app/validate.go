@@ -138,6 +138,9 @@ func validateBackup(field string, svc Service) error {
 	if err := validateRestoreSchedule(field, b.Restore); err != nil {
 		return err
 	}
+	if err := validateBackupPlaces(field, b); err != nil {
+		return err
+	}
 	switch b.Engine {
 	case BackupVolume:
 		return validateVolumeBackup(field, svc)
@@ -149,6 +152,38 @@ func validateBackup(field string, svc Service) error {
 	}
 	if !hasDumpLogin(b.Engine, svc) {
 		return NewFieldError(field, "the backup %s; set it in the service's environment or secrets", DumpLoginHint(b.Engine))
+	}
+	return nil
+}
+
+// validateBackupPlaces checks where a backup goes (feature 052): the names are
+// labels, at most MaxBackupCopies copies, no copy twice or at the destination
+// itself, and copyKeep only with copies. Whether a name exists is a question
+// for the installation, not for the model.
+func validateBackupPlaces(field string, b *Backup) error {
+	const labelRule = "%q must be 1 to 32 lowercase letters, digits or hyphens, starting and ending with a letter or digit"
+	if b.Destination != "" && !ValidLabel(b.Destination) {
+		return NewFieldError(field+".destination", labelRule, b.Destination)
+	}
+	if len(b.CopyTo) > MaxBackupCopies {
+		return NewFieldError(field+".copyTo", "has %d destinations; at most %d are allowed", len(b.CopyTo), MaxBackupCopies)
+	}
+	for k, name := range b.CopyTo {
+		copyField := fmt.Sprintf("%s.copyTo[%d]", field, k)
+		switch {
+		case !ValidLabel(name):
+			return NewFieldError(copyField, labelRule, name)
+		case name == b.Destination:
+			return NewFieldError(copyField, "%q is the destination the backups already go to", name)
+		case slices.Contains(b.CopyTo[:k], name):
+			return NewFieldError(copyField, "%q is listed twice", name)
+		}
+	}
+	if b.CopyKeep < 0 || b.CopyKeep > 100 {
+		return NewFieldError(field+".copyKeep", "must be between 1 and 100 (leave it out to keep what keep keeps), got %d", b.CopyKeep)
+	}
+	if b.CopyKeep != 0 && len(b.CopyTo) == 0 {
+		return NewFieldError(field+".copyKeep", "only applies with copyTo")
 	}
 	return nil
 }

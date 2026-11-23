@@ -534,6 +534,52 @@ func TestValidate(t *testing.T) {
 			a.Services[1].Backup = &Backup{Engine: BackupVolume, Restore: &RestoreSchedule{Schedule: "0 4 * * *", From: strings.Repeat("a", 33)}}
 		}, "services[1].backup.restore.from"},
 
+		// Where backups go (feature 052).
+		{"valid destination and copies", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Destination: "main", CopyTo: []string{"offsite", "client-a"}, CopyKeep: 14}
+		}, ""},
+		{"valid copy without a destination named", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, CopyTo: []string{"offsite"}}
+		}, ""},
+		{"destination not a label", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Destination: "Main"}
+		}, "services[1].backup.destination"},
+		{"copy not a label", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, CopyTo: []string{"offsite", "-x"}}
+		}, "services[1].backup.copyTo[1]"},
+		{"three copies", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, CopyTo: []string{"a", "b", "c"}}
+		}, "services[1].backup.copyTo"},
+		{"copy listed twice", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, CopyTo: []string{"a", "a"}}
+		}, "services[1].backup.copyTo[1]"},
+		{"copy equal to the destination", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Destination: "main", CopyTo: []string{"main"}}
+		}, "services[1].backup.copyTo[0]"},
+		{"copy keep without copies", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, CopyKeep: 5}
+		}, "services[1].backup.copyKeep"},
+		{"copy keep too many", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, CopyTo: []string{"a"}, CopyKeep: 101}
+		}, "services[1].backup.copyKeep"},
+		{"negative copy keep", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, CopyTo: []string{"a"}, CopyKeep: -1}
+		}, "services[1].backup.copyKeep"},
+		{"destination on a postgres backup", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupPostgres, Destination: "client-a", CopyTo: []string{"offsite"}}
+		}, ""},
+
 		// SQLite backups: the file lies inside a writable volume of the service.
 		{"valid sqlite backup", func(a *App, d *Deployment) {
 			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}

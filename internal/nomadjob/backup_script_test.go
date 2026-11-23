@@ -27,6 +27,7 @@ type uploadCase struct {
 	keep     string
 	ts       string
 	pinned   *string // nil for "BACKUP_PINNED is not an item at all"
+	dest     *string // nil for "BACKUP_DESTINATION is not an item at all" (a job from before feature 052)
 }
 
 // uploadResult is what uploadScript did.
@@ -57,6 +58,9 @@ func runUpload(t *testing.T, c uploadCase) uploadResult {
 	}
 	if c.pinned != nil {
 		env = append(env, "BACKUP_PINNED="+*c.pinned)
+	}
+	if c.dest != nil {
+		env = append(env, "BACKUP_DESTINATION="+*c.dest)
 	}
 	stdout, stderr, code := r.run(uploadScript, env...)
 	if _, err := os.Stat(filepath.Join(r.dir, "PWNED")); err == nil {
@@ -167,7 +171,7 @@ func TestPostgresUploadScript(t *testing.T) {
 				t.Fatalf("exit %d, stderr %q; want %d and %q", res.code, res.stderr, tt.wantCode, tt.wantStderr)
 			}
 			// The upload happened before retention either way, as the plain file.
-			if !strings.Contains(res.stdout, BackupDoneMarker+" key=b/notes/db/"+tt.ts+".dump bytes=8\n") {
+			if !strings.Contains(res.stdout, BackupDoneMarker+" key=b/notes/db/"+tt.ts+".dump bytes=8 dest=\n") {
 				t.Errorf("stdout = %q, want the done marker for the new dump", res.stdout)
 			}
 			if got := string(res.files[tt.ts+".dump"]); got != "pg dump\n" {
@@ -198,6 +202,31 @@ func TestPostgresUploadScript(t *testing.T) {
 	}
 }
 
+// The done line names the destination the job's variable named (feature 052), so
+// the run records where it went; a job from before that has none, and the line
+// ends with an empty dest.
+func TestUploadScriptNamesTheDestination(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		dest *string
+		want string
+	}{
+		{"named", new("offsite"), " bytes=8 dest=offsite\n"},
+		{"empty", new(""), " bytes=8 dest=\n"},
+		{"not an item", nil, " bytes=8 dest=\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			res := runUpload(t, uploadCase{ext: ".dump", dump: "pg dump\n", keep: "3", ts: "1791", dest: tt.dest})
+			if res.code != 0 || res.stderr != "" {
+				t.Fatalf("exit %d, stderr %q", res.code, res.stderr)
+			}
+			if want := BackupDoneMarker + " key=b/notes/db/1791.dump" + tt.want; !strings.Contains(res.stdout, want) {
+				t.Errorf("stdout = %q, want %q in it", res.stdout, want)
+			}
+		})
+	}
+}
+
 // The MySQL and MongoDB objects (feature 046) go through the same script: it
 // lists only the files that end in the engine's extension and a pin matches
 // <stamp><ext>, so the engines' backups in one folder never touch each other's.
@@ -216,7 +245,7 @@ func TestUploadScriptExtensions(t *testing.T) {
 		if got := gunzipString(t, obj); got != "CREATE TABLE t (id int);\n" {
 			t.Errorf("the object holds %q", got)
 		}
-		if want := BackupDoneMarker + " key=b/notes/db/1791.sql.gz bytes=" + strconv.Itoa(len(obj)) + "\n"; !strings.Contains(res.stdout, want) {
+		if want := BackupDoneMarker + " key=b/notes/db/1791.sql.gz bytes=" + strconv.Itoa(len(obj)) + " dest=\n"; !strings.Contains(res.stdout, want) {
 			t.Errorf("stdout = %q, want the compressed size in %q", res.stdout, want)
 		}
 		wantNames := []string{"1500.dump", "1600.archive.gz", "1650.sql", "1700.sql.gz", "1703.sql.gz", "1791.sql.gz", "readme"}

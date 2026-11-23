@@ -5,8 +5,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"net/url"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -42,105 +40,51 @@ func dumpBackup(svc app.Service) bool {
 // itself: its copy waits for it (research R3).
 const restoreTimeout = 10 * time.Minute
 
-// DestinationInput is a new backup destination. A nil SecretAccessKey keeps
-// the one set before.
-type DestinationInput struct {
-	Endpoint, Region, Bucket, Prefix, AccessKeyID string
-	SecretAccessKey                               *string
-}
-
-var (
-	bucketRE = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
-	prefixRE = regexp.MustCompile(`^[A-Za-z0-9._/-]*$`)
-)
-
-// GetBackupDestination returns the destination without its secret key, or
-// store.ErrNotFound when none is set.
-func (s *Service) GetBackupDestination(ctx context.Context) (store.BackupDestination, error) {
-	return s.store.GetBackupDestination(ctx)
-}
-
-// SetBackupDestination validates and saves the destination, and points every
-// backup job at it from its next run (no deploy). Errors are
-// *app.FieldError naming the input field, or Nomad's.
-func (s *Service) SetBackupDestination(ctx context.Context, in DestinationInput) (store.BackupDestination, error) {
-	u, err := url.Parse(in.Endpoint)
-	switch {
-	case err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "":
-		return store.BackupDestination{}, app.NewFieldError("endpoint", "%q must be an http or https URL", in.Endpoint)
-	case strings.TrimSpace(in.Region) == "":
-		return store.BackupDestination{}, app.NewFieldError("region", "is required (us-east-1 when the provider doesn't care)")
-	case !bucketRE.MatchString(in.Bucket):
-		return store.BackupDestination{}, app.NewFieldError("bucket", "%q must be a bucket name: lowercase letters, digits, '.' and '-'", in.Bucket)
-	case !prefixRE.MatchString(in.Prefix):
-		return store.BackupDestination{}, app.NewFieldError("prefix", "may hold letters, digits, '.', '_', '-' and '/'")
-	case strings.TrimSpace(in.AccessKeyID) == "":
-		return store.BackupDestination{}, app.NewFieldError("accessKeyId", "is required")
-	}
-
-	secret := ""
-	if in.SecretAccessKey != nil {
-		secret = *in.SecretAccessKey
-		if secret == "" {
-			return store.BackupDestination{}, app.NewFieldError("secretAccessKey", "is empty; leave it out to keep the one set before")
-		}
-		if err := s.deployer.SaveBackupSecret(ctx, secret); err != nil {
-			return store.BackupDestination{}, err
-		}
-	} else if secret, err = s.deployer.BackupSecret(ctx); err != nil {
-		return store.BackupDestination{}, err
-	} else if secret == "" {
-		return store.BackupDestination{}, app.NewFieldError("secretAccessKey", "is required the first time")
-	}
-
-	d := store.BackupDestination{Endpoint: in.Endpoint, Region: in.Region, Bucket: in.Bucket,
-		Prefix: strings.Trim(in.Prefix, "/"), AccessKeyID: in.AccessKeyID, UpdatedAt: time.Now().UTC()}
-	if err := s.store.SetBackupDestination(ctx, d); err != nil {
-		return store.BackupDestination{}, err
-	}
-	s.publish(Change{What: ChangeAttention}) // "no backup destination" may be resolved
-	if err := s.deployer.SetBackupDestination(ctx, toDeployDestination(d, secret)); err != nil {
-		return d, fmt.Errorf("saved, but the backup jobs still point at the old destination: %w", err)
-	}
-	return d, nil
-}
-
-func toDeployDestination(d store.BackupDestination, secret string) deploy.BackupDestination {
-	return deploy.BackupDestination{Endpoint: d.Endpoint, Region: d.Region, Bucket: d.Bucket, Prefix: d.Prefix,
-		AccessKeyID: d.AccessKeyID, SecretAccessKey: secret}
-}
-
-// backupDestination is the full destination, secret included, for jobs.
-// ok is false when none is set.
-func (s *Service) backupDestination(ctx context.Context) (deploy.BackupDestination, bool, error) {
-	d, err := s.store.GetBackupDestination(ctx)
-	if errors.Is(err, store.ErrNotFound) {
-		return deploy.BackupDestination{}, false, nil
-	}
-	if err != nil {
-		return deploy.BackupDestination{}, false, err
-	}
-	secret, err := s.deployer.BackupSecret(ctx)
-	if err != nil {
-		return deploy.BackupDestination{}, false, err
-	}
-	return toDeployDestination(d, secret), true, nil
-}
-
 // checkBackups refuses backups the installation can't run: none without a
-// destination. That is all a volume backup needs: no port and no credentials
-// (app.Validate checks a dump engine's own).
+// destination, and none that names a destination that doesn't exist, as its own
+// or as a copy, or copies to the destination its backups already go to. That is
+// all a volume backup needs: no port and no credentials (app.Validate checks a
+// dump engine's own, and the shape of the names).
 func (s *Service) checkBackups(ctx context.Context, a app.App) error {
 	for i, svc := range a.Services {
 		if svc.Backup == nil {
 			continue
 		}
-		if _, err := s.store.GetBackupDestination(ctx); errors.Is(err, store.ErrNotFound) {
-			return app.NewFieldError(fmt.Sprintf("services[%d].backup", i),
-				"no backup destination is set: set one first (Settings, or PUT /v1/backups/destination)")
-		} else if err != nil {
+		field := fmt.Sprintf("services[%d].backup", i)
+		primary, copies, err := s.backupPlaces(ctx, a.ID, *svc.Backup)
+		if errors.Is(err, ErrNoBackupDestination) {
+			return app.NewFieldError(field, "no backup destination is set: set one first (Settings, or PUT /v1/backups/destination)")
+		}
+		if err != nil {
 			return err
 		}
+		primaryField := field
+		if svc.Backup.Destination != "" {
+			primaryField = field + ".destination"
+		}
+		if err := s.requireDestination(ctx, primaryField, primary); err != nil {
+			return err
+		}
+		for k, name := range copies {
+			copyField := fmt.Sprintf("%s.copyTo[%d]", field, k)
+			if err := s.requireDestination(ctx, copyField, name); err != nil {
+				return err
+			}
+			if name == primary {
+				return app.NewFieldError(copyField, "%q is where this service's backups already go", name)
+			}
+		}
+	}
+	return nil
+}
+
+// requireDestination is a *app.FieldError on field unless a destination is
+// named name.
+func (s *Service) requireDestination(ctx context.Context, field, name string) error {
+	if _, err := s.store.GetBackupDestinationNamed(ctx, name); errors.Is(err, store.ErrNotFound) {
+		return app.NewFieldError(field, "no backup destination is named %q; add it in Settings › Backup storage", name)
+	} else if err != nil {
+		return err
 	}
 	return nil
 }
@@ -151,32 +95,41 @@ func (s *Service) checkBackups(ctx context.Context, a app.App) error {
 // have none, and a service that changed to one loses its old job. It answers a
 // warning when it couldn't: the app itself is deployed by then.
 func (s *Service) syncBackups(ctx context.Context, a app.App, digests map[string]string, sets secrets.Sets) []app.Warning {
-	dest, _, err := s.backupDestination(ctx)
-	if err == nil {
-		creds := map[string]deploy.BackupCredentials{}
-		for _, svc := range a.Services {
-			if !dumpBackup(svc) {
-				continue
-			}
-			// The service's env first, then its secrets: the same lookup for every engine.
-			login, _ := app.FindDumpLogin(svc.Backup.Engine, func(name string) (string, bool) {
-				for _, e := range svc.Env {
-					if e.Name == name {
-						return e.Value, true
-					}
-				}
-				v, ok := sets[svc.Name][name]
-				return v, ok
-			})
-			creds[svc.Name] = deploy.BackupCredentials{User: login.User, Password: login.Password, Database: login.Database}
+	var err error
+	creds := map[string]deploy.BackupCredentials{}
+	dests := map[string]deploy.BackupDestination{}
+	for _, svc := range a.Services {
+		if !dumpBackup(svc) {
+			continue
 		}
+		// The service's env first, then its secrets: the same lookup for every engine.
+		login, _ := app.FindDumpLogin(svc.Backup.Engine, func(name string) (string, bool) {
+			for _, e := range svc.Env {
+				if e.Name == name {
+					return e.Value, true
+				}
+			}
+			v, ok := sets[svc.Name][name]
+			return v, ok
+		})
+		creds[svc.Name] = deploy.BackupCredentials{User: login.User, Password: login.Password, Database: login.Database}
+		// Each service's backups go where its own policy says.
+		var dest deploy.BackupDestination
+		var found bool
+		if dest, found, err = s.destinationFor(ctx, a.ID, *svc.Backup); err != nil {
+			break
+		} else if found {
+			dests[svc.Name] = dest
+		}
+	}
+	if err == nil {
 		var private map[string]bool
 		var pins map[string][]string
 		if private, err = s.privateRegistries(ctx); err == nil {
 			// The pinned backups' timestamps go into each dump job's variable
 			// for its retention (feature 036).
 			if pins, err = s.pinStampsByService(ctx, a.ID); err == nil {
-				err = s.deployer.SyncBackups(ctx, a, digests, creds, dest, private, pins)
+				err = s.deployer.SyncBackups(ctx, a, digests, creds, dests, private, pins)
 			}
 		}
 	}
@@ -248,7 +201,11 @@ func (s *Service) backUpNow(ctx context.Context, appID, service, trigger string)
 	if err := s.refuseIfStopped(ctx, appID); err != nil {
 		return store.BackupRecord{}, err
 	}
-	if _, ok, err := s.backupDestination(ctx); err != nil {
+	primary, _, err := s.backupPlaces(ctx, appID, *svc.Backup)
+	if err != nil {
+		return store.BackupRecord{}, err // ErrNoBackupDestination when none resolves
+	}
+	if _, ok, err := s.destinationNamed(ctx, primary); err != nil {
 		return store.BackupRecord{}, err
 	} else if !ok {
 		return store.BackupRecord{}, ErrNoBackupDestination
@@ -270,6 +227,7 @@ func (s *Service) backUpNow(ctx context.Context, appID, service, trigger string)
 	}
 	rec := runRecord(appID, service, svc.Backup.Engine, deploy.BackupRun{JobID: jobID, Status: deploy.RunRunning, Started: runTime(jobID)})
 	rec.Trigger = trigger
+	rec.Destination = primary // the run's own word replaces it once the job says where it went
 	if err := s.store.SaveBackup(ctx, rec); err != nil {
 		return store.BackupRecord{}, err
 	}
@@ -345,7 +303,8 @@ func (s *Service) restoreBackup(ctx context.Context, appID string, b store.Backu
 	if err := s.refuseIfStopped(ctx, appID); err != nil {
 		return store.RestoreRecord{}, err
 	}
-	if _, ok, err := s.backupDestination(ctx); err != nil {
+	dest, ok, err := s.destinationFor(ctx, appID, *svc.Backup)
+	if err != nil {
 		return store.RestoreRecord{}, err
 	} else if !ok {
 		return store.RestoreRecord{}, ErrNoBackupDestination
@@ -377,7 +336,8 @@ func (s *Service) restoreBackup(ctx context.Context, appID string, b store.Backu
 		return store.RestoreRecord{}, err
 	}
 	r := store.RestoreRecord{ID: strings.ToLower(rand.Text()), AppID: appID, Service: b.Service, BackupID: b.ID,
-		Engine: svc.Backup.Engine, Status: store.BackupRunning, CreatedAt: time.Now().UTC(), Trigger: trigger, Pin: label}
+		Engine: svc.Backup.Engine, Status: store.BackupRunning, CreatedAt: time.Now().UTC(), Trigger: trigger, Pin: label,
+		Destination: dest.Name}
 	if err := s.store.SaveRestore(ctx, r); err != nil {
 		return store.RestoreRecord{}, err
 	}
@@ -404,7 +364,8 @@ func runTime(jobID string) time.Time {
 // runRecord is the store's record of one run of a dump engine's backup job.
 func runRecord(appID, service, engine string, r deploy.BackupRun) store.BackupRecord {
 	rec := store.BackupRecord{AppID: appID, ID: fmt.Sprintf("%s-%d", service, r.Started.Unix()), Service: service,
-		JobID: r.JobID, Engine: engine, Status: r.Status, Object: r.Object, Bytes: r.Bytes, Message: r.Message, StartedAt: r.Started}
+		JobID: r.JobID, Engine: engine, Status: r.Status, Object: r.Object, Bytes: r.Bytes, Message: r.Message, StartedAt: r.Started,
+		Destination: r.Destination}
 	if r.Status != deploy.RunRunning {
 		now := time.Now().UTC()
 		rec.FinishedAt = &now
@@ -478,10 +439,16 @@ func (s *Service) recordApp(ctx context.Context, a app.App) {
 		for _, k := range known {
 			final[k.ID] = k.Status != store.BackupRunning
 		}
+		// A run that doesn't say where it went (a job from before jobs did, or one
+		// still running) went where the policy sends backups now.
+		current, _, _ := s.backupPlaces(ctx, a.ID, *svc.Backup)
 		for _, run := range runs {
 			r := runRecord(a.ID, svc.Name, svc.Backup.Engine, run)
 			if final[r.ID] {
 				continue
+			}
+			if r.Destination == "" {
+				r.Destination = current
 			}
 			if err := s.store.SaveBackup(ctx, r); err != nil {
 				s.log.Warn("record backups: save", "app", a.ID, "backup", r.ID, "error", err)

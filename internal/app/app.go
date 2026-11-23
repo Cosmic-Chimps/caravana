@@ -269,7 +269,19 @@ type Backup struct {
 	// Restore, when set, restores the backup pinned under Restore.From on
 	// Restore.Schedule (feature 036). It works for every engine.
 	Restore *RestoreSchedule `json:"restore,omitempty"`
+	// Destination names the backup destination the backups go to (feature 052).
+	// Empty means the project's default, else the installation's.
+	Destination string `json:"destination,omitempty"`
+	// CopyTo names other destinations each succeeded backup is copied to, at
+	// most MaxBackupCopies, distinct, never Destination itself.
+	CopyTo []string `json:"copyTo,omitempty"`
+	// CopyKeep is how many backups each copy destination keeps, 1 to 100. Zero
+	// means the policy's Keep. Only with CopyTo.
+	CopyKeep int `json:"copyKeep,omitzero"`
 }
+
+// MaxBackupCopies is how many other destinations a policy may copy to.
+const MaxBackupCopies = 2
 
 // RestoreSchedule says when Caravana restores a pinned backup into the
 // service, and which one: the backup the owner pinned under From.
@@ -315,6 +327,15 @@ func (b Backup) KeepOrDefault() int {
 		return DefaultBackupKeep
 	}
 	return b.Keep
+}
+
+// CopyKeepOrDefault is how many backups each copy destination keeps: CopyKeep,
+// else what the policy keeps in its own destination.
+func (b Backup) CopyKeepOrDefault() int {
+	if b.CopyKeep == 0 {
+		return b.KeepOrDefault()
+	}
+	return b.CopyKeep
 }
 
 // SQLiteFile finds where the database of a sqlite backup is: the service's

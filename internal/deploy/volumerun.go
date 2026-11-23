@@ -79,7 +79,7 @@ var volumeRequestKeys = []string{"REQUEST", "ACTION", "TS", "OBJECT", "FILE", "N
 // isDestinationKey reports whether k is one of the variable's keys that hold
 // the destination: what destinationItems makes, and KEEP.
 func isDestinationKey(k string) bool {
-	return strings.HasPrefix(k, "RCLONE_CONFIG_DEST_") || k == "BACKUP_PATH" || k == "KEEP"
+	return strings.HasPrefix(k, "RCLONE_CONFIG_DEST_") || k == "BACKUP_PATH" || k == backupDestinationItem || k == "KEEP"
 }
 
 // volumeItems builds the task variable's items. dest nil leaves the

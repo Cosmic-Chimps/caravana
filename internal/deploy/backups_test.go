@@ -23,7 +23,16 @@ func backedUp() app.App {
 	}}}
 }
 
-var testDest = BackupDestination{Endpoint: "http://10.0.0.5:9000", Region: "us-east-1", Bucket: "backups", Prefix: "caravana",
+// destsOf sends every service of a to dest.
+func destsOf(a app.App, dest BackupDestination) map[string]BackupDestination {
+	out := map[string]BackupDestination{}
+	for _, svc := range a.Services {
+		out[svc.Name] = dest
+	}
+	return out
+}
+
+var testDest = BackupDestination{Name: "main", Endpoint: "http://10.0.0.5:9000", Region: "us-east-1", Bucket: "backups", Prefix: "caravana",
 	AccessKeyID: "AK", SecretAccessKey: "SK"}
 
 func TestSyncBackups(t *testing.T) {
@@ -33,7 +42,7 @@ func TestSyncBackups(t *testing.T) {
 	digests := map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:]}
 	creds := map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}
 
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, nil); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, destsOf(a, testDest), nil, nil); err != nil {
 		t.Fatalf("SyncBackups: %v", err)
 	}
 	job := nomad.Job("shop_db_backup")
@@ -41,7 +50,8 @@ func TestSyncBackups(t *testing.T) {
 		t.Fatalf("backup job = %+v", job)
 	}
 	v := nomad.Variable("nomad/jobs/shop_db_backup")
-	if v["PGPASSWORD"] != "pw" || v["BACKUP_PATH"] != "backups/caravana/shop/db" || v["RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY"] != "SK" {
+	if v["PGPASSWORD"] != "pw" || v["BACKUP_PATH"] != "backups/caravana/shop/db" || v["RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY"] != "SK" ||
+		v["BACKUP_DESTINATION"] != "main" {
 		t.Errorf("variable = %v", v)
 	}
 
@@ -49,7 +59,7 @@ func TestSyncBackups(t *testing.T) {
 	// credentials.
 	moved := testDest
 	moved.Bucket, moved.Prefix = "other", ""
-	if err := d.SetBackupDestination(ctx, moved); err != nil {
+	if err := d.PointBackups(ctx, "shop", "db", moved); err != nil {
 		t.Fatal(err)
 	}
 	if v := nomad.Variable("nomad/jobs/shop_db_backup"); v["BACKUP_PATH"] != "other/shop/db" || v["PGPASSWORD"] != "pw" {
@@ -61,7 +71,7 @@ func TestSyncBackups(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.Services[0].Backup = nil
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, nil); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, destsOf(a, testDest), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if nomad.Job("shop_db_backup") != nil || len(nomad.Runs("shop_db_backup")) != 0 || nomad.Variable("nomad/jobs/shop_db_backup") != nil {
@@ -88,7 +98,7 @@ func TestBackupPins(t *testing.T) {
 		t.Fatal("SetBackupPins made a variable for a job that isn't there")
 	}
 
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, nil); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, destsOf(a, testDest), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, has := nomad.Variable(path)["BACKUP_PINNED"]; has {
@@ -96,7 +106,7 @@ func TestBackupPins(t *testing.T) {
 	}
 
 	// A deploy writes the pins of the service.
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, map[string][]string{"db": {"1700", "1750"}, "other": {"1"}}); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, destsOf(a, testDest), nil, map[string][]string{"db": {"1700", "1750"}, "other": {"1"}}); err != nil {
 		t.Fatal(err)
 	}
 	if v := nomad.Variable(path); v["BACKUP_PINNED"] != "1700 1750" || v["PGPASSWORD"] != "pw" {
@@ -113,7 +123,7 @@ func TestBackupPins(t *testing.T) {
 	// The destination moving keeps the pins.
 	moved := testDest
 	moved.Bucket = "other"
-	if err := d.SetBackupDestination(ctx, moved); err != nil {
+	if err := d.PointBackups(ctx, "shop", "db", moved); err != nil {
 		t.Fatal(err)
 	}
 	if v := nomad.Variable(path); v["BACKUP_PINNED"] != "1800" || v["BACKUP_PATH"] != "other/caravana/shop/db" {
@@ -135,7 +145,7 @@ func TestBackupRuns(t *testing.T) {
 	d, _, nomad := newTestDeployer(t)
 	a := backedUp()
 	if err := d.SyncBackups(ctx, a, map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:]},
-		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, testDest, nil, nil); err != nil {
+		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, destsOf(a, testDest), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	ok, err := d.ForceBackup(ctx, "shop", "db")
@@ -150,7 +160,7 @@ func TestBackupRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nomad.FinishRun(ok, true, "", "caravana-backup key=backups/caravana/shop/db/1.dump bytes=1499\ncaravana-expired 0.dump\n", "")
+	nomad.FinishRun(ok, true, "", "caravana-backup key=backups/caravana/shop/db/1.dump bytes=1499 dest=offsite\ncaravana-expired 0.dump\n", "")
 	nomad.FinishRun(bad, false, "dump", "", "pg_dump: error: connection failed: FATAL:  password authentication failed for user \"postgres\"\n")
 
 	runs, err := d.BackupRuns(ctx, "shop", "db")
@@ -161,7 +171,7 @@ func TestBackupRuns(t *testing.T) {
 	for _, r := range runs {
 		byID[r.JobID] = r
 	}
-	if r := byID[ok]; r.Status != RunSucceeded || r.Object != "backups/caravana/shop/db/1.dump" || r.Bytes != 1499 || len(r.Expired) != 1 || r.Expired[0] != "0.dump" {
+	if r := byID[ok]; r.Status != RunSucceeded || r.Object != "backups/caravana/shop/db/1.dump" || r.Bytes != 1499 || len(r.Expired) != 1 || r.Expired[0] != "0.dump" || r.Destination != "offsite" {
 		t.Errorf("succeeded run = %+v", r)
 	}
 	if r := byID[bad]; r.Status != RunFailed || r.Message != `dump: pg_dump: error: connection failed: FATAL:  password authentication failed for user "postgres"` {
@@ -172,12 +182,76 @@ func TestBackupRuns(t *testing.T) {
 	}
 }
 
+// A run from before jobs named their destination prints no dest: the run has none.
+func TestBackupRunWithoutDestination(t *testing.T) {
+	ctx := context.Background()
+	d, _, nomad := newTestDeployer(t)
+	a := backedUp()
+	if err := d.SyncBackups(ctx, a, map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:]},
+		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, destsOf(a, testDest), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	id, err := d.ForceBackup(ctx, "shop", "db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nomad.FinishRun(id, true, "", "caravana-backup key=backups/caravana/shop/db/1.dump bytes=1499\n", "")
+	runs, err := d.BackupRuns(ctx, "shop", "db")
+	if err != nil || len(runs) != 1 || runs[0].Status != RunSucceeded || runs[0].Object == "" || runs[0].Destination != "" {
+		t.Errorf("BackupRuns = %+v, %v; want a succeeded run with no destination", runs, err)
+	}
+}
+
+// Each service's backups go to the destination the caller gave it, and
+// PointBackups moves one service without touching another's variable.
+func TestSyncBackupsPerServiceDestination(t *testing.T) {
+	ctx := context.Background()
+	d, _, nomad := newTestDeployer(t)
+	a := backedUp()
+	second := a.Services[0]
+	second.Name = "cache"
+	a.Services = append(a.Services, second)
+	digests := map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:], "cache": "postgres@sha256:" + whoamiDigest[7:]}
+	creds := map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}, "cache": {User: "postgres", Password: "pw", Database: "postgres"}}
+	offsite := BackupDestination{Name: "offsite", Endpoint: "http://10.0.0.6:9000", Region: "r", Bucket: "second", AccessKeyID: "AK2", SecretAccessKey: "SK2"}
+
+	if err := d.SyncBackups(ctx, a, digests, creds, map[string]BackupDestination{"db": testDest, "cache": offsite}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	db, cache := nomad.Variable("nomad/jobs/shop_db_backup"), nomad.Variable("nomad/jobs/shop_cache_backup")
+	if db["BACKUP_DESTINATION"] != "main" || db["BACKUP_PATH"] != "backups/caravana/shop/db" || db["RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY"] != "SK" {
+		t.Errorf("db variable = %v, want main", db)
+	}
+	if cache["BACKUP_DESTINATION"] != "offsite" || cache["BACKUP_PATH"] != "second/shop/cache" || cache["RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY"] != "SK2" {
+		t.Errorf("cache variable = %v, want offsite", cache)
+	}
+
+	// Pointing cache back at main leaves db's variable as it was.
+	if err := d.PointBackups(ctx, "shop", "cache", testDest); err != nil {
+		t.Fatal(err)
+	}
+	if v := nomad.Variable("nomad/jobs/shop_cache_backup"); v["BACKUP_DESTINATION"] != "main" || v["BACKUP_PATH"] != "backups/caravana/shop/cache" || v["PGPASSWORD"] != "pw" {
+		t.Errorf("cache variable after the move = %v, want main and the credentials kept", v)
+	}
+	if v := nomad.Variable("nomad/jobs/shop_db_backup"); v["BACKUP_DESTINATION"] != "main" || v["BACKUP_PATH"] != "backups/caravana/shop/db" {
+		t.Errorf("db variable changed: %v", v)
+	}
+
+	// A service with no variable yet has nothing to point, and that is no error.
+	if err := d.PointBackups(ctx, "shop", "ghost", offsite); err != nil {
+		t.Errorf("PointBackups of a service with no variable = %v, want nil", err)
+	}
+	if nomad.Variable("nomad/jobs/shop_ghost_backup") != nil || nomad.Variable("nomad/jobs/shop/ghost/caravana-volumes") != nil {
+		t.Error("PointBackups made a variable for a service that has none")
+	}
+}
+
 func TestRestoreJob(t *testing.T) {
 	ctx := context.Background()
 	d, _, nomad := newTestDeployer(t)
 	a := backedUp()
 	if err := d.SyncBackups(ctx, a, map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:]},
-		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, testDest, nil, nil); err != nil {
+		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, destsOf(a, testDest), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.Restore(ctx, "shop", a.Services[0], "postgres@sha256:"+whoamiDigest[7:], "backups/caravana/shop/db/1.dump", nil); err != nil {
@@ -248,7 +322,7 @@ func TestDumpEngineBackupsAndRestore(t *testing.T) {
 			if got := BackupJobIDs(a); len(got) != 1 || got[0] != "shop_db_backup" {
 				t.Errorf("BackupJobIDs = %v, want the dump job", got)
 			}
-			if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, map[string][]string{"db": {"1700"}}); err != nil {
+			if err := d.SyncBackups(ctx, a, digests, creds, destsOf(a, testDest), nil, map[string][]string{"db": {"1700"}}); err != nil {
 				t.Fatalf("SyncBackups: %v", err)
 			}
 			job := nomad.Job("shop_db_backup")
@@ -309,7 +383,7 @@ func TestDumpEngineBackupsAndRestore(t *testing.T) {
 			if got := BackupJobIDs(a); len(got) != 0 {
 				t.Errorf("BackupJobIDs for a volume backup = %v", got)
 			}
-			if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, nil); err != nil {
+			if err := d.SyncBackups(ctx, a, digests, creds, destsOf(a, testDest), nil, nil); err != nil {
 				t.Fatal(err)
 			}
 			if nomad.Job("shop_db_backup") != nil || nomad.Variable(path) != nil {

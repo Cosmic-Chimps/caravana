@@ -10,27 +10,6 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app"
 )
 
-func TestBackupDestination(t *testing.T) {
-	ctx := context.Background()
-	s := openTestStore(t)
-	if _, err := s.GetBackupDestination(ctx); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("Get on a new store = %v, want ErrNotFound", err)
-	}
-	t0 := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
-	d := BackupDestination{Endpoint: "https://s3.example.com", Region: "eu-west-1", Bucket: "b", Prefix: "p", AccessKeyID: "AK", UpdatedAt: t0}
-	if err := s.SetBackupDestination(ctx, d); err != nil {
-		t.Fatal(err)
-	}
-	d.Bucket = "b2"
-	if err := s.SetBackupDestination(ctx, d); err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.GetBackupDestination(ctx)
-	if err != nil || got != d {
-		t.Errorf("Get = %+v, %v; want %+v", got, err, d)
-	}
-}
-
 func TestBackupRecords(t *testing.T) {
 	ctx := context.Background()
 	s := openTestStore(t)

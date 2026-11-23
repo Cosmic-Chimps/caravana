@@ -2,22 +2,22 @@
 
 ## Phase A: model, store, destinations, resolution (existing behaviour unchanged)
 
-- [ ] T001 `internal/app`: `Backup.Destination`, `CopyTo`, `CopyKeep`, `CopyKeepOrDefault()`, the checks of D3 in
+- [x] T001 `internal/app`: `Backup.Destination`, `CopyTo`, `CopyKeep`, `CopyKeepOrDefault()`, the checks of D3 in
       `validateBackup`; table tests (each refusal names its field; an existing policy's JSON and revision unchanged).
-- [ ] T002 Migration `0042_backup_destinations.sql` (D1) and the store methods of D1 for destinations, projects,
+- [x] T002 Migration `0042_backup_destinations.sql` (D1) and the store methods of D1 for destinations, projects,
       records' `destination`; tests: a store migrated from 0041 with one destination has `main` as the default with
       `secret_path` `caravana/backup-destination` and every backup and restore row says `main`; one with none has no
       destination; the partial unique index holds one default; `DeleteApp` removes copies.
-- [ ] T003 `internal/deploy`: `BackupDestination.Name`, `remoteKeys`, `BACKUP_DESTINATION`, `isDestinationKey`,
+- [x] T003 `internal/deploy`: `BackupDestination.Name`, `remoteKeys`, `BACKUP_DESTINATION`, `isDestinationKey`,
       `SyncBackups` per service, the upload script's `dest=` (goldens), `BackupRun.Destination`, `PointBackups` in
       place of `SetBackupDestination`; `deploytest` fakes; tests.
-- [ ] T004 `internal/service/destinations.go`: D2 (list with used-by, save, delete with refusals, the old
+- [x] T004 `internal/service/destinations.go`: D2 (list with used-by, save, delete with refusals, the old
       `SetBackupDestination` on the default, `destinationNamed`) and secrets at `secret_path`; tests with a sentinel
       secret key in no record, log line or error.
-- [ ] T005 Resolution and checks (D4): `backupPlaces`, `checkBackups`' new refusals, `UpdateProject`'s
+- [x] T005 Resolution and checks (D4): `backupPlaces`, `checkBackups`' new refusals, `UpdateProject`'s
       `backupDestination` (service and store), `syncBackups` with each service's destination, the watcher recording
       `Destination`, volume and sqlite runs recording theirs; tests.
-- [ ] T006 Repoint (D6): after a save, a default change and a project default change; tests.
+- [x] T006 Repoint (D6): after a save, a default change and a project default change; tests.
 
 ## Phase B: copies, checks, restore, attention
 

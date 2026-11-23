@@ -120,6 +120,9 @@ func TestSQLiteBackupRun(t *testing.T) {
 			got.Object != "backups/caravana/whoami/web/"+strings.TrimPrefix(id, "web-")+".sqlite.gz" {
 			t.Errorf("record = %+v", got)
 		}
+		if rec.Destination != "main" || got.Destination != "main" {
+			t.Errorf("destination = %q started, %q settled; want main", rec.Destination, got.Destination)
+		}
 		if b, _ := l.store.GetBackup(ctx, "whoami", old.ID); !b.Expired {
 			t.Error("the backup retention removed isn't marked expired")
 		}
@@ -273,8 +276,8 @@ func TestSQLiteRestoreRun(t *testing.T) {
 			t.Fatalf("running record = %+v", rec)
 		}
 		got := l.settledRestore(rec.ID)
-		if got.Status != store.BackupSucceeded || got.Stopped == nil {
-			t.Errorf("record = %+v, want succeeded with a stop time", got)
+		if got.Status != store.BackupSucceeded || got.Stopped == nil || got.Destination != "main" || rec.Destination != "main" {
+			t.Errorf("record = %+v, want succeeded with a stop time, read from main", got)
 		}
 		if asked["REQUEST"] != id || asked["ACTION"] != "restore-sqlite" || asked["FILE"] != "data/app.db" {
 			t.Errorf("the request = %v", asked)
