@@ -2,10 +2,10 @@
 
 ## Phase A: model and job (pure)
 
-- [ ] T001 `internal/app/build.go`: `Build`, `Defaults()`, `BuiltService()`, `validateBuild` and the URL rule (D1),
+- [x] T001 `internal/app/build.go`: `Build`, `Defaults()`, `BuiltService()`, `validateBuild` and the URL rule (D1),
       the image rule for a built service, one built service per app, the `caravana-` volume prefix; promotion's
       `Changed` takes `build`; table tests.
-- [ ] T002 `internal/nomadjob/build.go`: `BuildSpec`, `BuildJob`, `BuildSourceScript`, `BuildScript`,
+- [x] T002 `internal/nomadjob/build.go`: `BuildSpec`, `BuildJob`, `BuildSourceScript`, `BuildScript`,
       `DefaultBuilderImage`, `DefaultGitImage`, the built-in known hosts (research R2) and `KnownHosts(host, hostKey)`
       (D3, D4); goldens `build-public`, `build-deploy-key`, `build-token`, `build-host-network`, `build-no-cache`;
       script tests under `sh` with fakes.

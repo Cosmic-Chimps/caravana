@@ -316,6 +316,7 @@ func TestValidate(t *testing.T) {
 		}, ""},
 		{"volume name uppercase", func(a *App, d *Deployment) { a.Services[1].Volumes = []Volume{{Name: "Data", Path: "/d"}} }, "services[1].volumes[0].name"},
 		{"volume name with a dot", func(a *App, d *Deployment) { a.Services[1].Volumes = []Volume{{Name: "a.b", Path: "/d"}} }, "services[1].volumes[0].name"},
+		{"volume name with Caravana's prefix", func(a *App, d *Deployment) { a.Services[1].Volumes = []Volume{{Name: "caravana-build", Path: "/d"}} }, "services[1].volumes[0].name"},
 		{"volume path relative", func(a *App, d *Deployment) { a.Services[1].Volumes = []Volume{{Name: "d", Path: "data"}} }, "services[1].volumes[0].path"},
 		{"volume path root", func(a *App, d *Deployment) { a.Services[1].Volumes = []Volume{{Name: "d", Path: "/"}} }, "services[1].volumes[0].path"},
 		{"volume path not clean", func(a *App, d *Deployment) { a.Services[1].Volumes = []Volume{{Name: "d", Path: "/a/../b"}} }, "services[1].volumes[0].path"},

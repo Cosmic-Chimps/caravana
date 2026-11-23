@@ -61,6 +61,10 @@ type Service struct {
 	// Image is the reference the user wrote, e.g. "traefik/whoami:latest".
 	// It is never put in the job: the deployment's resolved digest is.
 	Image string `json:"image"`
+	// Build says the image is built from a Git repository on the host (feature
+	// 050): Image is then the repository the build pushes to, without a tag or
+	// digest. nil means Image already exists.
+	Build *Build `json:"build,omitempty"`
 	// Entrypoint overrides the image's entrypoint: the program and its first
 	// arguments, in full. Empty keeps the image's. Command and Args follow it.
 	Entrypoint []string `json:"entrypoint,omitempty"`

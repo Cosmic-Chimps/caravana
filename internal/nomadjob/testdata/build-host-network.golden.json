@@ -1,0 +1,264 @@
+{
+  "Region": null,
+  "Namespace": null,
+  "ID": "shop_build-3f9a0c1d2e4b",
+  "Name": "shop_build-3f9a0c1d2e4b",
+  "Type": "batch",
+  "Priority": null,
+  "AllAtOnce": null,
+  "Datacenters": [
+    "*"
+  ],
+  "NodePool": null,
+  "Constraints": null,
+  "Affinities": null,
+  "TaskGroups": [
+    {
+      "Name": "build",
+      "Count": 1,
+      "Constraints": null,
+      "Affinities": null,
+      "Tasks": [
+        {
+          "Name": "source",
+          "Driver": "docker",
+          "User": "",
+          "Lifecycle": {
+            "Hook": "prestart",
+            "Sidecar": false
+          },
+          "Config": {
+            "args": [
+              "set -eu\nalloc=$NOMAD_ALLOC_DIR\nsecrets=$NOMAD_SECRETS_DIR\ntdir=$NOMAD_TASK_DIR\ncache=$(printenv BUILD_CACHE || true)\n[ -n \"$cache\" ] || cache=/cache\nsrc=$alloc/data/src\nout=$alloc/data/caravana\n\nsay() { printf '%s %s\\n' 'caravana-build:' \"$1\"; }\nfail() { printf '%s %s\\n' 'caravana-build:' \"$1\" \u003e\u00262; exit 1; }\n\nlimit=$(printenv BUILD_CACHE_MB || true)\nif [ -n \"$limit\" ] \u0026\u0026 [ -d \"$cache\" ]; then\n  used=$(du -sm \"$cache\" 2\u003e/dev/null | cut -f1)\n  [ -n \"$used\" ] || used=0\n  if [ \"$used\" -gt \"$limit\" ]; then\n    say \"the build cache is $used MB, over its $limit MB: emptying it\"\n    rm -rf \"$cache\"/* \"$cache\"/.[!.]* 2\u003e/dev/null || true\n  fi\nfi\n\nrm -rf \"$src\"\nmkdir -p \"$out\"\nchmod 0777 \"$out\"\n\nexport GIT_TERMINAL_PROMPT=0\nhelper=\ncase \"$BUILD_ACCESS\" in\n  public) ;;\n  deploy-key)\n    export GIT_SSH_COMMAND=\"ssh -i $secrets/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile=$tdir/known_hosts -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes\"\n    ;;\n  token) helper=\"store --file=$secrets/git-credentials\" ;;\n  *) fail \"unknown Git access $BUILD_ACCESS\" ;;\nesac\nset -- -c credential.helper= -c protocol.file.allow=never -c protocol.ext.allow=never\n[ -z \"$helper\" ] || set -- \"$@\" -c \"credential.helper=$helper\"\n\nsay \"cloning branch $BUILD_BRANCH of $BUILD_REPOSITORY\"\nif ! git \"$@\" clone --depth 1 --branch \"$BUILD_BRANCH\" --single-branch -- \"$BUILD_REPOSITORY\" \"$src\"; then\n  fail \"the repository could not be read\"\nfi\n\nctx=$src\n[ \"$BUILD_PATH\" = . ] || ctx=$src/$BUILD_PATH\nrel=$BUILD_PATH/$BUILD_DOCKERFILE\n[ \"$BUILD_PATH\" != . ] || rel=$BUILD_DOCKERFILE\n[ -d \"$ctx\" ] || fail \"no folder in the repository at $BUILD_PATH\"\n[ -f \"$ctx/$BUILD_DOCKERFILE\" ] || fail \"no Dockerfile at $rel\"\n\ncommit=$(git -C \"$src\" rev-parse HEAD)\nauthor=$(git -C \"$src\" log -1 --format=%an)\nsubject=$(git -C \"$src\" log -1 --format=%s)\nenc() { printf '%s' \"$1\" | base64 | tr -d '\\n'; }\n{\n  printf 'COMMIT=%s\\n' \"$(enc \"$commit\")\"\n  printf 'AUTHOR=%s\\n' \"$(enc \"$author\")\"\n  printf 'SUBJECT=%s\\n' \"$(enc \"$subject\")\"\n} \u003e \"$out/source.env.tmp\"\nmv \"$out/source.env.tmp\" \"$out/source.env\"\nrm -rf \"$src/.git\"\nsay \"cloned commit $commit\"\n"
+            ],
+            "entrypoint": [
+              "sh",
+              "-c"
+            ],
+            "image": "alpine/git@sha256:29cff25811f790b9f72fc266bf8009a5a911714c0e03c31c47339c50909d9aef",
+            "network_mode": "host"
+          },
+          "Constraints": null,
+          "Affinities": null,
+          "Env": {
+            "BUILD_ACCESS": "public",
+            "BUILD_BRANCH": "main",
+            "BUILD_CACHE_MB": "5120",
+            "BUILD_DOCKERFILE": "Dockerfile",
+            "BUILD_PATH": ".",
+            "BUILD_REPOSITORY": "http://127.0.0.1:8098/app.git"
+          },
+          "Services": null,
+          "Resources": {
+            "CPU": 200,
+            "Cores": null,
+            "MemoryMB": 128,
+            "MemoryMaxMB": null,
+            "DiskMB": null,
+            "Networks": null,
+            "Devices": null,
+            "NUMA": null,
+            "SecretsMB": null,
+            "IOPS": null
+          },
+          "RestartPolicy": null,
+          "Meta": null,
+          "KillTimeout": null,
+          "LogConfig": {
+            "MaxFiles": 2,
+            "MaxFileSizeMB": 1,
+            "Enabled": null,
+            "Disabled": null
+          },
+          "Artifacts": null,
+          "Vault": null,
+          "Consul": null,
+          "Templates": null,
+          "DispatchPayload": null,
+          "VolumeMounts": [
+            {
+              "Volume": "cache",
+              "Destination": "/cache",
+              "ReadOnly": false,
+              "PropagationMode": null,
+              "SELinuxLabel": null
+            }
+          ],
+          "Leader": false,
+          "ShutdownDelay": 0,
+          "KillSignal": "",
+          "Kind": "",
+          "ScalingPolicies": null,
+          "Secrets": null,
+          "Identity": null,
+          "Identities": null,
+          "Actions": null,
+          "Schedule": null
+        },
+        {
+          "Name": "build",
+          "Driver": "docker",
+          "User": "",
+          "Lifecycle": null,
+          "Config": {
+            "args": [
+              "set -eu\nalloc=$NOMAD_ALLOC_DIR\ncache=$(printenv BUILD_CACHE || true)\n[ -n \"$cache\" ] || cache=/cache\nsrc=$alloc/data/src\nout=$alloc/data/caravana\n\nsay() { printf '%s %s\\n' 'caravana-build:' \"$1\"; }\nfail() { printf '%s %s\\n' 'caravana-build:' \"$1\" \u003e\u00262; exit 1; }\n\ncommit=$(sed -n 's/^COMMIT=//p' \"$out/source.env\" | base64 -d)\ncase \"$commit\" in\n  \"\"|*[!0-9a-f]*) fail \"the source task left no commit\" ;;\nesac\ntag=git-$(printf '%s' \"$commit\" | cut -c1-12)\n\nctx=$src\n[ \"$BUILD_PATH\" = . ] || ctx=$src/$BUILD_PATH\ndockerfile=$ctx/$BUILD_DOCKERFILE\noutput=\"type=image,name=$BUILD_IMAGE:$tag,push=true\"\n[ -z \"$(printenv BUILD_INSECURE || true)\" ] || output=\"$output,registry.insecure=true\"\n\nrm -f \"$out/build.json\"\nset -- build --progress=plain --frontend dockerfile.v0 --local \"context=$ctx\" --local \"dockerfile=$(dirname \"$dockerfile\")\" --opt \"filename=$(basename \"$dockerfile\")\" --output \"$output\" --metadata-file \"$out/build.json\"\nif [ -n \"$(printenv BUILD_CACHE_MB || true)\" ]; then\n  [ ! -f \"$cache/index.json\" ] || set -- \"$@\" --import-cache \"type=local,src=$cache\"\n  set -- \"$@\" --export-cache \"type=local,dest=$cache,mode=max\"\nfi\n\nsay \"building $BUILD_IMAGE:$tag\"\nif ! buildctl-daemonless.sh \"$@\"; then\n  fail \"the build failed\"\nfi\ngrep -q containerimage.digest \"$out/build.json\" 2\u003e/dev/null || fail \"the build did not report an image digest\"\nsay \"pushed $BUILD_IMAGE:$tag\"\n"
+            ],
+            "entrypoint": [
+              "sh",
+              "-c"
+            ],
+            "image": "moby/buildkit:v0.26.2-rootless@sha256:0ffa2fcf6b8757c47d569b3ef0f03f9d5eb3b9ff5ce68d858f994f89b749da0c",
+            "network_mode": "host",
+            "security_opt": [
+              "seccomp=unconfined",
+              "apparmor=unconfined"
+            ]
+          },
+          "Constraints": null,
+          "Affinities": null,
+          "Env": {
+            "BUILDKITD_FLAGS": "--oci-worker-no-process-sandbox",
+            "BUILD_CACHE_MB": "5120",
+            "BUILD_DOCKERFILE": "Dockerfile",
+            "BUILD_IMAGE": "127.0.0.1:5001/gate/app",
+            "BUILD_INSECURE": "1",
+            "BUILD_PATH": "."
+          },
+          "Services": null,
+          "Resources": {
+            "CPU": 2000,
+            "Cores": null,
+            "MemoryMB": 2048,
+            "MemoryMaxMB": null,
+            "DiskMB": null,
+            "Networks": null,
+            "Devices": null,
+            "NUMA": null,
+            "SecretsMB": null,
+            "IOPS": null
+          },
+          "RestartPolicy": null,
+          "Meta": null,
+          "KillTimeout": null,
+          "LogConfig": {
+            "MaxFiles": 3,
+            "MaxFileSizeMB": 4,
+            "Enabled": null,
+            "Disabled": null
+          },
+          "Artifacts": null,
+          "Vault": null,
+          "Consul": null,
+          "Templates": null,
+          "DispatchPayload": null,
+          "VolumeMounts": [
+            {
+              "Volume": "cache",
+              "Destination": "/cache",
+              "ReadOnly": false,
+              "PropagationMode": null,
+              "SELinuxLabel": null
+            }
+          ],
+          "Leader": false,
+          "ShutdownDelay": 0,
+          "KillSignal": "",
+          "Kind": "",
+          "ScalingPolicies": null,
+          "Secrets": null,
+          "Identity": null,
+          "Identities": null,
+          "Actions": null,
+          "Schedule": null
+        }
+      ],
+      "Spreads": null,
+      "Volumes": {
+        "cache": {
+          "Name": "cache",
+          "Type": "host",
+          "Source": "shop_caravana-build",
+          "ReadOnly": false,
+          "Sticky": false,
+          "AccessMode": "single-node-single-writer",
+          "AttachmentMode": "file-system",
+          "MountOptions": null,
+          "PerAlloc": false
+        }
+      },
+      "RestartPolicy": {
+        "Interval": null,
+        "Attempts": 0,
+        "Delay": null,
+        "Mode": "fail",
+        "RenderTemplates": null
+      },
+      "Disconnect": null,
+      "ReschedulePolicy": {
+        "Attempts": 0,
+        "Interval": null,
+        "Delay": null,
+        "DelayFunction": null,
+        "MaxDelay": null,
+        "Unlimited": false
+      },
+      "EphemeralDisk": null,
+      "Update": null,
+      "Migrate": null,
+      "Networks": [
+        {
+          "Mode": "host",
+          "Device": "",
+          "CIDR": "",
+          "IP": "",
+          "DNS": null,
+          "ReservedPorts": null,
+          "DynamicPorts": null,
+          "Hostname": "",
+          "MBits": null,
+          "CNI": null
+        }
+      ],
+      "Meta": null,
+      "Services": null,
+      "ShutdownDelay": null,
+      "MaxRunDuration": null,
+      "StopAfterClientDisconnect": null,
+      "MaxClientDisconnect": null,
+      "Scaling": null,
+      "Consul": null,
+      "PreventRescheduleOnLost": null
+    }
+  ],
+  "Update": null,
+  "Multiregion": null,
+  "Spreads": null,
+  "Periodic": null,
+  "ParameterizedJob": null,
+  "Reschedule": null,
+  "Migrate": null,
+  "Meta": {
+    "caravana.app": "shop",
+    "caravana.build": "3f9a0c1d2e4b",
+    "caravana.service": "web"
+  },
+  "UI": null,
+  "Stop": null,
+  "ParentID": null,
+  "Dispatched": false,
+  "DispatchIdempotencyToken": null,
+  "Payload": null,
+  "ConsulNamespace": null,
+  "VaultNamespace": null,
+  "NomadTokenID": null,
+  "Status": null,
+  "StatusDescription": null,
+  "Stable": null,
+  "Version": null,
+  "SubmitTime": null,
+  "CreateIndex": null,
+  "ModifyIndex": null,
+  "JobModifyIndex": null,
+  "VersionTag": null
+}

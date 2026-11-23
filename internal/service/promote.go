@@ -49,7 +49,7 @@ type ServiceChange struct {
 	ImageTo, DigestTo string
 	// Changed names the parts of the service's shape the promotion replaces
 	// with the source's and that differ: any of "entrypoint", "command", "args", "ports",
-	// "health", "volumes", "stopTimeout", "dns", "placement" and "disconnect".
+	// "health", "volumes", "stopTimeout", "dns", "placement", "disconnect" and "build".
 	Changed []string
 }
 
@@ -268,7 +268,7 @@ func (s *Service) planPromotion(ctx context.Context, appID, to string) (promotio
 
 // promoted builds the target as a promotion leaves it, from the target as
 // stored and the source as its newest deployment deployed it (research R4):
-// for each service both have, the source's image, entrypoint, command, arguments, ports,
+// for each service both have, the source's image, build source, entrypoint, command, arguments, ports,
 // health check, volume mounts, stop timeout, DNS and placement rules (they name servers and labels, which
 // belong to the cluster, not to an environment), and the target's everything else (identities
 // included: an audience belongs to an environment, like a secret). A service
@@ -326,6 +326,9 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		if !sameDisconnect(t.Disconnect, s.Disconnect) {
 			change.Changed = append(change.Changed, "disconnect")
 		}
+		if !sameBuild(t.Build, s.Build) {
+			change.Changed = append(change.Changed, "build")
+		}
 		changes = append(changes, change)
 
 		t.Image, t.Command = s.Image, s.Command
@@ -337,6 +340,7 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		t.DNS = cloneDNS(s.DNS)
 		t.Placement = clonePlacement(s.Placement)
 		t.Disconnect = cloneDisconnect(s.Disconnect)
+		t.Build = cloneBuild(s.Build)
 		result.Services = append(result.Services, t)
 	}
 	for _, s := range source.Services {
@@ -446,6 +450,25 @@ func sameDisconnect(a, b *app.Disconnect) bool {
 		y = *b
 	}
 	return x == y
+}
+
+// sameBuild reports whether two services build from the same source, defaults
+// filled in: the same repository, branch, folder, Dockerfile, access and host
+// key. None is its own source.
+func sameBuild(a, b *app.Build) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Defaults() == b.Defaults()
+}
+
+// cloneBuild is a copy of a build source.
+func cloneBuild(b *app.Build) *app.Build {
+	if b == nil {
+		return nil
+	}
+	c := *b
+	return &c
 }
 
 func cloneDisconnect(d *app.Disconnect) *app.Disconnect {

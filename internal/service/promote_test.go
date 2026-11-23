@@ -212,6 +212,50 @@ func TestPromotedTakesTheStopTimeout(t *testing.T) {
 	}
 }
 
+// Feature 050: the build source is part of how the image is made, so a
+// promotion takes the source's, says so when it differs and shares nothing with
+// the source. The deployment's digest is what runs, so nothing is built.
+func TestPromotedTakesTheBuildSource(t *testing.T) {
+	source, target := staging(), production()
+	source.Services[0].Build = &app.Build{Repository: "https://github.com/acme/web.git", Branch: "release"}
+	target.Services[0].Build = &app.Build{Repository: "https://github.com/acme/web.git"}
+
+	got, changes, _, err := promoted(target, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := got.Services[0].Build; b == nil || b.Branch != "release" {
+		t.Errorf("build = %+v, want staging's", b)
+	}
+	if len(changes) != 1 || !slices.Contains(changes[0].Changed, "build") {
+		t.Errorf("changed = %+v, want build among them", changes)
+	}
+	got.Services[0].Build.Branch = "changed"
+	if source.Services[0].Build.Branch != "release" {
+		t.Error("the promoted service shares its build with the source")
+	}
+
+	// The same source with the defaults written or left out: nothing to say.
+	same := &app.Build{Repository: "https://github.com/acme/web.git"}
+	written := same.Defaults()
+	source.Services[0].Build, target.Services[0].Build = &written, same
+	if _, changes, _, _ = promoted(target, source); slices.Contains(changes[0].Changed, "build") {
+		t.Errorf("changed = %v, no build source differs", changes[0].Changed)
+	}
+
+	// Neither builds: nothing to say. Only the target builds: it takes the source's none.
+	_, changes, _, _ = promoted(production(), staging())
+	if slices.Contains(changes[0].Changed, "build") {
+		t.Errorf("changed = %v, no build source differs", changes[0].Changed)
+	}
+	target = production()
+	target.Services[0].Build = same
+	got, changes, _, _ = promoted(target, staging())
+	if got.Services[0].Build != nil || !slices.Contains(changes[0].Changed, "build") {
+		t.Errorf("build = %+v, changed = %v, want none and build changed", got.Services[0].Build, changes[0].Changed)
+	}
+}
+
 func TestPreviewPromotion(t *testing.T) {
 	ctx := context.Background()
 	e := shopEnv(t)

@@ -56,8 +56,9 @@ const (
 //
 // The order is fixed, so the same input always reports the same error:
 //  1. id, name, source.kind, services (at least one)
-//  2. each service in order: name, image, replicas, resources, env, secrets,
-//     identities, dns, placement, scale, ports, domains, health, disconnect, then volumes
+//  2. each service in order: name, image, build, replicas, resources, env, secrets,
+//     identities, dns, placement, scale, ports, domains, health, disconnect, then volumes;
+//     a second built service is refused after the service that comes first
 //  3. deployment: id, trigger, a digest for each service in order, then any
 //     extra digest keys in sorted order
 //
@@ -91,9 +92,16 @@ func ValidateApp(a App) error {
 	hosts := map[string]bool{}    // across the whole app: one host, one router
 	published := map[int]string{} // across the whole app: one published port, one claim
 	volumes := map[string]bool{}  // across the whole app: one volume, one service
+	built := -1                   // the first built service: an app has one
 	for i, svc := range a.Services {
 		if err := validateService(a.ID, i, svc, names, hosts, published); err != nil {
 			return err
+		}
+		if svc.Build != nil {
+			if built >= 0 {
+				return NewFieldError(fmt.Sprintf("services[%d].build", i), "only one service of an app can be built from a repository, and services[%d] already is", built)
+			}
+			built = i
 		}
 		if err := validateVolumes(fmt.Sprintf("services[%d]", i), svc, volumes); err != nil {
 			return err
@@ -271,6 +279,8 @@ func validateVolumes(field string, svc Service, used map[string]bool) error {
 		switch {
 		case !volumeNameRE.MatchString(v.Name):
 			return NewFieldError(f+".name", "%q must be lowercase letters, digits, '-' and '_', starting with a letter or digit, at most 63 characters", v.Name)
+		case strings.HasPrefix(v.Name, ReservedVolumePrefix):
+			return NewFieldError(f+".name", "%q starts with %q, which is Caravana's own prefix for the volumes it keeps for an app", v.Name, ReservedVolumePrefix)
 		case used[v.Name]:
 			return NewFieldError(f+".name", "volume %q is already mounted by another service; each volume belongs to one service", v.Name)
 		case !path.IsAbs(v.Path) || path.Clean(v.Path) != v.Path || v.Path == "/":
@@ -313,6 +323,9 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 	}
 	if strings.ContainsFunc(svc.Image, unicode.IsSpace) {
 		return NewFieldError(field+".image", "must not contain spaces")
+	}
+	if err := validateBuild(field, svc); err != nil {
+		return err
 	}
 
 	if svc.Replicas != nil && *svc.Replicas < 1 {
