@@ -83,7 +83,7 @@ func (s *Service) PinBackup(ctx context.Context, appID, backupID, label string) 
 	if err != nil {
 		return store.BackupRecord{}, err
 	}
-	if b.Status != store.BackupSucceeded || b.Expired {
+	if b.Status != store.BackupSucceeded || b.Gone() {
 		return store.BackupRecord{}, fmt.Errorf("backup %s can't be pinned: it %s: %w", backupID,
 			map[bool]string{true: "was deleted by retention", false: "didn't succeed"}[b.Expired], store.ErrNotFound)
 	}

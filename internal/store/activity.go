@@ -52,6 +52,7 @@ var OpenedProblemKinds = []string{
 	"server_down", "server_certificate_expiring",
 	"scale_at_max",
 	"image_vulnerable",
+	"backup_copy_failed", // a copy of a backup isn't a row of the feed (feature 052)
 }
 
 // ActivityRow is one row of the feed. Which fields are filled depends on

@@ -904,7 +904,7 @@ func (s *server) restoreBackup(w http.ResponseWriter, r *http.Request, session s
 		s.backupsPage(w, r, http.StatusUnprocessableEntity, id, backupsTab{ConfirmErr: backupID})
 		return
 	}
-	_, err := s.svc.Restore(r.Context(), id, backupID)
+	_, err := s.svc.Restore(r.Context(), id, backupID, "")
 	if err == nil {
 		http.Redirect(w, r, "/apps/"+id+"/backups", http.StatusSeeOther)
 		return

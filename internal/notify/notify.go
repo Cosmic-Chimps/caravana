@@ -111,6 +111,10 @@ type Event struct {
 	Advisory       string   `json:"advisory,omitempty"`
 	Severity       string   `json:"severity,omitempty"`
 	Image          string   `json:"image,omitempty"`
+	// Destination is the name of the backup destination of a problem about a backup (feature 052):
+	// where a failed backup was going (backup_failed), or the one a failed copy was going to
+	// (backup_copy_failed), when it opens.
+	Destination string `json:"destination,omitempty"`
 	// Release is the newer Caravana release of a caravana.release event.
 	Release *Release  `json:"release,omitempty"`
 	URL     string    `json:"url,omitempty"` // the console page about it, when its address is known; a caravana.release's is the release page

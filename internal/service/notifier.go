@@ -27,6 +27,14 @@ import (
 // the whole of it stays on the page the link leads to.
 const maxEventDetail = 2000
 
+// toDestination is " to main" for a backup that says where it went, "" for one that doesn't.
+func toDestination(destination string) string {
+	if destination == "" {
+		return ""
+	}
+	return " to " + destination
+}
+
 // consoleLink returns base and path joined, or "" when the console's address is
 // not known (research R6).
 func consoleLink(base, path string) string {
@@ -52,7 +60,7 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 		Project: it.Project, Environment: it.Environment, AppName: it.AppName,
 		Detail: limitDetail(it.Detail), URL: consoleLink(base, problemPath(it.Kind, it.AppID, problemSubject(it))), At: at,
 		Schedule: it.Schedule, ExitCode: it.ExitCode,
-		Domain: it.Domain, AddressSeen: it.AddressSeen, ExpiresAt: it.ExpiresAt, Server: it.Server,
+		Domain: it.Domain, AddressSeen: it.AddressSeen, ExpiresAt: it.ExpiresAt, Server: it.Server, Destination: it.Destination,
 	}
 	if it.Kind == AttentionDiskNearlyFull {
 		ev.Mount, ev.Holds, ev.UsedPercent, ev.FreeBytes, ev.Level =
@@ -80,7 +88,10 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 		ev.Text = fmt.Sprintf("%s of %s %s failing its health check.", copyCount(n), where, verbFor(n, "is", "are"))
 	case AttentionBackupFailed:
 		ev.Title = fmt.Sprintf("%s: the backup of %s failed", it.AppID, it.Service)
-		ev.Text = fmt.Sprintf("The latest backup of %s failed.", where)
+		ev.Text = fmt.Sprintf("The latest backup of %s%s failed.", where, toDestination(it.Destination))
+	case AttentionBackupCopyFailed:
+		ev.Title = fmt.Sprintf("%s: the copy of %s's backup to %s failed", it.AppID, it.Service, it.Destination)
+		ev.Text = fmt.Sprintf("The copy of %s's backup to %s failed.", where, it.Destination)
 	case AttentionRestoreFailed:
 		ev.Title = fmt.Sprintf("%s: the restore of %s failed", it.AppID, it.Service)
 		ev.Text = fmt.Sprintf("The latest restore of %s failed.", where)
@@ -261,7 +272,7 @@ func problemPath(kind AttentionKind, appID, subject string) string {
 		return "/settings/backup-storage"
 	case AttentionDeployFailed:
 		return deploymentPath(appID, subject)
-	case AttentionBackupFailed, AttentionRestoreFailed:
+	case AttentionBackupFailed, AttentionBackupCopyFailed, AttentionRestoreFailed:
 		return "/apps/" + url.PathEscape(appID) + "/backups"
 	case AttentionScheduleFailed, AttentionScheduleSkipping:
 		return "/schedules#schedule-" + subject
@@ -403,6 +414,9 @@ func problemKey(it AttentionItem) string {
 // server is in the key's service place, problemKey), the server of the server
 // kinds, else nothing.
 func problemSubject(it AttentionItem) string {
+	if it.Kind == AttentionBackupCopyFailed {
+		return it.Destination // one problem per destination a service copies to
+	}
 	if it.Kind == AttentionDiskNearlyFull {
 		return it.Mount
 	}

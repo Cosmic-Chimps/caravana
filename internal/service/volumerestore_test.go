@@ -77,7 +77,7 @@ func TestVolumeRestoreRun(t *testing.T) {
 		l.render(id)
 		inRestart, release := l.blockRestart(id, "status=succeeded\nmessage=\n")
 
-		rec, err := l.svc.Restore(ctx, "whoami", backupID)
+		rec, err := l.svc.Restore(ctx, "whoami", backupID, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +123,7 @@ func TestVolumeRestoreRun(t *testing.T) {
 		id := l.id(0)
 		l.render(id)
 		l.answer(id, "status=failed\nmessage=download of logs: object not found\n")
-		rec, err := l.svc.Restore(ctx, "whoami", backupID)
+		rec, err := l.svc.Restore(ctx, "whoami", backupID, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -145,7 +145,7 @@ func TestVolumeRestoreRun(t *testing.T) {
 		backupID := l.saveBackupToRestore()
 		l.svc.volume.limit = 20 * time.Millisecond
 		l.render(l.id(0))
-		rec, err := l.svc.Restore(ctx, "whoami", backupID)
+		rec, err := l.svc.Restore(ctx, "whoami", backupID, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -165,7 +165,7 @@ func TestVolumeRestoreRun(t *testing.T) {
 		l := newVolumeLab(t) // nothing renders the request before the restart
 		backupID := l.saveBackupToRestore()
 		l.answer(l.id(0), "status=succeeded\n")
-		rec, err := l.svc.Restore(ctx, "whoami", backupID)
+		rec, err := l.svc.Restore(ctx, "whoami", backupID, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -185,7 +185,7 @@ func TestVolumeRestoreRun(t *testing.T) {
 		l := newVolumeLab(t)
 		backupID := l.saveBackupToRestore()
 		l.nomad.SetCopies("whoami")
-		if _, err := l.svc.Restore(ctx, "whoami", backupID); !errors.Is(err, ErrNoRunningCopy) {
+		if _, err := l.svc.Restore(ctx, "whoami", backupID, ""); !errors.Is(err, ErrNoRunningCopy) {
 			t.Fatalf("Restore = %v, want ErrNoRunningCopy", err)
 		}
 		if restores, _ := l.store.ListRestores(ctx, "whoami", 0); len(restores) != 0 {
@@ -204,7 +204,7 @@ func TestVolumeRestoreRun(t *testing.T) {
 			if err := l.store.SaveBackup(ctx, rec); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := l.svc.Restore(ctx, "whoami", rec.ID); !errors.Is(err, store.ErrNotFound) {
+			if _, err := l.svc.Restore(ctx, "whoami", rec.ID, ""); !errors.Is(err, store.ErrNotFound) {
 				t.Errorf("Restore of %s = %v, want ErrNotFound", rec.ID, err)
 			}
 		}
@@ -219,12 +219,12 @@ func TestVolumeRestoreRun(t *testing.T) {
 		id := l.id(0)
 		l.render(id)
 		inRestart, release := l.blockRestart(id, "status=succeeded\n")
-		if _, err := l.svc.Restore(ctx, "whoami", backupID); err != nil {
+		if _, err := l.svc.Restore(ctx, "whoami", backupID, ""); err != nil {
 			t.Fatal(err)
 		}
 		<-inRestart
 		done := make(chan error, 1)
-		go func() { _, err := l.svc.Restore(ctx, "whoami", backupID); done <- err }()
+		go func() { _, err := l.svc.Restore(ctx, "whoami", backupID, ""); done <- err }()
 		select {
 		case err := <-done:
 			if !errors.Is(err, ErrBackupRunning) {
@@ -252,7 +252,7 @@ func TestVolumeRestoreRun(t *testing.T) {
 			t.Fatal(err)
 		}
 		<-inRestart
-		if _, err := l.svc.Restore(ctx, "whoami", backupID); !errors.Is(err, ErrBackupRunning) {
+		if _, err := l.svc.Restore(ctx, "whoami", backupID, ""); !errors.Is(err, ErrBackupRunning) {
 			t.Errorf("Restore during a backup = %v, want ErrBackupRunning", err)
 		}
 		release()
@@ -274,7 +274,7 @@ func TestVolumeRestoreRun(t *testing.T) {
 		// The fake clock hasn't moved: the restore's request moves on a second.
 		l.render(l.id(1))
 		l.answer(l.id(1), "status=succeeded\n")
-		rec, err := l.svc.Restore(ctx, "whoami", backupID)
+		rec, err := l.svc.Restore(ctx, "whoami", backupID, "")
 		if err != nil {
 			t.Fatal(err)
 		}

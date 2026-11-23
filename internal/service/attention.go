@@ -22,11 +22,14 @@ type AttentionKind string
 
 // The kinds of item on the needs-you list.
 const (
-	AttentionDeployFailed        AttentionKind = "deploy_failed"         // the latest deployment failed or was reverted
-	AttentionOutOfMemory         AttentionKind = "out_of_memory"         // a copy was killed for passing its memory ceiling
-	AttentionRestarting          AttentionKind = "restarting"            // a copy keeps restarting
-	AttentionUnhealthy           AttentionKind = "unhealthy"             // a copy fails its health check, outside a rollout
-	AttentionBackupFailed        AttentionKind = "backup_failed"         // a service's newest backup failed
+	AttentionDeployFailed AttentionKind = "deploy_failed" // the latest deployment failed or was reverted
+	AttentionOutOfMemory  AttentionKind = "out_of_memory" // a copy was killed for passing its memory ceiling
+	AttentionRestarting   AttentionKind = "restarting"    // a copy keeps restarting
+	AttentionUnhealthy    AttentionKind = "unhealthy"     // a copy fails its health check, outside a rollout
+	AttentionBackupFailed AttentionKind = "backup_failed" // a service's newest backup failed
+	// AttentionBackupCopyFailed: the newest finished copy of a service's backup to a destination failed
+	// (feature 052): a warning, resolved by a later copy that succeeds.
+	AttentionBackupCopyFailed    AttentionKind = "backup_copy_failed"
 	AttentionRestoreFailed       AttentionKind = "restore_failed"        // a service's newest restore failed
 	AttentionNoBackupDestination AttentionKind = "no_backup_destination" // backups are asked for and nowhere to put them
 	AttentionScheduleFailed      AttentionKind = "schedule_failed"       // a schedule's newest real run failed (feature 022)
@@ -97,6 +100,10 @@ type AttentionItem struct {
 	// ExitCode is a failed run's exit code, when it exited with one
 	// (schedule_failed). Notifications carry it; the API's item doesn't.
 	ExitCode *int
+	// Destination is the backup destination of backup_failed (where the failed backup was going; ""
+	// for a record from before destinations had names) and of backup_copy_failed (the destination the
+	// failed copy was going to), feature 052.
+	Destination string
 	// Domain is the host of the domain kinds (feature 023); Service is then
 	// the service it goes to. AddressSeen is, for domain_dns_elsewhere, the
 	// first address its DNS gave that isn't this host's; ExpiresAt is, for
@@ -259,6 +266,11 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 		return Attention{}, fmt.Errorf("attention: %w", err)
 	}
 	out.Items = append(out.Items, scaleItems...)
+	copyItems, err := s.backupCopyItems(ctx, apps)
+	if err != nil {
+		return Attention{}, fmt.Errorf("attention: %w", err)
+	}
+	out.Items = append(out.Items, copyItems...)
 	scanItems, scansOff, err := s.scanItems(ctx, apps)
 	if err != nil {
 		return Attention{}, fmt.Errorf("attention: %w", err)
@@ -539,7 +551,7 @@ func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.
 		rec, ok := known[b.AppID]
 		if ok && b.Status == store.BackupFailed && keepsBackups(rec, b.Service) {
 			out.Items = append(out.Items, AttentionItem{
-				Kind: AttentionBackupFailed, AppID: b.AppID, Service: b.Service,
+				Kind: AttentionBackupFailed, AppID: b.AppID, Service: b.Service, Destination: b.Destination,
 				When: finishedOr(b.FinishedAt, b.StartedAt), Detail: b.Message,
 			})
 		}

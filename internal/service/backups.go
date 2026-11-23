@@ -154,7 +154,8 @@ func (s *Service) ListBackups(ctx context.Context, appID string) ([]store.Backup
 	if err != nil {
 		return nil, nil, err
 	}
-	live := slices.DeleteFunc(all, func(b store.BackupRecord) bool { return b.Expired })
+	// A backup is listed while any place holds it: its own destination or a copy.
+	live := slices.DeleteFunc(all, func(b store.BackupRecord) bool { return b.Gone() })
 	restores, err := s.store.ListRestores(ctx, appID, 20)
 	if err != nil {
 		return nil, nil, err
@@ -270,44 +271,44 @@ func (s *Service) backupBusy(ctx context.Context, appID string, svc app.Service)
 }
 
 // Restore loads a backup into the running service. Only a succeeded backup
-// still in the destination can be restored, one backup or restore per service
+// still in one of its places can be restored, one backup or restore per service
 // at a time. It is the owner's restore: the record says so.
+//
+// from names the destination to read from (a *app.FieldError on "from" when the
+// backup isn't there). Without it a backup in one place is read from there, and
+// one in several is looked for with a check job, in the order its own
+// destination, then its copies; ErrBackupMissing says none still has it.
 //
 // A dump engine's restore is a Nomad job that loads the dump into the running
 // database. A volume restore restarts the service's own copy and stops the
 // service while its volumes are replaced with the archives' files (see
 // startVolumeRestore), which can also be ErrNoRunningCopy.
-func (s *Service) Restore(ctx context.Context, appID, backupID string) (store.RestoreRecord, error) {
+func (s *Service) Restore(ctx context.Context, appID, backupID, from string) (store.RestoreRecord, error) {
 	b, err := s.store.GetBackup(ctx, appID, backupID)
 	if err != nil {
 		return store.RestoreRecord{}, err
 	}
-	if b.Status != store.BackupSucceeded || b.Expired {
+	if b.Status != store.BackupSucceeded || b.Gone() {
 		return store.RestoreRecord{}, fmt.Errorf("backup %s can't be restored: it %s: %w", backupID, map[bool]string{true: "was deleted by retention", false: "didn't succeed"}[b.Expired], store.ErrNotFound)
 	}
-	return s.restoreBackup(ctx, appID, b, store.RestoreTriggerOwner, "")
+	return s.restoreBackup(ctx, appID, b, store.RestoreTriggerOwner, "", from)
 }
 
-// restoreBackup starts the restore of b, a succeeded backup that is still in
-// the destination, into its running service, and records it with trigger (the
+// restoreBackup starts the restore of b, a succeeded backup that is still in one
+// of its places, into its running service, and records it with trigger (the
 // owner's, or the service's restore schedule's, for which label is the one it
-// asked for; "" otherwise). It is what Restore and the restore clock share, so
-// a scheduled restore does exactly what the owner's does. The errors include
-// ErrAppStopped, ErrNoBackupDestination, ErrBackupRunning, ErrNoRunningCopy and
-// Nomad's.
-func (s *Service) restoreBackup(ctx context.Context, appID string, b store.BackupRecord, trigger, label string) (store.RestoreRecord, error) {
+// asked for; "" otherwise). from names the place to read from, "" for the first
+// place that has it. It is what Restore and the restore clock share, so a
+// scheduled restore does exactly what the owner's does. The errors include
+// ErrAppStopped, ErrNoBackupDestination, ErrBackupRunning, ErrNoRunningCopy,
+// ErrBackupMissing and Nomad's.
+func (s *Service) restoreBackup(ctx context.Context, appID string, b store.BackupRecord, trigger, label, from string) (store.RestoreRecord, error) {
 	_, svc, err := s.backedUpService(ctx, appID, b.Service)
 	if err != nil {
 		return store.RestoreRecord{}, err
 	}
 	if err := s.refuseIfStopped(ctx, appID); err != nil {
 		return store.RestoreRecord{}, err
-	}
-	dest, ok, err := s.destinationFor(ctx, appID, *svc.Backup)
-	if err != nil {
-		return store.RestoreRecord{}, err
-	} else if !ok {
-		return store.RestoreRecord{}, ErrNoBackupDestination
 	}
 	if b.Engine != svc.Backup.Engine {
 		return store.RestoreRecord{}, fmt.Errorf("backup %s was made by the %s engine, and the service now backs up with %s: %w",
@@ -318,11 +319,15 @@ func (s *Service) restoreBackup(ctx context.Context, appID string, b store.Backu
 	} else if busy {
 		return store.RestoreRecord{}, ErrBackupRunning
 	}
+	place, source, err := s.chooseRestorePlace(ctx, appID, b, svc, from)
+	if err != nil {
+		return store.RestoreRecord{}, err
+	}
 	if hasVolumeBackup(svc) {
-		return s.startVolumeRestore(ctx, appID, b, trigger, label)
+		return s.startVolumeRestore(ctx, appID, b, place, trigger, label)
 	}
 	if hasSQLiteBackup(svc) {
-		return s.startSQLiteRestore(ctx, appID, b, trigger, label)
+		return s.startSQLiteRestore(ctx, appID, b, place, trigger, label)
 	}
 	image, err := s.runningImage(ctx, appID, b.Service)
 	if err != nil {
@@ -332,12 +337,12 @@ func (s *Service) restoreBackup(ctx context.Context, appID string, b store.Backu
 	if err != nil {
 		return store.RestoreRecord{}, err
 	}
-	if err := s.deployer.Restore(ctx, appID, svc, image, b.Object, private); err != nil {
+	if err := s.deployer.Restore(ctx, appID, svc, image, place.Object, private, source); err != nil {
 		return store.RestoreRecord{}, err
 	}
 	r := store.RestoreRecord{ID: strings.ToLower(rand.Text()), AppID: appID, Service: b.Service, BackupID: b.ID,
 		Engine: svc.Backup.Engine, Status: store.BackupRunning, CreatedAt: time.Now().UTC(), Trigger: trigger, Pin: label,
-		Destination: dest.Name}
+		Destination: place.Destination}
 	if err := s.store.SaveRestore(ctx, r); err != nil {
 		return store.RestoreRecord{}, err
 	}
@@ -405,6 +410,7 @@ func (s *Service) recordBackups(ctx context.Context) {
 		s.recordApp(ctx, rec.App)
 	}
 	s.recordRestores(ctx)
+	s.copyPass(ctx)
 }
 
 // expiredRecordID is the ID of the record of the backup file that retention
@@ -462,6 +468,8 @@ func (s *Service) recordApp(ctx context.Context, a app.App) {
 			if err := s.store.ExpireBackups(ctx, a.ID, expired); err != nil {
 				s.log.Warn("record backups: expire", "app", a.ID, "error", err)
 			}
+			// A backup that first shows up as succeeded gets its copies queued.
+			s.queueCopies(ctx, r)
 		}
 	}
 	if changed {

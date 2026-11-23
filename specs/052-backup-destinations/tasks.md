@@ -21,18 +21,18 @@
 
 ## Phase B: copies, checks, restore, attention
 
-- [ ] T007 `internal/nomadjob/backupcopy.go` and `backupcheck.go` (D8, D9): IDs, jobs, scripts; goldens
+- [x] T007 `internal/nomadjob/backupcopy.go` and `backupcheck.go` (D8, D9): IDs, jobs, scripts; goldens
       `backup-copy-file`, `backup-copy-dir`, `backup-check-test`, `backup-check-locate`; script tests under a real `sh`
       with a fake rclone (copy file and dir, retention with pins and a bad pin list, empty copy, check test ok and each
       failed step, locate found/missing/unreachable).
-- [ ] T008 `internal/deploy`: `StartBackupCopy`, `BackupCopyOutcome`, `PurgeBackupCopy`, `CheckBackupPlaces`;
+- [x] T008 `internal/deploy`: `StartBackupCopy`, `BackupCopyOutcome`, `PurgeBackupCopy`, `CheckBackupPlaces`;
       `deploytest` fakes; tests (keys only in the job's variable, purged afterwards; redaction).
-- [ ] T009 `internal/service/backupcopies.go` (D7): queue on success for all three run kinds, the pass (settle, start,
+- [x] T009 `internal/service/backupcopies.go` (D7): queue on success for all three run kinds, the pass (settle, start,
       limits, failures), events wake; tests with the fakes, including a restart with running and pending rows.
-- [ ] T010 Test (D10) and restore from a place (D11) for the dump, volume and sqlite engines; `ListBackups` and
+- [x] T010 Test (D10) and restore from a place (D11) for the dump, volume and sqlite engines; `ListBackups` and
       pinning with places; tests (locate picks the copy when the primary is missing and marks it expired there;
       `from`; `backup_missing`).
-- [ ] T011 Attention and notifications (D12): `backup_copy_failed`, the destination in `backup_failed`,
+- [x] T011 Attention and notifications (D12): `backup_copy_failed`, the destination in `backup_failed`,
       `ProblemParts`, `notify.Event.Destination`; the words test walks the new kind.
 
 ## Phase C: API

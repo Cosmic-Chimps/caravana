@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 )
 
 // Nomad's event stream (deploy.FollowEvents) is how Caravana learns that
@@ -65,7 +66,7 @@ func (s *Service) onEvents(b deploy.EventBatch) {
 		switch {
 		case strings.Contains(id, "_run-"):
 			s.wakes.wake(runsKey)
-		case strings.Contains(id, "_backup"), strings.Contains(id, "_restore"):
+		case strings.Contains(id, "_backup"), strings.Contains(id, "_restore"), strings.Contains(id, nomadjob.BackupCopyJobMarker):
 			s.wakes.wake(backupsKey)
 		case strings.Contains(id, "_build-"):
 			s.wakes.wake(buildJobsKey)

@@ -366,7 +366,7 @@ func TestOwnerRestoreIsRecordedAsTheOwners(t *testing.T) {
 	id := l.id(0)
 	l.render(id)
 	l.answer(id, "status=succeeded\nmessage=\n")
-	rec, err := l.svc.Restore(ctx, "whoami", backupID)
+	rec, err := l.svc.Restore(ctx, "whoami", backupID, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -646,7 +646,7 @@ func TestStoppedAppRefusesDeploys(t *testing.T) {
 				Engine: app.BackupPostgres, Status: store.BackupSucceeded, Object: "b/x.dump", StartedAt: time.Now()}); err != nil {
 				return err
 			}
-			_, err := e.svc.Restore(ctx, productionID, "web-1")
+			_, err := e.svc.Restore(ctx, productionID, "web-1", "")
 			return err
 		},
 	}

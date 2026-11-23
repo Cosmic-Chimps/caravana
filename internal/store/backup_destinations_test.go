@@ -273,17 +273,30 @@ func TestBackupCopies(t *testing.T) {
 		t.Errorf("open = %+v, want offsite only", open)
 	}
 
-	// The newest copy per service and destination: db-2's replaces db-1's.
+	// The newest finished copy per service and destination. db-1's offsite copy is still pending, so
+	// only cold's counts; a later failed copy of db-2 to offsite then replaces the missing one, and
+	// a still-pending newer copy never hides it.
+	latest, err := s.LatestBackupCopies(ctx)
+	if err != nil || len(latest) != 1 || latest[0].Destination != "cold" || latest[0].Status != CopySucceeded {
+		t.Fatalf("latest = %+v, %v; want only cold's finished copy", latest, err)
+	}
 	if err := s.QueueBackupCopies(ctx, "notes", "db-2", []string{"offsite"}); err != nil {
 		t.Fatal(err)
 	}
-	latest, err := s.LatestBackupCopies(ctx)
-	if err != nil || len(latest) != 2 {
+	if err := s.SaveBackupCopy(ctx, BackupCopy{AppID: "notes", BackupID: "db-2", Destination: "offsite", Status: CopyFailed,
+		Message: "boom", FinishedAt: &finished}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveBackupCopy(ctx, BackupCopy{AppID: "notes", BackupID: "db-1", Destination: "offsite", Status: CopySucceeded,
+		Object: "o", FinishedAt: &finished}); err != nil {
+		t.Fatal(err)
+	}
+	if latest, err = s.LatestBackupCopies(ctx); err != nil || len(latest) != 2 {
 		t.Fatalf("latest = %+v, %v; want one per destination", latest, err)
 	}
 	for _, c := range latest {
-		if c.Destination == "offsite" && c.BackupID != "db-2" {
-			t.Errorf("latest offsite copy is of %s, want db-2", c.BackupID)
+		if c.Destination == "offsite" && (c.BackupID != "db-2" || c.Status != CopyFailed || c.Message != "boom") {
+			t.Errorf("latest offsite copy = %+v, want db-2's failure", c)
 		}
 	}
 

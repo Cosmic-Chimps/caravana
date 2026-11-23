@@ -164,13 +164,15 @@ func (s *Store) ExpireBackupCopies(ctx context.Context, appID, destination strin
 }
 
 // LatestBackupCopies returns, for every app, service and destination, the
-// newest copy (by when it was queued, ties by backup ID), for the needs-you list.
+// newest copy that finished, succeeded or failed (by when it was queued, ties by
+// backup ID), for the needs-you list: a copy still waiting or running doesn't
+// hide the failure before it, and a later success is what resolves it.
 func (s *Store) LatestBackupCopies(ctx context.Context) ([]BackupCopy, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+copyColumns+` FROM (
 			SELECT c.*, ROW_NUMBER() OVER (PARTITION BY c.app_id, b.service, c.destination
 				ORDER BY c.created_at DESC, c.backup_id DESC) AS n
-			`+copyFrom+`) c
+			`+copyFrom+` WHERE c.status IN ('succeeded', 'failed')) c
 		JOIN backups b ON b.app_id = c.app_id AND b.id = c.backup_id
 		WHERE c.n = 1 ORDER BY c.app_id, b.service, c.destination`)
 	if err != nil {

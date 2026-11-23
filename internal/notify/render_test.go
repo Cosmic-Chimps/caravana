@@ -516,6 +516,33 @@ func TestRenderServerProblem(t *testing.T) {
 	}
 }
 
+// A problem about a backup names its destination in the webhook's JSON (feature 052), and an event of
+// another kind has no "destination".
+func TestRenderBackupDestination(t *testing.T) {
+	now := time.Date(2026, 11, 23, 3, 0, 1, 0, time.UTC)
+	render := func(ev Event) map[string]any {
+		req, err := Render(Channel{Kind: KindWebhook, Address: "https://hooks.example.com/x", Secret: "s"}, ev, "ndl_1", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := io.ReadAll(req.Body)
+		var body map[string]any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+	ev := Event{Type: EventProblemOpened, Kind: "backup_copy_failed", AppID: "blog", Service: "db", Destination: "offsite",
+		Title: "blog: the copy of db's backup to offsite failed", Text: "The copy of blog/db's backup to offsite failed.", At: now}
+	if body := render(ev); body["destination"] != "offsite" || body["kind"] != "backup_copy_failed" {
+		t.Errorf("webhook body = %v", body)
+	}
+	ev.Destination, ev.Kind = "", "backup_failed"
+	if body := render(ev); body["destination"] != nil {
+		t.Errorf("an event with no destination has one: %v", body)
+	}
+}
+
 // An image_vulnerable problem says its sentence in every channel, and the webhook's JSON has the
 // package facts (and none of them on an event of another kind).
 func TestRenderImageVulnerable(t *testing.T) {

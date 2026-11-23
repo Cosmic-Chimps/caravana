@@ -125,7 +125,12 @@ func ProblemParts(it AttentionItem, display func(string) string) []TextPart {
 	case AttentionUnhealthy:
 		return parts(copyCount(n)+" of ", where, " "+verbFor(n, "is", "are")+" failing its health check.")
 	case AttentionBackupFailed:
+		if it.Destination != "" {
+			return parts("The latest backup of ", where, " to ", mono(it.Destination), " failed.")
+		}
 		return parts("The latest backup of ", where, " failed.")
+	case AttentionBackupCopyFailed:
+		return parts("The copy of ", where, "'s backup to ", mono(it.Destination), " failed.")
 	case AttentionRestoreFailed:
 		return parts("The latest restore of ", where, " failed.")
 	case AttentionNoBackupDestination:
@@ -187,7 +192,7 @@ func ProblemParts(it AttentionItem, display func(string) string) []TextPart {
 // from attention.go and fails when this list misses one.
 var AttentionKinds = []AttentionKind{
 	AttentionDeployFailed, AttentionOutOfMemory, AttentionRestarting, AttentionUnhealthy,
-	AttentionBackupFailed, AttentionRestoreFailed, AttentionNoBackupDestination,
+	AttentionBackupFailed, AttentionBackupCopyFailed, AttentionRestoreFailed, AttentionNoBackupDestination,
 	AttentionScheduleFailed, AttentionScheduleSkipping,
 	AttentionDomainDNSElsewhere, AttentionDomainCertExpiring,
 	AttentionDiskNearlyFull, AttentionOSRebootRequired, AttentionOSSecurityUpdates,

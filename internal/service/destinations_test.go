@@ -375,7 +375,7 @@ func TestBackupRecordsTheDestination(t *testing.T) {
 	}
 
 	// A restore records where it read from.
-	r, err := e.svc.Restore(ctx, "whoami", second.ID)
+	r, err := e.svc.Restore(ctx, "whoami", second.ID, "")
 	if err != nil || r.Destination != "main" {
 		t.Errorf("Restore = %+v, %v; want destination main", r, err)
 	}

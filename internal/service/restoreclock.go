@@ -115,7 +115,7 @@ func (s *Service) scheduledRestore(ctx context.Context, rec store.AppRecord, svc
 		// Nothing is recorded: the slot is still owed, and the next pass tries again.
 		s.log.Warn("scheduled restore: read the pinned backup", "app", appID, "service", svc.Name, "label", label, "error", err)
 		return
-	case b.Expired || b.Status != store.BackupSucceeded:
+	case b.Gone() || b.Status != store.BackupSucceeded:
 		refuse(b.ID, store.BackupFailed, fmt.Sprintf(restoreExpiredPin, label))
 		return
 	case b.Engine != svc.Backup.Engine:
@@ -123,7 +123,7 @@ func (s *Service) scheduledRestore(ctx context.Context, rec store.AppRecord, svc
 		return
 	}
 
-	started, err := s.restoreBackup(ctx, appID, b, store.RestoreTriggerSchedule, label)
+	started, err := s.restoreBackup(ctx, appID, b, store.RestoreTriggerSchedule, label, "")
 	switch {
 	case err == nil:
 		s.log.Info("scheduled restore started", "app", appID, "service", svc.Name, "label", label, "backup", b.ID,
@@ -171,7 +171,7 @@ func (s *Service) restoreLabelWarnings(ctx context.Context, a app.App) []app.War
 		}
 		label := svc.Backup.Restore.From
 		b, err := s.store.PinnedBackup(ctx, a.ID, svc.Name, label)
-		if err == nil && !b.Expired {
+		if err == nil && !b.Gone() {
 			continue
 		}
 		if err != nil && !errors.Is(err, store.ErrNotFound) {

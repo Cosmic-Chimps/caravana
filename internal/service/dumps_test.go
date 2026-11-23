@@ -81,14 +81,14 @@ func TestDumpEngineBackupsAndRestores(t *testing.T) {
 			})
 
 			// A restore of the newest one is a job of the engine, recorded with it.
-			r, err := e.svc.Restore(ctx, "whoami", second.ID)
+			r, err := e.svc.Restore(ctx, "whoami", second.ID, "")
 			if err != nil || r.Engine != tc.engine || r.Status != store.BackupRunning {
 				t.Fatalf("Restore = %+v, %v", r, err)
 			}
 			if rj := e.nomad.Job("whoami_web_restore"); rj == nil || rj.Meta["backup_key"] != "backups/caravana/whoami/web/2"+tc.ext {
 				t.Fatalf("restore job = %+v", rj)
 			}
-			if _, err := e.svc.Restore(ctx, "whoami", second.ID); !errors.Is(err, ErrBackupRunning) {
+			if _, err := e.svc.Restore(ctx, "whoami", second.ID, ""); !errors.Is(err, ErrBackupRunning) {
 				t.Errorf("a second restore = %v, want ErrBackupRunning", err)
 			}
 			e.nomad.FinishRun("whoami_web_restore", false, "restore", "", "the image has no mongorestore\n")
@@ -209,7 +209,7 @@ func TestRestoreRefusesAnotherDumpEngine(t *testing.T) {
 	if err := e.store.SaveBackup(ctx, done); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Restore(ctx, "whoami", "web-1"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := e.svc.Restore(ctx, "whoami", "web-1", ""); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Restore of a postgres dump into a mysql service = %v, want ErrNotFound", err)
 	}
 }

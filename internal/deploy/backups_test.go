@@ -246,6 +246,33 @@ func TestSyncBackupsPerServiceDestination(t *testing.T) {
 	}
 }
 
+// A restore reads from the destination it is given, whatever the backup job's variable
+// points at now: the restore's own copy of the variable gets the source's keys.
+func TestRestoreFromAnotherDestination(t *testing.T) {
+	ctx := context.Background()
+	d, _, nomad := newTestDeployer(t)
+	a := backedUp()
+	if err := d.SyncBackups(ctx, a, map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:]},
+		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, destsOf(a, testDest), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	offsite := BackupDestination{Name: "offsite", Endpoint: "https://s3.example.com", Region: "eu", Bucket: "second", AccessKeyID: "AK2", SecretAccessKey: "SK2"}
+	if err := d.Restore(ctx, "shop", a.Services[0], "postgres@sha256:"+whoamiDigest[7:], "second/shop/db/1.dump", nil, offsite); err != nil {
+		t.Fatal(err)
+	}
+	v := nomad.Variable("nomad/jobs/shop_db_restore")
+	if v["RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY"] != "SK2" || v["RCLONE_CONFIG_DEST_ENDPOINT"] != "https://s3.example.com" || v["PGPASSWORD"] != "pw" {
+		t.Errorf("restore variable = %v, want offsite's keys and the database's login", v)
+	}
+	if job := nomad.Job("shop_db_restore"); job.Meta["backup_key"] != "second/shop/db/1.dump" {
+		t.Errorf("restore job meta = %v", job.Meta)
+	}
+	// The backup job's own variable still points at main.
+	if v := nomad.Variable("nomad/jobs/shop_db_backup"); v["RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY"] != "SK" {
+		t.Errorf("backup variable = %v, want it untouched", v)
+	}
+}
+
 func TestRestoreJob(t *testing.T) {
 	ctx := context.Background()
 	d, _, nomad := newTestDeployer(t)
@@ -254,7 +281,7 @@ func TestRestoreJob(t *testing.T) {
 		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, destsOf(a, testDest), nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Restore(ctx, "shop", a.Services[0], "postgres@sha256:"+whoamiDigest[7:], "backups/caravana/shop/db/1.dump", nil); err != nil {
+	if err := d.Restore(ctx, "shop", a.Services[0], "postgres@sha256:"+whoamiDigest[7:], "backups/caravana/shop/db/1.dump", nil, testDest); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
 	if v := nomad.Variable("nomad/jobs/shop_db_restore"); v["PGPASSWORD"] != "pw" {
@@ -352,7 +379,7 @@ func TestDumpEngineBackupsAndRestore(t *testing.T) {
 			}
 
 			// A restore gets its own copy of the variable, and a job of its engine.
-			if err := d.Restore(ctx, "shop", a.Services[0], tc.image, tc.object, nil); err != nil {
+			if err := d.Restore(ctx, "shop", a.Services[0], tc.image, tc.object, nil, testDest); err != nil {
 				t.Fatalf("Restore: %v", err)
 			}
 			if v := nomad.Variable("nomad/jobs/shop_db_restore"); v["DB_PASSWORD"] != "pw-marker" || v["DB_USER"] != "root" {

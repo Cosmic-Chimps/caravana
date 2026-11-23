@@ -246,7 +246,7 @@ func TestPrivateBackupAndRestore(t *testing.T) {
 
 	// The restore job reads its own copy, with the pull credentials of the
 	// image it restores with.
-	if err := d.Restore(ctx, "shop", a.Services[0], digests["db"], "backups/1.dump", privHosts); err != nil {
+	if err := d.Restore(ctx, "shop", a.Services[0], digests["db"], "backups/1.dump", privHosts, testDest); err != nil {
 		t.Fatalf("Restore() = %v", err)
 	}
 	r := nomad.Variable("nomad/jobs/shop_db_restore")

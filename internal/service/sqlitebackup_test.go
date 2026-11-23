@@ -268,7 +268,7 @@ func TestSQLiteRestoreRun(t *testing.T) {
 			l.nomad.WriteAllocFile(copyID, "alloc/data/caravana/"+id+".result", "status=succeeded\nmessage=\n")
 		})
 
-		rec, err := l.svc.Restore(ctx, "whoami", b.ID)
+		rec, err := l.svc.Restore(ctx, "whoami", b.ID, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -315,7 +315,7 @@ func TestSQLiteRestoreRun(t *testing.T) {
 			r := l.sqliteOK(l.id(0))
 			tt.replies(&r)
 			l.onSQLite(r)
-			rec, err := l.svc.Restore(ctx, "whoami", b.ID)
+			rec, err := l.svc.Restore(ctx, "whoami", b.ID, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -340,7 +340,7 @@ func TestSQLiteRestoreRun(t *testing.T) {
 		if err := l.store.SaveBackup(ctx, b); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := l.svc.Restore(ctx, "whoami", b.ID); !errors.Is(err, store.ErrNotFound) {
+		if _, err := l.svc.Restore(ctx, "whoami", b.ID, ""); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("Restore = %v, want ErrNotFound", err)
 		}
 	})

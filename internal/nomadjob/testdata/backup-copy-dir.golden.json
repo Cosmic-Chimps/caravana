@@ -1,0 +1,173 @@
+{
+  "Region": null,
+  "Namespace": null,
+  "ID": "shop_db_copy-0123456789ab",
+  "Name": "shop_db_copy-0123456789ab",
+  "Type": "batch",
+  "Priority": null,
+  "AllAtOnce": null,
+  "Datacenters": [
+    "*"
+  ],
+  "NodePool": null,
+  "Constraints": null,
+  "Affinities": null,
+  "TaskGroups": [
+    {
+      "Name": "copy",
+      "Count": 1,
+      "Constraints": null,
+      "Affinities": null,
+      "Tasks": [
+        {
+          "Name": "copy",
+          "Driver": "docker",
+          "User": "",
+          "Lifecycle": null,
+          "Config": {
+            "args": [
+              "set -eu\nfor name in KIND SRC_OBJECT DEST_OBJECT DEST_PATH; do\n  [ -n \"$(printenv \"$name\" || true)\" ] || { echo \"the copy job has no $name\" \u003e\u00262; exit 1; }\ndone\next=$(printenv EXT || true)\nkeep=$(printenv KEEP || true)\npinned=$(printenv PINNED || true)\nerr=/tmp/caravana-copy.$$.err\ncase \"$KIND\" in\n  file) rclone copyto \"src:$SRC_OBJECT\" \"dest:$DEST_OBJECT\" ;;\n  dir) rclone copy \"src:$SRC_OBJECT\" \"dest:$DEST_OBJECT\" ;;\n  *) echo \"the copy job's kind is neither file nor dir\" \u003e\u00262; exit 1 ;;\nesac\nsize=$(rclone size --json \"dest:$DEST_OBJECT\")\ncount=$(printf '%s' \"$size\" | sed -n 's/.*\"count\": *\\([0-9][0-9]*\\).*/\\1/p')\nbytes=$(printf '%s' \"$size\" | sed -n 's/.*\"bytes\": *\\([0-9][0-9]*\\).*/\\1/p')\nif [ -z \"$count\" ] || [ \"$count\" -eq 0 ]; then\n  echo \"the copy is empty: nothing arrived in the destination\" \u003e\u00262\n  exit 1\nfi\n[ -n \"$bytes\" ] || bytes=0\necho \"caravana-copy: done key=$DEST_OBJECT bytes=$bytes\"\n\nwarn() { echo \"caravana-copy: warning the copy is kept, but old copies were not removed: $1\"; exit 0; }\ncase \"$keep\" in ''|*[!0-9]*|0) exit 0 ;; esac\nif printf '%s' \"$pinned\" | grep -q '[^0-9 ]'; then\n  warn \"the list of pinned backups is not valid\"\nfi\nown=$(basename \"$DEST_OBJECT\")\nif [ \"$KIND\" = dir ]; then\n  listing=$(rclone lsf --dirs-only \"dest:$DEST_PATH/\" 2\u003e \"$err\") || warn \"$(tail -n 1 \"$err\")\"\n  names=$(echo \"$listing\" | grep -E '^[0-9]+/$' | sort -n | while read -r d; do basename \"$d\"; done)\nelse\n  listing=$(rclone lsf --files-only \"dest:$DEST_PATH/\" 2\u003e \"$err\") || warn \"$(tail -n 1 \"$err\")\"\n  names=$(echo \"$listing\" | sort)\nfi\ncandidates=\nfor n in $names; do\n  case \"$n\" in\n    *\"$ext\") ;;\n    *) continue ;;\n  esac\n  is_pinned=\n  for p in $pinned; do\n    [ \"$n\" != \"$p$ext\" ] || is_pinned=1\n  done\n  [ -n \"$is_pinned\" ] || candidates=\"$candidates $n\"\ndone\nexcess=$(($(echo $candidates | wc -w) - keep))\n[ \"$excess\" -gt 0 ] || exit 0\nfor n in $(echo $candidates | tr ' ' '\\n' | head -n \"$excess\"); do\n  [ \"$n\" != \"$own\" ] || continue\n  if [ \"$KIND\" = dir ]; then\n    rclone purge \"dest:$DEST_PATH/$n\" 2\u003e \"$err\" || warn \"$(tail -n 1 \"$err\")\"\n  else\n    rclone deletefile \"dest:$DEST_PATH/$n\" 2\u003e \"$err\" || warn \"$(tail -n 1 \"$err\")\"\n  fi\n  echo \"caravana-copy: expired $n\"\ndone\n"
+            ],
+            "entrypoint": [
+              "/bin/sh",
+              "-c"
+            ],
+            "image": "rclone/rclone@sha256:3103526c506266a9ecdf064efe99bf3677d92ef6407af124d8c56b4f49cbaa51"
+          },
+          "Constraints": null,
+          "Affinities": null,
+          "Env": {
+            "EXT": "",
+            "KIND": "dir"
+          },
+          "Services": null,
+          "Resources": {
+            "CPU": 200,
+            "Cores": null,
+            "MemoryMB": 256,
+            "MemoryMaxMB": null,
+            "DiskMB": null,
+            "Networks": null,
+            "Devices": null,
+            "NUMA": null,
+            "SecretsMB": null,
+            "IOPS": null
+          },
+          "RestartPolicy": null,
+          "Meta": null,
+          "KillTimeout": null,
+          "LogConfig": null,
+          "Artifacts": null,
+          "Vault": null,
+          "Consul": null,
+          "Templates": [
+            {
+              "SourcePath": null,
+              "DestPath": "secrets/backup.env",
+              "EmbeddedTmpl": "{{ with nomadVar \"nomad/jobs/shop_db_copy-0123456789ab\" }}{{ range .Tuples }}{{ .K }}={{ printf \"%s\" .V | toJSON }}\n{{ end }}{{ end }}",
+              "ChangeMode": "noop",
+              "ChangeScript": null,
+              "ChangeSignal": null,
+              "Once": null,
+              "Splay": null,
+              "Perms": null,
+              "Uid": null,
+              "Gid": null,
+              "LeftDelim": null,
+              "RightDelim": null,
+              "Envvars": true,
+              "VaultGrace": null,
+              "Wait": null,
+              "ErrMissingKey": null
+            }
+          ],
+          "DispatchPayload": null,
+          "VolumeMounts": null,
+          "Leader": false,
+          "ShutdownDelay": 0,
+          "KillSignal": "",
+          "Kind": "",
+          "ScalingPolicies": null,
+          "Secrets": null,
+          "Identity": null,
+          "Identities": null,
+          "Actions": null,
+          "Schedule": null
+        }
+      ],
+      "Spreads": null,
+      "Volumes": null,
+      "RestartPolicy": {
+        "Interval": null,
+        "Attempts": 0,
+        "Delay": null,
+        "Mode": "fail",
+        "RenderTemplates": null
+      },
+      "Disconnect": null,
+      "ReschedulePolicy": {
+        "Attempts": 0,
+        "Interval": null,
+        "Delay": null,
+        "DelayFunction": null,
+        "MaxDelay": null,
+        "Unlimited": false
+      },
+      "EphemeralDisk": null,
+      "Update": null,
+      "Migrate": null,
+      "Networks": [
+        {
+          "Mode": "bridge",
+          "Device": "",
+          "CIDR": "",
+          "IP": "",
+          "DNS": null,
+          "ReservedPorts": null,
+          "DynamicPorts": null,
+          "Hostname": "",
+          "MBits": null,
+          "CNI": null
+        }
+      ],
+      "Meta": null,
+      "Services": null,
+      "ShutdownDelay": null,
+      "MaxRunDuration": null,
+      "StopAfterClientDisconnect": null,
+      "MaxClientDisconnect": null,
+      "Scaling": null,
+      "Consul": null,
+      "PreventRescheduleOnLost": null
+    }
+  ],
+  "Update": null,
+  "Multiregion": null,
+  "Spreads": null,
+  "Periodic": null,
+  "ParameterizedJob": null,
+  "Reschedule": null,
+  "Migrate": null,
+  "Meta": {
+    "caravana.app": "shop",
+    "caravana.service": "db"
+  },
+  "UI": null,
+  "Stop": null,
+  "ParentID": null,
+  "Dispatched": false,
+  "DispatchIdempotencyToken": null,
+  "Payload": null,
+  "ConsulNamespace": null,
+  "VaultNamespace": null,
+  "NomadTokenID": null,
+  "Status": null,
+  "StatusDescription": null,
+  "Stable": null,
+  "Version": null,
+  "SubmitTime": null,
+  "CreateIndex": null,
+  "ModifyIndex": null,
+  "JobModifyIndex": null,
+  "VersionTag": null
+}

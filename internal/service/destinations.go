@@ -343,6 +343,16 @@ func (s *Service) destinationFor(ctx context.Context, appID string, b app.Backup
 	return s.destinationNamed(ctx, primary)
 }
 
+// runDestination is the destination a volume or sqlite run uses, secret included:
+// the one named from when it is not empty (a restore reading from a place), else
+// the one the service's policy sends backups to. ok is false when there is none.
+func (s *Service) runDestination(ctx context.Context, appID string, b app.Backup, from string) (deploy.BackupDestination, bool, error) {
+	if from != "" {
+		return s.destinationNamed(ctx, from)
+	}
+	return s.destinationFor(ctx, appID, b)
+}
+
 // resolveBackupPlaces is the rule of where a policy's backups go: its own
 // destination, else its project's default, else the installation's ("" when none
 // of the three exists). Copies are the policy's, as it says them.
@@ -496,6 +506,24 @@ func (s *Service) checkDefaultChange(ctx context.Context, name string) error {
 			name, a, svc, dest)
 	}
 	return nil
+}
+
+// repointService points the backup jobs of one service at the destination its
+// policy resolves to now. A restore that read from another place leaves that
+// place's keys in the service's volume variable; this puts the policy's back. A
+// service that no longer has a policy, or whose destination is gone, is left as it is.
+func (s *Service) repointService(ctx context.Context, appID, service string) {
+	_, svc, err := s.backedUpService(ctx, appID, service)
+	if err != nil {
+		return
+	}
+	dest, ok, err := s.destinationFor(ctx, appID, *svc.Backup)
+	if err == nil && ok {
+		err = s.deployer.PointBackups(ctx, appID, service, dest)
+	}
+	if err != nil {
+		s.log.Warn("point a service's backups at its destination", "app", appID, "service", service, "error", err)
+	}
 }
 
 // repointBackups points the backup jobs of every stored service that has a

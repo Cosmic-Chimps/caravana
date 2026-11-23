@@ -65,7 +65,7 @@ type sqliteRun struct {
 //
 // On an error the claim is given back; on success the caller owns it, and
 // run.release gives it back.
-func (s *Service) prepareSQLiteRun(ctx context.Context, appID, service, action, object string) (sqliteRun, error) {
+func (s *Service) prepareSQLiteRun(ctx context.Context, appID, service, action, object, from string) (sqliteRun, error) {
 	release, err := s.claimVolumeRun(appID)
 	if err != nil {
 		return sqliteRun{}, err
@@ -87,7 +87,7 @@ func (s *Service) prepareSQLiteRun(ctx context.Context, appID, service, action, 
 	if !hasSQLiteBackup(svc) {
 		return sqliteRun{}, fmt.Errorf("service %q of %q no longer has a sqlite backup: %w", service, appID, store.ErrNotFound)
 	}
-	dest, ok, err := s.destinationFor(ctx, appID, *svc.Backup)
+	dest, ok, err := s.runDestination(ctx, appID, *svc.Backup, from)
 	if err != nil {
 		return sqliteRun{}, err
 	}
@@ -126,7 +126,7 @@ func (s *Service) prepareSQLiteRun(ctx context.Context, appID, service, action, 
 func (s *Service) startSQLiteBackup(ctx context.Context, appID, service, trigger string) (store.BackupRecord, error) {
 	// A browser that goes away must not cancel the run halfway.
 	ctx = context.WithoutCancel(ctx)
-	run, err := s.prepareSQLiteRun(ctx, appID, service, deploy.VolumeBackup, "")
+	run, err := s.prepareSQLiteRun(ctx, appID, service, deploy.VolumeBackup, "", "")
 	if err != nil {
 		return store.BackupRecord{}, err
 	}
@@ -218,14 +218,15 @@ func (s *Service) settleSQLiteBackup(rec store.BackupRecord, out nomadjob.SQLite
 		return
 	}
 	s.log.Info("sqlite backup finished", "app", rec.AppID, "service", rec.Service, "run", rec.ID, "status", rec.Status, "message", rec.Message)
+	s.queueCopies(ctx, rec)
 }
 
 // startSQLiteRestore starts the restore of the sqlite backup b into the
 // running service and returns the restore's record, running. trigger and label
 // are recorded on it, as for restoreBackup. The errors are prepareSQLiteRun's.
-func (s *Service) startSQLiteRestore(ctx context.Context, appID string, b store.BackupRecord, trigger, label string) (store.RestoreRecord, error) {
+func (s *Service) startSQLiteRestore(ctx context.Context, appID string, b store.BackupRecord, place restorePlace, trigger, label string) (store.RestoreRecord, error) {
 	ctx = context.WithoutCancel(ctx)
-	run, err := s.prepareSQLiteRun(ctx, appID, b.Service, deploy.VolumeRestoreSQLite, b.Object)
+	run, err := s.prepareSQLiteRun(ctx, appID, b.Service, deploy.VolumeRestoreSQLite, place.Object, place.Destination)
 	if err != nil {
 		return store.RestoreRecord{}, err
 	}

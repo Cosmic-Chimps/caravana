@@ -212,3 +212,37 @@ Spec: `spec.md`. Task `mv6m`. Branch: the worktree branch `alta/robust-monsoon-c
   and records that name in `restores.destination`; B (D11) makes it read from the backup's own place.
 - A migrated `main` is made by the migration with the old secret path, so a new installation's `main` has its key at
   `caravana/backup-destinations/main`.
+
+## Deviations (phase B)
+
+- **D8/D9 jobs.** The job's task env carries what isn't secret: `KIND` and `EXT` for a copy, `MODE` and `CHECK_ID` for a check
+  (`BackupCopyJob(appID, service, id, kind, ext, s)`, `BackupCheckJob(id, mode, s)`), so the two goldens of each pair differ
+  and a job says what it copies. The variable has the rest (`SRC_OBJECT`, `DEST_OBJECT`, `DEST_PATH`, `KEEP`, `PINNED`, the
+  remotes' keys; for a check `R<i>_PATH` and the keys). The copy script's lines are `caravana-copy: done key=… bytes=…`,
+  `caravana-copy: expired <name>` and `caravana-copy: warning …` (retention that couldn't finish: the copy is still good, and the
+  warning is the record's message). A check in mode test exits 1 after `failed <step>`; `CheckBackupPlaces` reads the failed
+  task's stdout and the end of its stderr itself, since `batchOutcome` keeps stdout only for a task that succeeded.
+- **D8 helpers.** `nomadjob.ObjectExt(engine)` (the extension of an engine's object, "" for a volume's directory),
+  `nomadjob.BackupCopyJobMarker` (`_copy-`, which `events.go` wakes `backupsKey` for), `ParseBackupCopyOutput` and
+  `ParseBackupCheckOutput`.
+- **D7/D9 deploy.** `BackupCopySpec{…}` is what `StartBackupCopy` takes; the service computes the objects (`DestinationBase` and
+  `BackupPath` are exported for it). `BackupCopyOutcome(ctx, jobID, dests...)` takes the destinations whose keys to blank out of
+  its messages. `Timing.CheckWait` (default 90 s) bounds a check. `deploytest.FinishOnRegisterPrefix` plays the life of the
+  copy and check jobs, whose IDs have a random part. `deploy.Restore` takes the `source` destination.
+- **D7 service.** `copyPass` is a wrapper over `runCopyPass` under `copyMu`, so a test can hold the lock to keep the watcher's own
+  passes out. A copy whose Nomad job fails to register with `ErrNomadRejected` is failed ("Nomad refused the copy: …"); any other
+  start error leaves it pending for the next pass. A succeeded backup that Caravana records and then crashes before queueing
+  its copies loses them (the window is two store writes; not worth a second record).
+- **D11 restore.** The place is chosen inside `restoreBackup` (not `Restore`), so the restore clock gets the same locate. A place
+  whose destination was removed is left out of the check; a check that found nothing and couldn't reach some place is
+  `deploy.ErrNomadUnavailable`-wrapped ("couldn't be reached"), not `ErrBackupMissing`. `store.BackupRecord.Gone()` ("expired
+  here and in every copy") replaces `Expired` where a record's liveness is asked (the list, pinning, the restore clock);
+  `store.PinnedBackups` also returns a backup whose own destination lost it but a copy holds, so the copy's retention keeps it.
+  A volume restore that read from a copy points the service's variable at the policy's destination again when it ends
+  (`repointService`).
+- **D12.** `AttentionItem.Destination` is set for `backup_failed` and `backup_copy_failed`; the sentence says "to main"
+  (`ProblemParts`, the notification's text) rather than the detail doing it, and an old record with no destination keeps the old
+  words. `store.LatestBackupCopies` returns the newest copy that **finished**, so a copy still running doesn't resolve a failure.
+  `backup_copy_failed` is also in `store.OpenedProblemKinds` (a copy has no row of its own in the feed). The API's item gains
+  `destination` and the kind enters the enum in Phase C.
+

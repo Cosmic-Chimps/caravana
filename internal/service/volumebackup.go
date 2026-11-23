@@ -146,7 +146,7 @@ type volumeRun struct {
 // The errors are ErrBackupRunning (a volume run of the app has the lock, or the
 // service's records say running), ErrNoBackupDestination, ErrNoRunningCopy and
 // Nomad's. A copy that never shows the request is restarted all the same.
-func (s *Service) prepareVolumeRun(ctx context.Context, appID, service, action, object string) (volumeRun, error) {
+func (s *Service) prepareVolumeRun(ctx context.Context, appID, service, action, object, from string) (volumeRun, error) {
 	release, err := s.claimVolumeRun(appID)
 	if err != nil {
 		return volumeRun{}, err
@@ -170,7 +170,7 @@ func (s *Service) prepareVolumeRun(ctx context.Context, appID, service, action, 
 	if !hasVolumeBackup(svc) {
 		return volumeRun{}, fmt.Errorf("service %q of %q no longer has a volume backup: %w", service, appID, store.ErrNotFound)
 	}
-	dest, ok, err := s.destinationFor(ctx, appID, *svc.Backup)
+	dest, ok, err := s.runDestination(ctx, appID, *svc.Backup, from)
 	if err != nil {
 		return volumeRun{}, err
 	}
@@ -248,7 +248,7 @@ func (s *Service) startVolumeBackup(ctx context.Context, appID, service, trigger
 	// away while it waits for the copy must not cancel it halfway.
 	// WithoutCancel keeps the request's values but drops its cancellation.
 	ctx = context.WithoutCancel(ctx)
-	run, err := s.prepareVolumeRun(ctx, appID, service, deploy.VolumeBackup, "")
+	run, err := s.prepareVolumeRun(ctx, appID, service, deploy.VolumeBackup, "", "")
 	if err != nil {
 		return store.BackupRecord{}, err
 	}
@@ -276,9 +276,9 @@ func (s *Service) startVolumeBackup(ctx context.Context, appID, service, trigger
 //
 // The restore's record ID is the request's ID with the app's: request IDs
 // are only unique within an app, restore IDs across all of them.
-func (s *Service) startVolumeRestore(ctx context.Context, appID string, b store.BackupRecord, trigger, label string) (store.RestoreRecord, error) {
+func (s *Service) startVolumeRestore(ctx context.Context, appID string, b store.BackupRecord, place restorePlace, trigger, label string) (store.RestoreRecord, error) {
 	ctx = context.WithoutCancel(ctx) // as for a backup: the client going away doesn't stop it
-	run, err := s.prepareVolumeRun(ctx, appID, b.Service, deploy.VolumeRestore, b.Object)
+	run, err := s.prepareVolumeRun(ctx, appID, b.Service, deploy.VolumeRestore, place.Object, place.Destination)
 	if err != nil {
 		return store.RestoreRecord{}, err
 	}
@@ -520,6 +520,7 @@ func (s *Service) settleVolumeBackup(rec store.BackupRecord, out volumeOutcome) 
 		return
 	}
 	s.log.Info("volume backup finished", "app", rec.AppID, "service", rec.Service, "run", rec.ID, "status", out.status, "message", out.message)
+	s.queueCopies(ctx, rec)
 }
 
 // settleVolumeRestore records how a restore ended: the status and message (a
@@ -537,6 +538,8 @@ func (s *Service) settleVolumeRestore(rec store.RestoreRecord, out volumeOutcome
 		return
 	}
 	s.log.Info("volume restore finished", "app", rec.AppID, "service", rec.Service, "run", rec.ID, "status", out.status, "message", out.message)
+	// A restore that read from a copy left that destination's keys in the variable.
+	s.repointService(ctx, rec.AppID, rec.Service)
 }
 
 // saveOutcome calls save until it works or ctx ends, so one failed write doesn't

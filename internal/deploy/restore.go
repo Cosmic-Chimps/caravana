@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"maps"
 	"net/http"
 
 	"github.com/hashicorp/nomad/api"
@@ -20,11 +21,17 @@ import (
 // nomadjob.Translate). The restore task runs image, so the copy's pull
 // credentials are those of image's registry, whatever the backup job's variable
 // held.
-func (d *Deployer) Restore(ctx context.Context, appID string, svc app.Service, image, object string, private map[string]bool) error {
+//
+// source is the destination the object is read from (feature 052): the backup
+// job's variable names the destination its backups go to now, which isn't always
+// where a given backup is, so the restore's copy of the variable gets source's
+// keys in its place.
+func (d *Deployer) Restore(ctx context.Context, appID string, svc app.Service, image, object string, private map[string]bool, source BackupDestination) error {
 	items, err := d.readVariable(ctx, nomadjob.BackupVariablePath(nomadjob.BackupJobID(appID, svc.Name)))
 	if err != nil {
 		return err
 	}
+	maps.Copy(items, destinationItems(appID, svc.Name, source))
 	if items, err = d.withPullCredentials(ctx, items, image, private); err != nil {
 		return err
 	}

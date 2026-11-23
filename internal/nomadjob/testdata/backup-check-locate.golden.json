@@ -1,0 +1,170 @@
+{
+  "Region": null,
+  "Namespace": null,
+  "ID": "_backup-check-0123456789ab",
+  "Name": "_backup-check-0123456789ab",
+  "Type": "batch",
+  "Priority": null,
+  "AllAtOnce": null,
+  "Datacenters": [
+    "*"
+  ],
+  "NodePool": null,
+  "Constraints": null,
+  "Affinities": null,
+  "TaskGroups": [
+    {
+      "Name": "check",
+      "Count": 1,
+      "Constraints": null,
+      "Affinities": null,
+      "Tasks": [
+        {
+          "Name": "check",
+          "Driver": "docker",
+          "User": "",
+          "Lifecycle": null,
+          "Config": {
+            "args": [
+              "set -eu\nmode=$(printenv MODE || true)\nid=$(printenv CHECK_ID || true)\n[ -n \"$id\" ] || { echo \"the check job has no CHECK_ID\" \u003e\u00262; exit 1; }\nerr=/tmp/caravana-check.$$.err\ncase \"$mode\" in\n  test)\n    path=$(printenv R1_PATH || true)\n    [ -n \"$path\" ] || { echo \"the check job has no R1_PATH\" \u003e\u00262; exit 1; }\n    probe=\"$path/.caravana-check-$id\"\n    status=0\n    rclone lsf --max-depth 1 \"r1:$path/\" \u003e /dev/null 2\u003e \"$err\" || status=$?\n    if [ \"$status\" -ne 0 ] \u0026\u0026 [ \"$status\" -ne 3 ]; then\n      echo \"caravana-check: failed list\"\n      cat \"$err\" \u003e\u00262\n      exit 1\n    fi\n    if ! printf 'caravana check %s\\n' \"$id\" | rclone rcat \"r1:$probe\" 2\u003e \"$err\"; then\n      echo \"caravana-check: failed write\"\n      cat \"$err\" \u003e\u00262\n      exit 1\n    fi\n    if ! rclone deletefile \"r1:$probe\" 2\u003e \"$err\"; then\n      echo \"caravana-check: failed delete\"\n      cat \"$err\" \u003e\u00262\n      exit 1\n    fi\n    echo \"caravana-check: ok\"\n    ;;\n  locate)\n    for i in 1 2 3; do\n      case $i in\n        1) path=$(printenv R1_PATH || true) ;;\n        2) path=$(printenv R2_PATH || true) ;;\n        3) path=$(printenv R3_PATH || true) ;;\n      esac\n      [ -n \"$path\" ] || break\n      status=0\n      size=$(rclone size --json \"r$i:$path\" 2\u003e /dev/null) || status=$?\n      if [ \"$status\" -eq 0 ]; then\n        count=$(printf '%s' \"$size\" | sed -n 's/.*\"count\": *\\([0-9][0-9]*\\).*/\\1/p')\n        if [ -n \"$count\" ] \u0026\u0026 [ \"$count\" -gt 0 ]; then\n          echo \"caravana-check: found $i\"\n          exit 0\n        fi\n        echo \"caravana-check: missing $i\"\n      elif [ \"$status\" -eq 3 ]; then\n        echo \"caravana-check: missing $i\"\n      else\n        echo \"caravana-check: unreachable $i\"\n      fi\n    done\n    ;;\n  *) echo \"the check job's mode is neither test nor locate\" \u003e\u00262; exit 1 ;;\nesac\n"
+            ],
+            "entrypoint": [
+              "/bin/sh",
+              "-c"
+            ],
+            "image": "rclone/rclone@sha256:3103526c506266a9ecdf064efe99bf3677d92ef6407af124d8c56b4f49cbaa51"
+          },
+          "Constraints": null,
+          "Affinities": null,
+          "Env": {
+            "CHECK_ID": "0123456789ab",
+            "MODE": "locate"
+          },
+          "Services": null,
+          "Resources": {
+            "CPU": 100,
+            "Cores": null,
+            "MemoryMB": 128,
+            "MemoryMaxMB": null,
+            "DiskMB": null,
+            "Networks": null,
+            "Devices": null,
+            "NUMA": null,
+            "SecretsMB": null,
+            "IOPS": null
+          },
+          "RestartPolicy": null,
+          "Meta": null,
+          "KillTimeout": null,
+          "LogConfig": null,
+          "Artifacts": null,
+          "Vault": null,
+          "Consul": null,
+          "Templates": [
+            {
+              "SourcePath": null,
+              "DestPath": "secrets/backup.env",
+              "EmbeddedTmpl": "{{ with nomadVar \"nomad/jobs/_backup-check-0123456789ab\" }}{{ range .Tuples }}{{ .K }}={{ printf \"%s\" .V | toJSON }}\n{{ end }}{{ end }}",
+              "ChangeMode": "noop",
+              "ChangeScript": null,
+              "ChangeSignal": null,
+              "Once": null,
+              "Splay": null,
+              "Perms": null,
+              "Uid": null,
+              "Gid": null,
+              "LeftDelim": null,
+              "RightDelim": null,
+              "Envvars": true,
+              "VaultGrace": null,
+              "Wait": null,
+              "ErrMissingKey": null
+            }
+          ],
+          "DispatchPayload": null,
+          "VolumeMounts": null,
+          "Leader": false,
+          "ShutdownDelay": 0,
+          "KillSignal": "",
+          "Kind": "",
+          "ScalingPolicies": null,
+          "Secrets": null,
+          "Identity": null,
+          "Identities": null,
+          "Actions": null,
+          "Schedule": null
+        }
+      ],
+      "Spreads": null,
+      "Volumes": null,
+      "RestartPolicy": {
+        "Interval": null,
+        "Attempts": 0,
+        "Delay": null,
+        "Mode": "fail",
+        "RenderTemplates": null
+      },
+      "Disconnect": null,
+      "ReschedulePolicy": {
+        "Attempts": 0,
+        "Interval": null,
+        "Delay": null,
+        "DelayFunction": null,
+        "MaxDelay": null,
+        "Unlimited": false
+      },
+      "EphemeralDisk": null,
+      "Update": null,
+      "Migrate": null,
+      "Networks": [
+        {
+          "Mode": "bridge",
+          "Device": "",
+          "CIDR": "",
+          "IP": "",
+          "DNS": null,
+          "ReservedPorts": null,
+          "DynamicPorts": null,
+          "Hostname": "",
+          "MBits": null,
+          "CNI": null
+        }
+      ],
+      "Meta": null,
+      "Services": null,
+      "ShutdownDelay": null,
+      "MaxRunDuration": null,
+      "StopAfterClientDisconnect": null,
+      "MaxClientDisconnect": null,
+      "Scaling": null,
+      "Consul": null,
+      "PreventRescheduleOnLost": null
+    }
+  ],
+  "Update": null,
+  "Multiregion": null,
+  "Spreads": null,
+  "Periodic": null,
+  "ParameterizedJob": null,
+  "Reschedule": null,
+  "Migrate": null,
+  "Meta": {},
+  "UI": null,
+  "Stop": null,
+  "ParentID": null,
+  "Dispatched": false,
+  "DispatchIdempotencyToken": null,
+  "Payload": null,
+  "ConsulNamespace": null,
+  "VaultNamespace": null,
+  "NomadTokenID": null,
+  "Status": null,
+  "StatusDescription": null,
+  "Stable": null,
+  "Version": null,
+  "SubmitTime": null,
+  "CreateIndex": null,
+  "ModifyIndex": null,
+  "JobModifyIndex": null,
+  "VersionTag": null
+}

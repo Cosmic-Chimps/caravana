@@ -153,7 +153,7 @@ func TestRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Restore(ctx, "whoami", b.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := e.svc.Restore(ctx, "whoami", b.ID, ""); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Restore of a running backup = %v, want ErrNotFound", err)
 	}
 	e.nomad.FinishRun(b.JobID, true, "", "caravana-backup key=backups/caravana/whoami/web/1.dump bytes=1499\n", "")
@@ -162,14 +162,14 @@ func TestRestore(t *testing.T) {
 		return err == nil && got.Status == store.BackupSucceeded
 	})
 
-	r, err := e.svc.Restore(ctx, "whoami", b.ID)
+	r, err := e.svc.Restore(ctx, "whoami", b.ID, "")
 	if err != nil || r.Status != store.BackupRunning {
 		t.Fatalf("Restore = %+v, %v", r, err)
 	}
 	if job := e.nomad.Job("whoami_web_restore"); job == nil || job.Meta["backup_key"] != "backups/caravana/whoami/web/1.dump" {
 		t.Fatalf("restore job = %+v", job)
 	}
-	if _, err := e.svc.Restore(ctx, "whoami", b.ID); !errors.Is(err, ErrBackupRunning) {
+	if _, err := e.svc.Restore(ctx, "whoami", b.ID, ""); !errors.Is(err, ErrBackupRunning) {
 		t.Errorf("a second restore = %v, want ErrBackupRunning", err)
 	}
 	e.nomad.FinishRun("whoami_web_restore", true, "", "", "")
@@ -355,7 +355,7 @@ func TestVolumeRunRefusals(t *testing.T) {
 	if err := e.store.SaveBackup(ctx, saved); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Restore(ctx, "whoami", "web-1"); !errors.Is(err, ErrNoRunningCopy) {
+	if _, err := e.svc.Restore(ctx, "whoami", "web-1", ""); !errors.Is(err, ErrNoRunningCopy) {
 		t.Errorf("Restore = %v, want ErrNoRunningCopy", err)
 	}
 
@@ -365,7 +365,7 @@ func TestVolumeRunRefusals(t *testing.T) {
 	if err := e.store.SaveBackup(ctx, old); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Restore(ctx, "whoami", "web-0"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := e.svc.Restore(ctx, "whoami", "web-0", ""); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Restore of a postgres backup into a volume service = %v, want ErrNotFound", err)
 	}
 
@@ -377,7 +377,7 @@ func TestVolumeRunRefusals(t *testing.T) {
 	if _, err := e.svc.BackUpNow(ctx, "whoami", "web"); !errors.Is(err, ErrBackupRunning) {
 		t.Errorf("BackUpNow during a run = %v, want ErrBackupRunning", err)
 	}
-	if _, err := e.svc.Restore(ctx, "whoami", "web-1"); !errors.Is(err, ErrBackupRunning) {
+	if _, err := e.svc.Restore(ctx, "whoami", "web-1", ""); !errors.Is(err, ErrBackupRunning) {
 		t.Errorf("Restore during a run = %v, want ErrBackupRunning", err)
 	}
 

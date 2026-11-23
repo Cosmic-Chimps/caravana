@@ -84,6 +84,22 @@ type BackupRecord struct {
 	Copies []BackupCopy
 }
 
+// HasLiveCopy reports whether a copy of the backup to another destination
+// succeeded and retention hasn't deleted it there.
+func (b BackupRecord) HasLiveCopy() bool {
+	for _, c := range b.Copies {
+		if c.Status == BackupSucceeded && !c.Expired {
+			return true
+		}
+	}
+	return false
+}
+
+// Gone reports whether the backup is nowhere any more: retention deleted it from
+// its own destination and from every copy (feature 052). A record whose copies
+// were not read (Copies nil) is judged by its own destination alone.
+func (b BackupRecord) Gone() bool { return b.Expired && !b.HasLiveCopy() }
+
 // backupColumns is the column order scanBackups reads.
 const backupColumns = `app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at,
 	engine, stopped_ms, volumes, trigger, pin, pinned_at, destination`
@@ -160,14 +176,22 @@ func (s *Store) ListBackups(ctx context.Context, appID string, limit int) ([]Bac
 	if err != nil {
 		return nil, fmt.Errorf("list backups of %q: %w", appID, err)
 	}
+	return s.withCopies(ctx, appID, out)
+}
+
+// withCopies fills the Copies of the app's backups.
+func (s *Store) withCopies(ctx context.Context, appID string, list []BackupRecord) ([]BackupRecord, error) {
+	if len(list) == 0 {
+		return list, nil
+	}
 	copies, err := s.ListBackupCopies(ctx, appID)
 	if err != nil {
 		return nil, err
 	}
-	for i := range out {
-		out[i].Copies = copies[out[i].ID]
+	for i := range list {
+		list[i].Copies = copies[list[i].ID]
 	}
-	return out, nil
+	return list, nil
 }
 
 // scanBackups reads backup rows in the order of backupColumns.
@@ -490,22 +514,30 @@ func (s *Store) PinnedBackup(ctx context.Context, appID, service, label string) 
 	if err != nil {
 		return BackupRecord{}, fmt.Errorf("pinned backup of %q/%s: %w", appID, service, err)
 	}
-	defer rows.Close()
 	list, err := scanBackups(rows)
+	rows.Close() // the store has one connection: the copies are read after this result is done
 	if err != nil {
 		return BackupRecord{}, fmt.Errorf("pinned backup of %q/%s: %w", appID, service, err)
 	}
 	if len(list) == 0 {
 		return BackupRecord{}, fmt.Errorf("backup of %q/%s pinned as %q: %w", appID, service, label, ErrNotFound)
 	}
+	if list, err = s.withCopies(ctx, appID, list); err != nil {
+		return BackupRecord{}, err
+	}
 	return list[0], nil
 }
 
 // PinnedBackups returns the pinned backups of an app that retention may not
-// delete (not expired), for the pin lists the engines' retention reads.
+// delete: those still in their own destination or in a copy, for the pin lists
+// the engines' retention reads (a copy's retention keeps a pinned backup whose
+// own destination already lost it).
 func (s *Store) PinnedBackups(ctx context.Context, appID string) ([]BackupRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+backupColumns+`
-		FROM backups WHERE app_id = ? AND pin IS NOT NULL AND expired = 0 ORDER BY service, id`, appID)
+		FROM backups WHERE app_id = ? AND pin IS NOT NULL AND (expired = 0 OR EXISTS (
+			SELECT 1 FROM backup_copies c WHERE c.app_id = backups.app_id AND c.backup_id = backups.id
+			AND c.status = 'succeeded' AND c.expired = 0))
+		ORDER BY service, id`, appID)
 	if err != nil {
 		return nil, fmt.Errorf("pinned backups of %q: %w", appID, err)
 	}

@@ -107,6 +107,9 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 		row.Action, row.Href = "View logs", appHref+logsQuery(it)
 	case service.AttentionBackupFailed:
 		row.Action, row.Href = "Open backups", appHref+"/backups"
+	case service.AttentionBackupCopyFailed:
+		row.Mark = "warning"
+		row.Action, row.Href = "Open backups", appHref+"/backups"
 	case service.AttentionRestoreFailed:
 		row.Action, row.Href = "Open backups", appHref+"/backups"
 	case service.AttentionNoBackupDestination:
@@ -219,6 +222,8 @@ func headlineWords(it service.AttentionItem) string {
 		return "has a service failing its health check"
 	case service.AttentionBackupFailed:
 		return "has a failed backup"
+	case service.AttentionBackupCopyFailed:
+		return "has a backup that couldn't be copied"
 	case service.AttentionRestoreFailed:
 		return "has a failed restore"
 	case service.AttentionScheduleFailed:

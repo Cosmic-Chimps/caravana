@@ -204,7 +204,7 @@ func (s *server) createBackup(w http.ResponseWriter, r *http.Request) error {
 
 // restoreBackup answers POST /v1/apps/{id}/backups/{backupId}/restore.
 func (s *server) restoreBackup(w http.ResponseWriter, r *http.Request) error {
-	x, err := s.svc.Restore(r.Context(), r.PathValue("id"), r.PathValue("backupId"))
+	x, err := s.svc.Restore(r.Context(), r.PathValue("id"), r.PathValue("backupId"), "")
 	if err != nil {
 		return err
 	}

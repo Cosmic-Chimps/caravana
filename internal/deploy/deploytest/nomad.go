@@ -158,6 +158,8 @@ type Nomad struct {
 	// onRegister runs, in its own goroutine, for each registration of a job whose ID has an entry
 	// (FinishOnRegister).
 	onRegister map[string]func(job *api.Job)
+	// onRegisterPrefix is the same for the jobs whose ID starts with a prefix (FinishOnRegisterPrefix).
+	onRegisterPrefix []prefixHook
 
 	scales      []ScaleRequest // accepted scale requests (scale.go)
 	scaleStatus int            // non-zero: the next scale request answers it
@@ -504,6 +506,13 @@ func (n *Nomad) register(w http.ResponseWriter, r *http.Request) {
 	n.registrations++
 	if f := n.onRegister[*j.ID]; f != nil {
 		go f(j) // blocks on n.mu until this handler returns
+	} else {
+		for _, h := range n.onRegisterPrefix {
+			if strings.HasPrefix(*j.ID, h.prefix) {
+				go h.fn(j)
+				break
+			}
+		}
 	}
 	n.writeJSON(w, api.JobRegisterResponse{
 		EvalID:         fmt.Sprintf("eval-%d", n.index),

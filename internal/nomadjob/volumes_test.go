@@ -470,6 +470,9 @@ func TestMain(m *testing.M) {
 	if dumpToolsPath != "" {
 		os.RemoveAll(dumpToolsPath)
 	}
+	if copyToolsPath != "" {
+		os.RemoveAll(copyToolsPath)
+	}
 	os.Exit(code)
 }
 

@@ -98,6 +98,9 @@ type Timing struct {
 	// before Caravana gives up: the server that holds the volume isn't placing
 	// work. ArchiveWait bounds the whole archive. Defaults 5 and 30 minutes.
 	ArchivePlaceWait, ArchiveWait time.Duration
+	// CheckWait is how long CheckBackupPlaces (feature 052) waits for its job to
+	// end, copy or not. Default 90 s.
+	CheckWait time.Duration
 }
 
 func (t Timing) withDefaults() Timing {
@@ -130,6 +133,9 @@ func (t Timing) withDefaults() Timing {
 	}
 	if t.ArchiveWait == 0 {
 		t.ArchiveWait = 30 * time.Minute
+	}
+	if t.CheckWait == 0 {
+		t.CheckWait = 90 * time.Second
 	}
 	if t.VolumeDeleteWait == 0 {
 		t.VolumeDeleteWait = time.Minute

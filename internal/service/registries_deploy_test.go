@@ -193,7 +193,7 @@ func TestPrivatePostgresBackup(t *testing.T) {
 		got, err := e.store.GetBackup(ctx, "whoami", b.ID)
 		return err == nil && got.Status == store.BackupSucceeded
 	})
-	if _, err := e.svc.Restore(ctx, "whoami", b.ID); err != nil {
+	if _, err := e.svc.Restore(ctx, "whoami", b.ID, ""); err != nil {
 		t.Fatalf("Restore() = %v", err)
 	}
 	if r := e.nomad.Variable("nomad/jobs/whoami_web_restore"); r[nomadjob.RegistryPasswordEnv] != registryPassword {

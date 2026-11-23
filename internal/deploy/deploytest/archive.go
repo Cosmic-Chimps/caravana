@@ -14,7 +14,29 @@ func (n *Nomad) FinishOnRegister(jobID string, ok bool, failedTask string, outpu
 	if n.onRegister == nil {
 		n.onRegister = map[string]func(*api.Job){}
 	}
-	n.onRegister[jobID] = func(job *api.Job) {
+	n.onRegister[jobID] = n.finishing(ok, failedTask, output)
+}
+
+// FinishOnRegisterPrefix is FinishOnRegister for every job whose ID starts with prefix: the copy and check
+// jobs of feature 052, whose IDs have a random part. The first hook whose prefix matches runs, in the order
+// they were set. The function sees the job as registered and, through Variable, its own variable.
+func (n *Nomad) FinishOnRegisterPrefix(prefix string, ok bool, failedTask string, output func(job *api.Job) (stdout, stderr string)) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.onRegisterPrefix = append(n.onRegisterPrefix, prefixHook{prefix: prefix, fn: n.finishing(ok, failedTask, output)})
+}
+
+// prefixHook is a FinishOnRegisterPrefix entry.
+type prefixHook struct {
+	prefix string
+	fn     func(job *api.Job)
+}
+
+// finishing is the life of a one-off batch job that ends as FinishRun says, with the output the function
+// returns for the job as registered.
+func (n *Nomad) finishing(ok bool, failedTask string, output func(job *api.Job) (stdout, stderr string)) func(job *api.Job) {
+	return func(job *api.Job) {
+		jobID := *job.ID
 		allocID := jobID + "-alloc"
 		stdout, stderr := output(job)
 		if stdout != "" {

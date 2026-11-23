@@ -182,6 +182,9 @@ type Service struct {
 
 	// Reclaiming space (feature 045), see cleanups.go and orphans.go.
 	cleanupGap time.Duration // between two passes of the clean-ups' clock
+	// copyMu makes the passes that start and settle backup copies (feature 052) one at a time.
+	copyMu sync.Mutex
+
 	// spaceMu guards deleting, the volumes whose deletion is going: one at a time per volume.
 	spaceMu  sync.Mutex
 	deleting map[string]bool
