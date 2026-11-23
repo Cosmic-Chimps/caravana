@@ -88,7 +88,9 @@ job "traefik" {
       # file is rewritten without restarting the task and the file provider watches the
       # directory, so a change of address never costs a gap on 80 and 443. One router per host
       # (caravana, caravana-1, ...), so each gets its own certificate and a domain whose
-      # certificate isn't issued yet can't hold up the current one. The HCL interpolations
+      # certificate isn't issued yet can't hold up the current one. An item is a struct that
+      # prints as its value, not a string: compared with "" it fails to render and kills the
+      # task (lab, 2026-11-23), so it goes through printf first. The HCL interpolations
       # (${...}) are replaced when the job is registered; the {{ }} ones when the file is rendered.
       template {
         destination = "local/dynamic/caravana.yml"
@@ -96,7 +98,7 @@ job "traefik" {
         data        = <<-YAML
           {{- $hosts := "" }}
           {{- if nomadVarExists "nomad/jobs/traefik/traefik" }}
-          {{- with nomadVar "nomad/jobs/traefik/traefik" }}{{ $hosts = index . "hosts" }}{{ end }}
+          {{- with nomadVar "nomad/jobs/traefik/traefik" }}{{ with index . "hosts" }}{{ $hosts = printf "%s" . }}{{ end }}{{ end }}
           {{- end }}
           {{- if eq $hosts "" }}{{ $hosts = "${var.console_domain}" }}{{ end }}
           {{- if eq $hosts "" }}

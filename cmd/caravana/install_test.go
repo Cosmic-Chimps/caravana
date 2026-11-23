@@ -107,18 +107,30 @@ func consoleRouteTemplate(t *testing.T, consoleDomain string) string {
 	return strings.ReplaceAll(data, "${local.resolver}", "{certResolver: letsencrypt}")
 }
 
+// varItem stands for consul-template's dependency.NomadVarItem: a struct, not a string, that
+// prints as its value. A template that compares an item with a string (eq $item "") fails to render
+// in Nomad ("incompatible types for comparison", lab, 2026-11-23) and the task is killed, so the fake
+// must not be a plain string either.
+type varItem struct{ Key, Value string }
+
+func (i varItem) String() string { return i.Value }
+
 // renderConsoleRoute renders the template the way Traefik's task does, with fakes of the two
 // functions of Nomad's template engine it uses: nomadVarExists and nomadVar read variable (nil is
-// no variable), and split takes the separator first, as consul-template's does.
+// no variable) as a map of items, and split takes the separator first, as consul-template's does.
 func renderConsoleRoute(t *testing.T, consoleDomain string, variable map[string]string) string {
 	t.Helper()
 	tmpl, err := template.New("caravana.yml").Funcs(template.FuncMap{
 		"nomadVarExists": func(path string) bool { return path == "nomad/jobs/traefik/traefik" && variable != nil },
-		"nomadVar": func(path string) (map[string]string, error) {
+		"nomadVar": func(path string) (map[string]varItem, error) {
 			if path != "nomad/jobs/traefik/traefik" || variable == nil {
 				return nil, fmt.Errorf("no variable %s", path)
 			}
-			return variable, nil
+			items := make(map[string]varItem, len(variable))
+			for k, v := range variable {
+				items[k] = varItem{Key: k, Value: v}
+			}
+			return items, nil
 		},
 		"split": func(sep, s string) []string { return strings.Split(s, sep) },
 	}).Parse(consoleRouteTemplate(t, consoleDomain))

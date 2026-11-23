@@ -134,3 +134,10 @@ redirects its pages and serves its `/v1/` and `/.well-known/`.
 - **Not done in phase A, for B and C.** `internal/api/nodecalls.go`'s `syncNode` answer doesn't carry `consoleURL`
   and `consoleAddress` yet (phase B adds them with the agent, with `api/openapi.yaml`); no route, no page, no
   `docs/console-address.md`.
+- **R1, lab (2026-11-23, a throwaway job in the dev lab).** `nomadVar` yields a map of `dependency.NomadVarItem`,
+  a struct that prints as its value: `{{ $hosts = index . "hosts" }}` then `eq $hosts ""` failed to render
+  ("incompatible types for comparison: dependency.NomadVarItem and string") and the task was killed, which on a host
+  would have stopped Traefik at the first change. The template reads `{{ with index . "hosts" }}{{ $hosts = printf
+  "%s" . }}{{ end }}`; with it the file re-rendered with `noop` and no restart for a new list, and fell back to
+  `console_domain` for a variable without `hosts` and for a deleted variable. The Go test's fake now returns struct
+  items, so the old form fails there too.
