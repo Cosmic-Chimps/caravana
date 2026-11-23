@@ -252,6 +252,8 @@ func TestTerminalSession(t *testing.T) {
 	c.input("echo $((6*7))\r")
 	c.readUntil("42\r\n")
 
+	// No retry here: deploy.OpenTerminal reads no input before Nomad's client
+	// has sent the starting size, so the first line already sees it.
 	c.input("stty size\r")
 	c.readUntil("30 100\r\n")
 
