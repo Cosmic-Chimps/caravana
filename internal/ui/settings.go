@@ -98,6 +98,7 @@ type settingsData struct {
 	DNS             dnsData
 	Notifications   notificationsData
 	Certificates    certificatesData
+	Builds          buildsData
 	Appearance      appearanceForm
 	SignIn          signInView
 	// Status, when not 0, is the HTTP status of the response (a refused form draws its page at 4xx).
@@ -328,6 +329,16 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 		data.Providers = providersSection(now, facts, states[entrySecretProviders], data.Providers)
 	case entryDNS:
 		data.DNS = dnsSection(now, facts, states[entryDNS], data.DNS)
+	case entryBuilds:
+		builds, err := s.buildsSection(r.Context(), data.Builds)
+		if err != nil {
+			s.serverError(w, r, "read the build settings", err)
+			return
+		}
+		data.Builds = builds
+		if len(builds.Errors) > 0 {
+			status = http.StatusUnprocessableEntity
+		}
 	case entryBackupStorage:
 		data.Dest = destinationSection(now, facts, states[entryBackupStorage], data.Dest)
 	case entryNotifications:

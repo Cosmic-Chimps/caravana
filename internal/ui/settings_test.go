@@ -21,6 +21,7 @@ import (
 var settingsPages = []struct{ path, entry string }{
 	{"/settings", "Account"},
 	{"/settings/registries", "Registries"},
+	{"/settings/builds", "Builds"},
 	{"/settings/secret-providers", "Secret providers"},
 	{"/settings/backup-storage", "Backup storage"},
 	{"/settings/certificates", "Certificates"},
@@ -58,7 +59,7 @@ func settingsNavOf(t *testing.T, body string) map[string][]string {
 	return out
 }
 
-// Every Settings page has the same nav: Account, then Connections (Registries,
+// Every Settings page has the same nav: Account, then Connections (Registries, Builds,
 // Backup storage, Certificates, DNS providers, Notifications), Security (API tokens) and This browser
 // (Appearance, feature 028), with this page's entry current.
 func TestSettingsNavOnEveryPage(t *testing.T) {
@@ -70,7 +71,7 @@ func TestSettingsNavOnEveryPage(t *testing.T) {
 		}
 		want := map[string][]string{
 			"":             {"Account=/settings"},
-			"Connections":  {"Registries=/settings/registries", "Secret providers=/settings/secret-providers", "Backup storage=/settings/backup-storage", "Certificates=/settings/certificates", "DNS providers=/settings/dns", "Notifications=/settings/notifications"},
+			"Connections":  {"Registries=/settings/registries", "Builds=/settings/builds", "Secret providers=/settings/secret-providers", "Backup storage=/settings/backup-storage", "Certificates=/settings/certificates", "DNS providers=/settings/dns", "Notifications=/settings/notifications"},
 			"Security":     {"Sign-in=/settings/sign-in", "API tokens=/settings/tokens"},
 			"This browser": {"Appearance=/settings/appearance"},
 		}
@@ -928,7 +929,7 @@ func TestSettingsAfterTheCritique(t *testing.T) {
 		}
 		// One HTML list for both orders: the wide nav keeps the contract's order, in its groups.
 		got := settingsNavOf(t, e.mustGet(t, "/settings/tokens"))
-		if strings.Join(got["Connections"], " ") != "Registries=/settings/registries Secret providers=/settings/secret-providers Backup storage=/settings/backup-storage Certificates=/settings/certificates DNS providers=/settings/dns Notifications=/settings/notifications" || strings.Join(got["Security"], " ") != "Sign-in=/settings/sign-in API tokens=/settings/tokens*" {
+		if strings.Join(got["Connections"], " ") != "Registries=/settings/registries Builds=/settings/builds Secret providers=/settings/secret-providers Backup storage=/settings/backup-storage Certificates=/settings/certificates DNS providers=/settings/dns Notifications=/settings/notifications" || strings.Join(got["Security"], " ") != "Sign-in=/settings/sign-in API tokens=/settings/tokens*" {
 			t.Errorf("the nav's order changed: %v", got)
 		}
 	})

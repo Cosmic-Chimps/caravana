@@ -41,13 +41,20 @@ type newAppForm struct {
 	// GitHub makes this the "From a GitHub repository" form (feature 020): it
 	// posts to /apps/new/github, asks for an image on ghcr.io and has one button.
 	GitHub bool
+	// Git makes this the "Build from Git" form (feature 050): it posts to /apps/new/git and
+	// asks for a repository to build, with the Repository, Branch, Folder, Dockerfile and
+	// Access inputs besides the image to push to. Access holds "public", "deploy-key" or "token".
+	Git                                            bool
+	Repository, Branch, Folder, Dockerfile, Access formField
 }
 
 // newForm is an empty form: every input has its ID, and the health check
 // path starts at "/".
 func newForm() newAppForm {
 	return newAppForm{Name: formField{ID: "name"}, Image: formField{ID: "image"}, Port: formField{ID: "port"},
-		Domain: formField{ID: "domain"}, Health: formField{ID: "healthPath", Value: "/"}}
+		Domain: formField{ID: "domain"}, Health: formField{ID: "healthPath", Value: "/"},
+		Repository: formField{ID: "repository"}, Branch: formField{ID: "branch"}, Folder: formField{ID: "folder"},
+		Dockerfile: formField{ID: "dockerfile"}, Access: formField{ID: "access", Value: app.BuildAccessPublic}}
 }
 
 // fields lists the inputs in the order they show, with the names of their form values.
@@ -58,7 +65,9 @@ func (f *newAppForm) fields() []struct {
 	return []struct {
 		Name  string
 		Field *formField
-	}{{"name", &f.Name}, {"image", &f.Image}, {"port", &f.Port}, {"domain", &f.Domain}, {"healthPath", &f.Health}}
+	}{{"name", &f.Name}, {"repository", &f.Repository}, {"branch", &f.Branch}, {"folder", &f.Folder},
+		{"dockerfile", &f.Dockerfile}, {"access", &f.Access}, {"image", &f.Image}, {"port", &f.Port},
+		{"domain", &f.Domain}, {"healthPath", &f.Health}}
 }
 
 // markFirstError chooses which error is announced and which field is focused.
@@ -86,6 +95,16 @@ func (f *newAppForm) fieldFor(path string) *formField {
 		return &f.Domain
 	case strings.HasPrefix(path, "services[0].health"):
 		return &f.Health
+	case path == "services[0].build.repository":
+		return &f.Repository
+	case path == "services[0].build.branch":
+		return &f.Branch
+	case path == "services[0].build.path":
+		return &f.Folder
+	case path == "services[0].build.dockerfile":
+		return &f.Dockerfile
+	case path == "services[0].build.access":
+		return &f.Access
 	}
 	return nil
 }
@@ -135,6 +154,14 @@ func (p newAppPage) GitHubHref() string {
 	return "/apps/new?from=github"
 }
 
+// GitHref is the address of the "Build from Git" tab (feature 050).
+func (p newAppPage) GitHref() string {
+	if q := p.query(); q != "" {
+		return "/apps/new?from=git&" + q
+	}
+	return "/apps/new?from=git"
+}
+
 // TemplatesHref is the address of the "From a template" tab.
 func (p newAppPage) TemplatesHref() string {
 	if q := p.query(); q != "" {
@@ -159,6 +186,9 @@ func (s *server) showNewApp(w http.ResponseWriter, r *http.Request, session stri
 	form := newForm()
 	form.Place.Value = asked
 	form.GitHub = r.URL.Query().Get("from") == "github"
+	if form.Git = r.URL.Query().Get("from") == "git"; form.Git {
+		form.Branch.Value = app.DefaultBuildBranch
+	}
 	s.renderNewApp(w, r, http.StatusOK, form)
 }
 
@@ -279,26 +309,42 @@ func (s *server) createApp(w http.ResponseWriter, r *http.Request, session strin
 // dropped.
 func buildNewApp(f *newAppForm, deployNow bool) (a app.App, ok bool) {
 	ok = true
+	if f.Image.Value == "" {
+		switch {
+		case deployNow:
+			f.Image.Error, ok = sentence{plain("Add an image to deploy now, or create the app without deploying.")}, false
+		case f.Port.Value != "" || f.Domain.Value != "":
+			f.Image.Error, ok = sentence{plain("Add the image the port and domain belong to, or clear them to create the app by name only.")}, false
+		}
+	}
+	port, named := f.checkNamePort()
+	if !ok || !named {
+		return app.App{}, false
+	}
+
+	if f.Image.Value == "" {
+		// Only a name: the app has no services until a deploy brings them.
+		return app.App{ID: f.Name.Value, Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{}}, true
+	}
+
+	svc := app.Service{Name: f.Name.Value, Image: f.Image.Value}
+	f.addPort(&svc, port)
+	return app.App{ID: f.Name.Value, Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{svc}}, true
+}
+
+// checkNamePort checks what every tab of New app asks the same way: the name, the port, and that a
+// domain has a port to go to. A problem is put on its field and ok is false. port is 0 for none.
+func (f *newAppForm) checkNamePort() (port int, ok bool) {
+	ok = true
 	refuse := func(field *formField, text string) {
 		field.Error, ok = sentence{plain(text)}, false
 	}
-
 	switch name := f.Name.Value; {
 	case name == "":
 		refuse(&f.Name, "Enter a name for the app.")
 	case len(name) > maxNewAppName:
 		refuse(&f.Name, "Use at most "+strconv.Itoa(maxNewAppName)+" characters: the service takes the same name, and Nomad allows 63 for the two together.")
 	}
-	if f.Image.Value == "" {
-		switch {
-		case deployNow:
-			refuse(&f.Image, "Add an image to deploy now, or create the app without deploying.")
-		case f.Port.Value != "" || f.Domain.Value != "":
-			refuse(&f.Image, "Add the image the port and domain belong to, or clear them to create the app by name only.")
-		}
-	}
-
-	port := 0
 	if f.Port.Value != "" {
 		n, err := strconv.Atoi(f.Port.Value)
 		if err != nil || n < 1 || n > 65535 {
@@ -310,25 +356,21 @@ func buildNewApp(f *newAppForm, deployNow bool) (a app.App, ok bool) {
 	if f.Domain.Value != "" && f.Port.Value == "" {
 		refuse(&f.Domain, "A domain needs a port to send traffic to.")
 	}
-	if !ok {
-		return app.App{}, false
-	}
+	return port, ok
+}
 
-	if f.Image.Value == "" {
-		// Only a name: the app has no services until a deploy brings them.
-		return app.App{ID: f.Name.Value, Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{}}, true
+// addPort gives svc the port, domain and health check the form describes. Without a port the service
+// is a worker: the domain and the health path are not part of it.
+func (f *newAppForm) addPort(svc *app.Service, port int) {
+	if port == 0 {
+		return
 	}
-
-	svc := app.Service{Name: f.Name.Value, Image: f.Image.Value}
-	if port != 0 {
-		svc.Ports = []app.Port{{Name: "http", ContainerPort: port}}
-		if f.Domain.Value != "" {
-			svc.Domains = []app.Domain{{Host: f.Domain.Value, Port: "http"}}
-		}
-		// A service with a port needs a health check; an empty path is a TCP check.
-		svc.Health = &app.HealthCheck{Path: f.Health.Value}
+	svc.Ports = []app.Port{{Name: "http", ContainerPort: port}}
+	if f.Domain.Value != "" {
+		svc.Domains = []app.Domain{{Host: f.Domain.Value, Port: "http"}}
 	}
-	return app.App{ID: f.Name.Value, Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{svc}}, true
+	// A service with a port needs a health check; an empty path is a TCP check.
+	svc.Health = &app.HealthCheck{Path: f.Health.Value}
 }
 
 // refuseNewApp says what a failed create looks like on the form: errors on
@@ -353,10 +395,18 @@ func refuseNewApp(f *newAppForm, id string, err error) (status int, ok bool) {
 		return true
 	}
 
+	var refusal *service.RefusalError
 	switch {
 	case errors.Is(err, service.ErrAppExists):
 		f.Name.Error = takenSentence(id)
 		return http.StatusUnprocessableEntity, true
+	case buildRefused(err):
+		// A built service's refusals (feature 050): at the image or the access when the form has them.
+		status, words, field, _ := buildRefusal(err)
+		if !errors.As(err, &refusal) || !f.fieldFor(field).setError(words) {
+			f.Notice = words
+		}
+		return status, true
 	case errors.Is(err, service.ErrProjectNotFound), errors.Is(err, service.ErrEnvironmentNotFound):
 		// The environment was deleted after the form was drawn.
 		f.Place.Error = sentence{plain("That environment doesn't exist any more. Choose another.")}
@@ -400,8 +450,23 @@ func fieldMessage(path, message string) string {
 	if strings.HasPrefix(message, `"`) {
 		return message
 	}
+	if strings.Contains(path, ".build.") && strings.HasPrefix(message, "the ") {
+		return capitalize(message) // the repository's "the scheme ... is not supported" already has its subject
+	}
 	subject := "This value"
 	switch {
+	case strings.HasSuffix(path, ".build.repository"):
+		subject = "The repository address"
+	case strings.HasSuffix(path, ".build.branch"):
+		subject = "The branch"
+	case strings.HasSuffix(path, ".build.path"):
+		subject = "The folder"
+	case strings.HasSuffix(path, ".build.dockerfile"):
+		subject = "The Dockerfile"
+	case strings.HasSuffix(path, ".build.access"):
+		subject = "The access"
+	case strings.HasSuffix(path, ".build.hostKey"):
+		subject = "The host key"
 	case strings.HasSuffix(path, "image"):
 		subject = "The image"
 	case path == "id" || strings.HasSuffix(path, ".name"):

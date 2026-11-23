@@ -317,6 +317,9 @@ type editServiceView struct {
 	Placement placementView
 	// Scale is the service's Scaling panel, with its own form (feature 043).
 	Scale scaleView
+	// Build is the Build panel of a service built from a Git repository, with its Git access
+	// (feature 050); nil for any other.
+	Build *buildPanel
 }
 
 // registryPrereq is the grid's "Needs a container registry" notice (the

@@ -30,6 +30,7 @@
     {{else if eq .Entry "notifications"}}{{template "settings-notifications" .}}
     {{else if eq .Entry "certificates"}}{{template "settings-certificates" .}}
     {{else if eq .Entry "dns"}}{{template "settings-dns" .}}
+    {{else if eq .Entry "builds"}}{{template "settings-builds" .}}
     {{else if eq .Entry "sign-in"}}{{template "settings-sign-in" .}}
     {{else if eq .Entry "tokens"}}{{template "settings-tokens" .}}
     {{else if eq .Entry "appearance"}}{{template "settings-appearance" .}}
@@ -732,6 +733,31 @@
     <div class="cv-certset"><dt>Warn when</dt> <dd>{{.WarnDays}} d before expiry</dd> <dd class="cv-certset-note">{{if .WarnLocked}}Applies once certificates are issued. {{end}}Sends to the channels set up in <a href="/settings/notifications">Notifications</a>.</dd></div>
   </dl>
 </section>
+{{end}}
+{{end}}
+
+{{/* ------------------------------------------------------------ Builds
+     The limits of the builds of apps built from a Git repository (feature 050). One form of five numbers;
+     the service judges each range and the page puts its message at the input. */}}
+{{define "settings-builds"}}
+{{with .Builds}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Builds</h1>
+    <p class="cv-lede">What a build of an app built from a Git repository may use, and how many may run at once. A change reaches the next build.</p>
+  </div>
+</header>
+{{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+<form method="post" action="/settings/builds" class="cv-panel" autocomplete="off">
+  {{range .Inputs}}
+  {{$id := .ID}}
+  {{template "srow-open" (srow .Label .Hint .ID)}}
+  <span class="cv-field cv-field-box cv-field-mono"><input class="cv-field-input" id="{{.ID}}" type="text" inputmode="numeric" name="{{.Name}}" value="{{.Value}}" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="{{.ID}}-error" autofocus{{end}}>{{with .Suffix}}<span class="cv-affix cv-affix-suf">{{.}}</span>{{end}}</span>
+  {{with .Error}}<span id="{{$id}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+  {{template "srow-close"}}
+  {{end}}
+  <div class="cv-setrow"><div class="cv-setrow-text"></div><div class="cv-setrow-ctl"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save limits</button></div></div>
+</form>
 {{end}}
 {{end}}
 

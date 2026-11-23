@@ -65,10 +65,12 @@
 {{with .Notice}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{with .Refusal}}<div role="alert" class="cv-main cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 <section class="cv-main" aria-label="App" hx-get="{{.HeaderHref}}" hx-trigger="sse:app, sse:deleted, sse:sync" hx-swap="innerHTML">{{template "app-header" .}}</section>
+{{with .Next}}{{template "next-steps" .}}{{end}}
 {{with .Running}}{{template "running" .}}{{end}}
 {{with .Run}}{{if .Show}}{{template "run-section" .}}{{end}}{{end}}
 {{with .Actions}}{{template "actions-section" .}}{{end}}
 {{with .Deployments}}{{template "deployments" .}}{{end}}
+{{with .BuildLog}}{{template "build-log" .}}{{end}}
 {{with .Configure}}{{template "configure" .}}{{end}}
 {{with .Compose}}{{template "compose-deploy" .}}{{end}}
 {{with .LogsTab}}<div class="cv-applogs">{{template "logs-page" .}}</div>{{end}}
@@ -193,6 +195,169 @@
 </details>
 {{else}}
 <p class="cv-note">Set it in the Compose overlay.</p>
+{{end}}
+{{end}}
+
+{{/* git-access: a built service's Git access (feature 050): which key or token is stored, the public half of a
+     deploy key with its fingerprint, and the forms that make, replace and remove them. The private key and the
+     token are never drawn: a token's input has no value, even after a refusal. "from" says which page to come
+     back to. Takes a gitAccessView. */}}
+{{define "git-access"}}
+<h3 class="cv-label" id="git-access-title">Git access</h3>
+{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{if eq .Kind "deploy-key"}}
+<p class="text-base text-fg-1">A deploy key{{if .Made.Text}}, made {{template "time" .Made}}{{end}}.</p>
+<p class="cv-note">Add this public key to the repository's deploy keys, with read-only access. Caravana keeps the private key and never shows it.</p>
+<code class="cv-cmd" id="{{.AnchorID}}">{{.PublicKey}}</code>
+<div><button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="{{.AnchorID}}" hidden>Copy key</button></div>
+<p class="cv-note">Fingerprint <span class="cv-inline-mono">{{.Fingerprint}}</span></p>
+{{else if eq .Kind "token"}}
+<p class="text-base text-fg-1">A token for the user <span class="cv-inline-mono">{{.Username}}</span>{{if .Made.Text}}, set {{template "time" .Made}}{{end}}. It is never shown again.</p>
+{{else if eq .Access "public"}}
+<p class="cv-note">No access is stored: the repository is read without credentials.</p>
+{{else}}
+<p class="cv-note">No access is stored yet.</p>
+{{end}}
+{{if .Needs}}
+<div class="cv-prereq">
+  <p class="cv-prereq-title"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>The build needs {{if eq .Access "deploy-key"}}a deploy key{{else}}a token{{end}}</span></p>
+  <p class="cv-prereq-reason">This service reads its repository with {{if eq .Access "deploy-key"}}a deploy key{{else}}a token{{end}}, and none is stored: a build is refused until there is one.</p>
+</div>
+{{end}}
+{{if .Offer}}
+<div class="cv-actions">
+  {{if eq .Kind "deploy-key"}}
+  <details class="cv-confirm">
+    <summary class="cv-btn cv-btn-secondary cv-btn-sm">New key…</summary>
+    <form method="post" action="{{.KeyAction}}" class="cv-confirm-body">
+      <input type="hidden" name="from" value="{{.From}}">
+      <p>The current key stops working at once. Add the new public key to the repository's deploy keys before the next build.</p>
+      <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Make a new key</button></div>
+    </form>
+  </details>
+  {{else}}
+  <form method="post" action="{{.KeyAction}}"><input type="hidden" name="from" value="{{.From}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Make a deploy key</button></form>
+  {{end}}
+  <details class="cv-confirm"{{if or .Token.Error .User.Error}} open{{end}}>
+    <summary class="cv-btn cv-btn-secondary cv-btn-sm">{{if eq .Kind "token"}}Replace token…{{else}}Add a token…{{end}}</summary>
+    <form method="post" action="{{.TokenAction}}" class="cv-confirm-body" autocomplete="off">
+      <input type="hidden" name="from" value="{{.From}}">
+      <label class="cv-fld" for="{{.User.ID}}">
+        <span class="cv-label">User name</span>
+        <input class="cv-field cv-field-mono" id="{{.User.ID}}" type="text" name="username" value="{{.User.Value}}" placeholder="x-access-token" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .User.Error}} aria-invalid="true" aria-describedby="{{.User.ID}}-error"{{end}}{{if .User.Alert}} autofocus{{end}}>
+        <span class="cv-data-muted cv-hint">Optional. The default works for GitHub, GitLab and Gitea.</span>
+        {{template "field-error" .User}}
+      </label>
+      <label class="cv-fld" for="{{.Token.ID}}">
+        <span class="cv-label">Token</span>
+        <input class="cv-field cv-field-mono" id="{{.Token.ID}}" type="password" name="token" autocomplete="new-password" required{{if .Token.Error}} aria-invalid="true" aria-describedby="{{.Token.ID}}-error"{{end}}{{if .Token.Alert}} autofocus{{end}}>
+        <span class="cv-data-muted cv-hint">A token that can read the repository. It is kept in the cluster's secret store and never shown again.</span>
+        {{template "field-error" .Token}}
+      </label>
+      <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save token</button></div>
+    </form>
+  </details>
+  {{if ne .Kind "none"}}
+  <details class="cv-confirm">
+    <summary class="cv-btn cv-btn-secondary cv-btn-sm">Remove access…</summary>
+    <form method="post" action="{{.RemoveAction}}" class="cv-confirm-body">
+      <input type="hidden" name="from" value="{{.From}}">
+      <p>The stored {{if eq .Kind "deploy-key"}}key{{else}}token{{end}} is deleted. A build that needs it is refused until you make another.</p>
+      <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Remove access</button></div>
+    </form>
+  </details>
+  {{end}}
+</div>
+{{end}}
+{{end}}
+
+{{/* next-steps: what an app that builds from Git needs before its first build (feature 050): access, the push
+     webhook, the build. Outside the live regions. Takes a nextSteps. */}}
+{{define "next-steps"}}
+<section id="next-steps" aria-labelledby="next-title" class="flex flex-col gap-2">
+  <h2 id="next-title" class="cv-label">Next steps</h2>
+  <div class="cv-panel p-4 flex flex-col gap-5">
+    <p class="text-base text-fg-1">{{template "sentence" .Summary}}</p>
+    {{if .Git.Offer}}<div id="git-access" class="flex flex-col gap-2">{{template "git-access" .Git}}</div>{{end}}
+    <div class="flex flex-col gap-2">
+      <h3 class="cv-label">Push webhook</h3>
+      <p class="cv-note">Optional: build on every push. Create a webhook token, then add a webhook for push events in the repository's settings, with the address the token gives and the content type <span class="cv-inline-mono">application/json</span>. A push to <span class="cv-inline-mono">{{.Branch}}</span> builds and deploys that commit; pushes to other branches build nothing.</p>
+      {{if .Hook.Enabled}}<p class="cv-note">A webhook token exists. Its address was shown once, when it was made; <a href="{{.Hook.ConfigureURL}}">replace the token in Configure</a> to see a new one.</p>
+      {{else}}<form method="post" action="{{.Hook.CreateAction}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Create a webhook token</button></form>{{end}}
+    </div>
+    <div class="flex flex-col gap-2">
+      <h3 class="cv-label">First build</h3>
+      <p class="cv-note">Builds the newest commit of <span class="cv-inline-mono">{{.Branch}}</span>, pushes the image and deploys it.</p>
+      <form method="post" action="{{.DeployAction}}"><button type="submit" class="cv-btn cv-btn-primary"{{if .Stopped}} disabled{{end}}>Build and deploy</button></form>
+    </div>
+  </div>
+</section>
+{{end}}
+
+{{/* build-panel: a built service's Build panel on Configure (feature 050): the source as a sentence and a form
+     (a deploy with the page's revision, so a build), then the Git access. Takes a buildPanel. */}}
+{{define "build-panel"}}
+<h3 class="cv-label" id="{{.AnchorID}}-title">Build</h3>
+{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+<p class="cv-plrules">{{template "sentence" .Summary}}</p>
+<form method="post" action="{{.Action}}#{{.AnchorID}}" class="cv-svcform cv-plform" aria-labelledby="{{.AnchorID}}-title">
+  <input type="hidden" name="revision" value="{{.Revision}}">
+  <fieldset class="cv-fieldset cv-plfields"{{if .Stopped}} disabled{{end}}>
+    {{template "field" (.F "repository")}}
+    <div class="cv-fields3">
+      {{template "field" (.F "branch")}}
+      {{template "field" (.F "folder")}}
+      {{template "field" (.F "dockerfile")}}
+    </div>
+    <fieldset class="cv-fieldset cv-plavoid"{{if .AccessError}} aria-describedby="{{.AccessID}}-error"{{end}}>
+      <legend class="cv-label">How it is read</legend>
+      {{range .Access}}<label class="cv-check" for="{{.ID}}"><input type="radio" id="{{.ID}}" name="{{$.AccessName}}" value="{{.Value}}"{{if .Checked}} checked{{end}}><span>{{.Label}} <span class="cv-srvafter">{{.Hint}}</span></span></label>
+      {{end}}
+      {{with .AccessError}}<span id="{{$.AccessID}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+    </fieldset>
+    {{template "field" (.F "hostkey")}}
+  </fieldset>
+  {{if not .Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save build source</button><span class="cv-note">Saving builds the newest commit and deploys it.</span></div>{{end}}
+</form>
+<div id="git-access" class="flex flex-col gap-2">{{template "git-access" .Git}}</div>
+{{end}}
+
+{{/* build-log: a build's page (feature 050): its head and log in one region that reads itself again while the
+     build is queued or running (on the deployments notice, and every 5 s: the log grows between notices),
+     and stops when the part answers 286. Takes a buildLogView. */}}
+{{define "build-log"}}
+<section aria-labelledby="build-title" class="flex flex-col gap-2">
+  <h2 id="build-title" class="cv-label">Build of deployment <span class="cv-inline-mono" title="{{.DeploymentID}}">{{.Short}}</span></h2>
+  <p class="cv-note"><a href="{{.DeploymentsHref}}">Back to the deployments</a></p>
+  <div class="cv-panel"{{if .Live}} hx-get="{{.RefreshHref}}" hx-trigger="sse:deployments, sse:sync, every 5s" hx-swap="innerHTML"{{end}} aria-live="polite">{{template "build-region" .Region}}</div>
+</section>
+{{end}}
+
+{{/* build-region: the build's status, facts, error and log. The page draws it inside its live panel and
+     /parts/apps/{id}/deployments/{deploymentId}/build draws it alone. Takes a buildRegion. */}}
+{{define "build-region"}}
+{{if .Gone}}
+<p class="px-4 py-4 text-sm text-fg-3">{{template "sentence" .Gone}}</p>
+{{else}}
+<div class="cv-def">
+  <p>{{template "status-pill" .Status}}</p>
+  <dl class="cv-def-rows">
+    {{range .Facts}}<div class="cv-def-row"><dt class="cv-label">{{.Label}}</dt><dd>{{if .Clock}}{{template "clock" .Clock}}{{else}}{{template "sentence" .Value}}{{end}}</dd></div>
+    {{end}}
+  </dl>
+  {{with .Error}}
+  <div class="flex flex-col gap-1">
+    <h3 class="cv-label">Why it failed</h3>
+    <pre class="cv-output" tabindex="0">{{.}}</pre>
+  </div>
+  {{end}}
+  <div class="flex flex-col gap-1">
+    <h3 class="cv-label">Log</h3>
+    {{if .Log}}<pre class="cv-output" tabindex="0">{{.Log}}</pre>
+    {{if .Cut}}<p class="cv-data-muted">The build printed more than this: only the last 64 KiB were kept.</p>{{end}}
+    {{else}}<p class="cv-data-muted">{{template "sentence" .Why}}</p>{{end}}
+  </div>
+</div>
 {{end}}
 {{end}}
 
@@ -664,7 +829,12 @@
 </div>
 {{else if .First}}
 <div class="cv-empty">
-  {{if .First.Defined}}
+  {{if .First.Built}}
+  <p class="cv-empty-title">Waiting for its first build.</p>
+  <p class="cv-empty-text">Nothing is running yet. The first deploy builds the newest commit of <span class="cv-inline-mono">{{.First.Branch}}</span> and deploys it: use the Next steps above, or let a push to the repository do it.</p>
+  <p class="cv-empty-text">Or call the API with a token:</p>
+  <code class="cv-cmd">{{.First.Call}}</code>
+  {{else if .First.Defined}}
   <p class="cv-empty-title">Waiting for its first deploy.</p>
   <p class="cv-empty-text">Nothing is running yet. Start it now, or let your CI do it with a webhook or the API.</p>
   <div class="cv-actions">
@@ -711,14 +881,18 @@
     {{with .Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
     {{range .Form.Fields}}
     {{$id := .ID}}
+    {{if .Built}}
+    <div class="cv-fld"><span class="cv-label">{{.Label}}</span><p class="text-base text-fg-1">{{template "sentence" .Built}}</p></div>
+    {{else}}
     <label class="cv-fld" for="{{$id}}">
       <span class="cv-label">{{.Label}}</span>
       <input class="cv-field cv-field-mono" id="{{$id}}" type="text" name="{{.Name}}" value="{{.Value}}" autocomplete="off" spellcheck="false" required{{if .Error}} aria-invalid="true" aria-describedby="{{$id}}-error"{{end}}>
       {{with .Error}}<span id="{{$id}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
     </label>
     {{end}}
-    <p class="text-sm text-fg-3">Keep the image to deploy it again and pick up a new push to the same tag, or change the tag.</p>
-    <div><button type="submit" class="cv-btn cv-btn-primary">Deploy</button></div>
+    {{end}}
+    {{if not .Form.Builds}}<p class="text-sm text-fg-3">Keep the image to deploy it again and pick up a new push to the same tag, or change the tag.</p>{{end}}
+    <div><button type="submit" class="cv-btn cv-btn-primary">{{if .Form.Builds}}Build and deploy{{else}}Deploy{{end}}</button></div>
   </form>
   {{end}}
 </section>
@@ -763,6 +937,7 @@
   </ol>
   {{end}}
   <p class="cv-deploy-sentence">{{template "sentence" .Sentence}}</p>
+  {{with .Build}}<p class="cv-data-muted">Build · {{if .Commit}}<span class="cv-inline-mono">{{.Commit}}</span> {{end}}{{with .Subject}}{{.}} · {{end}}<span class="cv-inline-mono">{{.Branch}}</span> · <a href="{{.LogHref}}">Build log</a></p>{{end}}
   {{with .Vulns}}<p class="cv-data-muted">{{.}}</p>{{end}}
   {{with .Progress}}<p class="cv-deploy-progress"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
   {{if .Error}}<p class="cv-data-muted cv-detail">{{with .ErrorLead}}<span class="cv-detail-lead">{{.}}</span>{{end}}{{.Error}}</p>{{end}}
@@ -954,6 +1129,7 @@
   </form>
   <div id="{{.Placement.AnchorID}}" class="cv-panel cv-gpanel cv-gpanel-tight cv-plpanel">{{template "placement" .Placement}}</div>
   <div id="{{.Scale.AnchorID}}" class="cv-panel cv-gpanel cv-gpanel-tight cv-plpanel">{{template "scale" .Scale}}</div>
+  {{with .Build}}<div id="{{.AnchorID}}" class="cv-panel cv-gpanel cv-gpanel-tight cv-plpanel">{{template "build-panel" .}}</div>{{end}}
 </section>
 {{end}}
 {{end}}

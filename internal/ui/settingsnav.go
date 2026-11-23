@@ -21,6 +21,7 @@ import (
 const (
 	entryAccount         = "account"
 	entryRegistries      = "registries"
+	entryBuilds          = "builds"
 	entrySecretProviders = "secret-providers"
 	entryBackupStorage   = "backup-storage"
 	entryNotifications   = "notifications"
@@ -43,6 +44,7 @@ var settingsGroups = []struct {
 	{"", []settingsEntry{{entryAccount, "Account", "/settings", "user"}}},
 	{"Connections", []settingsEntry{
 		{entryRegistries, "Registries", "/settings/registries", "package"},
+		{entryBuilds, "Builds", "/settings/builds", "hammer"},
 		{entrySecretProviders, "Secret providers", "/settings/secret-providers", "key"},
 		{entryBackupStorage, "Backup storage", "/settings/backup-storage", "hard-drive"},
 		{entryCertificates, "Certificates", "/settings/certificates", "lock"},

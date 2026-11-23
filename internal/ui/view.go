@@ -854,6 +854,9 @@ func deploymentSentence(rec store.DeploymentRecord, f deployFacts) sentence {
 	if rec.JobVersion != nil {
 		v = mono(versionLabel(rec.JobVersion))
 	}
+	if out := buildSentence(rec, f); out != nil {
+		return out // a deployment that waits for its build, or failed at it (feature 050)
+	}
 	// keeps ends a sentence with the version still serving, only when it is known to be true.
 	keeps := func(out sentence) sentence {
 		if f.Current && f.Previous != nil {

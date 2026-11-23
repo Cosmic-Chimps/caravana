@@ -945,6 +945,11 @@ Deploying now, the filter, the groups.
   entry gets the same three stages as one line of quiet mono ("● Queued under 1 s · ● Roll out 28 s ·
   ● Live 06:28:21 UTC", wrapping) in the panel's place, and drops "took ..." from its meta, which the line
   carries. A reverted entry's raw Nomad line is prefixed "Nomad said: " (the words after it stay mono).
+  A deployment that built from a Git repository (feature 050) has a fourth cell, **Build**, before Queued, in
+  the same shape (the cells share the panel's width, and stack under the same 660px): "queued", "building 12 s"
+  (active), "built in 41 s", a failed square and "failed", or a ring and "cancelled". Until the build has ended
+  well, Queued reads "—"; after it, Queued counts from the build's end. Under the strip a quiet line says the
+  commit (mono), its subject, the branch and a **Build log** link.
 - **The Version cell** of an app that is rolling out reads `v5 → v6`: the arrow and the new version in
   quiet text (the arrow is for the eye; a screen reader hears "rolling out v6").
 - **A rollback says what was deployed again.** After a revert Nomad's live version is a copy of an older

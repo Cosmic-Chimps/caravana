@@ -101,6 +101,10 @@ type appPage struct {
 	Notice  sentence
 	Refusal sentence
 	Running *copiesRegion
+	// Next is the Next steps panel of an app that builds from Git and has nothing deployed yet
+	// (feature 050); BuildLog is a build's page.
+	Next     *nextSteps
+	BuildLog *buildLogView
 	// Run and Actions are the Running tab's "Run a command" part and its list
 	// of recent actions.
 	Run         *runSection
@@ -306,6 +310,8 @@ type runningExtras struct {
 	Refusal sentence
 	Result  *runResult
 	Typed   *typedCommand
+	// Git is what a refused Git access post of Next steps typed (feature 050).
+	Git *gitPost
 }
 
 // runningPage draws the Running tab (the app's own page) with the given status.
@@ -340,6 +346,10 @@ func (s *server) runningPage(w http.ResponseWriter, r *http.Request, status int,
 	}
 	page := appPage{pageData: head, appHeader: s.header(r.Context(), sum, "running"), Running: &copies, Actions: &actions,
 		Run: runSectionOf(id, copies, extra), Refusal: extra.Refusal}
+	if page.Next, err = s.nextStepsOf(r, sum, extra.Git); err != nil {
+		s.serverError(w, r, "read the Git access", err)
+		return
+	}
 	if r.URL.Query().Get("created") == "1" && sum.LastDeployment == nil {
 		// Only said while it is still true: a reload after the first deploy says nothing.
 		page.Created = sentence{plain("Created "), mono(cmp.Or(sum.Place.Name, sum.App.ID)), plain(". Nothing is deployed yet.")}
@@ -532,6 +542,10 @@ type firstDeploy struct {
 	ComposeHref   string // Deploy from Compose
 	Call          string // the API call, as a curl line
 	CallNote      string // what goes in the call's body, for an app with no definition
+	// Built says the app builds from Git (feature 050): its Next steps panel has the actions, so the
+	// guidance only says what the first deploy will do. Branch is the branch it builds.
+	Built  bool
+	Branch string
 }
 
 // firstDeployOf builds the guidance for appID, which has no deployment.
@@ -543,6 +557,9 @@ func (s *server) firstDeployOf(r *http.Request, rec store.AppRecord) *firstDeplo
 		ConfigureHref: "/apps/" + id + "/configure",
 		WebhookHref:   "/apps/" + id + "/configure#webhook",
 		ComposeHref:   "/apps/" + id + "/compose",
+	}
+	if i, built := rec.App.BuiltService(); built {
+		f.Built, f.Branch = true, rec.App.Services[i].Build.Defaults().Branch
 	}
 	call := `curl -X POST -H "Authorization: Bearer $CARAVANA_TOKEN" `
 	if f.Defined {
@@ -679,6 +696,9 @@ type deployField struct {
 	ID      string // the element ID: image-web
 	Value   string // the stored image, or what was typed when the post was refused
 	Error   string // what is wrong with it; "" when nothing is
+	// Built says what a deploy of a built service does, in place of an image to type (feature 050):
+	// its image is the repository builds push to, and a deploy builds the branch's newest commit.
+	Built sentence
 }
 
 // deployForm is the deploy form: one image field per service. Notice is an
@@ -690,6 +710,8 @@ type deployForm struct {
 	Action                     string
 	Fields                     []deployField
 	Notice                     sentence
+	// Builds says one of the services builds from Git: the button says so.
+	Builds bool
 }
 
 // digestView is one service's pinned image in an entry: the short digest, and
@@ -718,7 +740,7 @@ type historyEntry struct {
 	Sentence sentence
 	// Stages are Queued, Roll out and Live. FullStrip draws them as the panel under the
 	// head line; otherwise as one line in its place (older healthy and superseded entries).
-	Stages    [3]stageView
+	Stages    []stageView
 	FullStrip bool
 	Progress  string // a running deployment's progress line; "" for the others
 	Error     string // the raw error, shown in mono under the sentence
@@ -728,6 +750,8 @@ type historyEntry struct {
 	Action    *actionLink // the one fix a failed newest deployment offers; nil for the rest
 	Warnings  []app.Warning
 	Digests   []digestView
+	// Build is the commit line of a deployment that built (feature 050); nil for the others.
+	Build *buildLine
 	// Source is the deployment this one redeployed; nil for the others.
 	Source *sourceLink
 	// Promoted is the deployment of another environment's app this one
@@ -902,7 +926,15 @@ func (s *server) historyEntry(ctx context.Context, now time.Time, rec store.Depl
 			e.Progress = progressLine(*p)
 		}
 	}
-	e.Stages = stagesOf(rec, progress)
+	e.Stages = withBuildStage(stagesOf(rec, progress), rec, now)
+	if e.Build = buildLineOf(rec); e.Build != nil {
+		if rec.Status == store.StatusPending && (rec.Build.Status == store.BuildQueued || rec.Build.Status == store.BuildRunning) {
+			e.Status = buildStatusView(rec.Build) // until the build is done, building is all that is happening
+		}
+		if rec.Build.Status == store.BuildFailed {
+			e.Error = firstLine(rec.Error) // the log page has the lines after it
+		}
+	}
 	return e
 }
 
@@ -916,8 +948,14 @@ func deployFormOf(a app.App) deployForm {
 		if len(a.Services) > 1 {
 			label = svc.Name + " image"
 		}
-		f.Fields = append(f.Fields, deployField{Service: svc.Name, Label: label,
-			Name: "image." + svc.Name, ID: "image-" + svc.Name, Value: svc.Image})
+		field := deployField{Service: svc.Name, Label: label,
+			Name: "image." + svc.Name, ID: "image-" + svc.Name, Value: svc.Image}
+		if svc.Build != nil {
+			f.Builds = true
+			field.Built = sentence{plain("Build and deploy the newest commit of "), mono(svc.Build.Defaults().Branch), plain(" from "),
+				mono(svc.Build.Repository), plain(", and push it to "), mono(svc.Image), plain(".")}
+		}
+		f.Fields = append(f.Fields, field)
 	}
 	return f
 }
@@ -1121,6 +1159,9 @@ func refuseDeploy(form *deployForm, err error) (status int, notice sentence, ok 
 	var existsErr *service.DNSRecordExistsError
 	var dnsErr *service.DNSProviderError
 	switch {
+	case buildRefused(err):
+		status, words, _, _ := buildRefusal(err)
+		return status, words, true
 	case errors.As(err, &refErr):
 		return referenceRefusal(refErr)
 	case errors.Is(err, service.ErrAppStopped):
@@ -1192,6 +1233,9 @@ type configureExtras struct {
 	// Scale, when set, is what a refused scaling post typed, with its messages
 	// (feature 043): the panel of that service is drawn from it.
 	Scale *scalePost
+	// Build and Git are what a refused Build or Git access post typed (feature 050).
+	Build *buildPost
+	Git   *gitPost
 }
 
 // configurePage draws the Configure tab with the given status. An unknown app
@@ -1284,6 +1328,10 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 	}
 	s.addPlacement(r, tab, sum, extra.Placement) // after the read-only panels exist
 	addScale(tab, sum, extra.Scale)
+	if err := s.addBuild(r, tab, sum, extra.Build, extra.Git); err != nil {
+		s.serverError(w, r, "read the Git access", err)
+		return
+	}
 	if !sum.App.Defined() {
 		// Nothing to edit yet: the form that gives it a definition replaces the per-service one.
 		form := newForm()

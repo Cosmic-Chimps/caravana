@@ -1966,6 +1966,57 @@ named `pr-<n>` (`app.PreviewNumber`; the prefix is reserved), opened and closed 
   `-run 'TestLab/^(api-needs-token|previews)$'`). The action prints `::add-mask::<value>` for each preview secret, so a
   leak check skips those lines, as `deploy-from-ci` does for the token.
 
+Feature 050 (`specs/050-build-from-git`, CodeAlta task `c9fd`, worktree branch `alta/solid-zagros-wbqx`): an app may be built from a Git
+repository on the host. `plan.md` D1–D12 are the decisions and its Deviations sections (phases B and D) the changes; operator doc:
+`docs/building-from-git.md`. Migration 0040, API 0.56.0, constitution 1.2.2 (names the build job and the build cache), no new module
+(`golang.org/x/crypto/ssh` makes the keys), no policy change (builds use jobs, `nomad/jobs/*` and `caravana/*` variables, host volumes,
+`read-fs` and `read-logs`, all in the policy already).
+- Model: `app.Service.Build *app.Build{Repository, Branch, Path, Dockerfile, Access, HostKey}` (`omitempty`, so no revision moved;
+  `Defaults()` is written into the stored app), the service's `image` is the repository builds push to (no tag or digest; each build is
+  `<image>:git-<commit12>`), one built service per app (`App.BuiltService`), `ParseRepository` is the one address rule, the `caravana-`
+  volume prefix is reserved. Compose's `build:` is still refused, a promotion takes the source's `build`.
+- Jobs: `nomadjob.BuildJob` is pure (goldens `build-*`; ID `<app>_build-<id>`): the `source` task (`alpine/git`, clones with a deploy key
+  or a credential file read from the job's own variable, `StrictHostKeyChecking=yes` over the built-in github.com and gitlab.com keys or
+  `hostKey`) and the `build` task (rootless BuildKit, `seccomp`/`apparmor` unconfined, pushes `<image>:git-<commit>` and writes the
+  digest), a cache volume `<app>_caravana-build` (uid 1000, emptied past its size), the proxy's server avoided once there is another, the
+  host network only for a loopback repository or registry. The scripts are tested under a real `sh` with fakes. The private key, a token
+  and the push credentials are in no job, only in `nomad/jobs/<job>`, and the log is masked of them.
+- Flow: a built service's deploy (`pin == nil`) is recorded with its build (`store.CreateDeploymentWithBuild`, status `pending`, build
+  `queued`), answers 202, and a goroutine on the process context builds, then runs `deployRecorded` with the pushed digest pinned
+  (`Deployer.ResolveWith`). The newest deploy cancels the build in progress, at most `concurrency` builds run at once (the rest are
+  `queued`), a timeout and a restart fail it ("Caravana restarted during the build"), a failure is `*service.BuildError` ("build failed:
+  <reason>" and the last 20 lines; nothing is registered, so the running version stays) and `notifyDeploy` sends `deploy.failed`. The
+  origin is the CI headers' when set, else the commit, branch and author. `checkBuild` runs before anything is saved:
+  `ErrGitAccessMissing` (409), `ErrGitHostKeyUnknown` and `ErrBuildRegistryMissing` (422), each a `*RefusalError` with its field.
+  `Redeploy`, the webhook and the console's Deploy build; a rollback, a promotion and Refresh secrets (pinned) never do.
+- Git access (`service/gitaccess.go`): the Nomad Variable `caravana/builds/<app>/<service>` (`kind`, `private_key`, `public_key` or
+  `username`, `token`); `NewDeployKey` (ed25519), `SetGitToken`, `RemoveGitAccess`, `GitAccess` (never the secrets). The push webhook
+  (`service.PushEvent`, pure) reads GitHub, Gitea, Forgejo and GitLab bodies and `X-Gitlab-Token`; a push elsewhere, a deletion, a ping
+  or the commit that is live is `WebhookResult.Skipped`. Settings: `BuildSettings` (memory 2048 MB, CPU 2000 MHz, timeout 30 min, one
+  build at once, cache 5120 MB), `CARAVANA_BUILDER_IMAGE` and `CARAVANA_GIT_IMAGE`.
+- API 0.56.0: `getDeploymentBuild`, `getGitAccess`, `createDeployKey`, `putGitToken`, `deleteGitAccess`, `getBuildSettings`,
+  `putBuildSettings`, `Service.build`, `Deployment.build`, `WebhookResult.skipped`, codes `git_access_missing`, `git_host_key_unknown`,
+  `build_registry_missing`, `build_not_found`, `git_access_not_found`. Deploy tokens may deploy a built app; the new routes are denied
+  to them.
+- Console (no designer pass, the existing parts and `DESIGN.md`'s rules; `internal/ui/build.go`, `gitaccess.go`, `buildpanel.go`,
+  `gitform.go`, `nextsteps.go`, `buildsettings.go`): New app's fifth tab **Build from Git** (`/apps/new?from=git`, `POST /apps/new/git`,
+  plain post; "Build and deploy" is for public access, a key or token is refused at `access` with "choose Create, then add access"; the
+  service is named like the app); the app's page has a **Next steps** panel outside the live regions while nothing is deployed (the Git
+  access, the push webhook, Build and deploy); Configure's **Build** panel per built service (a form posted to
+  `/apps/{id}/services/{service}/build` with the page's revision, a deploy that builds, and the **Git access** section: the public key with
+  its fingerprint, New key…, Add or Replace token…, Remove access; the token input never holds a value and the forms carry `from=next|
+  configure`); the history entry's **Build** stage first in the strip (queued, "building 12 s", "built in 41 s", failed, cancelled; the
+  strip is `grid-auto-flow: column`), its commit line and **Build log** link; the build page `/apps/{id}/deployments/{deploymentId}/build`
+  with its region `/parts/apps/{id}/deployments/{deploymentId}/build` (refreshed on the `deployments` notice and every 5 s while the
+  build is going, a `286` once it is over so htmx stops, a `noscript` refresh without script); Deploy on a built app says "Build and deploy
+  the newest commit of <branch>"; Settings › Builds (`/settings/builds`, Connections group after Registries). The refusals of a built
+  service are `buildRefusal`; `fieldMessage` names the build fields. The SSH host key has no field on New app's tab: it is in Configure's
+  Build panel.
+- Tests: `service`, `api` and `ui` have sentinel tests for a token, a private key and push credentials (rows, log, answers, pages, jobs); `internal/ui/build_test.go` plays Git and BuildKit with `deploytest.PlayBuilds`. The lab steps are the gate's
+  `build-from-git` (`cmd/caravana/gate_build_test.go`) and `TestConsoleLab`'s `console-build`, both to come in phase E.
+- Not in 050: Compose `build:`, more than one built service, polling a repository, build arguments and secrets, multi-architecture
+  images, a registry run by Caravana, Git providers as installation-wide accounts, a pool of build servers.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

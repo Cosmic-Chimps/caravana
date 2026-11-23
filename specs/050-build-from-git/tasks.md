@@ -30,9 +30,9 @@
 
 ## Phase D: console and docs
 
-- [ ] T008 Console (D10): New app › Build from Git, Next steps, Configure's Build panel and Git access, the Build
+- [x] T008 Console (D10): New app › Build from Git, Next steps, Configure's Build panel and Git access, the Build
       stage and the log page, Settings › Builds; `tools/ui-css.sh build`; UI tests (no key or token on any page).
-- [ ] T009 Docs (D11): `docs/building-from-git.md`, `docs/plan.md`, `changelog.d/050-build-from-git.md`, CLAUDE.md.
+- [x] T009 Docs (D11): `docs/building-from-git.md`, `docs/plan.md`, `changelog.d/050-build-from-git.md`, CLAUDE.md.
 
 ## Phase E: lab
 

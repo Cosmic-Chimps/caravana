@@ -83,12 +83,14 @@ var consoleParity = map[string]parity{
 	// The Running tab reads listCopies with usage=true: CPU and memory per copy. The header names the
 	// app's project and environments (getProject, and getEnvironmentApp for where the app exists).
 	// It also lists the app's recent actions (feature 020.5).
-	"GET /apps/{id}": {ops: []string{"getApp", "listCopies", "getProject", "getEnvironmentApp", "listAppActions"}},
+	// Next steps of an app built from Git (feature 050) read its Git access and whether it has a webhook token.
+	"GET /apps/{id}": {ops: []string{"getApp", "listCopies", "getProject", "getEnvironmentApp", "listAppActions", "getGitAccess", "getWebhook"}},
 
 	// The created notice of an app installed from a template reads the template's notes (getTemplate).
 	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments", "getTemplate", "getAppScan", "getDeploymentScan"}},
 	// A failed deploy on an image also reads the registries, to say whether to add or fix credentials.
-	"GET /apps/{id}/configure": {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules", "listRegistries", "getTemplate"}},
+	// A built service's Build panel (feature 050) also reads its Git access.
+	"GET /apps/{id}/configure": {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules", "listRegistries", "getTemplate", "getGitAccess"}},
 	// The Logs tab (feature 024) is the Logs page filtered to the app: listLogs with ?app= (and the lines around one,
 	// getLogsAround), the app's services for the rail (listApps), and the app for its header (getApp).
 	"GET /apps/{id}/logs": {ops: []string{"getApp", "listLogs", "getLogsAround", "listApps"}},
@@ -149,6 +151,19 @@ var consoleParity = map[string]parity{
 	// Removing one secret is a deploy of the app with its secrets listed, the others without a value (keep).
 	"POST /apps/{id}/secrets/remove":               {ops: []string{"deployApp"}},
 	"POST /apps/{id}/services/{service}/placement": {ops: []string{"getApp", "deployApp"}},
+	// Building from a Git repository (feature 050): New app's Build from Git tab is createApp (a deploy that builds) or
+	// the same with deploy=false; the Build panel's form is a deploy with the service's source; the build's page reads
+	// the build (getDeploymentBuild, whose part is the same read); the Git access forms are the API's own operations.
+	"POST /apps/new/git":                                       {ops: []string{"createApp", "createEnvironmentApp"}},
+	"GET /apps/{id}/deployments/{deploymentId}/build":          {ops: []string{"getApp", "getDeploymentBuild"}},
+	"GET /parts/apps/{id}/deployments/{deploymentId}/build":    {ops: []string{"getDeploymentBuild"}},
+	"POST /apps/{id}/services/{service}/build":                 {ops: []string{"getApp", "deployApp"}},
+	"POST /apps/{id}/services/{service}/git-access/deploy-key": {ops: []string{"createDeployKey"}},
+	"POST /apps/{id}/services/{service}/git-access/token":      {ops: []string{"putGitToken"}},
+	"POST /apps/{id}/services/{service}/git-access/remove":     {ops: []string{"deleteGitAccess"}},
+	// Settings › Builds: the five limits.
+	"GET /settings/builds":  {ops: append([]string{"getBuildSettings"}, settingsReads...)},
+	"POST /settings/builds": {ops: []string{"putBuildSettings"}},
 	// Scaling (feature 043): the form is a deploy with the service's scale; Stop scaling a deploy without it.
 	"POST /apps/{id}/services/{service}/scale": {ops: []string{"getApp", "deployApp"}},
 	"POST /apps/{id}/secrets/refresh":          {ops: []string{"refreshSecrets"}}, // feature 037
