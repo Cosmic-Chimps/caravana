@@ -44,6 +44,10 @@ const (
 	codeNotEmpty              = "not_empty"
 	codeProtected             = "protected"
 	codeTokenScope            = "token_scope"
+	codeDestinationNotFound   = "destination_not_found"
+	codeDestinationIsDefault  = "destination_is_default"
+	codeDestinationInUse      = "destination_in_use"
+	codeBackupMissing         = "backup_missing"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with

@@ -37,6 +37,9 @@ type attentionItemJSON struct {
 	// server_down and server_certificate_expiring (feature 031): the server's name. The certificate
 	// kind's end is expiresAt above; the items have no appId.
 	Server string `json:"server,omitempty"`
+	// backup_failed and backup_copy_failed (feature 052): the backup destination the failed backup was
+	// going to, or the one the failed copy was going to.
+	Destination string `json:"destination,omitempty"`
 	// copies_unplaced (feature 042): how many copies Nomad has queued; server_move_incomplete: how many
 	// movable copies still run on the server (named by server above).
 	Queued int `json:"queued,omitzero"`
@@ -51,7 +54,8 @@ func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
 	out := attentionItemJSON{Kind: string(it.Kind), AppID: it.AppID, Project: it.Project, Environment: it.Environment, AppName: it.AppName,
 		Service: it.Service, Schedule: it.Schedule, ScheduleID: it.ScheduleID, Copies: it.Copies,
 		DeploymentID: it.Deployment, DeploymentStatus: string(it.DeploymentStatus), JobVersion: it.Version,
-		Domain: it.Domain, AddressSeen: it.AddressSeen, ExpiresAt: it.ExpiresAt, At: it.When, Detail: it.Detail}
+		Domain: it.Domain, AddressSeen: it.AddressSeen, ExpiresAt: it.ExpiresAt, At: it.When, Detail: it.Detail,
+		Destination: it.Destination}
 	if it.Kind == service.AttentionDiskNearlyFull {
 		out.Mount, out.Holds, out.Level, out.Server = it.Mount, it.Holds, string(it.Level), it.Server
 		out.UsedPercent, out.FreeBytes = &it.UsedPercent, &it.FreeBytes

@@ -37,10 +37,10 @@
 
 ## Phase C: API
 
-- [ ] T012 `internal/api`: the routes and codes of `contracts/api.md`, error mapping, `Backup.copies`,
+- [x] T012 `internal/api`: the routes and codes of `contracts/api.md`, error mapping, `Backup.copies`,
       `Restore.destination`, the restore body, `Project.backupDestination`; `api/openapi.yaml` 0.58.0 (contract and
       parity tests, the scope walk).
-- [ ] T013 A sentinel test in `api`: a destination's secret key in no answer of any route, log line or error.
+- [x] T013 A sentinel test in `api`: a destination's secret key in no answer of any route, log line or error.
 
 ## Phase D: console and docs
 

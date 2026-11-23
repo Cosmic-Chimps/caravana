@@ -183,36 +183,52 @@ func (s *Service) SetProjectDisplayName(ctx context.Context, id, displayName str
 
 // SetProjectBackupDestination sets the backup destination the project's backups
 // go to when a policy names none: name, or "" for the installation's default
-// (feature 052). An unknown project is ErrProjectNotFound. A name that isn't a
-// destination, or that would leave a policy of the project copying to where its
-// backups already go, is a *app.FieldError on "backupDestination". It points the
-// project's backup jobs at the new destination from their next run (no deploy).
+// (feature 052). It is UpdateProject with that one change.
 func (s *Service) SetProjectBackupDestination(ctx context.Context, id, name string) (Project, error) {
+	return s.UpdateProject(ctx, id, ProjectChanges{BackupDestination: &name})
+}
+
+// ProjectChanges are the things about a project that can change; nil leaves one
+// as it is.
+type ProjectChanges struct {
+	// DisplayName is what the console calls the project (validDisplayName).
+	DisplayName *string
+	// BackupDestination is the destination the project's backups go to when a
+	// policy names none, "" for the installation's default.
+	BackupDestination *string
+}
+
+// UpdateProject applies the changes. Every one is checked before any is made, so
+// a refusal changes nothing. An unknown project is ErrProjectNotFound. A bad
+// display name is a *app.FieldError on "displayName"; a backup destination that
+// isn't a name, doesn't exist, or would leave a policy of the project copying to
+// where its backups already go is one on "backupDestination". A new backup
+// destination points the project's backup jobs at it from their next run (no deploy).
+func (s *Service) UpdateProject(ctx context.Context, id string, c ProjectChanges) (Project, error) {
 	if _, err := s.store.GetProject(ctx, id); errors.Is(err, store.ErrNotFound) {
 		return Project{}, fmt.Errorf("%w: %q", ErrProjectNotFound, id)
 	} else if err != nil {
 		return Project{}, err
 	}
-	if name != "" {
-		if !app.ValidLabel(name) {
-			return Project{}, app.NewFieldError("backupDestination", "%q must be a destination's name: 1 to 32 lowercase letters, digits or hyphens", name)
-		}
-		if _, err := s.store.GetBackupDestinationNamed(ctx, name); errors.Is(err, store.ErrNotFound) {
-			return Project{}, app.NewFieldError("backupDestination", "no backup destination is named %q; add it in Settings › Backup storage", name)
-		} else if err != nil {
+	if c.DisplayName != nil {
+		if err := validDisplayName(*c.DisplayName); err != nil {
 			return Project{}, err
 		}
 	}
-	apps, projects, installDefault, err := s.backupWorld(ctx)
-	if err != nil {
-		return Project{}, err
+	if c.BackupDestination != nil {
+		if err := s.checkProjectBackupDestination(ctx, id, *c.BackupDestination); err != nil {
+			return Project{}, err
+		}
 	}
-	projects[id] = name
-	if a, svc, dest, found := copyConflict(apps, projects, installDefault); found {
-		return Project{}, app.NewFieldError("backupDestination", "%s/%s copies its backups to %q, where they would already go; change that policy first", a, svc, dest)
+	if c.DisplayName != nil {
+		if _, err := s.store.SetProjectDisplayName(ctx, id, *c.DisplayName); err != nil {
+			return Project{}, err
+		}
 	}
-	if err := s.store.SetProjectBackupDestination(ctx, id, name); err != nil {
-		return Project{}, err
+	if c.BackupDestination != nil {
+		if err := s.store.SetProjectBackupDestination(ctx, id, *c.BackupDestination); err != nil {
+			return Project{}, err
+		}
 	}
 	rec, err := s.store.GetProject(ctx, id)
 	if err != nil {
@@ -223,11 +239,38 @@ func (s *Service) SetProjectBackupDestination(ctx context.Context, id, name stri
 		return Project{}, err
 	}
 	s.publish(Change{What: ChangeApps})
-	s.publish(Change{What: ChangeAttention})
-	if err := s.repointBackups(ctx); err != nil {
-		return p, fmt.Errorf("saved, but the backup jobs still point at the old destination: %w", err)
+	if c.BackupDestination != nil {
+		s.publish(Change{What: ChangeAttention})
+		if err := s.repointBackups(ctx); err != nil {
+			return p, fmt.Errorf("saved, but the backup jobs still point at the old destination: %w", err)
+		}
 	}
 	return p, nil
+}
+
+// checkProjectBackupDestination refuses a default destination for the project that
+// is no destination's name, or that would leave a policy of the project copying to
+// the destination its backups already go to.
+func (s *Service) checkProjectBackupDestination(ctx context.Context, id, name string) error {
+	if name != "" {
+		if !app.ValidLabel(name) {
+			return app.NewFieldError("backupDestination", "%q must be a destination's name: 1 to 32 lowercase letters, digits or hyphens", name)
+		}
+		if _, err := s.store.GetBackupDestinationNamed(ctx, name); errors.Is(err, store.ErrNotFound) {
+			return app.NewFieldError("backupDestination", "no backup destination is named %q; add it in Settings › Backup storage", name)
+		} else if err != nil {
+			return err
+		}
+	}
+	apps, projects, installDefault, err := s.backupWorld(ctx)
+	if err != nil {
+		return err
+	}
+	projects[id] = name
+	if a, svc, dest, found := copyConflict(apps, projects, installDefault); found {
+		return app.NewFieldError("backupDestination", "%s/%s copies its backups to %q, where they would already go; change that policy first", a, svc, dest)
+	}
+	return nil
 }
 
 // DeleteProject deletes a project and its environments. Default is

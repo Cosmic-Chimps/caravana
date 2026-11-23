@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.56.0
+  version: 0.58.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -304,7 +304,7 @@ paths:
         are one item.
 
         When Nomad can't be read the answer is still 200 with `copiesUnknown: true`, and only
-        the kinds that come from Caravana's own records (`deploy_failed`, `backup_failed`,
+        the kinds that come from Caravana's own records (`deploy_failed`, `backup_failed`, `backup_copy_failed`,
         `restore_failed`, `no_backup_destination`) are listed.
       tags: [apps]
       responses:
@@ -1599,10 +1599,11 @@ paths:
           $ref: "#/components/responses/Internal"
     patch:
       operationId: updateProject
-      summary: Change a project's display name.
+      summary: Change a project's display name or backup destination.
       description: |
-        The only thing about a project that can change: its name is part of every app's ID.
-        `default` may be renamed for display.
+        The things about a project that can change: its name is part of every app's ID. `default`
+        may be renamed for display. Both fields are optional, one is required; they are checked
+        together, so a refusal changes nothing.
       tags: [projects]
       requestBody:
         required: true
@@ -3714,7 +3715,11 @@ paths:
   /v1/backups/destination:
     get:
       operationId: getBackupDestination
-      summary: Read where backups go, without the secret key.
+      summary: Read the default backup destination, without the secret key.
+      description: |
+        The installation can keep several destinations (`listBackupDestinations`); this reads the
+        default one, the one backups go to unless a policy or its project names another. 404
+        `not_found` while there is none.
       tags: [backups]
       responses:
         "200":
@@ -3731,11 +3736,13 @@ paths:
           $ref: "#/components/responses/Internal"
     put:
       operationId: setBackupDestination
-      summary: Set where backups go.
+      summary: Set the default backup destination.
       description: |
-        One S3-compatible bucket for the installation. Leave `secretAccessKey` out to keep the
-        one set before; it is required the first time and never returned. Every backup
-        schedule uses the new destination from its next run, without a deploy.
+        Writes the default destination, or makes the destination `main`, as the default, when there
+        is none: the call of the days of a single destination. Leave `secretAccessKey` out to keep
+        the one set before; it is required the first time and never returned. Every backup
+        that goes to the default uses the new settings from its next run, without a deploy. To
+        manage several destinations use `putBackupDestination`.
       tags: [backups]
       requestBody:
         required: true
@@ -3760,6 +3767,140 @@ paths:
           $ref: "#/components/responses/BodyTooLarge"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/backups/destinations:
+    get:
+      operationId: listBackupDestinations
+      summary: List the backup destinations, ordered by name.
+      description: |
+        Each destination with its last test and what uses it: the policies that send backups there
+        (`role: destination`) or copy to it (`role: copy`), and the projects whose default it is. The
+        secret key is never returned.
+      tags: [backups]
+      responses:
+        "200":
+          description: The destinations; empty while there are none.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BackupDestination"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/backups/destinations/{name}:
+    parameters:
+      - $ref: "#/components/parameters/BackupDestinationName"
+    put:
+      operationId: putBackupDestination
+      summary: Make or change a backup destination.
+      description: |
+        Creates the destination called `name` (201, with `Location`) or changes it (200). The name is
+        1 to 32 lowercase letters, digits and hyphens, starting and ending with a letter or digit (else
+        400 `invalid_field` on `name`). `secretAccessKey` is required when creating and optional
+        after: leave it out to keep the one set before. It is kept only in a Nomad Variable and never
+        returned, logged or put in a job. The first destination is the default whatever `default`
+        says; `default: true` makes this one the default, and `default: false` on the default is 400 on
+        `default` (make another the default instead). A save forgets the last test, and every backup
+        that goes to this destination uses the new settings from its next run, without a deploy. A
+        change that couldn't reach the backup jobs is 502 "saved, but the backup jobs still point at
+        the old destination"; the destination is saved.
+      tags: [backups]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupDestinationPut"
+      responses:
+        "200":
+          description: Changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupDestination"
+        "201":
+          description: Made.
+          headers:
+            Location:
+              description: The destination's path.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupDestination"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+    delete:
+      operationId: deleteBackupDestination
+      summary: Remove a backup destination and its secret key.
+      description: |
+        Refused with 409 `destination_is_default` for the default (make another the default first),
+        and with 409 `destination_in_use` while a policy sends backups there or copies to it, or a
+        project has it as its default: the message names up to five of its users. Backups already kept
+        in the bucket stay there, and their records stay.
+      tags: [backups]
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/BackupConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/backups/destinations/{name}/test:
+    parameters:
+      - $ref: "#/components/parameters/BackupDestinationName"
+    post:
+      operationId: testBackupDestination
+      summary: Check that a destination can be reached with its key.
+      description: |
+        From the servers, a one-off job lists the destination's folder, writes a small object and
+        deletes it. The answer is the outcome, whichever it is: a bucket that said no is 200 with
+        `ok: false` and rclone's words in `message` (never the key). The outcome is kept on the
+        destination (`lastTest`). 404 `destination_not_found` for an unknown name; 502 when Nomad
+        couldn't run the check or it didn't end in 90 seconds.
+      tags: [backups]
+      responses:
+        "200":
+          description: The outcome.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupDestinationTest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/Internal"
         "502":
@@ -5655,7 +5796,21 @@ paths:
         check stops nothing. It runs in the background: list the backups to follow the restore. One restore per service at a time.
         A restore started here is recorded with `trigger: owner`; the service's `backup.restore`
         schedule starts the same restore with `trigger: schedule`.
+
+        The body is optional. `from` names the destination to read from. Without it, a backup that is
+        in one place is read from there, and one in several (its own destination and its copies) is
+        looked for first: a one-off job asks each place, in order, whether it still has the object, and
+        the restore reads the first that does. A place that says no is marked `expired` on the backup.
+        409 `backup_missing` when no place has it any more; 502 `nomad_unavailable` when the check
+        couldn't run, or the places that could be asked don't have it and another couldn't be reached.
+        The restore's `destination` says where it read.
       tags: [backups]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestoreRequest"
       responses:
         "202":
           description: Started.
@@ -5663,6 +5818,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Restore"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -6920,6 +7077,16 @@ components:
       examples:
         bella:
           value: bella-prod
+    BackupDestinationName:
+      name: name
+      in: path
+      required: true
+      description: A backup destination's name, 1 to 32 lowercase letters, digits and hyphens.
+      schema:
+        type: string
+      examples:
+        offsite:
+          value: offsite
     RegistryHost:
       name: host
       in: path
@@ -7981,6 +8148,37 @@ components:
           description: |
             How many unpinned backups stay (1 to 100). Leave it out for 7. Pinned backups
             (`pinBackup`) are kept besides.
+        destination:
+          type: string
+          pattern: "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$"
+          examples: [client-a]
+          description: |
+            The name of the backup destination the backups go to. Leave it out for the project's
+            default (`updateProject`), else the installation's default. A name that isn't a
+            destination is 400 `invalid_field` on `services[i].backup.destination` at deploy time.
+        copyTo:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$"
+          examples: [[offsite]]
+          description: |
+            Other destinations each succeeded backup is copied to, by Caravana, after it succeeds
+            (every engine, and across restarts). At most 2, distinct, and never the destination the
+            backups go to (400 `invalid_field` on `services[i].backup.copyTo[k]`, also for a name that
+            isn't a destination). Each destination's retention keeps its own number of backups
+            (`copyKeep`) and never deletes a pinned one. A copy that fails is recorded on the backup
+            and is the needs-you item `backup_copy_failed`. When the object is gone from the first
+            place, a restore takes it from a copy.
+        copyKeep:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: |
+            How many backups each copy destination keeps. Leave it out for `keep`. Only with `copyTo`
+            (400 on `services[i].backup.copyKeep` otherwise).
         restore:
           type: object
           additionalProperties: false
@@ -8010,14 +8208,81 @@ components:
     BackupDestination:
       type: object
       additionalProperties: false
-      required: [endpoint, region, bucket, prefix, accessKeyId, updatedAt]
+      required: [name, default, endpoint, region, bucket, prefix, accessKeyId, updatedAt]
+      description: "A backup destination: an S3-compatible bucket. The secret key is never in it."
       properties:
+        name:
+          type: string
+          examples: [main, offsite]
+          description: |
+            1 to 32 lowercase letters, digits and hyphens. The destination that existed before API
+            0.58.0 is named `main`.
+        default:
+          type: boolean
+          description: Exactly one destination is the default while any exists.
         endpoint: {type: string, examples: ["https://s3.eu-west-1.amazonaws.com"]}
         region: {type: string}
         bucket: {type: string}
         prefix: {type: string}
         accessKeyId: {type: string}
         updatedAt: {type: string, format: date-time}
+        lastTest:
+          $ref: "#/components/schemas/BackupDestinationTest"
+          description: The outcome of the last test. Absent until one ran, and after a save.
+        usedBy:
+          type: array
+          description: What uses the destination. Only `listBackupDestinations` has it.
+          items:
+            $ref: "#/components/schemas/BackupDestinationUse"
+
+    BackupDestinationTest:
+      type: object
+      additionalProperties: false
+      required: [ok, message, testedAt]
+      properties:
+        ok: {type: boolean}
+        message:
+          type: string
+          examples: ["listed, wrote and removed a test object", "could not write: AccessDenied"]
+          description: "What the check did, or `could not <list|write|delete>: ` and the tool's words. Never the secret key."
+        testedAt: {type: string, format: date-time}
+
+    BackupDestinationUse:
+      type: object
+      additionalProperties: false
+      description: |
+        One user of a destination: a service's backup policy (`app`, `service` and `role`), or a project
+        whose default it is (`project`).
+      properties:
+        app: {type: string}
+        service: {type: string}
+        role:
+          type: string
+          enum: [destination, copy]
+          description: "`destination`: the policy's backups go there. `copy`: each backup is copied there."
+        project: {type: string}
+
+    BackupDestinationPut:
+      type: object
+      additionalProperties: false
+      required: [endpoint, region, bucket, accessKeyId]
+      description: |
+        The body of `putBackupDestination`: `BackupDestinationRequest`, plus `default`.
+      properties:
+        endpoint: {type: string}
+        region: {type: string}
+        bucket: {type: string}
+        prefix: {type: string}
+        accessKeyId: {type: string}
+        secretAccessKey:
+          type: string
+          writeOnly: true
+          description: Required when creating; leave it out to keep the one set before.
+        default:
+          type: boolean
+          description: |
+            `true` makes the destination the default. `false` is refused (400 on `default`) on the
+            default. The first destination is the default whatever this says.
 
     BackupDestinationRequest:
       type: object
@@ -8440,6 +8705,9 @@ components:
         freeBytes:
           type: integer
           description: "`problem.opened` of `disk_nearly_full`: what is left, in bytes."
+        destination:
+          type: string
+          description: "`problem.opened` of `backup_failed` and `backup_copy_failed` (feature 052): the destination the failed backup or copy was going to."
         package:
           type: string
           description: "`problem.opened` of `image_vulnerable` (feature 044): the package with the advisory, such as `zlib`."
@@ -8549,6 +8817,48 @@ components:
             The label the backup is pinned under (`pinBackup`). Retention never deletes a pinned
             backup and counts only unpinned ones against `keep`. Absent when not pinned.
         pinnedAt: {type: string, format: date-time}
+        destination:
+          type: string
+          description: |
+            The name of the destination the backup went to. Absent for a backup recorded before API
+            0.58.0 on an installation that had no destination yet.
+        expired:
+          type: boolean
+          description: |
+            `true` when retention deleted the backup from `destination`. It is still listed while a
+            copy holds it (`copies`), and `restoreBackup` then reads the copy.
+        copies:
+          type: array
+          description: |
+            The copies of the backup to the other destinations its policy names, in the order they were
+            queued. A backup is listed while its own destination or any copy still holds it.
+          items:
+            $ref: "#/components/schemas/BackupCopy"
+
+    BackupCopy:
+      type: object
+      additionalProperties: false
+      required: [destination, status, bytes, expired]
+      properties:
+        destination:
+          type: string
+          description: The destination copied to.
+        status:
+          type: string
+          enum: [pending, running, succeeded, failed]
+        object:
+          type: string
+          description: The copy's path in that destination, when it succeeded.
+        bytes: {type: integer}
+        message:
+          type: string
+          description: |
+            Why it failed, in rclone's words or Caravana's. A succeeded copy may carry a warning that
+            retention couldn't finish there.
+        expired:
+          type: boolean
+          description: "`true` when retention deleted the copy from its destination."
+        finishedAt: {type: string, format: date-time}
 
     BackupVolume:
       type: object
@@ -8664,12 +8974,26 @@ components:
         pin:
           type: string
           description: "For a restore with `trigger: schedule`, the label it restored from."
+        destination:
+          type: string
+          description: The name of the destination the restore read the backup from (a copy's, when the backup's own had lost it).
         message: {type: string}
         createdAt: {type: string, format: date-time}
         finishedAt: {type: string, format: date-time}
         stoppedSeconds:
           type: number
           description: "`volume` and `sqlite` restores only: how long the service was stopped, once measured."
+
+    RestoreRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        from:
+          type: string
+          pattern: "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$"
+          description: |
+            The destination to read the backup from: its own, or one of its copies that succeeded and is
+            still there. A destination the backup isn't in is 400 `invalid_field` on `from`.
 
     BackupList:
       type: object
@@ -10327,6 +10651,11 @@ components:
             $ref: "#/components/schemas/Environment"
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+        backupDestination:
+          type: string
+          description: |
+            The name of the backup destination the project's backups go to when a policy names none.
+            Absent for the installation's default.
 
     ProjectRequest:
       type: object
@@ -10344,12 +10673,20 @@ components:
     ProjectUpdate:
       type: object
       additionalProperties: false
-      required: [displayName]
+      minProperties: 1
       properties:
         displayName:
           type: string
           minLength: 1
           maxLength: 100
+        backupDestination:
+          type: string
+          description: |
+            A destination's name, or `""` for the installation's default; leave it out to leave it as
+            it is. A name that isn't a destination, or a default that would make a policy of the
+            project copy to where its backups already go, is 400 `invalid_field` on
+            `backupDestination`. The project's backup jobs go to the new destination from their next
+            run, without a deploy.
 
     EnvironmentRequest:
       type: object
@@ -12139,7 +12476,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, restore_failed, no_backup_destination,
+          enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, backup_copy_failed, restore_failed, no_backup_destination,
             schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring, disk_nearly_full,
             os_reboot_required, os_security_updates, caravana_update_failed, server_down, server_certificate_expiring,
             copies_unplaced, server_move_incomplete, scale_at_max, image_vulnerable]
@@ -12196,7 +12533,17 @@ components:
             level that has a known fix, one item per package; `detail` is the sentence ("zlib 1.2.11-r3
             in blog/web has CVE-2022-37434 (critical), fixed in 1.2.12-r2."). It exists only while the
             image scanner is installed, and goes when a deploy brings an image without it or the app
-            stops. Clients should accept kinds they don't know.
+            stops. `backup_copy_failed` (feature 052), a warning: the newest copy that finished of a
+            service's backup to one of the destinations its policy copies to (`destination`) failed;
+            `detail` is rclone's words or Caravana's. A later copy that succeeds, a policy that stops
+            copying there, or the app's deletion clears it. `backup_failed` carries `destination` too,
+            where the failed backup was going. Clients should accept kinds they don't know.
+        destination:
+          type: string
+          description: |
+            The backup destination of `backup_failed` (where the failed backup was going; absent for a
+            record from before destinations had names) and of `backup_copy_failed` (the one the failed
+            copy was going to).
         appId:
           type: string
           description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required`, `os_security_updates`, `caravana_update_failed`, `server_down` and `server_certificate_expiring`, which are about the installation, the host or a server.
@@ -13027,7 +13374,8 @@ components:
                 `dns_record_exists`, `dns_address_unknown`, `dns_provider_refused`, `dns_provider_unavailable`,
                 `dns_zone_not_found`, `preview_limit`, `previews_open`, `not_a_preview`, `preview_password`,
                 `git_access_missing`, `git_host_key_unknown`, `build_registry_missing`, `build_not_found`,
-                `git_access_not_found`.
+                `git_access_not_found`, `destination_not_found`, `destination_is_default`,
+                `destination_in_use`, `backup_missing`.
               examples: [invalid_field]
             message:
               type: string
@@ -13459,6 +13807,10 @@ components:
         no running copy (it was never deployed, is still starting, or has stopped).
         `app_stopped`: the app is stopped (`stopApp`); start it first. `app_busy` (`pinBackup`,
         `unpinBackup`): a deploy or a volume run holds the app; try again when it ends.
+        `backup_missing` (`restoreBackup`): the backup is in none of its places any more.
+        `destination_is_default` and `destination_in_use` (`deleteBackupDestination`): the default
+        can't be removed, and neither can a destination a policy or a project still uses; the message
+        names its users.
       content:
         application/json:
           schema:

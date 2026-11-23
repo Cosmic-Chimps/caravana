@@ -10,22 +10,6 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
-// backupDestinationJSON is the destination without its secret key (schema
-// BackupDestination).
-type backupDestinationJSON struct {
-	Endpoint    string    `json:"endpoint"`
-	Region      string    `json:"region"`
-	Bucket      string    `json:"bucket"`
-	Prefix      string    `json:"prefix"`
-	AccessKeyID string    `json:"accessKeyId"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-}
-
-func toDestinationJSON(d store.BackupDestination) backupDestinationJSON {
-	return backupDestinationJSON{Endpoint: d.Endpoint, Region: d.Region, Bucket: d.Bucket, Prefix: d.Prefix,
-		AccessKeyID: d.AccessKeyID, UpdatedAt: d.UpdatedAt}
-}
-
 // backupJSON is one backup (schema Backup). Engine, StoppedSeconds and Volumes
 // are feature 016's: only a volume run has the last two.
 type backupJSON struct {
@@ -50,6 +34,23 @@ type backupJSON struct {
 	// (feature 036).
 	Pin      string     `json:"pin,omitempty"`
 	PinnedAt *time.Time `json:"pinnedAt,omitempty"`
+	// Destination is where the backup went (feature 052), left out for a record from before
+	// destinations had names. Expired says retention deleted it from there: it is listed while a
+	// copy holds it. Copies are the copies of it to other destinations.
+	Destination string           `json:"destination,omitempty"`
+	Expired     bool             `json:"expired,omitempty"`
+	Copies      []backupCopyJSON `json:"copies,omitempty"`
+}
+
+// backupCopyJSON is one copy of a backup to another destination (schema BackupCopy).
+type backupCopyJSON struct {
+	Destination string     `json:"destination"`
+	Status      string     `json:"status"`
+	Object      string     `json:"object,omitempty"`
+	Bytes       int64      `json:"bytes"`
+	Message     string     `json:"message,omitempty"`
+	Expired     bool       `json:"expired"`
+	FinishedAt  *time.Time `json:"finishedAt,omitempty"`
 }
 
 // backupVolumeJSON is one volume's archive in a volume backup (schema
@@ -66,9 +67,13 @@ type backupVolumeJSON struct {
 func toBackupJSON(b store.BackupRecord) backupJSON {
 	out := backupJSON{ID: b.ID, Service: b.Service, Engine: engineOrPostgres(b.Engine), Status: b.Status, Trigger: triggerOrTimer(b.Trigger),
 		Bytes: b.Bytes, Message: b.Message, StartedAt: b.StartedAt, FinishedAt: b.FinishedAt, StoppedSeconds: seconds(b.Stopped),
-		Pin: b.Pin, PinnedAt: b.PinnedAt}
+		Pin: b.Pin, PinnedAt: b.PinnedAt, Destination: b.Destination, Expired: b.Expired}
 	for _, v := range b.Volumes {
 		out.Volumes = append(out.Volumes, backupVolumeJSON{Name: v.Name, Bytes: v.Bytes, SizeBytes: v.SizeKB * 1024})
+	}
+	for _, c := range b.Copies {
+		out.Copies = append(out.Copies, backupCopyJSON{Destination: c.Destination, Status: c.Status, Object: c.Object, Bytes: c.Bytes,
+			Message: c.Message, Expired: c.Expired, FinishedAt: c.FinishedAt})
 	}
 	return out
 }
@@ -115,12 +120,14 @@ type restoreJSON struct {
 	// restore, the label it restored from (feature 036).
 	Trigger string `json:"trigger"`
 	Pin     string `json:"pin,omitempty"`
+	// Destination is where the restore read the backup from (feature 052).
+	Destination string `json:"destination,omitempty"`
 }
 
 func toRestoreJSON(r store.RestoreRecord) restoreJSON {
 	return restoreJSON{ID: r.ID, Service: r.Service, BackupID: r.BackupID, Engine: engineOrPostgres(r.Engine), Status: r.Status,
 		Message: r.Message, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt, StoppedSeconds: seconds(r.Stopped),
-		Trigger: restoreTriggerOrOwner(r.Trigger), Pin: r.Pin}
+		Trigger: restoreTriggerOrOwner(r.Trigger), Pin: r.Pin, Destination: r.Destination}
 }
 
 // restoreTriggerOrOwner is the trigger of a restore record: the store defaults
@@ -130,39 +137,6 @@ func restoreTriggerOrOwner(trigger string) string {
 		return store.RestoreTriggerOwner
 	}
 	return trigger
-}
-
-// getBackupDestination answers GET /v1/backups/destination.
-func (s *server) getBackupDestination(w http.ResponseWriter, r *http.Request) error {
-	d, err := s.svc.GetBackupDestination(r.Context())
-	if err != nil {
-		return err
-	}
-	writeJSON(w, http.StatusOK, toDestinationJSON(d))
-	return nil
-}
-
-// setBackupDestination answers PUT /v1/backups/destination. A body without
-// secretAccessKey keeps the secret set before.
-func (s *server) setBackupDestination(w http.ResponseWriter, r *http.Request) error {
-	var in struct {
-		Endpoint        string  `json:"endpoint"`
-		Region          string  `json:"region"`
-		Bucket          string  `json:"bucket"`
-		Prefix          string  `json:"prefix"`
-		AccessKeyID     string  `json:"accessKeyId"`
-		SecretAccessKey *string `json:"secretAccessKey"`
-	}
-	if err := decodeJSON(r, &in); err != nil {
-		return err
-	}
-	d, err := s.svc.SetBackupDestination(r.Context(), service.DestinationInput{Endpoint: in.Endpoint, Region: in.Region,
-		Bucket: in.Bucket, Prefix: in.Prefix, AccessKeyID: in.AccessKeyID, SecretAccessKey: in.SecretAccessKey})
-	if err != nil {
-		return err
-	}
-	writeJSON(w, http.StatusOK, toDestinationJSON(d))
-	return nil
 }
 
 // listBackups answers GET /v1/apps/{id}/backups.
@@ -202,9 +176,16 @@ func (s *server) createBackup(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// restoreBackup answers POST /v1/apps/{id}/backups/{backupId}/restore.
+// restoreBackup answers POST /v1/apps/{id}/backups/{backupId}/restore. The body is optional:
+// {"from": "<destination>"} names the place to read the backup from (feature 052).
 func (s *server) restoreBackup(w http.ResponseWriter, r *http.Request) error {
-	x, err := s.svc.Restore(r.Context(), r.PathValue("id"), r.PathValue("backupId"), "")
+	var in struct {
+		From string `json:"from"`
+	}
+	if _, err := decodeOptionalJSON(r, &in); err != nil {
+		return err
+	}
+	x, err := s.svc.Restore(r.Context(), r.PathValue("id"), r.PathValue("backupId"), in.From)
 	if err != nil {
 		return err
 	}
@@ -247,6 +228,16 @@ func backupError(err error) *Error {
 		return &Error{Status: http.StatusConflict, Code: codeNoRunningCopy, Message: "The service has no running copy. Deploy it first."}
 	case errors.Is(err, service.ErrNoBackupDestination):
 		return &Error{Status: http.StatusConflict, Code: codeNoBackupDestination, Message: err.Error() + "; set one with PUT /v1/backups/destination"}
+	case errors.Is(err, service.ErrBackupMissing):
+		return &Error{Status: http.StatusConflict, Code: codeBackupMissing, Message: err.Error()}
+	case errors.Is(err, service.ErrDestinationNotFound):
+		return &Error{Status: http.StatusNotFound, Code: codeDestinationNotFound, Message: err.Error()}
+	case errors.Is(err, service.ErrDestinationIsDefault):
+		return &Error{Status: http.StatusConflict, Code: codeDestinationIsDefault, Message: err.Error()}
+	}
+	var inUse *service.DestinationInUseError
+	if errors.As(err, &inUse) {
+		return &Error{Status: http.StatusConflict, Code: codeDestinationInUse, Message: err.Error()}
 	}
 	return nil
 }

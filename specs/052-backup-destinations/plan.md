@@ -246,3 +246,20 @@ Spec: `spec.md`. Task `mv6m`. Branch: the worktree branch `alta/robust-monsoon-c
   `backup_copy_failed` is also in `store.OpenedProblemKinds` (a copy has no row of its own in the feed). The API's item gains
   `destination` and the kind enters the enum in Phase C.
 
+## Deviations (phase C)
+
+- **D13 project.** `Service.UpdateProject(ctx, id, ProjectChanges{DisplayName, BackupDestination})` is the service call behind
+  `PATCH /v1/projects/{project}` (`SetProjectBackupDestination` is it with one change): both fields are checked before either is
+  made. A refused display name is the place's 422 as before; a refused `backupDestination` is 400 `invalid_field` on that field
+  (the contract's). `ProjectUpdate` has no required field any more (`minProperties: 1`); `{}` is still 422.
+- **D13 schemas.** `BackupDestination` answers `lastTest` everywhere it appears and `usedBy` only in the list (`GET
+  /v1/backups/destinations`), which is a plain array as the contract has it. `BackupDestinationPut` is a schema of its own
+  (not an `allOf` of the request): the request refuses unknown fields, `default` among them. `BackupDestinationTest`
+  (`{ok, message, testedAt}`) is also the type of `lastTest`.
+- **Backup.expired.** `Backup` also gains `expired` (true only when retention deleted the backup from its own `destination`):
+  a backup is listed while a copy holds it, and without the flag a client couldn't tell main lost it. Not in the contract's
+  list; additive.
+- **D13 codes.** `destination_not_found` (404), `destination_is_default` and `destination_in_use` (409, under `BackupConflict`)
+  and `backup_missing` (409). The "couldn't be reached" restore is the existing 502 `nomad_unavailable`. `putBackupDestination`
+  decides 201 or 200 by reading the destination first.
+

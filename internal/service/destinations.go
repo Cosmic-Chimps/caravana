@@ -115,6 +115,16 @@ func (s *Service) SetBackupDestination(ctx context.Context, in DestinationInput)
 	return s.SaveBackupDestination(ctx, name, in)
 }
 
+// GetBackupDestinationNamed returns the destination called name without its secret key, or
+// ErrDestinationNotFound.
+func (s *Service) GetBackupDestinationNamed(ctx context.Context, name string) (store.BackupDestination, error) {
+	d, err := s.store.GetBackupDestinationNamed(ctx, name)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.BackupDestination{}, fmt.Errorf("%w: %q", ErrDestinationNotFound, name)
+	}
+	return d, err
+}
+
 // ListBackupDestinations returns every destination, ordered by name, with what
 // uses each.
 func (s *Service) ListBackupDestinations(ctx context.Context) ([]DestinationView, error) {

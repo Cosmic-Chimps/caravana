@@ -40,6 +40,9 @@ type projectJSON struct {
 	Environments []environmentJSON `json:"environments"`
 	CreatedAt    time.Time         `json:"createdAt"`
 	UpdatedAt    time.Time         `json:"updatedAt"`
+	// BackupDestination is the destination the project's backups go to when a policy names none
+	// (feature 052); absent for the installation's default.
+	BackupDestination string `json:"backupDestination,omitempty"`
 }
 
 func toEnvironmentJSON(e service.Environment) environmentJSON {
@@ -55,7 +58,8 @@ func toProjectJSON(p service.Project) projectJSON {
 	for _, e := range p.Environments {
 		envs = append(envs, toEnvironmentJSON(e))
 	}
-	return projectJSON{Name: p.ID, DisplayName: p.DisplayName, Environments: envs, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
+	return projectJSON{Name: p.ID, DisplayName: p.DisplayName, Environments: envs, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+		BackupDestination: p.BackupDestination}
 }
 
 // projectPath is a project's URL, for Location.
@@ -133,20 +137,27 @@ func (s *server) getProject(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// updateProject answers PATCH /v1/projects/{project}: the display name, the
-// only thing about a project that can change (its name is part of its apps' IDs).
+// updateProject answers PATCH /v1/projects/{project}: the display name and the backup destination,
+// the things about a project that can change (its name is part of its apps' IDs). A field left out is
+// left as it is; backupDestination "" returns the project to the installation's default.
 func (s *server) updateProject(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
-		DisplayName *string `json:"displayName"`
+		DisplayName       *string `json:"displayName"`
+		BackupDestination *string `json:"backupDestination"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		return err
 	}
-	if in.DisplayName == nil {
-		return &Error{Status: http.StatusUnprocessableEntity, Code: codeInvalidField, Field: "displayName", Message: "is required"}
+	if in.DisplayName == nil && in.BackupDestination == nil {
+		return &Error{Status: http.StatusUnprocessableEntity, Code: codeInvalidField, Field: "displayName", Message: "is required (or backupDestination)"}
 	}
-	p, err := s.svc.SetProjectDisplayName(r.Context(), r.PathValue("project"), *in.DisplayName)
+	p, err := s.svc.UpdateProject(r.Context(), r.PathValue("project"), service.ProjectChanges{
+		DisplayName: in.DisplayName, BackupDestination: in.BackupDestination})
 	if err != nil {
+		var fe *app.FieldError
+		if errors.As(err, &fe) && fe.Field == "backupDestination" {
+			return err // a refusal of the destination is a 400 on its field, not the place's 422
+		}
 		return registryInvalid(err)
 	}
 	writeJSON(w, http.StatusOK, toProjectJSON(p))
