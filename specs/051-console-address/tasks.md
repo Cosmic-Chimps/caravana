@@ -56,11 +56,11 @@
 
 ## Phase D — lab
 
-- [ ] T017 `deploy/dev/install-test.sh` `check_console_address_host`: `/etc/hosts` names for `caravana.test` and
+- [x] T017 (written, not run; `ONLY=console-address deploy/dev/install-test.sh` runs just it) `deploy/dev/install-test.sh` `check_console_address_host`: `/etc/hosts` names for `caravana.test` and
   `console2.caravana.test`; `nowhere.caravana.test` refused 422 with the env file and the route unchanged; the change to
   `console2.caravana.test` ready, switched, applied; env file, `install.env`, `/v1/console-address`, the issuer, the
   old domain's 308 for `/` and 200 for `/v1/health`, whoami answering throughout, Traefik's allocation unchanged; a
-  rerun of the installer keeps the new domain. Run it.
-- [ ] T018 `TestConsoleLab` step `console-address` (the lab's Traefik has no console route: the page shows the
+  rerun of the installer keeps the new domain.
+- [x] T018 `TestConsoleLab` step `console-address` (the lab's Traefik has no console route: the page shows the
   sentence, the API answers `console_address_unsupported`).
 - [ ] T019 CLAUDE.md entry; plan deviations; task `xbf5` complete.
