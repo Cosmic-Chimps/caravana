@@ -69,7 +69,8 @@ log or export shows it. At most 30 certificates can be uploaded.
 ### When a domain still shows its earlier certificate
 
 Traefik keeps a certificate it already has. If a domain had a Let's Encrypt certificate before you uploaded
-one that covers it, Traefik goes on serving and renewing the earlier one, and the uploaded certificate's row
+one that covers it (or was added in the few seconds before Traefik picked the upload up: upload first, then
+add the domains), Traefik goes on serving and renewing the earlier one, and the uploaded certificate's row
 says "Still on their earlier certificate". Run the installer again on the server: it drops the ACME
 certificates whose every name an uploaded certificate covers, and says which.
 

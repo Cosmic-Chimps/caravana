@@ -33,19 +33,19 @@ const (
 	certHostA     = "a.byo.gate034.test"
 	certHostB     = "b.byo.gate034.test"
 	certWildcard  = "*.byo.gate034.test"
-	certEABKeyID  = "kid-gate034"
+	certProbeHost = "probe.byo.gate034.test" // no router: Traefik answers it from its store alone
 )
 
 // certPebble is a Pebble ACME server that requires External Account Binding, validates every
 // challenge without calling back (PEBBLE_VA_ALWAYS_VALID) and issues 20-day certificates, so Traefik
 // renews them whenever it starts (it renews what ends within 30 days). Its own HTTPS certificate is
 // the step's, so the step knows the CA Caravana and Traefik must trust to talk to it.
-func certPebble(hmac string, serverCert, serverKey []byte) *api.Job {
+func certPebble(kid, hmac string, serverCert, serverKey []byte) *api.Job {
 	config := fmt.Sprintf(`{"pebble": {"listenAddress": "0.0.0.0:14000", "managementListenAddress": "0.0.0.0:15000",
   "certificate": "/local/cert.pem", "privateKey": "/local/key.pem", "httpPort": 5002, "tlsPort": 5001,
   "ocspResponderURL": "", "externalAccountBindingRequired": true,
   "externalAccountMACKeys": {%q: %q},
-  "profiles": {"default": {"description": "short", "validityPeriod": 1728000}}}}`, certEABKeyID, hmac)
+  "profiles": {"default": {"description": "short", "validityPeriod": 1728000}}}}`, kid, hmac)
 	return &api.Job{
 		ID: new(certPebbleJob), Name: new(certPebbleJob), Type: new("service"),
 		TaskGroups: []*api.TaskGroup{{
@@ -188,6 +188,10 @@ func (g *gate) certificatesStep(t *testing.T) {
 	raw := make([]byte, 32)
 	_, _ = rand.Read(raw)
 	hmac := base64.RawURLEncoding.EncodeToString(raw)
+	// The key ID names this run's store file in Traefik (acme-<hash of server and key ID>.json), so the
+	// certificates an earlier run got from Pebble aren't in it: an exact name Traefik already holds
+	// beats an uploaded wildcard (research R5).
+	kid := "kid-gate034-" + hmac[:8]
 
 	// Pebble's own HTTPS certificate, and the CA that signs it.
 	pebbleCA := certstest.NewCA(t, "Gate 034 Pebble server CA")
@@ -228,7 +232,7 @@ func (g *gate) certificatesStep(t *testing.T) {
 	}
 
 	// 1. Pebble, and Caravana with the resolver.
-	if _, _, err := nomad.Jobs().Register(certPebble(hmac, pebbleLeaf.PEM(), pebbleLeaf.KeyPEM(t, certstest.PKCS8)), nil); err != nil {
+	if _, _, err := nomad.Jobs().Register(certPebble(kid, hmac, pebbleLeaf.PEM(), pebbleLeaf.KeyPEM(t, certstest.PKCS8)), nil); err != nil {
 		t.Fatalf("register Pebble: %v", err)
 	}
 	pebbleClient := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{
@@ -260,7 +264,7 @@ func (g *gate) certificatesStep(t *testing.T) {
 	if raw := send(http.MethodPut, "/v1/settings/certificates/issuer", string(notDir), http.StatusUnprocessableEntity); !strings.Contains(string(raw), `"field":"server"`) {
 		t.Errorf("an address that isn't a directory: want a refusal on server, got %s", raw)
 	}
-	send(http.MethodPut, "/v1/settings/certificates/issuer", issuer(map[string]any{"eabKeyId": certEABKeyID, "eabHmacKey": hmac}), http.StatusOK)
+	send(http.MethodPut, "/v1/settings/certificates/issuer", issuer(map[string]any{"eabKeyId": kid, "eabHmacKey": hmac}), http.StatusOK)
 	if s := settings(); s.Issuer != "custom" || s.ACME == nil || s.ACME.Server != certPebbleDir || !s.ACME.EABKeySet || !s.ACME.PrivateCA {
 		t.Errorf("settings after the save = %+v", s)
 	}
@@ -311,11 +315,16 @@ func (g *gate) certificatesStep(t *testing.T) {
 		t.Errorf("the upload = %+v", up)
 	}
 	uploadedAt := time.Now()
+	// Traefik picks the upload up through its file watch, a few seconds after the variable. The
+	// domains are added only once it serves the upload: a router that came first would make Traefik
+	// order a certificate for its names, and an exact name beats the wildcard (research R5; the
+	// console reports such a host as still on its earlier certificate).
+	isCompany := func(p presented) bool { return strings.Contains(p.Issuer, "Gate034 Company") }
+	g.waitPresented(t, certProbeHost, "the uploaded certificate", time.Minute, isCompany)
 	_ = json.Unmarshal(send(http.MethodPost, "/v1/apps/"+certUpApp+"/deployments", certApp(certHostA, certHostB), http.StatusAccepted), &d)
 	if fin := g.waitFinalOf(t, certUpApp, d.ID, 3*time.Minute); fin.Status != "healthy" {
 		t.Fatalf("%s: deployment %s", certUpApp, fin.Status)
 	}
-	isCompany := func(p presented) bool { return strings.Contains(p.Issuer, "Gate034 Company") }
 	for _, h := range []string{certHostA, certHostB} {
 		g.waitPresented(t, h, "the uploaded certificate", time.Minute, isCompany)
 	}
