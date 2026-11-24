@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 var apiTokenFormat = regexp.MustCompile(`^cvat_[A-Za-z0-9_-]{43}$`)
@@ -241,5 +244,83 @@ func TestTokensNeverInTheLog(t *testing.T) {
 	}
 	if !strings.Contains(out, `"event":"token_created"`) || !strings.Contains(out, `"event":"token_revoked"`) {
 		t.Errorf("the log lacks the token events:\n%s", out)
+	}
+}
+
+// Tokens and passkeys belong to a person: the account routes act on the caller's own and on
+// nobody else's, and a token acts as its person (feature 053).
+func TestAccountRoutesActOnTheCallersOwn(t *testing.T) {
+	ctx := context.Background()
+	e := newTestEnv(t, "")
+	ana := store.PersonRecord{ID: "ana00000000000000000000000", Email: "ana@example.com", OrgRole: "member", State: "active",
+		PasswordHash: "x", PasswordSignIn: true, CreatedAt: e.Clock.Now()}
+	if err := e.Store.CreatePerson(ctx, ana, nil); err != nil {
+		t.Fatal(err)
+	}
+	anaToken, err := e.Auth.CreateAPIToken(ctx, ana.ID, "ana-laptop", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asAna := "Bearer " + anaToken.Token
+	ownerTokens, err := e.Auth.ListAPITokens(ctx, e.OwnerID)
+	if err != nil || len(ownerTokens) != 1 {
+		t.Fatalf("the owner's tokens = %+v, %v", ownerTokens, err)
+	}
+	if err := e.Store.InsertPasskey(ctx, store.PasskeyRecord{ID: "ownerkey", PersonID: e.OwnerID, UserHandle: []byte("h"),
+		CredentialID: []byte("c"), RPID: "localhost", PublicKey: []byte("k"), AttestationType: "none", AttestationFormat: "none",
+		AAGUID: []byte{}, Name: "Owner's key", CreatedAt: e.Clock.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lists are the caller's.
+	status, _, raw := callWith(t, asAna, http.MethodGet, e.URL+"/v1/tokens", "", "")
+	if status != http.StatusOK || !strings.Contains(string(raw), "ana-laptop") || strings.Contains(string(raw), "tests") {
+		t.Errorf("GET /v1/tokens as Ana = %d %s; want only her token", status, raw)
+	}
+	status, _, raw = callWith(t, asAna, http.MethodGet, e.URL+"/v1/account/passkeys", "", "")
+	if status != http.StatusOK || strings.Contains(string(raw), "Owner's key") {
+		t.Errorf("GET /v1/account/passkeys as Ana = %d %s; want none of the owner's", status, raw)
+	}
+	status, _, raw = callWith(t, asAna, http.MethodGet, e.URL+"/v1/account/sign-in", "", "")
+	if status != http.StatusOK || !strings.Contains(string(raw), `"passkeys":0`) {
+		t.Errorf("GET /v1/account/sign-in as Ana = %d %s; want 0 passkeys", status, raw)
+	}
+
+	// Another person's token and passkey are not found, and stay as they were.
+	status, _, raw = callWith(t, asAna, http.MethodDelete, e.URL+"/v1/tokens/"+ownerTokens[0].ID, "", "")
+	if status != http.StatusNotFound {
+		t.Errorf("DELETE the owner's token as Ana = %d %s, want 404", status, raw)
+	}
+	status, _, raw = callWith(t, asAna, http.MethodPatch, e.URL+"/v1/account/passkeys/ownerkey", "application/json", `{"name":"mine"}`)
+	if status != http.StatusNotFound {
+		t.Errorf("PATCH the owner's passkey as Ana = %d %s, want 404", status, raw)
+	}
+	status, _, raw = callWith(t, asAna, http.MethodDelete, e.URL+"/v1/account/passkeys/ownerkey", "", "")
+	if status != http.StatusNotFound {
+		t.Errorf("DELETE the owner's passkey as Ana = %d %s, want 404", status, raw)
+	}
+	if status, _, raw := call(t, http.MethodGet, e.URL+"/v1/account/passkeys", "", ""); status != http.StatusOK || !strings.Contains(string(raw), "Owner's key") {
+		t.Errorf("the owner's passkeys after Ana's attempts = %d %s", status, raw)
+	}
+	if status, _, _ := call(t, http.MethodGet, e.URL+"/v1/tokens", "", ""); status != http.StatusOK {
+		t.Errorf("the owner's token after Ana's attempt = %d, want 200", status)
+	}
+
+	// A token Ana makes is Ana's, and its person is gone with her.
+	status, _, raw = callWith(t, asAna, http.MethodPost, e.URL+"/v1/tokens", "application/json", `{"name":"second"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("POST /v1/tokens as Ana = %d %s", status, raw)
+	}
+	if list, _ := e.Auth.ListAPITokens(ctx, ana.ID); len(list) != 2 {
+		t.Errorf("Ana's tokens = %d, want 2", len(list))
+	}
+	if list, _ := e.Auth.ListAPITokens(ctx, e.OwnerID); len(list) != 1 {
+		t.Errorf("the owner's tokens = %d, want still 1", len(list))
+	}
+	if err := e.Store.DeletePerson(ctx, ana.ID); err != nil {
+		t.Fatal(err)
+	}
+	if status, _, _ := callWith(t, asAna, http.MethodGet, e.URL+"/v1/tokens", "", ""); status != http.StatusUnauthorized {
+		t.Errorf("Ana's token after she was removed = %d, want 401", status)
 	}
 }

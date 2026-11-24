@@ -603,14 +603,14 @@ func TestTerminalClosedByTheUser(t *testing.T) {
 func TestTerminalEndsWhenTheTokenIsRevoked(t *testing.T) {
 	e := deployedWithCopies(t)
 	url := terminalServer(t, e, func(s *server) { s.recheck = 30 * time.Millisecond })
-	made, err := e.Auth.CreateAPIToken(context.Background(), "terminal", nil)
+	made, err := e.Auth.CreateAPIToken(context.Background(), e.OwnerID, "terminal", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := openTerm(t, url, terminalPath, http.Header{"Authorization": {"Bearer " + made.Token}})
 	c.input("echo up\r")
 	c.readUntil("up\r\n")
-	if err := e.Auth.RevokeAPIToken(context.Background(), made.Info.ID); err != nil {
+	if err := e.Auth.RevokeAPIToken(context.Background(), e.OwnerID, made.Info.ID); err != nil {
 		t.Fatal(err)
 	}
 	msg := c.readExit()

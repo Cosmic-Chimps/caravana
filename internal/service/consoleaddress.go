@@ -279,14 +279,14 @@ func (s *Service) consoleDependents(ctx context.Context, domain string, now time
 	var d ConsoleDependents
 	var err error
 	if domain != "" {
-		if d.Passkeys, err = s.store.CountPasskeys(ctx, domain); err != nil {
+		if d.Passkeys, err = s.store.CountAllPasskeys(ctx, domain); err != nil {
 			return d, err
 		}
 	}
 	if d.Webhooks, err = s.store.CountWebhookTokens(ctx); err != nil {
 		return d, err
 	}
-	tokens, err := s.store.ListAPITokens(ctx)
+	tokens, err := s.store.ListAllAPITokens(ctx)
 	if err != nil {
 		return d, err
 	}

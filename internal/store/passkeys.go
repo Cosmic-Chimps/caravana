@@ -14,7 +14,8 @@ import (
 // password hash, so nothing here grants access if the file is read.
 type PasskeyRecord struct {
 	ID                string // ours: 26 lowercase base32 characters, shown in lists and logs
-	UserHandle        []byte // the WebAuthn user.id of the owner
+	PersonID          string // whose passkey it is
+	UserHandle        []byte // the WebAuthn user.id of that person
 	CredentialID      []byte // the authenticator's ID for it; never logged
 	RPID              string // the domain it was made at
 	PublicKey         []byte // COSE_Key as the authenticator gave it
@@ -32,15 +33,15 @@ type PasskeyRecord struct {
 	LastUsedAt        *time.Time // nil: never used
 }
 
-const passkeyColumns = "id, user_handle, credential_id, rp_id, public_key, attestation_type, attestation_format, " +
+const passkeyColumns = "id, person_id, user_handle, credential_id, rp_id, public_key, attestation_type, attestation_format, " +
 	"aaguid, sign_count, transports, user_present, user_verified, backup_eligible, backup_state, name, created_at, last_used_at"
 
 // InsertPasskey stores a new passkey. A credential ID that is already stored is
 // ErrAlreadyExists.
 func (s *Store) InsertPasskey(ctx context.Context, p PasskeyRecord) error {
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO passkeys ("+passkeyColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		p.ID, p.UserHandle, p.CredentialID, p.RPID, p.PublicKey, p.AttestationType, p.AttestationFormat,
+		"INSERT INTO passkeys ("+passkeyColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		p.ID, p.PersonID, p.UserHandle, p.CredentialID, p.RPID, p.PublicKey, p.AttestationType, p.AttestationFormat,
 		nonNilBytes(p.AAGUID), int64(p.SignCount), strings.Join(p.Transports, ","),
 		p.UserPresent, p.UserVerified, p.BackupEligible, p.BackupState,
 		p.Name, formatTime(p.CreatedAt), nullTime(p.LastUsedAt))
@@ -53,10 +54,18 @@ func (s *Store) InsertPasskey(ctx context.Context, p PasskeyRecord) error {
 	return nil
 }
 
-// ListPasskeys returns every passkey, oldest first.
-func (s *Store) ListPasskeys(ctx context.Context) ([]PasskeyRecord, error) {
-	rows, err := s.db.QueryContext(ctx,
-		"SELECT "+passkeyColumns+" FROM passkeys ORDER BY created_at, rowid")
+// ListPasskeys returns one person's passkeys, oldest first.
+func (s *Store) ListPasskeys(ctx context.Context, personID string) ([]PasskeyRecord, error) {
+	return s.queryPasskeys(ctx, "SELECT "+passkeyColumns+" FROM passkeys WHERE person_id = ? ORDER BY created_at, rowid", personID)
+}
+
+// ListAllPasskeys returns every person's passkeys, oldest first (for the host CLI).
+func (s *Store) ListAllPasskeys(ctx context.Context) ([]PasskeyRecord, error) {
+	return s.queryPasskeys(ctx, "SELECT "+passkeyColumns+" FROM passkeys ORDER BY created_at, rowid")
+}
+
+func (s *Store) queryPasskeys(ctx context.Context, query string, args ...any) ([]PasskeyRecord, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list passkeys: %w", err)
 	}
@@ -75,9 +84,11 @@ func (s *Store) ListPasskeys(ctx context.Context) ([]PasskeyRecord, error) {
 	return out, nil
 }
 
-// GetPasskey returns the passkey with our ID, or ErrNotFound.
-func (s *Store) GetPasskey(ctx context.Context, id string) (PasskeyRecord, error) {
-	p, err := scanPasskey(s.db.QueryRowContext(ctx, "SELECT "+passkeyColumns+" FROM passkeys WHERE id = ?", id))
+// GetPasskey returns the person's passkey with our ID, or ErrNotFound (also for
+// another person's passkey).
+func (s *Store) GetPasskey(ctx context.Context, personID, id string) (PasskeyRecord, error) {
+	p, err := scanPasskey(s.db.QueryRowContext(ctx,
+		"SELECT "+passkeyColumns+" FROM passkeys WHERE person_id = ? AND id = ?", personID, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return PasskeyRecord{}, fmt.Errorf("passkey %q: %w", id, ErrNotFound)
 	} else if err != nil {
@@ -99,18 +110,20 @@ func (s *Store) GetPasskeyByCredential(ctx context.Context, credentialID []byte)
 	return p, nil
 }
 
-// RenamePasskey changes a passkey's name. An unknown ID is ErrNotFound.
-func (s *Store) RenamePasskey(ctx context.Context, id, name string) error {
-	res, err := s.db.ExecContext(ctx, "UPDATE passkeys SET name = ? WHERE id = ?", name, id)
+// RenamePasskey changes the name of a person's passkey. An unknown ID, or another
+// person's passkey, is ErrNotFound.
+func (s *Store) RenamePasskey(ctx context.Context, personID, id, name string) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE passkeys SET name = ? WHERE id = ? AND person_id = ?", name, id, personID)
 	if err != nil {
 		return fmt.Errorf("rename passkey: %w", err)
 	}
 	return passkeyChanged(res, "rename passkey", id)
 }
 
-// DeletePasskey removes a passkey. An unknown ID is ErrNotFound.
-func (s *Store) DeletePasskey(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, "DELETE FROM passkeys WHERE id = ?", id)
+// DeletePasskey removes a person's passkey. An unknown ID, or another person's
+// passkey, is ErrNotFound.
+func (s *Store) DeletePasskey(ctx context.Context, personID, id string) error {
+	res, err := s.db.ExecContext(ctx, "DELETE FROM passkeys WHERE id = ? AND person_id = ?", id, personID)
 	if err != nil {
 		return fmt.Errorf("delete passkey: %w", err)
 	}
@@ -130,12 +143,25 @@ func (s *Store) UpdatePasskeyUse(ctx context.Context, id string, signCount uint3
 	return passkeyChanged(res, "update passkey use", id)
 }
 
-// CountPasskeys counts the passkeys made at rpID, or all of them when rpID is "".
-func (s *Store) CountPasskeys(ctx context.Context, rpID string) (int, error) {
+// CountPasskeys counts a person's passkeys made at rpID, or all of theirs when rpID is "".
+func (s *Store) CountPasskeys(ctx context.Context, personID, rpID string) (int, error) {
+	query, args := "SELECT count(*) FROM passkeys WHERE person_id = ?", []any{personID}
+	if rpID != "" {
+		query, args = query+" AND rp_id = ?", append(args, rpID)
+	}
+	return s.countPasskeys(ctx, query, args)
+}
+
+// CountAllPasskeys counts everyone's passkeys made at rpID, or all of them when rpID is "".
+func (s *Store) CountAllPasskeys(ctx context.Context, rpID string) (int, error) {
 	query, args := "SELECT count(*) FROM passkeys", []any(nil)
 	if rpID != "" {
 		query, args = query+" WHERE rp_id = ?", []any{rpID}
 	}
+	return s.countPasskeys(ctx, query, args)
+}
+
+func (s *Store) countPasskeys(ctx context.Context, query string, args []any) (int, error) {
 	var n int
 	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
 		return 0, fmt.Errorf("count passkeys: %w", err)
@@ -164,7 +190,7 @@ func scanPasskey(r scanner) (PasskeyRecord, error) {
 		present, verified     bool
 		eligible, backedUpNow bool
 	)
-	if err := r.Scan(&p.ID, &p.UserHandle, &p.CredentialID, &p.RPID, &p.PublicKey, &p.AttestationType,
+	if err := r.Scan(&p.ID, &p.PersonID, &p.UserHandle, &p.CredentialID, &p.RPID, &p.PublicKey, &p.AttestationType,
 		&p.AttestationFormat, &p.AAGUID, &signCount, &transports, &present, &verified, &eligible, &backedUpNow,
 		&p.Name, &created, &lastUsed); err != nil {
 		return PasskeyRecord{}, err

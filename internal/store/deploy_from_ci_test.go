@@ -11,11 +11,11 @@ import (
 
 func TestAPITokenScope(t *testing.T) {
 	ctx := context.Background()
-	s := openTestStore(t)
+	s := openTestStoreWithPerson(t)
 	t0 := time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC)
 
-	full := APITokenRecord{ID: "id1", Name: "full", Hash: "h1", CreatedAt: t0}
-	scoped := APITokenRecord{ID: "id2", Name: "shop-web-ci", Hash: "h2", CreatedAt: t0.Add(time.Minute),
+	full := APITokenRecord{ID: "id1", PersonID: "p1", Name: "full", Hash: "h1", CreatedAt: t0}
+	scoped := APITokenRecord{ID: "id2", PersonID: "p1", Name: "shop-web-ci", Hash: "h2", CreatedAt: t0.Add(time.Minute),
 		ScopeProject: "shop", ScopeApp: "web"}
 	for _, r := range []APITokenRecord{full, scoped} {
 		if err := s.CreateAPIToken(ctx, r, t0); err != nil {
@@ -32,11 +32,11 @@ func TestAPITokenScope(t *testing.T) {
 		t.Errorf("full token = %+v, %v; want no scope", got, err)
 	}
 
-	list, err := s.ListAPITokens(ctx)
+	list, err := s.ListAPITokens(ctx, "p1")
 	if err != nil || len(list) != 2 || list[0].ScopeApp != "web" || list[1].ScopeApp != "" {
 		t.Errorf("ListAPITokens = %+v, %v", list, err)
 	}
-	byName, err := s.ActiveAPITokenByName(ctx, "shop-web-ci", t0)
+	byName, err := s.ActiveAPITokenByName(ctx, "p1", "shop-web-ci", t0)
 	if err != nil || byName.ScopeProject != "shop" {
 		t.Errorf("ActiveAPITokenByName = %+v, %v", byName, err)
 	}

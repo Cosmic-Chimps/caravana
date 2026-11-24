@@ -88,11 +88,12 @@ func TestCreateFromGitHub(t *testing.T) {
 		}
 
 		// The token: scoped to this app name in its project, named after the app.
-		scope, err := e.Auth.CheckAPIToken(ctx, token)
+		who, err := e.Auth.CheckAPIToken(ctx, token)
+		scope := who.Scope
 		if err != nil || scope == nil || scope.Project != "default" || scope.App != "web" {
 			t.Fatalf("the token's scope = %+v, %v; want default/web", scope, err)
 		}
-		infos, _ := e.Auth.ListAPITokens(ctx)
+		infos, _ := e.Auth.ListAPITokens(ctx, e.OwnerID)
 		if len(infos) != 1 || infos[0].Name != "web-ci" {
 			t.Errorf("tokens = %+v, want one named web-ci", infos)
 		}
@@ -153,7 +154,8 @@ func TestCreateFromGitHub(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("POST = %d:\n%s", resp.StatusCode, body)
 		}
-		scope, err := e.Auth.CheckAPIToken(ctx, tokenIn(t, body))
+		who, err := e.Auth.CheckAPIToken(ctx, tokenIn(t, body))
+		scope := who.Scope
 		if err != nil || scope == nil || scope.Project != "shop" || scope.App != "web" {
 			t.Errorf("scope = %+v, %v; want shop/web", scope, err)
 		}
@@ -194,7 +196,7 @@ func TestCreateFromGitHub(t *testing.T) {
 				}
 			})
 		}
-		if infos, _ := e.Auth.ListAPITokens(ctx); len(infos) != 0 {
+		if infos, _ := e.Auth.ListAPITokens(ctx, e.OwnerID); len(infos) != 0 {
 			t.Errorf("%d tokens after the refusals, want none", len(infos))
 		}
 		if _, err := e.Svc.GetApp(ctx, "web"); err == nil {
@@ -204,7 +206,7 @@ func TestCreateFromGitHub(t *testing.T) {
 
 	t.Run("a token name an active token already has gets a number", func(t *testing.T) {
 		e := newConsoleEnv(t)
-		if _, err := e.Auth.CreateAPIToken(ctx, "web-ci", nil); err != nil {
+		if _, err := e.Auth.CreateAPIToken(ctx, e.OwnerID, "web-ci", nil); err != nil {
 			t.Fatal(err)
 		}
 		resp, body := e.postForm(t, "/apps/new/github", githubForm("web", "ghcr.io/acme/shop", "", "", ""))
@@ -269,7 +271,8 @@ func TestConfigureDeployToken(t *testing.T) {
 		t.Fatalf("POST = %d (Cache-Control %q), want 200 no-store:\n%s", resp.StatusCode, resp.Header.Get("Cache-Control"), body)
 	}
 	token := tokenIn(t, body)
-	scope, err := e.Auth.CheckAPIToken(ctx, token)
+	who, err := e.Auth.CheckAPIToken(ctx, token)
+	scope := who.Scope
 	if err != nil || scope == nil || scope.Project != "default" || scope.App != "whoami" {
 		t.Fatalf("scope = %+v, %v; want default/whoami", scope, err)
 	}
@@ -314,7 +317,8 @@ func TestSettingsDeployToken(t *testing.T) {
 		t.Fatalf("POST /settings/tokens = %d:\n%s", resp.StatusCode, body)
 	}
 	token := tokenIn(t, body)
-	scope, err := e.Auth.CheckAPIToken(ctx, token)
+	who, err := e.Auth.CheckAPIToken(ctx, token)
+	scope := who.Scope
 	if err != nil || scope == nil || scope.Project != "shop" || scope.App != "web" {
 		t.Errorf("scope = %+v, %v; want shop/web", scope, err)
 	}
@@ -331,7 +335,7 @@ func TestSettingsDeployToken(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("a full token = %d", resp.StatusCode)
 	}
-	if scope, err := e.Auth.CheckAPIToken(ctx, tokenIn(t, body)); err != nil || scope != nil {
+	if who, err := e.Auth.CheckAPIToken(ctx, tokenIn(t, body)); err != nil || who.Scope != nil {
 		t.Errorf("a token made without an app name has scope %+v, %v; want none", scope, err)
 	}
 

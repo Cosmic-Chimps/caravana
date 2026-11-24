@@ -44,7 +44,7 @@ func (s *server) loginPage(r *http.Request) loginData {
 
 // showLogin answers GET /login.
 func (s *server) showLogin(w http.ResponseWriter, r *http.Request) {
-	if _, state, err := s.current(r); err != nil {
+	if _, _, state, err := s.current(r); err != nil {
 		s.serverError(w, r, "check session", err)
 		return
 	} else if state == validSession {
@@ -60,22 +60,20 @@ func (s *server) showLogin(w http.ResponseWriter, r *http.Request) {
 	s.renderLogin(w, r, data)
 }
 
-// renderLogin shows the form, or the host command when no admin exists yet.
+// renderLogin shows the form, or the host command when nobody exists yet.
 func (s *server) renderLogin(w http.ResponseWriter, r *http.Request, data loginData) {
-	if _, err := s.auth.AdminEmail(r.Context()); errors.Is(err, service.ErrNoAdmin) {
+	place := s.passkeyPlace(r)
+	// The page doesn't know who is signing in: the password form is drawn when some person can use it here.
+	allowed, err := s.auth.AnyPasswordSignIn(r.Context(), place.Console)
+	switch {
+	case errors.Is(err, service.ErrNoAdmin):
 		data.NoAdmin = true
 		data.Notice = nil
-	} else if err != nil {
-		s.serverError(w, r, "read admin", err)
+	case err != nil:
+		s.serverError(w, r, "read sign-in settings", err)
 		return
-	} else {
-		place := s.passkeyPlace(r)
+	default:
 		data.PasskeyAvailable, data.PasskeyWhy = place.Available, place.Why
-		allowed, err := s.auth.PasswordSignInAllowed(r.Context(), place.Console)
-		if err != nil {
-			s.serverError(w, r, "read sign-in settings", err)
-			return
-		}
 		data.PasswordOff = !allowed
 	}
 	s.render(w, http.StatusOK, "login", data)

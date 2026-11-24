@@ -329,7 +329,7 @@ func TestConsoleAddressSettledSentences(t *testing.T) {
 
 func TestConsoleAddressDependents(t *testing.T) {
 	e := newAddressEnv(t)
-	if _, err := e.Auth.CreateScopedAPIToken(context.Background(), "ci", nil, &service.TokenScope{Project: "default", App: "web"}); err != nil {
+	if _, err := e.Auth.CreateScopedAPIToken(context.Background(), e.OwnerID, "ci", nil, &service.TokenScope{Project: "default", App: "web"}); err != nil {
 		t.Fatal(err)
 	}
 	_, page := e.get(t, "/ops/console-address")

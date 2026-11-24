@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -71,14 +72,14 @@ func TestAdminInitStatusReset(t *testing.T) {
 
 	code, stdout, stderr = admin(t, dir, "", "status")
 	record(stdout, stderr)
-	if code != 0 || stdout != "admin: you@example.com\nsign-in: password on, 0 passkeys\n" {
-		t.Errorf("status = %d, %q; want 0, the email and the sign-in line", code, stdout)
+	if want := "EMAIL ROLE STATE SIGN-IN ENDS you@example.com owner active password on, 0 passkeys"; code != 0 || strings.Join(strings.Fields(stdout), " ") != want {
+		t.Errorf("status = %d, %q; want 0 and a line for the owner: %s", code, stdout, want)
 	}
 
 	before := adminHash(t, dir)
 	code, stdout, stderr = admin(t, dir, "a brand new password\n", "reset-password")
 	record(stdout, stderr)
-	if code != 0 || !strings.Contains(stdout, "Password changed") {
+	if code != 0 || !strings.Contains(stdout, "Password of you@example.com changed") {
 		t.Errorf("reset-password = %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 	if after := adminHash(t, dir); after == before {
@@ -99,9 +100,9 @@ func adminHash(t *testing.T, dir string) string {
 		t.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
-	a, err := st.GetAdmin(context.Background())
+	a, err := st.FirstOwner(context.Background())
 	if err != nil {
-		t.Fatalf("GetAdmin: %v", err)
+		t.Fatalf("FirstOwner: %v", err)
 	}
 	return a.PasswordHash
 }
@@ -315,7 +316,11 @@ func setPasswordSignIn(t *testing.T, dir string, on bool, domain string) {
 	}
 	defer st.Close()
 	auth := service.NewAuth(st, slog.New(slog.DiscardHandler), service.AuthOptions{})
-	if _, err := auth.SetPasswordSignIn(context.Background(), on, domain); err != nil {
+	owner, err := auth.ResolvePerson(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ResolvePerson: %v", err)
+	}
+	if _, err := auth.SetPasswordSignIn(context.Background(), owner.ID, on, domain); err != nil {
 		t.Fatalf("SetPasswordSignIn(%v): %v", on, err)
 	}
 }
@@ -344,27 +349,27 @@ func TestAdminPasskeys(t *testing.T) {
 		t.Fatalf("list = %d, %q; want a header and two rows", code, stdout)
 	}
 	header := strings.Fields(lines[0])
-	if strings.Join(header, " ") != "ID NAME DOMAIN ADDED LAST USED" {
+	if strings.Join(header, " ") != "ID PERSON NAME DOMAIN ADDED LAST USED" {
 		t.Errorf("header = %q", lines[0])
 	}
 	first, second := strings.Fields(lines[1]), strings.Fields(lines[2])
-	if len(first) != 5 || len(first[0]) != 26 || first[1] != "MacBook" || first[2] != "console.example.com" || first[4] != "never" {
+	if len(first) != 6 || len(first[0]) != 26 || first[1] != "you@example.com" || first[2] != "MacBook" || first[3] != "console.example.com" || first[5] != "never" {
 		t.Errorf("first row = %q", lines[1])
 	}
-	if len(second) != 6 || second[1] != "Old" || second[3] != "old.example.com" { // the name has a space
+	if len(second) != 7 || second[2] != "Old" || second[4] != "old.example.com" { // the name has a space
 		t.Errorf("second row = %q", lines[2])
 	}
 
 	code, stdout, stderr = admin(t, dir, "", "status")
 	record(stdout, stderr)
-	if code != 0 || !strings.Contains(stdout, "sign-in: password on, 2 passkeys\n") {
+	if code != 0 || !strings.Contains(stdout, "password on, 2 passkeys") {
 		t.Errorf("status = %d, %q; want the sign-in line with 2 passkeys", code, stdout)
 	}
 
 	// Remove one by its ID.
 	code, stdout, stderr = admin(t, dir, "", "passkeys", "remove", "--id", first[0])
 	record(stdout, stderr)
-	if code != 0 || !strings.Contains(stdout, "Passkey "+first[0]+" (MacBook) removed.") || strings.Contains(stdout, "still off") {
+	if code != 0 || !strings.Contains(stdout, "Passkey "+first[0]+" (MacBook, you@example.com) removed.") || strings.Contains(stdout, "still off") {
 		t.Errorf("remove = %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 	_, stdout, _ = admin(t, dir, "", "passkeys", "list")
@@ -397,7 +402,7 @@ func TestAdminPasskeysWhilePasswordSignInIsOff(t *testing.T) {
 	setPasswordSignIn(t, dir, false, "console.example.com")
 
 	code, stdout, _ := admin(t, dir, "", "status")
-	if code != 0 || !strings.Contains(stdout, "sign-in: password off (passkeys only), 1 passkey\n") {
+	if code != 0 || !strings.Contains(stdout, "password off (passkeys only), 1 passkey") {
 		t.Errorf("status = %d, %q; want password off with 1 passkey", code, stdout)
 	}
 
@@ -409,7 +414,7 @@ func TestAdminPasskeysWhilePasswordSignInIsOff(t *testing.T) {
 		t.Errorf("remove the last passkey = %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 	_, stdout, _ = admin(t, dir, "", "status")
-	if !strings.Contains(stdout, "sign-in: password off (passkeys only), 0 passkeys\n") {
+	if !strings.Contains(stdout, "password off (passkeys only), 0 passkeys") {
 		t.Errorf("status after = %q", stdout)
 	}
 }
@@ -433,7 +438,7 @@ func TestAdminResetTurnsPasswordSignInOn(t *testing.T) {
 		t.Fatalf("reset with it off = %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 	_, stdout, _ = admin(t, dir, "", "status")
-	if !strings.Contains(stdout, "sign-in: password on, 1 passkey\n") {
+	if !strings.Contains(stdout, "password on, 1 passkey") {
 		t.Errorf("status after the reset = %q; want password on and the passkey kept", stdout)
 	}
 }
@@ -466,4 +471,114 @@ func addCLIPasskeyWith(t *testing.T, dir, password, domain, name string) *webaut
 		t.Fatalf("FinishPasskeyRegistration: %v", err)
 	}
 	return a
+}
+
+// With several people, status lists them, and the commands that act on one take --email (the
+// first owner without it).
+func TestAdminWithSeveralPeople(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if code, _, stderr := admin(t, dir, cliPassword+"\n", "init", "--email", "you@example.com"); code != 0 {
+		t.Fatalf("init = %d %s", code, stderr)
+	}
+	// The people other than the first owner come from the service (invites, a later phase); the
+	// store makes them here. Nothing else may hold the store while it is open.
+	func() {
+		st, err := store.Open(ctx, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer st.Close()
+		hash := "pbkdf2-sha256$1$c2FsdA$a2V5" // nobody signs in as Ana here, so it need not match a password
+		end := time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC)
+		for _, p := range []store.PersonRecord{
+			{ID: "ana00000000000000000000000", Email: "ana@example.com", OrgRole: "member", State: "active", PasswordHash: hash, PasswordSignIn: true, EndsAt: &end, CreatedAt: time.Now()},
+			{ID: "new00000000000000000000000", Email: "new@example.com", OrgRole: "member", State: "invited", PasswordSignIn: true, CreatedAt: time.Now()},
+		} {
+			if err := st.CreatePerson(ctx, p, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}()
+
+	_, stdout, _ := admin(t, dir, "", "status")
+	for _, want := range []string{"you@example.com owner active password on, 0 passkeys", "ana@example.com member active password on, 0 passkeys 2030-01-02", "new@example.com member invited"} {
+		if !strings.Contains(strings.Join(strings.Fields(stdout), " "), want) {
+			t.Errorf("status = %q; want a line %q", stdout, want)
+		}
+	}
+
+	// A token is made for the person asked, and revoked from that person's own.
+	code, token, stderr := admin(t, dir, "", "create-token", "--name", "ci", "--email", "ANA@example.com")
+	if code != 0 || !strings.Contains(stderr, "ana@example.com") {
+		t.Fatalf("create-token for Ana = %d, stderr %q", code, stderr)
+	}
+	if code, _, _ := admin(t, dir, "", "create-token", "--name", "ci"); code != 0 {
+		t.Errorf("the owner's ci next to Ana's = exit %d, want 0", code)
+	}
+	if code, _, stderr := admin(t, dir, "", "revoke-token", "--name", "ci", "--email", "ana@example.com"); code != 0 {
+		t.Fatalf("revoke Ana's ci = %d, %q", code, stderr)
+	}
+	if tokenIsActive(t, dir, strings.TrimSpace(token)) {
+		t.Error("Ana's token still works after revoking it")
+	}
+	if code, _, stderr := admin(t, dir, "", "revoke-token", "--name", "ci", "--email", "ana@example.com"); code != 1 || !strings.Contains(stderr, "ana@example.com has no active token") {
+		t.Errorf("revoke twice = %d, %q; want 1 naming Ana", code, stderr)
+	}
+
+	// Someone who is unknown or only invited is no person to act for.
+	for _, email := range []string{"nobody@example.com", "new@example.com"} {
+		for _, args := range [][]string{{"create-token", "--name", "x"}, {"reset-password"}, {"revoke-token", "--name", "x"}, {"passkeys", "list"}} {
+			code, _, stderr := admin(t, dir, cliPassword+"\n", append(args, "--email", email)...)
+			if code != 3 || !strings.Contains(stderr, "no active person") {
+				t.Errorf("%v --email %s = %d, %q; want 3 saying no active person", args, email, code, stderr)
+			}
+		}
+	}
+
+	// Reset by email changes that person's password only.
+	before := adminHash(t, dir)
+	if code, stdout, stderr := admin(t, dir, "a brand new password\n", "reset-password", "--email", "ana@example.com"); code != 0 || !strings.Contains(stdout, "ana@example.com") {
+		t.Fatalf("reset Ana's password = %d, %q, %q", code, stdout, stderr)
+	}
+	if adminHash(t, dir) != before {
+		t.Error("resetting Ana's password changed the first owner's")
+	}
+
+	// A person's passkeys: the list shows the person, --email narrows it, remove checks the owner.
+	func() {
+		st, err := store.Open(ctx, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer st.Close()
+		for i, who := range []string{"ana00000000000000000000000", ""} {
+			if who == "" {
+				owner, err := st.FirstOwner(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				who = owner.ID
+			}
+			if err := st.InsertPasskey(ctx, store.PasskeyRecord{ID: fmt.Sprintf("pk%d", i), PersonID: who, UserHandle: []byte("h"),
+				CredentialID: []byte{byte(i)}, RPID: "localhost", PublicKey: []byte("k"), AttestationType: "none", AttestationFormat: "none",
+				AAGUID: []byte{}, Name: fmt.Sprintf("key%d", i), CreatedAt: time.Now()}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}()
+	_, all, _ := admin(t, dir, "", "passkeys", "list")
+	if !strings.Contains(all, "ana@example.com") || !strings.Contains(all, "you@example.com") {
+		t.Errorf("the list of everyone's passkeys = %q; want both people", all)
+	}
+	_, hers, _ := admin(t, dir, "", "passkeys", "list", "--email", "ana@example.com")
+	if !strings.Contains(hers, "key0") || strings.Contains(hers, "key1") {
+		t.Errorf("Ana's passkeys = %q; want only hers", hers)
+	}
+	if code, _, stderr := admin(t, dir, "", "passkeys", "remove", "--id", "pk1", "--email", "ana@example.com"); code != 1 || !strings.Contains(stderr, "no passkey has the ID") {
+		t.Errorf("removing the owner's passkey as Ana's = %d, %q; want 1", code, stderr)
+	}
+	if code, stdout, stderr := admin(t, dir, "", "passkeys", "remove", "--id", "pk0", "--email", "ana@example.com"); code != 0 || !strings.Contains(stdout, "key0, ana@example.com") {
+		t.Errorf("removing Ana's passkey = %d, %q, %q", code, stdout, stderr)
+	}
 }

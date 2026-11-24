@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -170,6 +171,7 @@ func TestViewToggle(t *testing.T) {
 	// An Operator page shows the other side current (the pages themselves come with T011; the
 	// shell is drawn by whatever page asks for it, here the brand block on its own).
 	req := httptest.NewRequest(http.MethodGet, "/ops", nil)
+	req = req.WithContext(service.WithPrincipal(req.Context(), service.Principal{PersonID: e.OwnerID, Email: testEmail, OrgRole: service.OrgOwner}))
 	d, err := e.Server.shellPage(req, "Overview", navOpsOverview, crumb{Label: "Overview"})
 	if err != nil {
 		t.Fatal(err)

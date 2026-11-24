@@ -63,6 +63,7 @@ type authEnv struct {
 	logs   *lockedBuffer
 	hashes int // password hashes and checks run, via the test hook
 	start  time.Time
+	owner  string // the ID of the owner newAuthEnvWithAdmin makes
 }
 
 // clockStart is when the environment's clock began.
@@ -97,6 +98,11 @@ func newAuthEnvWithAdmin(t *testing.T) *authEnv {
 	if err := e.auth.InitAdmin(context.Background(), testEmail, testPassword); err != nil {
 		t.Fatalf("InitAdmin: %v", err)
 	}
+	who, err := e.auth.ResolvePerson(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ResolvePerson: %v", err)
+	}
+	e.owner = who.ID
 	e.hashes = 0
 	return e
 }
@@ -231,11 +237,11 @@ func TestInitAdmin(t *testing.T) {
 		if err := e.auth.InitAdmin(ctx, "  You@Example.com ", testPassword); err != nil {
 			t.Fatalf("InitAdmin: %v", err)
 		}
-		admin, err := e.store.GetAdmin(ctx)
+		admin, err := e.store.FirstOwner(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if admin.Email != "you@example.com" {
+		if admin.Email != "you@example.com" || admin.OrgRole != "owner" || admin.State != "active" {
 			t.Errorf("stored email = %q, want you@example.com", admin.Email)
 		}
 		if strings.Contains(admin.PasswordHash, testPassword) || !checkPassword(testPassword, admin.PasswordHash) {
@@ -252,7 +258,7 @@ func TestInitAdmin(t *testing.T) {
 		if !errors.Is(err, ErrAdminExists) {
 			t.Fatalf("second InitAdmin = %v, want ErrAdminExists", err)
 		}
-		if email, _ := e.auth.AdminEmail(ctx); email != testEmail {
+		if email, _ := e.auth.FirstOwnerEmail(ctx); email != testEmail {
 			t.Errorf("admin email = %q after a refused init, want %q", email, testEmail)
 		}
 	})
@@ -269,7 +275,7 @@ func TestInitAdmin(t *testing.T) {
 				t.Errorf("InitAdmin(%q, %q) = %v, want a field error naming %s", tc.email, tc.password, err, tc.field)
 			}
 		}
-		if _, err := e.auth.AdminEmail(ctx); !errors.Is(err, ErrNoAdmin) {
+		if _, err := e.auth.FirstOwnerEmail(ctx); !errors.Is(err, ErrNoAdmin) {
 			t.Errorf("an admin exists after refused inits: %v", err)
 		}
 	})
@@ -278,13 +284,13 @@ func TestInitAdmin(t *testing.T) {
 func TestAdminEmail(t *testing.T) {
 	ctx := context.Background()
 	e := newAuthEnv(t)
-	if _, err := e.auth.AdminEmail(ctx); !errors.Is(err, ErrNoAdmin) {
+	if _, err := e.auth.FirstOwnerEmail(ctx); !errors.Is(err, ErrNoAdmin) {
 		t.Errorf("AdminEmail before init = %v, want ErrNoAdmin", err)
 	}
 	if err := e.auth.InitAdmin(ctx, testEmail, testPassword); err != nil {
 		t.Fatal(err)
 	}
-	if email, err := e.auth.AdminEmail(ctx); err != nil || email != testEmail {
+	if email, err := e.auth.FirstOwnerEmail(ctx); err != nil || email != testEmail {
 		t.Errorf("AdminEmail = %q, %v; want %q", email, err, testEmail)
 	}
 }
@@ -297,19 +303,19 @@ func TestResetPassword(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		now := e.clock.Now()
 		for _, id := range []string{"s1", "s2"} {
-			if err := e.store.CreateSession(ctx, store.SessionRecord{IDHash: id, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+			if err := e.store.CreateSession(ctx, store.SessionRecord{IDHash: id, PersonID: e.owner, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
 				t.Fatal(err)
 			}
 		}
-		created, err := e.auth.CreateAPIToken(ctx, "ci", nil)
+		created, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		if err := e.auth.ResetPassword(ctx, newPassword); err != nil {
+		if err := e.auth.ResetPassword(ctx, testEmail, newPassword); err != nil {
 			t.Fatalf("ResetPassword: %v", err)
 		}
-		admin, _ := e.store.GetAdmin(ctx)
+		admin, _ := e.store.GetPerson(ctx, e.owner)
 		if checkPassword(testPassword, admin.PasswordHash) {
 			t.Error("the old password still works")
 		}
@@ -332,19 +338,19 @@ func TestResetPassword(t *testing.T) {
 
 	t.Run("without an admin", func(t *testing.T) {
 		e := newAuthEnv(t)
-		if err := e.auth.ResetPassword(ctx, newPassword); !errors.Is(err, ErrNoAdmin) {
+		if err := e.auth.ResetPassword(ctx, testEmail, newPassword); !errors.Is(err, ErrNoAdmin) {
 			t.Errorf("ResetPassword without admin = %v, want ErrNoAdmin", err)
 		}
 	})
 
 	t.Run("a weak password is a field error and changes nothing", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		err := e.auth.ResetPassword(ctx, "short")
+		err := e.auth.ResetPassword(ctx, testEmail, "short")
 		var fe *app.FieldError
 		if !errors.As(err, &fe) || fe.Field != "password" {
 			t.Errorf("ResetPassword(short) = %v, want a field error naming password", err)
 		}
-		admin, _ := e.store.GetAdmin(ctx)
+		admin, _ := e.store.GetPerson(ctx, e.owner)
 		if !checkPassword(testPassword, admin.PasswordHash) {
 			t.Error("the password changed on a refused reset")
 		}
@@ -364,7 +370,7 @@ func TestChangePassword(t *testing.T) {
 		if other, err = e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9"); err != nil {
 			t.Fatal(err)
 		}
-		if token, err = e.auth.CreateAPIToken(ctx, "ci", nil); err != nil {
+		if token, err = e.auth.CreateAPIToken(ctx, e.owner, "ci", nil); err != nil {
 			t.Fatal(err)
 		}
 		return keep, other, token
@@ -373,16 +379,16 @@ func TestChangePassword(t *testing.T) {
 	t.Run("a wrong current password changes nothing", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		keep, other, _ := signedIn(t, e)
-		err := e.auth.ChangePassword(ctx, "not the password", newPassword, keep.Value)
+		err := e.auth.ChangePassword(ctx, e.owner, "not the password", newPassword, keep.Value)
 		if !errors.Is(err, ErrWrongPassword) {
 			t.Fatalf("ChangePassword = %v, want ErrWrongPassword", err)
 		}
-		admin, _ := e.store.GetAdmin(ctx)
+		admin, _ := e.store.GetPerson(ctx, e.owner)
 		if !checkPassword(testPassword, admin.PasswordHash) {
 			t.Error("the password changed on a refused change")
 		}
 		for name, s := range map[string]Session{"calling": keep, "other": other} {
-			if err := e.auth.CheckSession(ctx, s.Value); err != nil {
+			if _, err := e.auth.CheckSession(ctx, s.Value); err != nil {
 				t.Errorf("the %s session ended on a refused change: %v", name, err)
 			}
 		}
@@ -390,12 +396,12 @@ func TestChangePassword(t *testing.T) {
 
 	t.Run("a short new password is a field error naming newPassword", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		err := e.auth.ChangePassword(ctx, testPassword, "short", "")
+		err := e.auth.ChangePassword(ctx, e.owner, testPassword, "short", "")
 		var fe *app.FieldError
 		if !errors.As(err, &fe) || fe.Field != "newPassword" {
 			t.Fatalf("ChangePassword = %v, want a field error naming newPassword", err)
 		}
-		admin, _ := e.store.GetAdmin(ctx)
+		admin, _ := e.store.GetPerson(ctx, e.owner)
 		if !checkPassword(testPassword, admin.PasswordHash) {
 			t.Error("the password changed on a refused change")
 		}
@@ -405,20 +411,20 @@ func TestChangePassword(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		keep, other, token := signedIn(t, e)
 
-		if err := e.auth.ChangePassword(ctx, testPassword, newPassword, keep.Value); err != nil {
+		if err := e.auth.ChangePassword(ctx, e.owner, testPassword, newPassword, keep.Value); err != nil {
 			t.Fatalf("ChangePassword: %v", err)
 		}
-		admin, _ := e.store.GetAdmin(ctx)
+		admin, _ := e.store.GetPerson(ctx, e.owner)
 		if checkPassword(testPassword, admin.PasswordHash) || !checkPassword(newPassword, admin.PasswordHash) {
 			t.Error("the stored password is not the new one")
 		}
 		if !admin.PasswordChangedAt.Equal(e.clock.Now()) {
 			t.Errorf("PasswordChangedAt = %v, want %v", admin.PasswordChangedAt, e.clock.Now())
 		}
-		if err := e.auth.CheckSession(ctx, keep.Value); err != nil {
+		if _, err := e.auth.CheckSession(ctx, keep.Value); err != nil {
 			t.Errorf("the calling session ended: %v", err)
 		}
-		if err := e.auth.CheckSession(ctx, other.Value); !errors.Is(err, ErrNotAuthenticated) {
+		if _, err := e.auth.CheckSession(ctx, other.Value); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("another session survived: %v", err)
 		}
 		if _, err := e.auth.CheckAPIToken(ctx, token.Token); err != nil {
@@ -432,11 +438,11 @@ func TestChangePassword(t *testing.T) {
 	t.Run("without a calling session every session ends", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		keep, other, _ := signedIn(t, e)
-		if err := e.auth.ChangePassword(ctx, testPassword, newPassword, ""); err != nil {
+		if err := e.auth.ChangePassword(ctx, e.owner, testPassword, newPassword, ""); err != nil {
 			t.Fatalf("ChangePassword: %v", err)
 		}
 		for name, s := range map[string]Session{"first": keep, "second": other} {
-			if err := e.auth.CheckSession(ctx, s.Value); !errors.Is(err, ErrNotAuthenticated) {
+			if _, err := e.auth.CheckSession(ctx, s.Value); !errors.Is(err, ErrNotAuthenticated) {
 				t.Errorf("the %s session survived: %v", name, err)
 			}
 		}
@@ -444,14 +450,14 @@ func TestChangePassword(t *testing.T) {
 
 	t.Run("without an admin", func(t *testing.T) {
 		e := newAuthEnv(t)
-		if err := e.auth.ChangePassword(ctx, testPassword, newPassword, ""); !errors.Is(err, ErrNoAdmin) {
+		if err := e.auth.ChangePassword(ctx, e.owner, testPassword, newPassword, ""); !errors.Is(err, ErrNoAdmin) {
 			t.Errorf("ChangePassword without admin = %v, want ErrNoAdmin", err)
 		}
 	})
 
 	t.Run("the change is logged, without passwords", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		if err := e.auth.ChangePassword(ctx, testPassword, newPassword, ""); err != nil {
+		if err := e.auth.ChangePassword(ctx, e.owner, testPassword, newPassword, ""); err != nil {
 			t.Fatal(err)
 		}
 		out := e.logs.String()

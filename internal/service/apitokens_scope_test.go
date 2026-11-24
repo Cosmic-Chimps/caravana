@@ -23,7 +23,7 @@ func TestScopedAPIToken(t *testing.T) {
 
 	t.Run("create, check and list", func(t *testing.T) {
 		e := newEnvWithShop(t)
-		created, err := e.auth.CreateScopedAPIToken(ctx, "shop-web-ci", nil, &scope)
+		created, err := e.auth.CreateScopedAPIToken(ctx, e.owner, "shop-web-ci", nil, &scope)
 		if err != nil {
 			t.Fatalf("CreateScopedAPIToken: %v", err)
 		}
@@ -31,14 +31,14 @@ func TestScopedAPIToken(t *testing.T) {
 			t.Errorf("Info.Scope = %+v, want %+v", created.Info.Scope, scope)
 		}
 		got, err := e.auth.CheckAPIToken(ctx, created.Token)
-		if err != nil || got == nil || *got != scope {
-			t.Errorf("CheckAPIToken = %+v, %v; want scope %+v", got, err, scope)
+		if err != nil || got.Scope == nil || *got.Scope != scope || got.TokenName != "shop-web-ci" || got.PersonID != e.owner || !got.Owner() {
+			t.Errorf("CheckAPIToken = %+v, %v; want the owner with scope %+v and the token's name", got, err, scope)
 		}
-		full, _ := e.auth.CreateAPIToken(ctx, "everything", nil)
-		if got, err := e.auth.CheckAPIToken(ctx, full.Token); err != nil || got != nil {
+		full, _ := e.auth.CreateAPIToken(ctx, e.owner, "everything", nil)
+		if got, err := e.auth.CheckAPIToken(ctx, full.Token); err != nil || got.Scope != nil || got.TokenName != "everything" {
 			t.Errorf("CheckAPIToken(full) = %+v, %v; want nil scope", got, err)
 		}
-		list, err := e.auth.ListAPITokens(ctx)
+		list, err := e.auth.ListAPITokens(ctx, e.owner)
 		if err != nil || len(list) != 2 || list[0].Scope != nil || list[1].Scope == nil || list[1].Scope.App != "web" {
 			t.Errorf("ListAPITokens = %+v, %v", list, err)
 		}
@@ -49,7 +49,7 @@ func TestScopedAPIToken(t *testing.T) {
 
 	t.Run("the app need not exist, the project must", func(t *testing.T) {
 		e := newEnvWithShop(t)
-		if _, err := e.auth.CreateScopedAPIToken(ctx, "ok", nil, &TokenScope{Project: "shop", App: "nothing-yet"}); err != nil {
+		if _, err := e.auth.CreateScopedAPIToken(ctx, e.owner, "ok", nil, &TokenScope{Project: "shop", App: "nothing-yet"}); err != nil {
 			t.Errorf("an app that doesn't exist = %v, want ok", err)
 		}
 		tests := []struct {
@@ -66,21 +66,21 @@ func TestScopedAPIToken(t *testing.T) {
 		}
 		for i, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				_, err := e.auth.CreateScopedAPIToken(ctx, "bad-"+string(rune('a'+i)), nil, &tt.scope)
+				_, err := e.auth.CreateScopedAPIToken(ctx, e.owner, "bad-"+string(rune('a'+i)), nil, &tt.scope)
 				var fe *app.FieldError
 				if !errors.As(err, &fe) || fe.Field != tt.field {
 					t.Errorf("error = %v, want a FieldError on %s", err, tt.field)
 				}
 			})
 		}
-		if got, _ := e.store.ListAPITokens(ctx); len(got) != 1 {
+		if got, _ := e.store.ListAPITokens(ctx, e.owner); len(got) != 1 {
 			t.Errorf("%d tokens stored, want only the one that was fine", len(got))
 		}
 	})
 
 	t.Run("the log names the scope, never the token", func(t *testing.T) {
 		e := newEnvWithShop(t)
-		created, err := e.auth.CreateScopedAPIToken(ctx, "shop-web-ci", nil, &scope)
+		created, err := e.auth.CreateScopedAPIToken(ctx, e.owner, "shop-web-ci", nil, &scope)
 		if err != nil {
 			t.Fatal(err)
 		}

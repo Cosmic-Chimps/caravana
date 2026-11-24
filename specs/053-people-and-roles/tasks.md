@@ -2,16 +2,16 @@
 
 ## Phase A: store, Auth per person, principal (existing behaviour unchanged with one owner)
 
-- [ ] T001 Migration `0043_people.sql` (D1) and `internal/store/people.go`; sessions, tokens and passkeys with
+- [x] T001 Migration `0043_people.sql` (D1) and `internal/store/people.go`; sessions, tokens and passkeys with
       `person_id`; the admin-singular methods made per person; `actor` columns. Tests: a store migrated from 0042 with an
       admin has one owner with the same email, hash, sign-in setting and handle, and every session, token and passkey is
       the owner's; with no admin, no person; `DeletePerson` removes sessions, tokens, passkeys and roles; the role tables'
       checks and cascades (deleting an environment drops its overrides).
-- [ ] T002 `Auth` per person (D2): sign-in by email among active people, per-person password sign-in and passkeys,
+- [x] T002 `Auth` per person (D2): sign-in by email among active people, per-person password sign-in and passkeys,
       `CheckSession`/`CheckAPITokenNamed` returning the `Principal`, the end date, tokens of their own; the CLI
       (`admin init|status|reset-password|create-token|passkeys` with `--email`). Every existing auth, passkey, token and
       CLI test passes, adapted to a person.
-- [ ] T003 `internal/service/access.go` pure part (D3): `Level`, `Principal.LevelAt`, `ProjectLevel`, `Admin`, `Owner`,
+- [x] T003 `internal/service/access.go` pure part (D3): `Level`, `Principal.LevelAt`, `ProjectLevel`, `Admin`, `Owner`,
       `WithPrincipal`/`PrincipalFrom`; table tests (overrides, previews, ended roles, admin and owner).
 
 ## Phase B: service

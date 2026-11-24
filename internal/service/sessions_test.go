@@ -138,7 +138,7 @@ func TestCheckSession(t *testing.T) {
 
 	t.Run("a valid session", func(t *testing.T) {
 		e, s := signedIn(t)
-		if err := e.auth.CheckSession(ctx, s.Value); err != nil {
+		if _, err := e.auth.CheckSession(ctx, s.Value); err != nil {
 			t.Errorf("CheckSession = %v", err)
 		}
 	})
@@ -149,7 +149,7 @@ func TestCheckSession(t *testing.T) {
 			"empty": "", "unknown": strings.Repeat("A", 43), "tampered": s.Value[:42] + "A" + "x",
 			"the hash instead of the value": hashToken(s.Value),
 		} {
-			if err := e.auth.CheckSession(ctx, v); !errors.Is(err, ErrNotAuthenticated) {
+			if _, err := e.auth.CheckSession(ctx, v); !errors.Is(err, ErrNotAuthenticated) {
 				t.Errorf("CheckSession(%s) = %v, want ErrNotAuthenticated", name, err)
 			}
 		}
@@ -158,16 +158,16 @@ func TestCheckSession(t *testing.T) {
 	t.Run("12 hours without use ends it", func(t *testing.T) {
 		e, s := signedIn(t)
 		e.clock.Advance(12*time.Hour - time.Second)
-		if err := e.auth.CheckSession(ctx, s.Value); err != nil {
+		if _, err := e.auth.CheckSession(ctx, s.Value); err != nil {
 			t.Fatalf("just before the idle limit: %v", err)
 		}
 		// That check was a use: the idle clock restarted.
 		e.clock.Advance(12*time.Hour - time.Second)
-		if err := e.auth.CheckSession(ctx, s.Value); err != nil {
+		if _, err := e.auth.CheckSession(ctx, s.Value); err != nil {
 			t.Fatalf("a use restarts the idle clock: %v", err)
 		}
 		e.clock.Advance(12 * time.Hour)
-		if err := e.auth.CheckSession(ctx, s.Value); !errors.Is(err, ErrNotAuthenticated) {
+		if _, err := e.auth.CheckSession(ctx, s.Value); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("after 12 h idle: %v, want ErrNotAuthenticated", err)
 		}
 	})
@@ -182,7 +182,7 @@ func TestCheckSession(t *testing.T) {
 			e.auth.CheckSession(ctx, s.Value)
 		}
 		e.clock.Advance(time.Hour)
-		if err := e.auth.CheckSession(ctx, s.Value); !errors.Is(err, ErrNotAuthenticated) {
+		if _, err := e.auth.CheckSession(ctx, s.Value); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("past 7 days: %v, want ErrNotAuthenticated", err)
 		}
 	})
@@ -222,7 +222,7 @@ func TestCheckSessionQuiet(t *testing.T) {
 	t.Run("never moves LastSeenAt", func(t *testing.T) {
 		for range 5 {
 			e.clock.Advance(5 * time.Minute) // far over the one-minute touch interval
-			if err := e.auth.CheckSessionQuiet(ctx, s.Value); err != nil {
+			if _, err := e.auth.CheckSessionQuiet(ctx, s.Value); err != nil {
 				t.Fatalf("CheckSessionQuiet = %v", err)
 			}
 		}
@@ -237,21 +237,21 @@ func TestCheckSessionQuiet(t *testing.T) {
 
 	t.Run("a session checked only quietly expires after 12 hours idle", func(t *testing.T) {
 		e.clock.Advance(12*time.Hour - time.Second - 25*time.Minute) // 25 minutes are already spent
-		if err := e.auth.CheckSessionQuiet(ctx, s.Value); err != nil {
+		if _, err := e.auth.CheckSessionQuiet(ctx, s.Value); err != nil {
 			t.Fatalf("just before the idle limit: %v", err)
 		}
 		e.clock.Advance(2 * time.Second)
-		if err := e.auth.CheckSessionQuiet(ctx, s.Value); !errors.Is(err, ErrNotAuthenticated) {
+		if _, err := e.auth.CheckSessionQuiet(ctx, s.Value); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("after 12 h idle: %v, want ErrNotAuthenticated", err)
 		}
-		if err := e.auth.CheckSession(ctx, s.Value); !errors.Is(err, ErrNotAuthenticated) {
+		if _, err := e.auth.CheckSession(ctx, s.Value); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("CheckSession agrees: %v, want ErrNotAuthenticated", err)
 		}
 	})
 
 	t.Run("unknown, empty and expired values", func(t *testing.T) {
 		for name, v := range map[string]string{"empty": "", "unknown": strings.Repeat("A", 43)} {
-			if err := e.auth.CheckSessionQuiet(ctx, v); !errors.Is(err, ErrNotAuthenticated) {
+			if _, err := e.auth.CheckSessionQuiet(ctx, v); !errors.Is(err, ErrNotAuthenticated) {
 				t.Errorf("CheckSessionQuiet(%s) = %v, want ErrNotAuthenticated", name, err)
 			}
 		}
@@ -261,10 +261,10 @@ func TestCheckSessionQuiet(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		s, _ := e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9")
 		e.clock.Advance(2 * time.Minute)
-		_ = e.auth.CheckSession(ctx, s.Value)
+		_, _ = e.auth.CheckSession(ctx, s.Value)
 		want := e.clock.Now()
 		e.clock.Advance(2 * time.Minute)
-		_ = e.auth.CheckSessionQuiet(ctx, s.Value)
+		_, _ = e.auth.CheckSessionQuiet(ctx, s.Value)
 		rec, _ := e.store.GetSession(ctx, hashToken(s.Value))
 		if !rec.LastSeenAt.Equal(want) {
 			t.Errorf("LastSeenAt = %v, want %v", rec.LastSeenAt, want)
@@ -284,10 +284,10 @@ func TestSignOut(t *testing.T) {
 	if _, err := e.store.GetSession(ctx, hashToken(s.Value)); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("the row is still there after sign-out: %v", err)
 	}
-	if err := e.auth.CheckSession(ctx, s.Value); !errors.Is(err, ErrNotAuthenticated) {
+	if _, err := e.auth.CheckSession(ctx, s.Value); !errors.Is(err, ErrNotAuthenticated) {
 		t.Errorf("CheckSession after sign-out = %v, want ErrNotAuthenticated", err)
 	}
-	if err := e.auth.CheckSession(ctx, other.Value); err != nil {
+	if _, err := e.auth.CheckSession(ctx, other.Value); err != nil {
 		t.Errorf("another session ended too: %v", err)
 	}
 	if err := e.auth.SignOut(ctx, s.Value); err != nil {

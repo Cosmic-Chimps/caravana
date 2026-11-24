@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
@@ -643,20 +644,28 @@ const (
 )
 
 // current checks the request's session cookie. The cookie's value comes back
-// too, for the calls that act on that session.
-func (s *server) current(r *http.Request) (value string, state sessionState, err error) {
+// too, for the calls that act on that session, and who the session is (set only
+// for a valid one).
+func (s *server) current(r *http.Request) (value string, who service.Principal, state sessionState, err error) {
 	value, ok := httpx.SessionCookie(r, s.proxies.HTTPS(r))
 	if !ok {
-		return "", noSession, nil
+		return "", service.Principal{}, noSession, nil
 	}
-	switch err := s.auth.CheckSession(r.Context(), value); {
+	switch who, err := s.auth.CheckSession(r.Context(), value); {
 	case err == nil:
-		return value, validSession, nil
+		return value, who, validSession, nil
 	case errors.Is(err, service.ErrNotAuthenticated):
-		return value, endedSession, nil
+		return value, service.Principal{}, endedSession, nil
 	default:
-		return "", noSession, err
+		return "", service.Principal{}, noSession, err
 	}
+}
+
+// callerID is the ID of the person the request acts as, "" for a context without one. The guards
+// (requireSession and its kin) put the principal there before a page handler runs.
+func callerID(ctx context.Context) string {
+	who, _ := service.PrincipalFrom(ctx)
+	return who.PersonID
 }
 
 // sessionHandler is a handler of a page that needs a signed-in admin; it gets
@@ -667,7 +676,7 @@ type sessionHandler func(w http.ResponseWriter, r *http.Request, session string)
 // browser to /login, remembering where it was going (FR-011).
 func (s *server) requireSession(next sessionHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		value, state, err := s.current(r)
+		value, who, state, err := s.current(r)
 		if err != nil {
 			s.serverError(w, r, "check session", err)
 			return
@@ -689,7 +698,7 @@ func (s *server) requireSession(next sessionHandler) http.HandlerFunc {
 			http.Redirect(w, r, to, http.StatusSeeOther)
 			return
 		}
-		next(w, r, value)
+		next(w, r.WithContext(service.WithPrincipal(r.Context(), who)), value)
 	}
 }
 
@@ -699,7 +708,7 @@ func (s *server) requireSession(next sessionHandler) http.HandlerFunc {
 // whole browser to /login, remembering the page it was on (HX-Current-URL).
 func (s *server) requirePart(next sessionHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		value, state, err := s.current(r)
+		value, who, state, err := s.current(r)
 		if err != nil {
 			s.log.Error("check session", "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -723,7 +732,7 @@ func (s *server) requirePart(next sessionHandler) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		next(w, r, value)
+		next(w, r.WithContext(service.WithPrincipal(r.Context(), who)), value)
 	}
 }
 
@@ -740,7 +749,7 @@ func currentPath(r *http.Request) string {
 // home answers GET /: a signed-in admin lands on the apps, anyone else signs
 // in first (and lands there afterwards: the sign-in default is /apps).
 func (s *server) home(w http.ResponseWriter, r *http.Request) {
-	_, state, err := s.current(r)
+	_, _, state, err := s.current(r)
 	switch {
 	case err != nil:
 		s.serverError(w, r, "check session", err)

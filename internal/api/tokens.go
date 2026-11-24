@@ -66,7 +66,11 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request) error {
 	if req.Scope != nil {
 		scope = &service.TokenScope{Project: req.Scope.Project, App: req.Scope.App}
 	}
-	created, err := s.auth.CreateScopedAPIToken(r.Context(), req.Name, req.ExpiresAt, scope)
+	id, err := callerID(r)
+	if err != nil {
+		return err
+	}
+	created, err := s.auth.CreateScopedAPIToken(r.Context(), id, req.Name, req.ExpiresAt, scope)
 	if err != nil {
 		return err
 	}
@@ -75,9 +79,13 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// listTokens answers GET /v1/tokens: every token, newest first, never a value.
+// listTokens answers GET /v1/tokens: the caller's tokens, newest first, never a value.
 func (s *server) listTokens(w http.ResponseWriter, r *http.Request) error {
-	infos, err := s.auth.ListAPITokens(r.Context())
+	id, err := callerID(r)
+	if err != nil {
+		return err
+	}
+	infos, err := s.auth.ListAPITokens(r.Context(), id)
 	if err != nil {
 		return err
 	}
@@ -91,10 +99,14 @@ func (s *server) listTokens(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// revokeToken answers DELETE /v1/tokens/{tokenId}. A request may revoke the
-// token it is using.
+// revokeToken answers DELETE /v1/tokens/{tokenId}: one of the caller's own. A request may
+// revoke the token it is using.
 func (s *server) revokeToken(w http.ResponseWriter, r *http.Request) error {
-	if err := s.auth.RevokeAPIToken(r.Context(), r.PathValue("tokenId")); err != nil {
+	id, err := callerID(r)
+	if err != nil {
+		return err
+	}
+	if err := s.auth.RevokeAPIToken(r.Context(), id, r.PathValue("tokenId")); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)

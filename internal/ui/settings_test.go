@@ -328,7 +328,7 @@ func TestSettingsPostsRedirectToTheirEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := e.Auth.CreateAPIToken(ctx, "victim", nil)
+	created, err := e.Auth.CreateAPIToken(ctx, e.OwnerID, "victim", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +433,7 @@ func TestSettingsPagesHoldNoSecret(t *testing.T) {
 	if wh.SigningSecret == "" {
 		t.Fatal("no signing secret")
 	}
-	created, err := e.Auth.CreateAPIToken(ctx, "ci", nil)
+	created, err := e.Auth.CreateAPIToken(ctx, e.OwnerID, "ci", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -680,27 +680,27 @@ func TestSettingsTokenRows(t *testing.T) {
 	e := newConsoleEnv(t)
 	start := e.Clock.Now()
 	later := start.Add(200 * 24 * time.Hour)
-	if _, err := e.Auth.CreateScopedAPIToken(ctx, "github-actions", &later, &service.TokenScope{Project: "default", App: "web"}); err != nil {
+	if _, err := e.Auth.CreateScopedAPIToken(ctx, e.OwnerID, "github-actions", &later, &service.TokenScope{Project: "default", App: "web"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Auth.CreateAPIToken(ctx, "old", &later); err != nil {
+	if _, err := e.Auth.CreateAPIToken(ctx, e.OwnerID, "old", &later); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Auth.CreateAPIToken(ctx, "forever", nil); err != nil {
+	if _, err := e.Auth.CreateAPIToken(ctx, e.OwnerID, "forever", nil); err != nil {
 		t.Fatal(err)
 	}
 	soon := e.Clock.Now().Add(time.Hour)
-	if _, err := e.Auth.CreateAPIToken(ctx, "lapsed", &soon); err != nil {
+	if _, err := e.Auth.CreateAPIToken(ctx, e.OwnerID, "lapsed", &soon); err != nil {
 		t.Fatal(err)
 	}
-	gone, _ := e.Auth.CreateAPIToken(ctx, "gone", &later)
-	if err := e.Auth.RevokeAPIToken(ctx, gone.Info.ID); err != nil {
+	gone, _ := e.Auth.CreateAPIToken(ctx, e.OwnerID, "gone", &later)
+	if err := e.Auth.RevokeAPIToken(ctx, e.OwnerID, gone.Info.ID); err != nil {
 		t.Fatal(err)
 	}
 	// Everything above was made 95 days ago and never used; fresh-deploy is made now.
 	e.Clock.Advance(95 * 24 * time.Hour)
 	e.Cookie = e.signIn(t, nil) // the session idled out meanwhile
-	if _, err := e.Auth.CreateScopedAPIToken(ctx, "fresh-deploy", &later, &service.TokenScope{Project: "default", App: "api"}); err != nil {
+	if _, err := e.Auth.CreateScopedAPIToken(ctx, e.OwnerID, "fresh-deploy", &later, &service.TokenScope{Project: "default", App: "api"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -873,7 +873,7 @@ func TestSettingsAfterTheCritique(t *testing.T) {
 		if _, err := e.Svc.UpdateNotificationChannel(ctx, ch.ID, service.NotificationChannelPatch{Paused: &yes}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := e.Auth.CreateAPIToken(ctx, "forever", nil); err != nil {
+		if _, err := e.Auth.CreateAPIToken(ctx, e.OwnerID, "forever", nil); err != nil {
 			t.Fatal(err)
 		}
 		notify, tokens := e.mustGet(t, "/settings/notifications"), e.mustGet(t, "/settings/tokens")
@@ -937,12 +937,12 @@ func TestSettingsAfterTheCritique(t *testing.T) {
 	t.Run("the last five expired or revoked tokens, then Show older", func(t *testing.T) {
 		later := e.Clock.Now().Add(1000 * 24 * time.Hour)
 		for i := range 8 {
-			made, err := e.Auth.CreateAPIToken(ctx, "old-"+strconv.Itoa(i), &later)
+			made, err := e.Auth.CreateAPIToken(ctx, e.OwnerID, "old-"+strconv.Itoa(i), &later)
 			if err != nil {
 				t.Fatal(err)
 			}
 			e.Clock.Advance(time.Minute)
-			if err := e.Auth.RevokeAPIToken(ctx, made.Info.ID); err != nil {
+			if err := e.Auth.RevokeAPIToken(ctx, e.OwnerID, made.Info.ID); err != nil {
 				t.Fatal(err)
 			}
 		}

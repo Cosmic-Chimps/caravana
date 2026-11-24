@@ -12,6 +12,7 @@ import (
 // exists only in the response that created it.
 type APITokenRecord struct {
 	ID         string
+	PersonID   string // whose token it is: it acts with their rights
 	Name       string
 	Hash       string // hex SHA-256 of the token
 	CreatedAt  time.Time
@@ -33,10 +34,10 @@ func (r APITokenRecord) active(now time.Time) bool {
 	return r.ExpiresAt == nil || now.Before(*r.ExpiresAt)
 }
 
-const apiTokenColumns = "id, name, token_hash, created_at, last_used_at, expires_at, revoked_at, scope_project, scope_app"
+const apiTokenColumns = "id, person_id, name, token_hash, created_at, last_used_at, expires_at, revoked_at, scope_project, scope_app"
 
 // CreateAPIToken inserts r unless an active token (not revoked, not expired
-// at now) already has the same name: then it is ErrAlreadyExists. The check
+// at now) of the same person already has the same name: then it is ErrAlreadyExists. The check
 // and the insert are one transaction.
 func (s *Store) CreateAPIToken(ctx context.Context, r APITokenRecord, now time.Time) error {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -46,7 +47,7 @@ func (s *Store) CreateAPIToken(ctx context.Context, r APITokenRecord, now time.T
 	defer tx.Rollback() // does nothing once Commit succeeds
 
 	rows, err := tx.QueryContext(ctx,
-		"SELECT "+apiTokenColumns+" FROM api_tokens WHERE name = ?", r.Name)
+		"SELECT "+apiTokenColumns+" FROM api_tokens WHERE person_id = ? AND name = ?", r.PersonID, r.Name)
 	if err != nil {
 		return fmt.Errorf("create api token %q: %w", r.Name, err)
 	}
@@ -71,8 +72,8 @@ func (s *Store) CreateAPIToken(ctx context.Context, r APITokenRecord, now time.T
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		"INSERT INTO api_tokens ("+apiTokenColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		r.ID, r.Name, r.Hash, formatTime(r.CreatedAt),
+		"INSERT INTO api_tokens ("+apiTokenColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		r.ID, r.PersonID, r.Name, r.Hash, formatTime(r.CreatedAt),
 		nullTime(r.LastUsedAt), nullTime(r.ExpiresAt), nullTime(r.RevokedAt),
 		nullString(r.ScopeProject), nullString(r.ScopeApp)); err != nil {
 		return fmt.Errorf("create api token %q: %w", r.Name, err)
@@ -96,10 +97,10 @@ func (s *Store) GetAPITokenByHash(ctx context.Context, hash string) (APITokenRec
 	return rec, nil
 }
 
-// ListAPITokens returns every token, newest first.
-func (s *Store) ListAPITokens(ctx context.Context) ([]APITokenRecord, error) {
+// ListAPITokens returns the person's tokens, newest first.
+func (s *Store) ListAPITokens(ctx context.Context, personID string) ([]APITokenRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT "+apiTokenColumns+" FROM api_tokens ORDER BY created_at DESC, rowid DESC")
+		"SELECT "+apiTokenColumns+" FROM api_tokens WHERE person_id = ? ORDER BY created_at DESC, rowid DESC", personID)
 	if err != nil {
 		return nil, fmt.Errorf("list api tokens: %w", err)
 	}
@@ -118,6 +119,29 @@ func (s *Store) ListAPITokens(ctx context.Context) ([]APITokenRecord, error) {
 	return out, nil
 }
 
+// ListAllAPITokens returns every person's tokens, newest first (for counts over the whole
+// installation; a person's own list is ListAPITokens).
+func (s *Store) ListAllAPITokens(ctx context.Context) ([]APITokenRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT "+apiTokenColumns+" FROM api_tokens ORDER BY created_at DESC, rowid DESC")
+	if err != nil {
+		return nil, fmt.Errorf("list all api tokens: %w", err)
+	}
+	defer rows.Close()
+	var out []APITokenRecord
+	for rows.Next() {
+		rec, err := scanAPIToken(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list all api tokens: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list all api tokens: %w", err)
+	}
+	return out, nil
+}
+
 // TouchAPIToken records that the token was used at the given time.
 func (s *Store) TouchAPIToken(ctx context.Context, id string, at time.Time) error {
 	if _, err := s.db.ExecContext(ctx,
@@ -127,13 +151,13 @@ func (s *Store) TouchAPIToken(ctx context.Context, id string, at time.Time) erro
 	return nil
 }
 
-// RevokeAPIToken revokes the token with that ID and returns its name. It
+// RevokeAPIToken revokes the person's token with that ID and returns its name. It
 // stays in the list, refused from now on. Revoking again changes nothing (the
-// first time is kept); an unknown ID is ErrNotFound.
-func (s *Store) RevokeAPIToken(ctx context.Context, id string, at time.Time) (name string, err error) {
+// first time is kept); an unknown ID, or another person's token, is ErrNotFound.
+func (s *Store) RevokeAPIToken(ctx context.Context, personID, id string, at time.Time) (name string, err error) {
 	err = s.db.QueryRowContext(ctx,
-		"UPDATE api_tokens SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ? RETURNING name",
-		formatTime(at), id).Scan(&name)
+		"UPDATE api_tokens SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ? AND person_id = ? RETURNING name",
+		formatTime(at), id, personID).Scan(&name)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", fmt.Errorf("revoke api token: token %q: %w", id, ErrNotFound)
 	} else if err != nil {
@@ -142,11 +166,11 @@ func (s *Store) RevokeAPIToken(ctx context.Context, id string, at time.Time) (na
 	return name, nil
 }
 
-// ActiveAPITokenByName returns the active token (not revoked, not expired at
+// ActiveAPITokenByName returns the person's active token (not revoked, not expired at
 // now) with that name, or ErrNotFound.
-func (s *Store) ActiveAPITokenByName(ctx context.Context, name string, now time.Time) (APITokenRecord, error) {
+func (s *Store) ActiveAPITokenByName(ctx context.Context, personID, name string, now time.Time) (APITokenRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT "+apiTokenColumns+" FROM api_tokens WHERE name = ?", name)
+		"SELECT "+apiTokenColumns+" FROM api_tokens WHERE person_id = ? AND name = ?", personID, name)
 	if err != nil {
 		return APITokenRecord{}, fmt.Errorf("find api token %q: %w", name, err)
 	}
@@ -178,7 +202,7 @@ func scanAPIToken(sc scanner) (APITokenRecord, error) {
 		lastUsed, expires, revoked sql.NullString
 		scopeProject, scopeApp     sql.NullString
 	)
-	if err := sc.Scan(&r.ID, &r.Name, &r.Hash, &created, &lastUsed, &expires, &revoked, &scopeProject, &scopeApp); err != nil {
+	if err := sc.Scan(&r.ID, &r.PersonID, &r.Name, &r.Hash, &created, &lastUsed, &expires, &revoked, &scopeProject, &scopeApp); err != nil {
 		return APITokenRecord{}, err
 	}
 	r.ScopeProject, r.ScopeApp = scopeProject.String, scopeApp.String

@@ -36,7 +36,7 @@ func unconfirmedSession(t *testing.T, e *authEnv, value string) string {
 	t.Helper()
 	now := e.clock.Now()
 	err := e.store.CreateSession(context.Background(), store.SessionRecord{
-		IDHash: hashToken(value), CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(sessionAbsolute),
+		IDHash: hashToken(value), PersonID: e.owner, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(sessionAbsolute),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +119,7 @@ func TestAddAndSignInWithAPasskey(t *testing.T) {
 	session := signedIn(t, e)
 
 	a := addPasskey(t, e, session, rpMain, "  MacBook ")
-	list, err := e.auth.ListPasskeys(ctx)
+	list, err := e.auth.ListPasskeys(ctx, e.owner)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("ListPasskeys = %v, %v", list, err)
 	}
@@ -132,8 +132,8 @@ func TestAddAndSignInWithAPasskey(t *testing.T) {
 	}
 
 	// The admin has a handle now, and the stored passkey carries it.
-	admin, _ := e.store.GetAdmin(ctx)
-	rec, _ := e.store.GetPasskey(ctx, p.ID)
+	admin, _ := e.store.GetPerson(ctx, e.owner)
+	rec, _ := e.store.GetPasskey(ctx, e.owner, p.ID)
 	if len(admin.WebAuthnHandle) != 32 || string(rec.UserHandle) != string(admin.WebAuthnHandle) {
 		t.Errorf("handle = %x, stored with the passkey = %x", admin.WebAuthnHandle, rec.UserHandle)
 	}
@@ -146,13 +146,13 @@ func TestAddAndSignInWithAPasskey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("passkey sign-in: %v", err)
 	}
-	if err := e.auth.CheckSession(ctx, s.Value); err != nil {
+	if _, err := e.auth.CheckSession(ctx, s.Value); err != nil {
 		t.Errorf("the session of a passkey sign-in is not live: %v", err)
 	}
 	if ok, _ := e.auth.SessionConfirmed(ctx, s.Value); !ok {
 		t.Error("a session that signed in with a passkey is not confirmed")
 	}
-	rec, _ = e.store.GetPasskey(ctx, p.ID)
+	rec, _ = e.store.GetPasskey(ctx, e.owner, p.ID)
 	if rec.SignCount != 1 || rec.LastUsedAt == nil || !rec.LastUsedAt.Equal(e.clock.Now()) {
 		t.Errorf("after the sign-in: count = %d, last used = %v", rec.SignCount, rec.LastUsedAt)
 	}
@@ -161,7 +161,7 @@ func TestAddAndSignInWithAPasskey(t *testing.T) {
 	if _, err := passkeySignIn(t, e, rpMain, a, addrB); err != nil {
 		t.Fatalf("second passkey sign-in: %v", err)
 	}
-	if rec, _ = e.store.GetPasskey(ctx, p.ID); rec.SignCount != 2 {
+	if rec, _ = e.store.GetPasskey(ctx, e.owner, p.ID); rec.SignCount != 2 {
 		t.Errorf("sign count = %d, want 2", rec.SignCount)
 	}
 
@@ -315,7 +315,7 @@ func TestPasskeyAnotherSessionsCeremony(t *testing.T) {
 		if _, err := e.auth.FinishPasskeyRegistration(ctx, two, rpMain, "Phone", opts.Ceremony, posted); !errors.Is(err, ErrPasskeyRefused) {
 			t.Errorf("registration finished by another session = %v, want ErrPasskeyRefused", err)
 		}
-		if n, _ := e.store.CountPasskeys(ctx, ""); n != 1 {
+		if n, _ := e.store.CountPasskeys(ctx, e.owner, ""); n != 1 {
 			t.Errorf("passkeys = %d, want 1: nothing was added", n)
 		}
 	})
@@ -579,7 +579,7 @@ func TestRegistration(t *testing.T) {
 		if options.Selection.ResidentKey != "required" || options.Selection.UV != "required" || options.Attestation != "none" {
 			t.Errorf("options ask for %+v, attestation %q; want resident key and UV required, no attestation", options.Selection, options.Attestation)
 		}
-		admin, _ := e.store.GetAdmin(ctx)
+		admin, _ := e.store.GetPerson(ctx, e.owner)
 		if options.User.ID != base64.RawURLEncoding.EncodeToString(admin.WebAuthnHandle) || options.User.Name != testEmail {
 			t.Errorf("user = %+v, want the admin's handle and email", options.User)
 		}
@@ -590,7 +590,7 @@ func TestRegistration(t *testing.T) {
 		if _, err := e.auth.FinishPasskeyRegistration(ctx, session, rpMain, "Phone", opts.Ceremony, posted); err != nil {
 			t.Fatal(err)
 		}
-		after, _ := e.store.GetAdmin(ctx)
+		after, _ := e.store.GetPerson(ctx, e.owner)
 		if string(after.WebAuthnHandle) != string(admin.WebAuthnHandle) {
 			t.Error("the admin's handle changed with the second passkey")
 		}
@@ -601,7 +601,7 @@ func TestRegistration(t *testing.T) {
 		session := signedIn(t, e)
 		addPasskey(t, e, session, rpMain, "MacBook")
 		addPasskey(t, e, session, rpOther, "Old domain")
-		list, _ := e.auth.ListPasskeys(ctx)
+		list, _ := e.auth.ListPasskeys(ctx, e.owner)
 		if len(list) != 2 || list[0].Domain != rpMain.ID || list[1].Domain != rpOther.ID {
 			t.Errorf("list = %+v", list)
 		}
@@ -617,7 +617,7 @@ func TestRegistration(t *testing.T) {
 		if _, err := e.auth.FinishPasskeyRegistration(ctx, session, rpMain, "Again", opts.Ceremony, posted); !errors.Is(err, ErrPasskeyRefused) {
 			t.Errorf("registering one credential twice = %v, want ErrPasskeyRefused", err)
 		}
-		if n, _ := e.store.CountPasskeys(ctx, ""); n != 1 {
+		if n, _ := e.store.CountPasskeys(ctx, e.owner, ""); n != 1 {
 			t.Errorf("passkeys = %d, want 1", n)
 		}
 	})
@@ -640,7 +640,7 @@ func TestRegistration(t *testing.T) {
 				if _, err := e.auth.FinishPasskeyRegistration(ctx, session, rp, "Phone", opts.Ceremony, posted); !errors.Is(err, ErrPasskeyRefused) {
 					t.Errorf("err = %v, want ErrPasskeyRefused", err)
 				}
-				if n, _ := e.store.CountPasskeys(ctx, ""); n != 0 {
+				if n, _ := e.store.CountPasskeys(ctx, e.owner, ""); n != 0 {
 					t.Errorf("passkeys = %d, want none", n)
 				}
 			})
@@ -724,20 +724,20 @@ func TestRenamePasskey(t *testing.T) {
 	ctx := context.Background()
 	e := newAuthEnvWithAdmin(t)
 	addPasskey(t, e, signedIn(t, e), rpMain, "MacBook")
-	list, _ := e.auth.ListPasskeys(ctx)
+	list, _ := e.auth.ListPasskeys(ctx, e.owner)
 
-	got, err := e.auth.RenamePasskey(ctx, list[0].ID, "  Work laptop ")
+	got, err := e.auth.RenamePasskey(ctx, e.owner, list[0].ID, "  Work laptop ")
 	if err != nil || got.Name != "Work laptop" || got.ID != list[0].ID || got.Domain != rpMain.ID {
 		t.Fatalf("RenamePasskey = %+v, %v", got, err)
 	}
 	var fe *app.FieldError
-	if _, err := e.auth.RenamePasskey(ctx, list[0].ID, ""); !errors.As(err, &fe) || fe.Field != "name" {
+	if _, err := e.auth.RenamePasskey(ctx, e.owner, list[0].ID, ""); !errors.As(err, &fe) || fe.Field != "name" {
 		t.Errorf("empty name = %v, want a field error on name", err)
 	}
-	if _, err := e.auth.RenamePasskey(ctx, "nope", "x"); !errors.Is(err, ErrPasskeyNotFound) {
+	if _, err := e.auth.RenamePasskey(ctx, e.owner, "nope", "x"); !errors.Is(err, ErrPasskeyNotFound) {
 		t.Errorf("unknown ID = %v, want ErrPasskeyNotFound", err)
 	}
-	if list, _ = e.auth.ListPasskeys(ctx); list[0].Name != "Work laptop" {
+	if list, _ = e.auth.ListPasskeys(ctx, e.owner); list[0].Name != "Work laptop" {
 		t.Errorf("listed name = %q", list[0].Name)
 	}
 }
@@ -747,7 +747,7 @@ func TestPasswordSignInOff(t *testing.T) {
 
 	t.Run("turning it off needs a passkey for the console's domain", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		_, err := e.auth.SetPasswordSignIn(ctx, false, rpMain.ID)
+		_, err := e.auth.SetPasswordSignIn(ctx, e.owner, false, rpMain.ID)
 		var de *PasskeyDomainError
 		if !errors.Is(err, ErrNoPasskey) || !errors.As(err, &de) || de.Domain != rpMain.ID {
 			t.Fatalf("with no passkey = %v, want ErrNoPasskey for %s", err, rpMain.ID)
@@ -756,11 +756,11 @@ func TestPasswordSignInOff(t *testing.T) {
 			t.Errorf("message = %q", err)
 		}
 		addPasskey(t, e, signedIn(t, e), rpOther, "Old domain")
-		if _, err := e.auth.SetPasswordSignIn(ctx, false, rpMain.ID); !errors.Is(err, ErrNoPasskey) {
+		if _, err := e.auth.SetPasswordSignIn(ctx, e.owner, false, rpMain.ID); !errors.Is(err, ErrNoPasskey) {
 			t.Errorf("with a passkey for another domain only = %v, want ErrNoPasskey", err)
 		}
 		// With no console domain known, any passkey will do.
-		got, err := e.auth.SetPasswordSignIn(ctx, false, "")
+		got, err := e.auth.SetPasswordSignIn(ctx, e.owner, false, "")
 		if err != nil || got.PasswordSignIn || got.Passkeys != 1 {
 			t.Errorf("SetPasswordSignIn(off, any) = %+v, %v", got, err)
 		}
@@ -769,7 +769,7 @@ func TestPasswordSignInOff(t *testing.T) {
 	t.Run("sign-in is refused without a password check and without counting", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		addPasskey(t, e, signedIn(t, e), rpMain, "MacBook")
-		if _, err := e.auth.SetPasswordSignIn(ctx, false, rpMain.ID); err != nil {
+		if _, err := e.auth.SetPasswordSignIn(ctx, e.owner, false, rpMain.ID); err != nil {
 			t.Fatal(err)
 		}
 		e.hashes = 0
@@ -784,7 +784,7 @@ func TestPasswordSignInOff(t *testing.T) {
 		// Nothing was counted: the address still has all its tries on a passkey.
 		_, err := e.auth.FinishPasskeySignIn(ctx, rpMain, "never-issued", []byte("{}"), addrB)
 		refusedWith(t, "first failure", err, 4)
-		if ok, _ := e.auth.PasswordSignInAllowed(ctx, rpMain.ID); ok {
+		if ok, _ := e.auth.PasswordSignInAllowed(ctx, e.owner, rpMain.ID); ok {
 			t.Error("PasswordSignInAllowed = true with it off and a passkey here")
 		}
 	})
@@ -792,14 +792,14 @@ func TestPasswordSignInOff(t *testing.T) {
 	t.Run("the password keeps working where no passkey exists", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		addPasskey(t, e, signedIn(t, e), rpOther, "Old domain")
-		if _, err := e.auth.SetPasswordSignIn(ctx, false, rpOther.ID); err != nil {
+		if _, err := e.auth.SetPasswordSignIn(ctx, e.owner, false, rpOther.ID); err != nil {
 			t.Fatal(err)
 		}
 		// The console moved to rpMain, where there is no passkey yet.
 		if _, err := e.auth.SignIn(ctx, testEmail, testPassword, rpMain.ID, addrA); err != nil {
 			t.Errorf("SignIn at a domain with no passkey = %v, want it to work", err)
 		}
-		if ok, _ := e.auth.PasswordSignInAllowed(ctx, rpMain.ID); !ok {
+		if ok, _ := e.auth.PasswordSignInAllowed(ctx, e.owner, rpMain.ID); !ok {
 			t.Error("PasswordSignInAllowed = false where no passkey exists")
 		}
 		// And where a passkey does exist it is refused; "" counts any passkey.
@@ -813,7 +813,7 @@ func TestPasswordSignInOff(t *testing.T) {
 	t.Run("confirming with the password is refused too", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		addPasskey(t, e, signedIn(t, e), rpMain, "MacBook")
-		e.auth.SetPasswordSignIn(ctx, false, rpMain.ID)
+		e.auth.SetPasswordSignIn(ctx, e.owner, false, rpMain.ID)
 		old := unconfirmedSession(t, e, "old-session")
 		e.hashes = 0
 		if err := e.auth.VerifyPassword(ctx, old, testPassword, rpMain.ID, addrA); !errors.Is(err, ErrPasswordSignInOff) || e.hashes != 0 {
@@ -826,12 +826,12 @@ func TestPasswordSignInOff(t *testing.T) {
 		session := signedIn(t, e)
 		addPasskey(t, e, session, rpMain, "MacBook")
 		addPasskey(t, e, session, rpOther, "Old domain")
-		e.auth.SetPasswordSignIn(ctx, false, rpMain.ID)
-		list, _ := e.auth.ListPasskeys(ctx)
+		e.auth.SetPasswordSignIn(ctx, e.owner, false, rpMain.ID)
+		list, _ := e.auth.ListPasskeys(ctx, e.owner)
 		main, other := list[0], list[1]
 
 		// Another domain's passkey doesn't count towards this one.
-		err := e.auth.RemovePasskey(ctx, main.ID)
+		err := e.auth.RemovePasskey(ctx, e.owner, main.ID)
 		var de *PasskeyDomainError
 		if !errors.Is(err, ErrLastPasskey) || !errors.As(err, &de) || de.Domain != rpMain.ID {
 			t.Fatalf("removing the only passkey of its domain = %v, want ErrLastPasskey for %s", err, rpMain.ID)
@@ -841,17 +841,17 @@ func TestPasswordSignInOff(t *testing.T) {
 		}
 		// A second one makes the first removable.
 		addPasskey(t, e, session, rpMain, "Phone")
-		if err := e.auth.RemovePasskey(ctx, main.ID); err != nil {
+		if err := e.auth.RemovePasskey(ctx, e.owner, main.ID); err != nil {
 			t.Errorf("removing one of two: %v", err)
 		}
 		// With it on, the last one goes.
-		if _, err := e.auth.SetPasswordSignIn(ctx, true, rpMain.ID); err != nil {
+		if _, err := e.auth.SetPasswordSignIn(ctx, e.owner, true, rpMain.ID); err != nil {
 			t.Fatal(err)
 		}
-		if err := e.auth.RemovePasskey(ctx, other.ID); err != nil {
+		if err := e.auth.RemovePasskey(ctx, e.owner, other.ID); err != nil {
 			t.Errorf("removing the last passkey with password sign-in on: %v", err)
 		}
-		if err := e.auth.RemovePasskey(ctx, "nope"); !errors.Is(err, ErrPasskeyNotFound) {
+		if err := e.auth.RemovePasskey(ctx, e.owner, "nope"); !errors.Is(err, ErrPasskeyNotFound) {
 			t.Errorf("unknown ID = %v, want ErrPasskeyNotFound", err)
 		}
 	})
@@ -859,12 +859,12 @@ func TestPasswordSignInOff(t *testing.T) {
 	t.Run("the host's removal skips the rule", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		addPasskey(t, e, signedIn(t, e), rpMain, "MacBook")
-		e.auth.SetPasswordSignIn(ctx, false, rpMain.ID)
-		list, _ := e.auth.ListPasskeys(ctx)
-		if err := e.auth.RemovePasskeyUnchecked(ctx, list[0].ID); err != nil {
+		e.auth.SetPasswordSignIn(ctx, e.owner, false, rpMain.ID)
+		list, _ := e.auth.ListPasskeys(ctx, e.owner)
+		if err := e.auth.RemovePasskeyUnchecked(ctx, e.owner, list[0].ID); err != nil {
 			t.Fatalf("RemovePasskeyUnchecked: %v", err)
 		}
-		if err := e.auth.RemovePasskeyUnchecked(ctx, list[0].ID); !errors.Is(err, ErrPasskeyNotFound) {
+		if err := e.auth.RemovePasskeyUnchecked(ctx, e.owner, list[0].ID); !errors.Is(err, ErrPasskeyNotFound) {
 			t.Errorf("removing it twice = %v, want ErrPasskeyNotFound", err)
 		}
 		// Nothing for the domain is left, so the password works again by itself.
@@ -877,18 +877,18 @@ func TestPasswordSignInOff(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		session := signedIn(t, e)
 		addPasskey(t, e, session, rpMain, "MacBook")
-		e.auth.SetPasswordSignIn(ctx, false, rpMain.ID)
-		if err := e.auth.ResetPassword(ctx, "a brand new password"); err != nil {
+		e.auth.SetPasswordSignIn(ctx, e.owner, false, rpMain.ID)
+		if err := e.auth.ResetPassword(ctx, testEmail, "a brand new password"); err != nil {
 			t.Fatal(err)
 		}
-		got, _ := e.auth.SignInSettings(ctx)
+		got, _ := e.auth.SignInSettings(ctx, e.owner)
 		if !got.PasswordSignIn || got.Passkeys != 1 {
 			t.Errorf("after reset: %+v, want password on and 1 passkey", got)
 		}
 		if _, err := e.auth.SignIn(ctx, testEmail, "a brand new password", rpMain.ID, addrA); err != nil {
 			t.Errorf("SignIn with the new password: %v", err)
 		}
-		if err := e.auth.CheckSession(ctx, session); !errors.Is(err, ErrNotAuthenticated) {
+		if _, err := e.auth.CheckSession(ctx, session); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("the old session after a reset = %v, want it ended", err)
 		}
 		if !strings.Contains(e.logs.String(), `"event":"password_signin_on"`) {
@@ -898,7 +898,7 @@ func TestPasswordSignInOff(t *testing.T) {
 
 	t.Run("setting it to what it is changes nothing", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		got, err := e.auth.SetPasswordSignIn(ctx, true, "")
+		got, err := e.auth.SetPasswordSignIn(ctx, e.owner, true, "")
 		if err != nil || !got.PasswordSignIn || got.Passkeys != 0 {
 			t.Errorf("SetPasswordSignIn(on) = %+v, %v", got, err)
 		}
@@ -909,7 +909,7 @@ func TestPasswordSignInOff(t *testing.T) {
 
 	t.Run("without an admin", func(t *testing.T) {
 		e := newAuthEnv(t)
-		if _, err := e.auth.SignInSettings(ctx); !errors.Is(err, ErrNoAdmin) {
+		if _, err := e.auth.SignInSettings(ctx, e.owner); !errors.Is(err, ErrNoAdmin) {
 			t.Errorf("SignInSettings = %v, want ErrNoAdmin", err)
 		}
 		if _, err := e.auth.BeginPasskeySignIn(ctx, rpMain, addrA); !errors.Is(err, ErrNoAdmin) {
@@ -982,11 +982,11 @@ func TestPasskeyLogsHoldNoSecret(t *testing.T) {
 	cGood, _ := a.Get(cOpts.Options, rpMain.Origin)
 	e.auth.FinishPasskeyConfirm(ctx, session, rpMain, cOpts.Ceremony, cGood, addrA)
 	e.auth.FinishPasskeyConfirm(ctx, session, rpMain, cOpts.Ceremony, cGood, addrA) // replay
-	e.auth.SetPasswordSignIn(ctx, false, rpMain.ID)
+	e.auth.SetPasswordSignIn(ctx, e.owner, false, rpMain.ID)
 	e.auth.SignIn(ctx, testEmail, testPassword, rpMain.ID, addrB)
-	list, _ := e.auth.ListPasskeys(ctx)
-	e.auth.RemovePasskey(ctx, list[0].ID) // refused: the last one
-	e.auth.RenamePasskey(ctx, list[0].ID, "Work laptop")
+	list, _ := e.auth.ListPasskeys(ctx, e.owner)
+	e.auth.RemovePasskey(ctx, e.owner, list[0].ID) // refused: the last one
+	e.auth.RenamePasskey(ctx, e.owner, list[0].ID, "Work laptop")
 
 	logs := e.logs.String()
 	if !strings.Contains(logs, "passkey_signin_failed") || !strings.Contains(logs, "passkey_added") {

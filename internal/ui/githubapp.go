@@ -56,7 +56,7 @@ func (s *server) makeDeployToken(r *http.Request, id string, pl app.Place) (serv
 	}
 	name := base
 	for n := 2; ; n++ {
-		created, err := s.auth.CreateScopedAPIToken(r.Context(), name, nil, scope)
+		created, err := s.auth.CreateScopedAPIToken(r.Context(), callerID(r.Context()), name, nil, scope)
 		if !errors.Is(err, service.ErrTokenNameTaken) || n > 50 {
 			return created, err
 		}

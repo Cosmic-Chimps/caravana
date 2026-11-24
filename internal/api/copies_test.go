@@ -517,7 +517,7 @@ func TestGetLogsFollowEndsWhenCredentialsEnd(t *testing.T) {
 	url := logServer(t, e, 50*time.Millisecond, time.Hour)
 
 	t.Run("a revoked token", func(t *testing.T) {
-		made, err := e.Auth.CreateAPIToken(context.Background(), "follower", nil)
+		made, err := e.Auth.CreateAPIToken(context.Background(), e.OwnerID, "follower", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -525,7 +525,7 @@ func TestGetLogsFollowEndsWhenCredentialsEnd(t *testing.T) {
 			r.Header.Set("Authorization", "Bearer "+made.Token)
 		})
 		c.nextLog() // the stream is up
-		if err := e.Auth.RevokeAPIToken(context.Background(), made.Info.ID); err != nil {
+		if err := e.Auth.RevokeAPIToken(context.Background(), e.OwnerID, made.Info.ID); err != nil {
 			t.Fatal(err)
 		}
 		deadline := time.Now().Add(3 * time.Second)

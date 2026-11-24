@@ -968,11 +968,15 @@ func TestConsoleAddressView(t *testing.T) {
 	if _, err := e.store.SetWebhookToken(ctx, "shop", strings.Repeat("a", 64)); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.store.InsertPasskey(ctx, store.PasskeyRecord{ID: "pk1", UserHandle: []byte("h"), CredentialID: []byte("c1"), RPID: "console.example.com",
+	if err := e.store.CreatePerson(ctx, store.PersonRecord{ID: "owner", Email: "you@example.com", OrgRole: "owner", State: "active",
+		PasswordHash: "x", PasswordSignIn: true, CreatedAt: time.Now()}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.store.InsertPasskey(ctx, store.PasskeyRecord{ID: "pk1", PersonID: "owner", UserHandle: []byte("h"), CredentialID: []byte("c1"), RPID: "console.example.com",
 		PublicKey: []byte("k"), Name: "mac", CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.store.InsertPasskey(ctx, store.PasskeyRecord{ID: "pk2", UserHandle: []byte("h"), CredentialID: []byte("c2"), RPID: "old.example.org",
+	if err := e.store.InsertPasskey(ctx, store.PasskeyRecord{ID: "pk2", PersonID: "owner", UserHandle: []byte("h"), CredentialID: []byte("c2"), RPID: "old.example.org",
 		PublicKey: []byte("k"), Name: "phone", CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}

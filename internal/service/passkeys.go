@@ -19,8 +19,8 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
-// Passkeys (feature 033). The admin may sign in with a WebAuthn passkey instead of the password,
-// and may turn the password off. This file is the ceremonies (begin and finish for signing in,
+// Passkeys (feature 033, per person since 053). A person may sign in with a WebAuthn passkey instead
+// of the password, and may turn the password off. This file is the ceremonies (begin and finish for signing in,
 // confirming it is them and adding a passkey), the passkey list and the password-sign-in setting.
 // go-webauthn does the parsing and the checks of what an authenticator sends; what Caravana adds
 // is who may do it, from where, how often and what is kept. See specs/033-passkeys/plan.md, R1-R13.
@@ -31,7 +31,7 @@ const (
 	confirmWindow = 10 * time.Minute
 
 	maxPasskeyName     = 64
-	passkeyHandleBytes = 32       // the admin's WebAuthn user handle
+	passkeyHandleBytes = 32       // a person's WebAuthn user handle
 	maxCredentialBytes = 64 << 10 // a posted credential is a few KB; more is refused unread
 )
 
@@ -82,6 +82,7 @@ func (e *PasskeyDomainError) Error() string {
 // Passkey is a passkey as a list shows it. It never holds the credential ID or the public key.
 type Passkey struct {
 	ID         string // ours, not the authenticator's
+	PersonID   string // whose passkey it is
 	Name       string
 	Domain     string // the RP ID it was made at
 	CreatedAt  time.Time
@@ -97,7 +98,7 @@ type PasskeyOptions struct {
 	Options  json.RawMessage
 }
 
-// SignInSettings is how the admin may sign in.
+// SignInSettings is how a person may sign in.
 type SignInSettings struct {
 	PasswordSignIn bool
 	Passkeys       int // all of them, whatever domain they were made at
@@ -105,12 +106,12 @@ type SignInSettings struct {
 
 func passkeyOf(r store.PasskeyRecord) Passkey {
 	return Passkey{
-		ID: r.ID, Name: r.Name, Domain: r.RPID, CreatedAt: r.CreatedAt, LastUsedAt: r.LastUsedAt,
+		ID: r.ID, PersonID: r.PersonID, Name: r.Name, Domain: r.RPID, CreatedAt: r.CreatedAt, LastUsedAt: r.LastUsedAt,
 		Transports: append([]string{}, r.Transports...), BackedUp: r.BackupState,
 	}
 }
 
-// passkeyUser is the admin as go-webauthn wants a user: the handle, a name and the credentials
+// passkeyUser is a person as go-webauthn wants a user: the handle, a name and the credentials
 // the ceremony may use.
 type passkeyUser struct {
 	handle      []byte
@@ -191,7 +192,7 @@ func optionsJSON(v any) (json.RawMessage, error) {
 // passkeys it holds for rp, so no email is typed. Asking is not counted against the address
 // (nothing is guessed yet); only a finish that fails is.
 func (a *Auth) BeginPasskeySignIn(ctx context.Context, rp RelyingParty, address string) (PasskeyOptions, error) {
-	if _, err := a.admin(ctx); err != nil {
+	if err := a.anyone(ctx); err != nil {
 		return PasskeyOptions{}, err
 	}
 	w, err := webauthnFor(rp)
@@ -223,8 +224,7 @@ func (a *Auth) keepCeremony(c ceremony, options any) (PasskeyOptions, error) {
 // against the address (R11). A failure is a *PasskeyFailure with the tries left, or a
 // *SigninLimitError. credential is the PublicKeyCredential JSON the script posted.
 func (a *Auth) FinishPasskeySignIn(ctx context.Context, rp RelyingParty, ceremonyID string, credential []byte, address string) (Session, error) {
-	admin, err := a.admin(ctx)
-	if err != nil {
+	if err := a.anyone(ctx); err != nil {
 		return Session{}, err
 	}
 	at, err := a.beginAttempt(ctx, address)
@@ -257,18 +257,16 @@ func (a *Auth) FinishPasskeySignIn(ctx context.Context, rp RelyingParty, ceremon
 	}
 
 	// The library asks who owns the credential once it has read the answer. The checks that
-	// are ours happen here, before it verifies the signature: the user handle must be the
-	// admin's (R9) and the credential must have been made at this domain.
+	// are ours happen here, before it verifies the signature: the credential belongs to a
+	// person who may sign in, the user handle is that person's (R9) and the credential was
+	// made at this domain.
 	var (
 		found    store.PasskeyRecord
+		who      store.PersonRecord
 		reason   string
 		storeErr error
 	)
 	lookup := func(rawID, userHandle []byte) (webauthn.User, error) {
-		if len(admin.WebAuthnHandle) == 0 || !bytes.Equal(userHandle, admin.WebAuthnHandle) {
-			reason = "credential"
-			return nil, errors.New("not the admin's passkey")
-		}
 		rec, err := a.store.GetPasskeyByCredential(ctx, rawID)
 		switch {
 		case errors.Is(err, store.ErrNotFound):
@@ -277,15 +275,27 @@ func (a *Auth) FinishPasskeySignIn(ctx context.Context, rp RelyingParty, ceremon
 		case err != nil:
 			storeErr = err
 			return nil, errors.New("store failed")
+		}
+		person, err := a.livePerson(ctx, rec.PersonID)
+		switch {
+		case errors.Is(err, ErrNotAuthenticated):
+			reason = "credential"
+			return nil, errors.New("not a person who may sign in")
+		case err != nil:
+			storeErr = err
+			return nil, errors.New("store failed")
+		case len(person.WebAuthnHandle) == 0 || !bytes.Equal(userHandle, person.WebAuthnHandle):
+			reason = "credential"
+			return nil, errors.New("not this person's passkey")
 		case rec.RPID != c.rp.ID:
 			reason = "domain"
 			return nil, errors.New("made for another domain")
 		case !bytes.Equal(rec.UserHandle, userHandle):
 			reason = "credential"
-			return nil, errors.New("not the admin's passkey")
+			return nil, errors.New("not this person's passkey")
 		}
-		found = rec
-		return &passkeyUser{handle: rec.UserHandle, email: admin.Email, credentials: []webauthn.Credential{credentialOf(rec)}}, nil
+		found, who = rec, person
+		return &passkeyUser{handle: rec.UserHandle, email: person.Email, credentials: []webauthn.Credential{credentialOf(rec)}}, nil
 	}
 	_, cred, err := w.ValidatePasskeyLogin(lookup, c.session, parsed)
 	if storeErr != nil {
@@ -307,7 +317,7 @@ func (a *Auth) FinishPasskeySignIn(ctx context.Context, rp RelyingParty, ceremon
 	if err := a.clearFailures(ctx, at); err != nil {
 		return Session{}, err
 	}
-	s, err := a.startSession(ctx)
+	s, err := a.startSession(ctx, who.ID)
 	if err != nil {
 		return Session{}, err
 	}
@@ -342,66 +352,79 @@ func (a *Auth) recordPasskeyUse(ctx context.Context, id string, cred *webauthn.C
 	return nil
 }
 
-// admin returns the admin, or ErrNoAdmin.
-func (a *Auth) admin(ctx context.Context) (store.AdminRecord, error) {
-	admin, err := a.store.GetAdmin(ctx)
-	if errors.Is(err, store.ErrNotFound) {
-		return store.AdminRecord{}, ErrNoAdmin
-	} else if err != nil {
-		return store.AdminRecord{}, fmt.Errorf("get admin: %w", err)
-	}
-	return admin, nil
-}
-
 // --- Confirming it's you --------------------------------------------------------------------
 
-// confirmed reports whether the session proved it is the owner within confirmWindow.
+// confirmed reports whether the session proved who is at the keyboard within confirmWindow.
 func (a *Auth) confirmed(rec store.SessionRecord) bool {
 	return rec.VerifiedAt != nil && a.now().UTC().Sub(*rec.VerifiedAt) < confirmWindow
 }
 
 // SessionConfirmed reports whether the session (a cookie value) may add a passkey: it signed in,
-// or confirmed it's the owner, within the last 10 minutes. A dead session is ErrNotAuthenticated.
+// or confirmed it's them, within the last 10 minutes. A dead session is ErrNotAuthenticated.
 func (a *Auth) SessionConfirmed(ctx context.Context, sessionValue string) (bool, error) {
-	_, rec, err := a.liveSession(ctx, sessionValue)
+	_, rec, _, err := a.liveSession(ctx, sessionValue)
 	if err != nil {
 		return false, err
 	}
 	return a.confirmed(rec), nil
 }
 
-// PasswordSignInAllowed reports whether the password may sign in at consoleDomain: it is on, or it
-// is off but no passkey exists for that domain, which keeps a way in after a domain change (R4).
-// consoleDomain "" means any passkey counts.
-func (a *Auth) PasswordSignInAllowed(ctx context.Context, consoleDomain string) (bool, error) {
-	admin, err := a.admin(ctx)
+// PasswordSignInAllowed reports whether the person's password may sign in at consoleDomain: it
+// is on, or it is off but they have no passkey for that domain, which keeps a way in after a
+// domain change (R4). consoleDomain "" means any passkey counts.
+func (a *Auth) PasswordSignInAllowed(ctx context.Context, personID, consoleDomain string) (bool, error) {
+	person, err := a.settingsPerson(ctx, personID)
 	if err != nil {
 		return false, err
 	}
-	if admin.PasswordSignIn {
+	return a.passwordMayCheck(ctx, person, consoleDomain)
+}
+
+func (a *Auth) passwordMayCheck(ctx context.Context, person store.PersonRecord, consoleDomain string) (bool, error) {
+	if person.PasswordSignIn {
 		return true, nil
 	}
-	n, err := a.store.CountPasskeys(ctx, consoleDomain)
+	n, err := a.store.CountPasskeys(ctx, person.ID, consoleDomain)
 	if err != nil {
 		return false, fmt.Errorf("check password sign-in: %w", err)
 	}
 	return n == 0, nil
 }
 
-// VerifyPassword confirms a signed-in session is the owner with the password, which counts as a
+// AnyPasswordSignIn is for the sign-in page, which doesn't know who is signing in: it reports
+// whether the password form is worth drawing at consoleDomain, that is whether some active
+// person can sign in with a password there. Before anyone exists it is ErrNoAdmin.
+func (a *Auth) AnyPasswordSignIn(ctx context.Context, consoleDomain string) (bool, error) {
+	if err := a.anyone(ctx); err != nil {
+		return false, err
+	}
+	people, err := a.store.ListPeople(ctx)
+	if err != nil {
+		return false, fmt.Errorf("check password sign-in: %w", err)
+	}
+	for _, p := range people {
+		if p.State != personActive {
+			continue
+		}
+		if ok, err := a.passwordMayCheck(ctx, p, consoleDomain); err != nil {
+			return false, err
+		} else if ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// VerifyPassword confirms a signed-in session is its person with the password, which counts as a
 // sign-in for the next 10 minutes. A wrong password counts against the address like a wrong
 // sign-in and is a *SigninFailure (or a *SigninLimitError); when password sign-in is off for
 // consoleDomain it is ErrPasswordSignInOff and nothing is checked or counted.
 func (a *Auth) VerifyPassword(ctx context.Context, sessionValue, password, consoleDomain, address string) error {
-	id, _, err := a.liveSession(ctx, sessionValue)
+	id, _, person, err := a.liveSession(ctx, sessionValue)
 	if err != nil {
 		return err
 	}
-	admin, err := a.admin(ctx)
-	if err != nil {
-		return err
-	}
-	if allowed, err := a.PasswordSignInAllowed(ctx, consoleDomain); err != nil {
+	if allowed, err := a.passwordMayCheck(ctx, person, consoleDomain); err != nil {
 		return err
 	} else if !allowed {
 		return ErrPasswordSignInOff
@@ -416,7 +439,7 @@ func (a *Auth) VerifyPassword(ctx context.Context, sessionValue, password, conso
 		return err
 	}
 	defer at.release()
-	if !a.check(password, admin.PasswordHash) {
+	if !a.check(password, person.PasswordHash) {
 		a.event("password_confirm_failed", "address", address)
 		triesLeft, err := a.recordFailure(ctx, at)
 		var limited *SigninLimitError
@@ -442,15 +465,11 @@ func (a *Auth) VerifyPassword(ctx context.Context, sessionValue, password, conso
 // BeginPasskeyConfirm starts "Confirm it's you" with a passkey made at rp's domain. Without one
 // it is ErrNoPasskey. The ceremony belongs to this session: no other can finish it.
 func (a *Auth) BeginPasskeyConfirm(ctx context.Context, sessionValue string, rp RelyingParty, address string) (PasskeyOptions, error) {
-	id, _, err := a.liveSession(ctx, sessionValue)
+	id, _, person, err := a.liveSession(ctx, sessionValue)
 	if err != nil {
 		return PasskeyOptions{}, err
 	}
-	admin, err := a.admin(ctx)
-	if err != nil {
-		return PasskeyOptions{}, err
-	}
-	recs, err := a.passkeysAt(ctx, rp.ID)
+	recs, err := a.passkeysAt(ctx, person.ID, rp.ID)
 	if err != nil {
 		return PasskeyOptions{}, err
 	}
@@ -461,7 +480,7 @@ func (a *Auth) BeginPasskeyConfirm(ctx context.Context, sessionValue string, rp 
 	if err != nil {
 		return PasskeyOptions{}, err
 	}
-	assertion, session, err := w.BeginLogin(userWith(admin, recs), webauthn.WithUserVerification(protocol.VerificationRequired))
+	assertion, session, err := w.BeginLogin(userWith(person, recs), webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
 		return PasskeyOptions{}, fmt.Errorf("begin passkey confirm: %w", err)
 	}
@@ -472,11 +491,7 @@ func (a *Auth) BeginPasskeyConfirm(ctx context.Context, sessionValue string, rp 
 // FinishPasskeyConfirm checks the browser's answer to BeginPasskeyConfirm and confirms the
 // session. Failures count against the address, as a failed sign-in does (R11).
 func (a *Auth) FinishPasskeyConfirm(ctx context.Context, sessionValue string, rp RelyingParty, ceremonyID string, credential []byte, address string) error {
-	id, _, err := a.liveSession(ctx, sessionValue)
-	if err != nil {
-		return err
-	}
-	admin, err := a.admin(ctx)
+	id, _, person, err := a.liveSession(ctx, sessionValue)
 	if err != nil {
 		return err
 	}
@@ -504,7 +519,7 @@ func (a *Auth) FinishPasskeyConfirm(ctx context.Context, sessionValue string, rp
 	if err != nil {
 		return fail("credential")
 	}
-	recs, err := a.passkeysAt(ctx, c.rp.ID)
+	recs, err := a.passkeysAt(ctx, person.ID, c.rp.ID)
 	if err != nil {
 		return err
 	}
@@ -521,7 +536,7 @@ func (a *Auth) FinishPasskeyConfirm(ctx context.Context, sessionValue string, rp
 	if err != nil {
 		return err
 	}
-	cred, err := w.ValidateLogin(userWith(admin, recs), c.session, parsed)
+	cred, err := w.ValidateLogin(userWith(person, recs), c.session, parsed)
 	if err != nil {
 		return fail("verification")
 	}
@@ -542,9 +557,9 @@ func (a *Auth) FinishPasskeyConfirm(ctx context.Context, sessionValue string, rp
 	return nil
 }
 
-// passkeysAt returns the passkeys made at one domain, oldest first.
-func (a *Auth) passkeysAt(ctx context.Context, rpID string) ([]store.PasskeyRecord, error) {
-	all, err := a.store.ListPasskeys(ctx)
+// passkeysAt returns a person's passkeys made at one domain, oldest first.
+func (a *Auth) passkeysAt(ctx context.Context, personID, rpID string) ([]store.PasskeyRecord, error) {
+	all, err := a.store.ListPasskeys(ctx, personID)
 	if err != nil {
 		return nil, fmt.Errorf("list passkeys: %w", err)
 	}
@@ -557,9 +572,9 @@ func (a *Auth) passkeysAt(ctx context.Context, rpID string) ([]store.PasskeyReco
 	return out, nil
 }
 
-// userWith is the admin with the credentials of recs.
-func userWith(admin store.AdminRecord, recs []store.PasskeyRecord) *passkeyUser {
-	u := &passkeyUser{handle: admin.WebAuthnHandle, email: admin.Email}
+// userWith is the person with the credentials of recs.
+func userWith(person store.PersonRecord, recs []store.PasskeyRecord) *passkeyUser {
+	u := &passkeyUser{handle: person.WebAuthnHandle, email: person.Email}
 	for _, r := range recs {
 		u.credentials = append(u.credentials, credentialOf(r))
 	}
@@ -569,31 +584,27 @@ func userWith(admin store.AdminRecord, recs []store.PasskeyRecord) *passkeyUser 
 // --- Adding a passkey -----------------------------------------------------------------------
 
 // BeginPasskeyRegistration starts adding a passkey at rp's domain. The session must be confirmed
-// (ErrNotConfirmed). The admin's WebAuthn user handle is made here the first time. Passkeys
+// (ErrNotConfirmed). The person's WebAuthn user handle is made here the first time. Passkeys
 // already stored for the domain are excluded, so one device doesn't register twice.
 func (a *Auth) BeginPasskeyRegistration(ctx context.Context, sessionValue string, rp RelyingParty, address string) (PasskeyOptions, error) {
-	id, rec, err := a.liveSession(ctx, sessionValue)
+	id, rec, person, err := a.liveSession(ctx, sessionValue)
 	if err != nil {
 		return PasskeyOptions{}, err
 	}
 	if !a.confirmed(rec) {
 		return PasskeyOptions{}, ErrNotConfirmed
 	}
-	admin, err := a.admin(ctx)
-	if err != nil {
-		return PasskeyOptions{}, err
-	}
-	if len(admin.WebAuthnHandle) == 0 {
+	if len(person.WebAuthnHandle) == 0 {
 		fresh := make([]byte, passkeyHandleBytes)
 		if _, err := rand.Read(fresh); err != nil {
 			return PasskeyOptions{}, fmt.Errorf("generate user handle: %w", err)
 		}
 		// Two first registrations at once agree on whichever handle was stored first.
-		if admin.WebAuthnHandle, err = a.store.SetWebAuthnHandle(ctx, fresh); err != nil {
+		if person.WebAuthnHandle, err = a.store.SetWebAuthnHandle(ctx, person.ID, fresh); err != nil {
 			return PasskeyOptions{}, fmt.Errorf("store user handle: %w", err)
 		}
 	}
-	recs, err := a.passkeysAt(ctx, rp.ID)
+	recs, err := a.passkeysAt(ctx, person.ID, rp.ID)
 	if err != nil {
 		return PasskeyOptions{}, err
 	}
@@ -606,7 +617,7 @@ func (a *Auth) BeginPasskeyRegistration(ctx context.Context, sessionValue string
 	if err != nil {
 		return PasskeyOptions{}, err
 	}
-	creation, session, err := w.BeginRegistration(&passkeyUser{handle: admin.WebAuthnHandle, email: admin.Email},
+	creation, session, err := w.BeginRegistration(&passkeyUser{handle: person.WebAuthnHandle, email: person.Email},
 		webauthn.WithAuthenticatorSelection(passkeySelection()),
 		webauthn.WithConveyancePreference(protocol.PreferNoAttestation),
 		webauthn.WithExclusions(exclude))
@@ -626,16 +637,12 @@ func (a *Auth) FinishPasskeyRegistration(ctx context.Context, sessionValue strin
 	if err != nil {
 		return Passkey{}, err
 	}
-	id, rec, err := a.liveSession(ctx, sessionValue)
+	id, rec, person, err := a.liveSession(ctx, sessionValue)
 	if err != nil {
 		return Passkey{}, err
 	}
 	if !a.confirmed(rec) {
 		return Passkey{}, ErrNotConfirmed
-	}
-	admin, err := a.admin(ctx)
-	if err != nil {
-		return Passkey{}, err
 	}
 
 	c, ok := a.ceremonies.take(a.now().UTC(), ceremonyID)
@@ -650,7 +657,10 @@ func (a *Auth) FinishPasskeyRegistration(ctx context.Context, sessionValue strin
 	if err != nil {
 		return Passkey{}, err
 	}
-	cred, err := w.CreateCredential(&passkeyUser{handle: admin.WebAuthnHandle, email: admin.Email}, c.session, parsed)
+	if len(person.WebAuthnHandle) == 0 {
+		return Passkey{}, ErrPasskeyRefused // no registration was begun for this person
+	}
+	cred, err := w.CreateCredential(&passkeyUser{handle: person.WebAuthnHandle, email: person.Email}, c.session, parsed)
 	if err != nil || !cred.Flags.UserVerified {
 		return Passkey{}, ErrPasskeyRefused
 	}
@@ -660,7 +670,7 @@ func (a *Auth) FinishPasskeyRegistration(ctx context.Context, sessionValue strin
 		transports[i] = string(t)
 	}
 	r := store.PasskeyRecord{
-		ID: strings.ToLower(rand.Text()), UserHandle: admin.WebAuthnHandle, CredentialID: cred.ID,
+		ID: strings.ToLower(rand.Text()), PersonID: person.ID, UserHandle: person.WebAuthnHandle, CredentialID: cred.ID,
 		RPID: c.rp.ID, PublicKey: cred.PublicKey, AttestationType: cred.AttestationType,
 		AttestationFormat: cred.AttestationFormat, AAGUID: cred.Authenticator.AAGUID,
 		SignCount: cred.Authenticator.SignCount, Transports: transports,
@@ -693,9 +703,9 @@ func checkPasskeyName(name string) (string, error) {
 
 // --- Managing passkeys ----------------------------------------------------------------------
 
-// ListPasskeys returns every passkey, oldest first.
-func (a *Auth) ListPasskeys(ctx context.Context) ([]Passkey, error) {
-	recs, err := a.store.ListPasskeys(ctx)
+// ListPasskeys returns a person's passkeys, oldest first.
+func (a *Auth) ListPasskeys(ctx context.Context, personID string) ([]Passkey, error) {
+	recs, err := a.store.ListPasskeys(ctx, personID)
 	if err != nil {
 		return nil, fmt.Errorf("list passkeys: %w", err)
 	}
@@ -706,19 +716,33 @@ func (a *Auth) ListPasskeys(ctx context.Context) ([]Passkey, error) {
 	return out, nil
 }
 
-// RenamePasskey gives a passkey a new name and returns it. A bad name is an *app.FieldError on
-// "name"; an unknown ID is ErrPasskeyNotFound.
-func (a *Auth) RenamePasskey(ctx context.Context, id, name string) (Passkey, error) {
+// ListAllPasskeys returns everyone's passkeys, oldest first, each with its person's ID. It is
+// for the host CLI; nothing a signed-in person calls reaches it.
+func (a *Auth) ListAllPasskeys(ctx context.Context) ([]Passkey, error) {
+	recs, err := a.store.ListAllPasskeys(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list passkeys: %w", err)
+	}
+	out := make([]Passkey, 0, len(recs))
+	for _, r := range recs {
+		out = append(out, passkeyOf(r))
+	}
+	return out, nil
+}
+
+// RenamePasskey gives one of the person's passkeys a new name and returns it. A bad name is an
+// *app.FieldError on "name"; an unknown ID, or another person's passkey, is ErrPasskeyNotFound.
+func (a *Auth) RenamePasskey(ctx context.Context, personID, id, name string) (Passkey, error) {
 	name, err := checkPasskeyName(name)
 	if err != nil {
 		return Passkey{}, err
 	}
-	if err := a.store.RenamePasskey(ctx, id, name); errors.Is(err, store.ErrNotFound) {
+	if err := a.store.RenamePasskey(ctx, personID, id, name); errors.Is(err, store.ErrNotFound) {
 		return Passkey{}, ErrPasskeyNotFound
 	} else if err != nil {
 		return Passkey{}, fmt.Errorf("rename passkey: %w", err)
 	}
-	rec, err := a.store.GetPasskey(ctx, id)
+	rec, err := a.store.GetPasskey(ctx, personID, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return Passkey{}, ErrPasskeyNotFound
 	} else if err != nil {
@@ -728,24 +752,24 @@ func (a *Auth) RenamePasskey(ctx context.Context, id, name string) (Passkey, err
 	return passkeyOf(rec), nil
 }
 
-// RemovePasskey deletes a passkey. While password sign-in is off, the last passkey of its domain
-// can't go (ErrLastPasskey, as a *PasskeyDomainError): that would leave no way in. An unknown ID
-// is ErrPasskeyNotFound.
-func (a *Auth) RemovePasskey(ctx context.Context, id string) error {
+// RemovePasskey deletes one of the person's passkeys. While their password sign-in is off, the
+// last passkey of its domain can't go (ErrLastPasskey, as a *PasskeyDomainError): that would
+// leave no way in. An unknown ID, or another person's passkey, is ErrPasskeyNotFound.
+func (a *Auth) RemovePasskey(ctx context.Context, personID, id string) error {
 	a.passkeyMu.Lock()
 	defer a.passkeyMu.Unlock()
-	rec, err := a.store.GetPasskey(ctx, id)
+	rec, err := a.store.GetPasskey(ctx, personID, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return ErrPasskeyNotFound
 	} else if err != nil {
 		return fmt.Errorf("remove passkey: %w", err)
 	}
-	admin, err := a.admin(ctx)
+	person, err := a.person(ctx, personID)
 	if err != nil {
 		return err
 	}
-	if !admin.PasswordSignIn {
-		n, err := a.store.CountPasskeys(ctx, rec.RPID)
+	if !person.PasswordSignIn {
+		n, err := a.store.CountPasskeys(ctx, personID, rec.RPID)
 		if err != nil {
 			return fmt.Errorf("remove passkey: %w", err)
 		}
@@ -753,19 +777,20 @@ func (a *Auth) RemovePasskey(ctx context.Context, id string) error {
 			return &PasskeyDomainError{Err: ErrLastPasskey, Domain: rec.RPID}
 		}
 	}
-	return a.deletePasskey(ctx, id, "console")
+	return a.deletePasskey(ctx, personID, id, "console")
 }
 
-// RemovePasskeyUnchecked deletes a passkey without the last-passkey rule. It is for `caravana
-// admin passkeys remove`: root on the host is the owner, and reset-password is the way back in.
-func (a *Auth) RemovePasskeyUnchecked(ctx context.Context, id string) error {
+// RemovePasskeyUnchecked deletes a person's passkey without the last-passkey rule. It is for
+// `caravana admin passkeys remove`: root on the host is the owner, and reset-password is the way
+// back in.
+func (a *Auth) RemovePasskeyUnchecked(ctx context.Context, personID, id string) error {
 	a.passkeyMu.Lock()
 	defer a.passkeyMu.Unlock()
-	return a.deletePasskey(ctx, id, "host")
+	return a.deletePasskey(ctx, personID, id, "host")
 }
 
-func (a *Auth) deletePasskey(ctx context.Context, id, how string) error {
-	if err := a.store.DeletePasskey(ctx, id); errors.Is(err, store.ErrNotFound) {
+func (a *Auth) deletePasskey(ctx context.Context, personID, id, how string) error {
+	if err := a.store.DeletePasskey(ctx, personID, id); errors.Is(err, store.ErrNotFound) {
 		return ErrPasskeyNotFound
 	} else if err != nil {
 		return fmt.Errorf("remove passkey: %w", err)
@@ -774,30 +799,31 @@ func (a *Auth) deletePasskey(ctx context.Context, id, how string) error {
 	return nil
 }
 
-// SignInSettings says whether the password may sign in and how many passkeys there are.
-func (a *Auth) SignInSettings(ctx context.Context) (SignInSettings, error) {
-	admin, err := a.admin(ctx)
+// SignInSettings says whether the person's password may sign in and how many passkeys they have.
+func (a *Auth) SignInSettings(ctx context.Context, personID string) (SignInSettings, error) {
+	person, err := a.settingsPerson(ctx, personID)
 	if err != nil {
 		return SignInSettings{}, err
 	}
-	n, err := a.store.CountPasskeys(ctx, "")
+	n, err := a.store.CountPasskeys(ctx, personID, "")
 	if err != nil {
 		return SignInSettings{}, fmt.Errorf("count passkeys: %w", err)
 	}
-	return SignInSettings{PasswordSignIn: admin.PasswordSignIn, Passkeys: n}, nil
+	return SignInSettings{PasswordSignIn: person.PasswordSignIn, Passkeys: n}, nil
 }
 
-// SetPasswordSignIn turns password sign-in on or off. Turning it off needs a passkey made at
-// consoleDomain ("" means any passkey): otherwise it is ErrNoPasskey, as a *PasskeyDomainError.
-func (a *Auth) SetPasswordSignIn(ctx context.Context, on bool, consoleDomain string) (SignInSettings, error) {
+// SetPasswordSignIn turns a person's password sign-in on or off. Turning it off needs a passkey
+// of theirs made at consoleDomain ("" means any passkey): otherwise it is ErrNoPasskey, as a
+// *PasskeyDomainError.
+func (a *Auth) SetPasswordSignIn(ctx context.Context, personID string, on bool, consoleDomain string) (SignInSettings, error) {
 	a.passkeyMu.Lock()
 	defer a.passkeyMu.Unlock()
-	admin, err := a.admin(ctx)
+	person, err := a.settingsPerson(ctx, personID)
 	if err != nil {
 		return SignInSettings{}, err
 	}
 	if !on {
-		n, err := a.store.CountPasskeys(ctx, consoleDomain)
+		n, err := a.store.CountPasskeys(ctx, personID, consoleDomain)
 		if err != nil {
 			return SignInSettings{}, fmt.Errorf("set password sign-in: %w", err)
 		}
@@ -805,8 +831,8 @@ func (a *Auth) SetPasswordSignIn(ctx context.Context, on bool, consoleDomain str
 			return SignInSettings{}, &PasskeyDomainError{Err: ErrNoPasskey, Domain: consoleDomain}
 		}
 	}
-	if admin.PasswordSignIn != on {
-		if err := a.store.SetPasswordSignIn(ctx, on); err != nil {
+	if person.PasswordSignIn != on {
+		if err := a.store.SetPasswordSignIn(ctx, personID, on); err != nil {
 			return SignInSettings{}, fmt.Errorf("set password sign-in: %w", err)
 		}
 		if on {
@@ -815,21 +841,21 @@ func (a *Auth) SetPasswordSignIn(ctx context.Context, on bool, consoleDomain str
 			a.event("password_signin_off")
 		}
 	}
-	return a.SignInSettings(ctx)
+	return a.SignInSettings(ctx, personID)
 }
 
-// passwordSignInOn turns password sign-in on (ResetPassword's step), logging only a change.
-func (a *Auth) passwordSignInOn(ctx context.Context) error {
+// passwordSignInOn turns a person's password sign-in on (ResetPassword's step), logging only a change.
+func (a *Auth) passwordSignInOn(ctx context.Context, personID string) error {
 	a.passkeyMu.Lock()
 	defer a.passkeyMu.Unlock()
-	admin, err := a.admin(ctx)
+	person, err := a.person(ctx, personID)
 	if err != nil {
 		return err
 	}
-	if admin.PasswordSignIn {
+	if person.PasswordSignIn {
 		return nil
 	}
-	if err := a.store.SetPasswordSignIn(ctx, true); err != nil {
+	if err := a.store.SetPasswordSignIn(ctx, personID, true); err != nil {
 		return fmt.Errorf("turn password sign-in on: %w", err)
 	}
 	a.event("password_signin_on")

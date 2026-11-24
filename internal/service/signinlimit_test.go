@@ -160,7 +160,7 @@ func TestSigninLimit(t *testing.T) {
 
 	t.Run("API tokens are never limited", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		created, err := e.auth.CreateAPIToken(ctx, "ci", nil)
+		created, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -170,7 +170,7 @@ func TestSigninLimit(t *testing.T) {
 		if _, err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
 			t.Errorf("CheckAPIToken while the address is locked = %v", err)
 		}
-		if _, err := e.auth.CreateAPIToken(ctx, "ci-2", nil); err != nil {
+		if _, err := e.auth.CreateAPIToken(ctx, e.owner, "ci-2", nil); err != nil {
 			t.Errorf("CreateAPIToken while the address is locked = %v", err)
 		}
 	})

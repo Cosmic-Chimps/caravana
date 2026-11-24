@@ -61,7 +61,11 @@ type signInJSON struct {
 
 // listPasskeys answers GET /v1/account/passkeys.
 func (s *server) listPasskeys(w http.ResponseWriter, r *http.Request) error {
-	list, err := s.auth.ListPasskeys(r.Context())
+	id, err := callerID(r)
+	if err != nil {
+		return err
+	}
+	list, err := s.auth.ListPasskeys(r.Context(), id)
 	if err != nil {
 		return err
 	}
@@ -83,7 +87,11 @@ func (s *server) updatePasskey(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSON(r, &req); err != nil {
 		return err
 	}
-	p, err := s.auth.RenamePasskey(r.Context(), r.PathValue("passkeyId"), req.Name)
+	id, err := callerID(r)
+	if err != nil {
+		return err
+	}
+	p, err := s.auth.RenamePasskey(r.Context(), id, r.PathValue("passkeyId"), req.Name)
 	if err != nil {
 		return unprocessable(err)
 	}
@@ -93,7 +101,11 @@ func (s *server) updatePasskey(w http.ResponseWriter, r *http.Request) error {
 
 // deletePasskey answers DELETE /v1/account/passkeys/{passkeyId}.
 func (s *server) deletePasskey(w http.ResponseWriter, r *http.Request) error {
-	if err := s.auth.RemovePasskey(r.Context(), r.PathValue("passkeyId")); err != nil {
+	id, err := callerID(r)
+	if err != nil {
+		return err
+	}
+	if err := s.auth.RemovePasskey(r.Context(), id, r.PathValue("passkeyId")); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -102,7 +114,11 @@ func (s *server) deletePasskey(w http.ResponseWriter, r *http.Request) error {
 
 // getSignIn answers GET /v1/account/sign-in.
 func (s *server) getSignIn(w http.ResponseWriter, r *http.Request) error {
-	st, err := s.auth.SignInSettings(r.Context())
+	id, err := callerID(r)
+	if err != nil {
+		return err
+	}
+	st, err := s.auth.SignInSettings(r.Context(), id)
 	if err != nil {
 		return err
 	}
@@ -123,7 +139,11 @@ func (s *server) putSignIn(w http.ResponseWriter, r *http.Request) error {
 		return &Error{Status: http.StatusUnprocessableEntity, Code: codeInvalidField, Field: "passwordSignIn",
 			Message: "passwordSignIn is required"}
 	}
-	st, err := s.auth.SetPasswordSignIn(r.Context(), *req.PasswordSignIn, s.svc.ConsoleHost())
+	id, err := callerID(r)
+	if err != nil {
+		return err
+	}
+	st, err := s.auth.SetPasswordSignIn(r.Context(), id, *req.PasswordSignIn, s.svc.ConsoleHost())
 	if err != nil {
 		return err
 	}

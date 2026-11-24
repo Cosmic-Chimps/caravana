@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
+
+	"github.com/cosmic-chimps/caravana/internal/service"
 )
 
 // shellView is what shell.html needs to draw the sidebar and the top bar
@@ -12,7 +15,7 @@ import (
 type shellView struct {
 	Host     string  // shown in the sidebar's brand block, beside the logo mark
 	Version  string  // Caravana's version, after "caravana"; "" for none
-	Email    string  // the admin, in the account row
+	Email    string  // the signed-in person, in the account row
 	Initials string  // the first two letters of the email's local part, upper case; "?" for none
 	Active   string  // navHome, navProjects, navPreviews, navSchedules, navDomains, navLogs, navRequests, navMonitoring or navSettings: the sidebar item marked as current
 	Crumbs   []crumb // the top bar's breadcrumbs, the last one being this page
@@ -88,10 +91,11 @@ const (
 // around it with the host, the admin's email, the sidebar item to mark and the
 // breadcrumbs. Pages add their own fields on top (embedding pageData).
 func (s *server) shellPage(r *http.Request, title, active string, crumbs ...crumb) (pageData, error) {
-	email, err := s.auth.AdminEmail(r.Context())
-	if err != nil {
-		return pageData{}, err
+	who, ok := service.PrincipalFrom(r.Context())
+	if !ok {
+		return pageData{}, errors.New("no signed-in person in the request")
 	}
+	email := who.Email
 	host := s.host
 	if host == "" {
 		host = r.Host

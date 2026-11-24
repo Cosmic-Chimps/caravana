@@ -163,7 +163,7 @@ func (s *server) saveAppearance(w http.ResponseWriter, r *http.Request, session 
 func (s *server) settingsFacts(ctx context.Context) (settingsFacts, error) {
 	var f settingsFacts
 	var err error
-	if f.Tokens, err = s.auth.ListAPITokens(ctx); err != nil {
+	if f.Tokens, err = s.auth.ListAPITokens(ctx, callerID(ctx)); err != nil {
 		return f, fmt.Errorf("list API tokens: %w", err)
 	}
 	if s.svc == nil {
@@ -368,7 +368,7 @@ func (s *server) changePassword(w http.ResponseWriter, r *http.Request, session 
 	if !s.readForm(w, r) {
 		return
 	}
-	err := s.auth.ChangePassword(r.Context(), r.PostFormValue("currentPassword"), r.PostFormValue("newPassword"), session)
+	err := s.auth.ChangePassword(r.Context(), callerID(r.Context()), r.PostFormValue("currentPassword"), r.PostFormValue("newPassword"), session)
 	var fieldErr *app.FieldError
 	switch {
 	case err == nil:
@@ -414,7 +414,7 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request, session str
 		expiresAt = new(day.Add(24*time.Hour - time.Second))
 	}
 
-	created, err := s.auth.CreateScopedAPIToken(r.Context(), name, expiresAt, scope)
+	created, err := s.auth.CreateScopedAPIToken(r.Context(), callerID(r.Context()), name, expiresAt, scope)
 	var fieldErr *app.FieldError
 	switch {
 	case err == nil:
@@ -447,7 +447,7 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request, session str
 // for a confirmation first (a <details>, research R16); this is the post it
 // sends. Revoking can't touch deployed apps, and a new token replaces it.
 func (s *server) revokeToken(w http.ResponseWriter, r *http.Request, session string) {
-	err := s.auth.RevokeAPIToken(r.Context(), r.PathValue("tokenId"))
+	err := s.auth.RevokeAPIToken(r.Context(), callerID(r.Context()), r.PathValue("tokenId"))
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		s.serverError(w, r, "revoke api token", err)
 		return

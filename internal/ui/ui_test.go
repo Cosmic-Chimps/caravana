@@ -65,11 +65,12 @@ func (b *syncBuffer) String() string {
 
 // uiEnv is the pages on a real store, with a fake clock and fast hashing.
 type uiEnv struct {
-	URL   string
-	Auth  *service.Auth
-	Store *store.Store
-	Clock *fakeClock
-	Logs  *syncBuffer
+	URL     string
+	Auth    *service.Auth
+	Store   *store.Store
+	Clock   *fakeClock
+	Logs    *syncBuffer
+	OwnerID string // the ID of the owner testEmail, when the environment has one
 }
 
 // newUIEnv serves the pages. withAdmin creates the admin testEmail /
@@ -95,6 +96,11 @@ func newUIEnvAt(t *testing.T, withAdmin bool, proxies, publicURL string) *uiEnv 
 		if err := e.Auth.InitAdmin(context.Background(), testEmail, testPassword); err != nil {
 			t.Fatalf("create admin: %v", err)
 		}
+		owner, err := e.Auth.ResolvePerson(context.Background(), "")
+		if err != nil {
+			t.Fatalf("find the owner: %v", err)
+		}
+		e.OwnerID = owner.ID
 	}
 	trusted, err := httpx.ParseProxies(proxies)
 	if err != nil {
@@ -296,12 +302,12 @@ func TestSignInWithPasswordSignInOff(t *testing.T) {
 	host := strings.TrimPrefix(e.URL, "http://")
 	host = host[:strings.LastIndex(host, ":")] // the page is addressed as 127.0.0.1:<port>
 	if err := e.Store.InsertPasskey(context.Background(), store.PasskeyRecord{
-		ID: "p1", UserHandle: []byte("handle"), CredentialID: []byte("cred"), RPID: host, PublicKey: []byte("key"),
+		ID: "p1", PersonID: e.OwnerID, UserHandle: []byte("handle"), CredentialID: []byte("cred"), RPID: host, PublicKey: []byte("key"),
 		AttestationType: "none", AttestationFormat: "none", Name: "MacBook", CreatedAt: e.Clock.Now(),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Auth.SetPasswordSignIn(context.Background(), false, host); err != nil {
+	if _, err := e.Auth.SetPasswordSignIn(context.Background(), e.OwnerID, false, host); err != nil {
 		t.Fatal(err)
 	}
 
@@ -316,7 +322,7 @@ func TestSignInWithPasswordSignInOff(t *testing.T) {
 		}
 	}
 	// Turned back on, the same post signs in: nothing was counted against the address.
-	if _, err := e.Auth.SetPasswordSignIn(context.Background(), true, host); err != nil {
+	if _, err := e.Auth.SetPasswordSignIn(context.Background(), e.OwnerID, true, host); err != nil {
 		t.Fatal(err)
 	}
 	resp, _ := e.do(t, request{method: http.MethodPost, path: "/login",
@@ -912,14 +918,14 @@ func TestTokensOnThePage(t *testing.T) {
 		e := newUIEnv(t, true, "")
 		c := e.signIn(t, nil)
 		soon := e.Clock.Now().Add(time.Hour)
-		if _, err := e.Auth.CreateAPIToken(ctx, "will-expire", &soon); err != nil {
+		if _, err := e.Auth.CreateAPIToken(ctx, e.OwnerID, "will-expire", &soon); err != nil {
 			t.Fatal(err)
 		}
-		gone, _ := e.Auth.CreateAPIToken(ctx, "gone", nil)
-		if err := e.Auth.RevokeAPIToken(ctx, gone.Info.ID); err != nil {
+		gone, _ := e.Auth.CreateAPIToken(ctx, e.OwnerID, "gone", nil)
+		if err := e.Auth.RevokeAPIToken(ctx, e.OwnerID, gone.Info.ID); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := e.Auth.CreateAPIToken(ctx, "live", nil); err != nil {
+		if _, err := e.Auth.CreateAPIToken(ctx, e.OwnerID, "live", nil); err != nil {
 			t.Fatal(err)
 		}
 		e.Clock.Advance(2 * time.Hour)
@@ -950,7 +956,7 @@ func TestTokensOnThePage(t *testing.T) {
 	t.Run("revoke redirects and the row shows revoked", func(t *testing.T) {
 		e := newUIEnv(t, true, "")
 		c := e.signIn(t, nil)
-		created, _ := e.Auth.CreateAPIToken(ctx, "victim", nil)
+		created, _ := e.Auth.CreateAPIToken(ctx, e.OwnerID, "victim", nil)
 
 		resp, _ := e.post(t, c, "/settings/tokens/"+created.Info.ID+"/revoke", url.Values{})
 		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings/tokens" {
@@ -973,7 +979,7 @@ func TestTokensOnThePage(t *testing.T) {
 	t.Run("refused creates say why, under the field", func(t *testing.T) {
 		e := newUIEnv(t, true, "")
 		c := e.signIn(t, nil)
-		if _, err := e.Auth.CreateAPIToken(ctx, "taken", nil); err != nil {
+		if _, err := e.Auth.CreateAPIToken(ctx, e.OwnerID, "taken", nil); err != nil {
 			t.Fatal(err)
 		}
 		yesterday := e.Clock.Now().Add(-24 * time.Hour).Format("2006-01-02")
@@ -1009,7 +1015,7 @@ func TestTokensOnThePage(t *testing.T) {
 		if resp, body := e.post(t, c, "/settings/tokens", url.Values{"name": {"dated"}, "expires": {day}}); resp.StatusCode != http.StatusOK || !tokenInPage.MatchString(body) {
 			t.Fatalf("create with an expiry = %d:\n%s", resp.StatusCode, body)
 		}
-		infos, _ := e.Auth.ListAPITokens(ctx)
+		infos, _ := e.Auth.ListAPITokens(ctx, e.OwnerID)
 		want, _ := time.Parse("2006-01-02 15:04:05", day+" 23:59:59")
 		if len(infos) != 1 || infos[0].ExpiresAt == nil || !infos[0].ExpiresAt.Equal(want) {
 			t.Errorf("tokens = %+v, want one expiring %v", infos, want)
@@ -1069,7 +1075,7 @@ func TestSettingsPage(t *testing.T) {
 	t.Run("revoke sits behind a confirmation", func(t *testing.T) {
 		e := newUIEnv(t, true, "")
 		c := e.signIn(t, nil)
-		created, err := e.Auth.CreateAPIToken(ctx, "victim", nil)
+		created, err := e.Auth.CreateAPIToken(ctx, e.OwnerID, "victim", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1376,7 +1382,7 @@ func TestAccountPostsAreProtected(t *testing.T) {
 	ctx := context.Background()
 	e := newUIEnv(t, true, "")
 	c := e.signIn(t, nil)
-	victim, _ := e.Auth.CreateAPIToken(ctx, "victim", nil)
+	victim, _ := e.Auth.CreateAPIToken(ctx, e.OwnerID, "victim", nil)
 
 	cross := map[string]string{"Sec-Fetch-Site": "cross-site"}
 	for path, form := range map[string]url.Values{
@@ -1393,7 +1399,7 @@ func TestAccountPostsAreProtected(t *testing.T) {
 	if _, err := e.Auth.CheckAPIToken(ctx, victim.Token); err != nil {
 		t.Errorf("a cross-site post revoked the token: %v", err)
 	}
-	infos, _ := e.Auth.ListAPITokens(ctx)
+	infos, _ := e.Auth.ListAPITokens(ctx, e.OwnerID)
 	if len(infos) != 1 {
 		t.Errorf("a cross-site post created a token: %+v", infos)
 	}

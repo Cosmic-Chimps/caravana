@@ -94,7 +94,8 @@ func (s *server) stream(w http.ResponseWriter, r *http.Request, route liveRoute)
 		if !hasCookie {
 			return service.ErrNotAuthenticated
 		}
-		return s.auth.CheckSessionQuiet(ctx, value)
+		_, err := s.auth.CheckSessionQuiet(ctx, value)
+		return err
 	}
 
 	err := check(r.Context())

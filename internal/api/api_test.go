@@ -92,7 +92,8 @@ type testEnv struct {
 	Service  *service.Service
 	Auth     *service.Auth
 	Clock    *fakeClock
-	Token    string // an active API token of the admin
+	OwnerID  string // the ID of the owner testAdminEmail
+	Token    string // an active API token of the owner
 	Dir      string // the store's data directory
 	log      *slog.Logger
 }
@@ -135,7 +136,12 @@ func newTestEnvWith(t *testing.T, nomadToken string, setup func(*service.Service
 	if err := e.Auth.InitAdmin(context.Background(), testAdminEmail, testAdminPassword); err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
-	created, err := e.Auth.CreateAPIToken(context.Background(), "tests", nil)
+	owner, err := e.Auth.ResolvePerson(context.Background(), "")
+	if err != nil {
+		t.Fatalf("find the owner: %v", err)
+	}
+	e.OwnerID = owner.ID
+	created, err := e.Auth.CreateAPIToken(context.Background(), e.OwnerID, "tests", nil)
 	if err != nil {
 		t.Fatalf("create token: %v", err)
 	}

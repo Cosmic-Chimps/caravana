@@ -64,6 +64,11 @@ func newConsoleEnvWith(t *testing.T, setup func(*service.Service, *deploytest.No
 	if err := uie.Auth.InitAdmin(ctx, testEmail, testPassword); err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
+	owner, err := uie.Auth.ResolvePerson(ctx, "")
+	if err != nil {
+		t.Fatalf("find the owner: %v", err)
+	}
+	uie.OwnerID = owner.ID
 
 	nomad := deploytest.New(t)
 	nomad.Succeed()

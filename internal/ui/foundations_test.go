@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cosmic-chimps/caravana/internal/service"
 )
 
 // newTestServer is the server itself, on the env's Auth, for tests of what
@@ -199,6 +201,7 @@ func TestShellAndParts(t *testing.T) {
 	render := func(t *testing.T, live string) string {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req = req.WithContext(service.WithPrincipal(req.Context(), service.Principal{PersonID: e.OwnerID, Email: testEmail, OrgRole: service.OrgOwner}))
 		page, err := s.shellPage(req, "Test", navSettings, crumb{Label: "Default", Href: "/projects/default"}, crumb{Label: "whoami"})
 		if err != nil {
 			t.Fatal(err)

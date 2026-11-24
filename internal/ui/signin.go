@@ -75,12 +75,12 @@ func (s *server) showSignIn(w http.ResponseWriter, r *http.Request, session stri
 func (s *server) renderSignIn(w http.ResponseWriter, r *http.Request, session string, status int, v signInView) {
 	ctx := r.Context()
 	v.Place = s.passkeyPlace(r)
-	list, err := s.auth.ListPasskeys(ctx)
+	list, err := s.auth.ListPasskeys(ctx, callerID(ctx))
 	if err != nil {
 		s.serverError(w, r, "list passkeys", err)
 		return
 	}
-	settings, err := s.auth.SignInSettings(ctx)
+	settings, err := s.auth.SignInSettings(ctx, callerID(ctx))
 	if err != nil {
 		s.serverError(w, r, "read sign-in settings", err)
 		return
@@ -89,7 +89,7 @@ func (s *server) renderSignIn(w http.ResponseWriter, r *http.Request, session st
 		s.serverError(w, r, "check the session", err)
 		return
 	}
-	if v.PasswordWorks, err = s.auth.PasswordSignInAllowed(ctx, v.Place.Console); err != nil {
+	if v.PasswordWorks, err = s.auth.PasswordSignInAllowed(ctx, callerID(ctx), v.Place.Console); err != nil {
 		s.serverError(w, r, "read sign-in settings", err)
 		return
 	}
@@ -251,7 +251,7 @@ func (s *server) renamePasskey(w http.ResponseWriter, r *http.Request, session s
 	if !s.readForm(w, r) {
 		return
 	}
-	_, err := s.auth.RenamePasskey(r.Context(), r.PathValue("id"), r.PostFormValue("name"))
+	_, err := s.auth.RenamePasskey(r.Context(), callerID(r.Context()), r.PathValue("id"), r.PostFormValue("name"))
 	switch {
 	case err == nil:
 		http.Redirect(w, r, "/settings/sign-in?renamed=1", http.StatusSeeOther)
@@ -268,7 +268,7 @@ func (s *server) renamePasskey(w http.ResponseWriter, r *http.Request, session s
 
 // removePasskey answers POST /settings/passkeys/{id}/remove. The page asks first (a <details>).
 func (s *server) removePasskey(w http.ResponseWriter, r *http.Request, session string) {
-	err := s.auth.RemovePasskey(r.Context(), r.PathValue("id"))
+	err := s.auth.RemovePasskey(r.Context(), callerID(r.Context()), r.PathValue("id"))
 	var de *service.PasskeyDomainError
 	switch {
 	case err == nil, errors.Is(err, service.ErrPasskeyNotFound):
@@ -300,7 +300,7 @@ func (s *server) setPasswordSignIn(w http.ResponseWriter, r *http.Request, sessi
 		return
 	}
 	domain := s.consoleDomain(r)
-	_, err := s.auth.SetPasswordSignIn(r.Context(), on, domain)
+	_, err := s.auth.SetPasswordSignIn(r.Context(), callerID(r.Context()), on, domain)
 	var de *service.PasskeyDomainError
 	switch {
 	case err == nil:

@@ -143,7 +143,7 @@ func writeOptions(w http.ResponseWriter, o service.PasskeyOptions) {
 // a redirect to a page the script would try to read as JSON.
 func (s *server) requireSessionJSON(next sessionHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		value, state, err := s.current(r)
+		value, who, state, err := s.current(r)
 		if err != nil {
 			s.log.Error("check session", "error", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal", "internal error")
@@ -153,7 +153,7 @@ func (s *server) requireSessionJSON(next sessionHandler) http.HandlerFunc {
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized", "Your session ended. Sign in again.")
 			return
 		}
-		next(w, r, value)
+		next(w, r.WithContext(service.WithPrincipal(r.Context(), who)), value)
 	}
 }
 

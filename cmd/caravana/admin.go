@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -31,16 +32,19 @@ const (
 const adminUsage = `usage: caravana admin <command> [flags]
 
 commands:
-  init --email <email>                       create the one admin
-  status                                     show the admin and how they sign in
-  reset-password                             set a new password, and turn password sign-in on
-  passkeys list                              list the passkeys
-  passkeys remove --id <id>                  remove a passkey (see "list" for the ID)
-  create-token --name <name> [--expires-in <duration>]
-                                             create an API token (printed on standard output)
-  revoke-token --name <name>                 revoke the active token with that name
+  init --email <email>                       create the first owner (refused once anyone exists)
+  status                                     list the people and how each signs in
+  reset-password [--email <email>]           set a new password, and turn password sign-in on
+  passkeys list [--email <email>]            list the passkeys (everyone's, or one person's)
+  passkeys remove --id <id> [--email <email>]
+                                             remove a passkey (see "list" for the ID)
+  create-token --name <name> [--email <email>] [--expires-in <duration>]
+                                             create an API token for a person (printed on standard output)
+  revoke-token --name <name> [--email <email>]
+                                             revoke the person's active token with that name
 
-every command takes -data-dir (CARAVANA_DATA_DIR), default "data"
+--email names an active person; without it, the first owner. Every command takes
+-data-dir (CARAVANA_DATA_DIR), default "data"
 `
 
 // runAdmin is `caravana admin <command>`, run on the host by the owner. args
@@ -80,16 +84,22 @@ func runAdmin(ctx context.Context, args []string, getenv func(string) string,
 	var email, name, expiresIn, passkeyID *string
 	switch command {
 	case "passkeys list":
+		email = fs.String("email", "", "only this person's passkeys; default: everyone's")
 	case "passkeys remove":
 		passkeyID = fs.String("id", "", "the passkey's ID, from passkeys list")
+		email = fs.String("email", "", "the passkey must be this person's")
 	case "init":
-		email = fs.String("email", "", "the admin's email")
-	case "status", "reset-password":
+		email = fs.String("email", "", "the first owner's email")
+	case "status":
+	case "reset-password":
+		email = fs.String("email", "", "the person; default: the first owner")
 	case "create-token":
 		name = fs.String("name", "", "a label for the token")
+		email = fs.String("email", "", "the person the token acts as; default: the first owner")
 		expiresIn = fs.String("expires-in", "", "how long the token lasts, e.g. 720h; default: never")
 	case "revoke-token":
 		name = fs.String("name", "", "the name of the token to revoke")
+		email = fs.String("email", "", "the person whose token it is; default: the first owner")
 	default:
 		fmt.Fprintf(stderr, "caravana admin: unknown command %q\n\n%s", command, adminUsage)
 		return exitUsage
@@ -105,6 +115,9 @@ func runAdmin(ctx context.Context, args []string, getenv func(string) string,
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "caravana admin %s: unexpected argument %q\n", command, fs.Arg(0))
 		return exitUsage
+	}
+	if email == nil {
+		email = new(string) // status takes none
 	}
 	if command == "init" && strings.TrimSpace(*email) == "" {
 		fmt.Fprintln(stderr, "caravana admin init: --email is required")
@@ -143,15 +156,15 @@ func runAdmin(ctx context.Context, args []string, getenv func(string) string,
 	case "status":
 		return adminStatus(ctx, auth, stdout, stderr)
 	case "reset-password":
-		return adminResetPassword(ctx, auth, stdin, stdout, stderr)
+		return adminResetPassword(ctx, auth, *email, stdin, stdout, stderr)
 	case "passkeys list":
-		return adminPasskeysList(ctx, auth, stdout, stderr)
+		return adminPasskeysList(ctx, auth, *email, stdout, stderr)
 	case "passkeys remove":
-		return adminPasskeysRemove(ctx, auth, *passkeyID, stdout, stderr)
+		return adminPasskeysRemove(ctx, auth, *email, *passkeyID, stdout, stderr)
 	case "create-token":
-		return adminCreateToken(ctx, auth, *name, lifetime, stdout, stderr)
+		return adminCreateToken(ctx, auth, *email, *name, lifetime, stdout, stderr)
 	default: // revoke-token
-		return adminRevokeToken(ctx, auth, *name, stdout, stderr)
+		return adminRevokeToken(ctx, auth, *email, *name, stdout, stderr)
 	}
 }
 
@@ -175,7 +188,7 @@ func openAdminStore(ctx context.Context, dataDir string) (*store.Store, error) {
 
 func adminInit(ctx context.Context, auth *service.Auth, email string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// Refuse before asking for a password the owner would type for nothing.
-	if _, err := auth.AdminEmail(ctx); err == nil {
+	if _, err := auth.FirstOwnerEmail(ctx); err == nil {
 		fmt.Fprintf(stderr, "caravana admin init: %v\n", service.ErrAdminExists)
 		return exitState
 	} else if !errors.Is(err, service.ErrNoAdmin) {
@@ -190,32 +203,41 @@ func adminInit(ctx context.Context, auth *service.Auth, email string, stdin io.R
 	if err := auth.InitAdmin(ctx, email, password); err != nil {
 		return reportAdminError(stderr, "init", err)
 	}
-	shown, _ := auth.AdminEmail(ctx)
-	fmt.Fprintf(stdout, "caravana has its admin: %s. Sign in at /login.\n", shown)
+	shown, _ := auth.FirstOwnerEmail(ctx)
+	fmt.Fprintf(stdout, "caravana has its first owner: %s. Sign in at /login.\n", shown)
 	return exitOK
 }
 
+// adminStatus lists everyone: email, role, state, how they sign in and, for a guest, when their
+// access ends.
 func adminStatus(ctx context.Context, auth *service.Auth, stdout, stderr io.Writer) int {
-	email, err := auth.AdminEmail(ctx)
-	switch {
-	case errors.Is(err, service.ErrNoAdmin):
-		fmt.Fprintln(stdout, "no admin yet: run caravana admin init --email <email>")
-		return exitState
-	case err != nil:
-		fmt.Fprintf(stderr, "caravana admin status: %v\n", err)
-		return exitFailed
-	}
-	fmt.Fprintf(stdout, "admin: %s\n", email)
-	settings, err := auth.SignInSettings(ctx)
+	people, err := auth.ListPeople(ctx)
 	if err != nil {
 		fmt.Fprintf(stderr, "caravana admin status: %v\n", err)
 		return exitFailed
 	}
-	fmt.Fprintf(stdout, "sign-in: %s\n", signInLine(settings))
+	if len(people) == 0 {
+		fmt.Fprintln(stdout, "no admin yet: run caravana admin init --email <email>")
+		return exitState
+	}
+	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "EMAIL\tROLE\tSTATE\tSIGN-IN\tENDS")
+	for _, p := range people {
+		ends := ""
+		if p.EndsAt != nil {
+			ends = p.EndsAt.UTC().Format("2006-01-02")
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", p.Email, p.OrgRole, p.State,
+			signInLine(service.SignInSettings{PasswordSignIn: p.PasswordSignIn, Passkeys: p.Passkeys}), ends)
+	}
+	if err := tw.Flush(); err != nil {
+		fmt.Fprintf(stderr, "caravana admin status: %v\n", err)
+		return exitFailed
+	}
 	return exitOK
 }
 
-// signInLine says how the admin may sign in: "password on, 2 passkeys".
+// signInLine says how a person may sign in: "password on, 2 passkeys".
 func signInLine(s service.SignInSettings) string {
 	password := "password on"
 	if !s.PasswordSignIn {
@@ -228,14 +250,10 @@ func signInLine(s service.SignInSettings) string {
 	return fmt.Sprintf("%s, %d %s", password, s.Passkeys, noun)
 }
 
-func adminResetPassword(ctx context.Context, auth *service.Auth, stdin io.Reader, stdout, stderr io.Writer) int {
-	switch _, err := auth.AdminEmail(ctx); {
-	case errors.Is(err, service.ErrNoAdmin):
-		fmt.Fprintf(stderr, "caravana admin reset-password: %v\n", err)
-		return exitState
-	case err != nil:
-		fmt.Fprintf(stderr, "caravana admin reset-password: %v\n", err)
-		return exitFailed
+func adminResetPassword(ctx context.Context, auth *service.Auth, email string, stdin io.Reader, stdout, stderr io.Writer) int {
+	who, err := auth.ResolvePerson(ctx, email)
+	if err != nil {
+		return reportAdminError(stderr, "reset-password", err)
 	}
 	password, err := readPassword(stdin, stderr, "New password (12+ characters): ", "New password again: ")
 	if err != nil {
@@ -243,41 +261,48 @@ func adminResetPassword(ctx context.Context, auth *service.Auth, stdin io.Reader
 		return exitFailed
 	}
 	// A reset is the way back in when every passkey is lost: it turns password sign-in on.
-	before, err := auth.SignInSettings(ctx)
+	before, err := auth.SignInSettings(ctx, who.ID)
 	if err != nil {
 		fmt.Fprintf(stderr, "caravana admin reset-password: %v\n", err)
 		return exitFailed
 	}
-	if err := auth.ResetPassword(ctx, password); err != nil {
+	if err := auth.ResetPassword(ctx, who.Email, password); err != nil {
 		return reportAdminError(stderr, "reset-password", err)
 	}
-	fmt.Fprintln(stdout, "Password changed. Every browser was signed out; API tokens still work.")
+	fmt.Fprintf(stdout, "Password of %s changed. Every browser of theirs was signed out; API tokens still work.\n", who.Email)
 	if !before.PasswordSignIn {
 		fmt.Fprintln(stdout, "Password sign-in is on again.")
 	}
 	return exitOK
 }
 
-// adminPasskeysList prints one row per passkey: its ID (for remove), name, the domain it was
-// made at, when it was added and when it was last used.
-func adminPasskeysList(ctx context.Context, auth *service.Auth, stdout, stderr io.Writer) int {
-	list, err := auth.ListPasskeys(ctx)
+// adminPasskeysList prints one row per passkey: its ID (for remove), its person, name, the domain
+// it was made at, when it was added and when it was last used. With an email, only that person's.
+func adminPasskeysList(ctx context.Context, auth *service.Auth, email string, stdout, stderr io.Writer) int {
+	list, emails, err := passkeysWithEmails(ctx, auth)
 	if err != nil {
 		fmt.Fprintf(stderr, "caravana admin passkeys list: %v\n", err)
 		return exitFailed
+	}
+	if strings.TrimSpace(email) != "" {
+		who, err := auth.ResolvePerson(ctx, email)
+		if err != nil {
+			return reportAdminError(stderr, "passkeys list", err)
+		}
+		list = slices.DeleteFunc(list, func(p service.Passkey) bool { return p.PersonID != who.ID })
 	}
 	if len(list) == 0 {
 		fmt.Fprintln(stdout, "No passkeys.")
 		return exitOK
 	}
 	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tDOMAIN\tADDED\tLAST USED")
+	fmt.Fprintln(tw, "ID\tPERSON\tNAME\tDOMAIN\tADDED\tLAST USED")
 	for _, p := range list {
 		lastUsed := "never"
 		if p.LastUsedAt != nil {
 			lastUsed = p.LastUsedAt.UTC().Format(time.RFC3339)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", p.ID, p.Name, p.Domain, p.CreatedAt.UTC().Format(time.RFC3339), lastUsed)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", p.ID, emails[p.PersonID], p.Name, p.Domain, p.CreatedAt.UTC().Format(time.RFC3339), lastUsed)
 	}
 	if err := tw.Flush(); err != nil {
 		fmt.Fprintf(stderr, "caravana admin passkeys list: %v\n", err)
@@ -286,29 +311,57 @@ func adminPasskeysList(ctx context.Context, auth *service.Auth, stdout, stderr i
 	return exitOK
 }
 
+// passkeysWithEmails is everyone's passkeys and the email of each person who has any.
+func passkeysWithEmails(ctx context.Context, auth *service.Auth) ([]service.Passkey, map[string]string, error) {
+	list, err := auth.ListAllPasskeys(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	people, err := auth.ListPeople(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	emails := make(map[string]string, len(people))
+	for _, p := range people {
+		emails[p.ID] = p.Email
+	}
+	return list, emails, nil
+}
+
 // adminPasskeysRemove removes a passkey without the console's last-passkey rule: root on the host
-// is the owner, and reset-password is always there as the way back in.
-func adminPasskeysRemove(ctx context.Context, auth *service.Auth, id string, stdout, stderr io.Writer) int {
-	list, err := auth.ListPasskeys(ctx)
+// is the owner, and reset-password is always there as the way back in. With an email, the passkey
+// must be that person's.
+func adminPasskeysRemove(ctx context.Context, auth *service.Auth, email, id string, stdout, stderr io.Writer) int {
+	list, emails, err := passkeysWithEmails(ctx, auth)
 	if err != nil {
 		fmt.Fprintf(stderr, "caravana admin passkeys remove: %v\n", err)
 		return exitFailed
 	}
-	name := ""
-	for _, p := range list {
-		if p.ID == id {
-			name = p.Name
+	var onlyPerson string
+	if strings.TrimSpace(email) != "" {
+		who, err := auth.ResolvePerson(ctx, email)
+		if err != nil {
+			return reportAdminError(stderr, "passkeys remove", err)
 		}
+		onlyPerson = who.ID
 	}
-	if err := auth.RemovePasskeyUnchecked(ctx, id); errors.Is(err, service.ErrPasskeyNotFound) {
+	idx := slices.IndexFunc(list, func(p service.Passkey) bool {
+		return p.ID == id && (onlyPerson == "" || p.PersonID == onlyPerson)
+	})
+	if idx < 0 {
+		fmt.Fprintf(stderr, "caravana admin passkeys remove: no passkey has the ID %q (caravana admin passkeys list shows them)\n", id)
+		return exitFailed
+	}
+	found := list[idx]
+	if err := auth.RemovePasskeyUnchecked(ctx, found.PersonID, id); errors.Is(err, service.ErrPasskeyNotFound) {
 		fmt.Fprintf(stderr, "caravana admin passkeys remove: no passkey has the ID %q (caravana admin passkeys list shows them)\n", id)
 		return exitFailed
 	} else if err != nil {
 		fmt.Fprintf(stderr, "caravana admin passkeys remove: %v\n", err)
 		return exitFailed
 	}
-	fmt.Fprintf(stdout, "Passkey %s (%s) removed.\n", id, name)
-	if settings, err := auth.SignInSettings(ctx); err == nil && !settings.PasswordSignIn {
+	fmt.Fprintf(stdout, "Passkey %s (%s, %s) removed.\n", id, found.Name, emails[found.PersonID])
+	if settings, err := auth.SignInSettings(ctx, found.PersonID); err == nil && !settings.PasswordSignIn {
 		fmt.Fprintln(stdout, "Password sign-in is still off. It works again at any domain that has no passkey left; "+
 			"caravana admin reset-password turns it on everywhere.")
 	}
@@ -317,28 +370,36 @@ func adminPasskeysRemove(ctx context.Context, auth *service.Auth, id string, std
 
 // adminCreateToken prints only the token on standard output, so a script can
 // capture it; the notice goes to standard error.
-func adminCreateToken(ctx context.Context, auth *service.Auth, name string, lifetime time.Duration, stdout, stderr io.Writer) int {
+func adminCreateToken(ctx context.Context, auth *service.Auth, email, name string, lifetime time.Duration, stdout, stderr io.Writer) int {
+	who, err := auth.ResolvePerson(ctx, email)
+	if err != nil {
+		return reportAdminError(stderr, "create-token", err)
+	}
 	var expiresAt *time.Time
 	if lifetime > 0 {
 		expiresAt = new(time.Now().Add(lifetime))
 	}
-	created, err := auth.CreateAPIToken(ctx, name, expiresAt)
+	created, err := auth.CreateAPIToken(ctx, who.ID, name, expiresAt)
 	if err != nil {
 		return reportAdminError(stderr, "create-token", err)
 	}
 	fmt.Fprintln(stdout, created.Token)
 	if created.Info.ExpiresAt != nil {
-		fmt.Fprintf(stderr, "Token %s created; it expires %s. It is shown only now.\n",
-			name, created.Info.ExpiresAt.UTC().Format(time.RFC3339))
+		fmt.Fprintf(stderr, "Token %s created for %s; it expires %s. It is shown only now.\n",
+			name, who.Email, created.Info.ExpiresAt.UTC().Format(time.RFC3339))
 	} else {
-		fmt.Fprintf(stderr, "Token %s created; it never expires. It is shown only now.\n", name)
+		fmt.Fprintf(stderr, "Token %s created for %s; it never expires. It is shown only now.\n", name, who.Email)
 	}
 	return exitOK
 }
 
-func adminRevokeToken(ctx context.Context, auth *service.Auth, name string, stdout, stderr io.Writer) int {
-	if err := auth.RevokeAPITokenByName(ctx, name); errors.Is(err, store.ErrNotFound) {
-		fmt.Fprintf(stderr, "caravana admin revoke-token: no active token is named %q\n", name)
+func adminRevokeToken(ctx context.Context, auth *service.Auth, email, name string, stdout, stderr io.Writer) int {
+	who, err := auth.ResolvePerson(ctx, email)
+	if err != nil {
+		return reportAdminError(stderr, "revoke-token", err)
+	}
+	if err := auth.RevokeAPITokenByName(ctx, who.ID, name); errors.Is(err, store.ErrNotFound) {
+		fmt.Fprintf(stderr, "caravana admin revoke-token: %s has no active token named %q\n", who.Email, name)
 		return exitFailed
 	} else if err != nil {
 		fmt.Fprintf(stderr, "caravana admin revoke-token: %v\n", err)
@@ -349,12 +410,13 @@ func adminRevokeToken(ctx context.Context, auth *service.Auth, name string, stdo
 }
 
 // reportAdminError prints err for the owner and picks the exit code: a state
-// problem (no admin, already one, name taken) is 3, a bad flag value is 2,
+// problem (nobody yet, already an owner, no such person, name taken) is 3, a bad flag value is 2,
 // anything else 1.
 func reportAdminError(stderr io.Writer, command string, err error) int {
 	var fieldErr *app.FieldError
 	switch {
-	case errors.Is(err, service.ErrNoAdmin), errors.Is(err, service.ErrAdminExists), errors.Is(err, service.ErrTokenNameTaken):
+	case errors.Is(err, service.ErrNoAdmin), errors.Is(err, service.ErrAdminExists), errors.Is(err, service.ErrNoSuchPerson),
+		errors.Is(err, service.ErrTokenNameTaken):
 		fmt.Fprintf(stderr, "caravana admin %s: %v\n", command, err)
 		return exitState
 	case errors.As(err, &fieldErr):

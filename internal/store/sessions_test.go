@@ -11,11 +11,11 @@ func TestSessions(t *testing.T) {
 	ctx := context.Background()
 	t0 := time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
 	session := func(id string, created time.Time) SessionRecord {
-		return SessionRecord{IDHash: id, CreatedAt: created, LastSeenAt: created, ExpiresAt: created.Add(7 * 24 * time.Hour)}
+		return SessionRecord{IDHash: id, PersonID: "p1", CreatedAt: created, LastSeenAt: created, ExpiresAt: created.Add(7 * 24 * time.Hour)}
 	}
 
 	t.Run("create, get, touch", func(t *testing.T) {
-		s := openTestStore(t)
+		s := openTestStoreWithPerson(t)
 		want := session("a", t0)
 		if err := s.CreateSession(ctx, want); err != nil {
 			t.Fatalf("CreateSession: %v", err)
@@ -34,14 +34,14 @@ func TestSessions(t *testing.T) {
 	})
 
 	t.Run("unknown session", func(t *testing.T) {
-		s := openTestStore(t)
+		s := openTestStoreWithPerson(t)
 		if _, err := s.GetSession(ctx, "nope"); !errors.Is(err, ErrNotFound) {
 			t.Errorf("GetSession(nope) = %v, want ErrNotFound", err)
 		}
 	})
 
 	t.Run("delete is fine when gone", func(t *testing.T) {
-		s := openTestStore(t)
+		s := openTestStoreWithPerson(t)
 		if err := s.CreateSession(ctx, session("a", t0)); err != nil {
 			t.Fatal(err)
 		}
@@ -56,7 +56,7 @@ func TestSessions(t *testing.T) {
 	})
 
 	t.Run("expired and idle sessions are deleted", func(t *testing.T) {
-		s := openTestStore(t)
+		s := openTestStoreWithPerson(t)
 		now := t0.Add(8 * 24 * time.Hour)
 		idle := 12 * time.Hour
 
@@ -84,10 +84,10 @@ func TestSessions(t *testing.T) {
 func TestSessionVerifiedAt(t *testing.T) {
 	ctx := context.Background()
 	t0 := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
-	s := openTestStore(t)
+	s := openTestStoreWithPerson(t)
 
 	// A session from before the column, or made without one, has none.
-	if err := s.CreateSession(ctx, SessionRecord{IDHash: "old", CreatedAt: t0, LastSeenAt: t0, ExpiresAt: t0.Add(time.Hour)}); err != nil {
+	if err := s.CreateSession(ctx, SessionRecord{IDHash: "old", PersonID: "p1", CreatedAt: t0, LastSeenAt: t0, ExpiresAt: t0.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.GetSession(ctx, "old"); got.VerifiedAt != nil {
@@ -95,7 +95,7 @@ func TestSessionVerifiedAt(t *testing.T) {
 	}
 
 	// CreateSession writes it, and SetSessionVerified moves it.
-	if err := s.CreateSession(ctx, SessionRecord{IDHash: "new", CreatedAt: t0, LastSeenAt: t0, ExpiresAt: t0.Add(time.Hour), VerifiedAt: &t0}); err != nil {
+	if err := s.CreateSession(ctx, SessionRecord{IDHash: "new", PersonID: "p1", CreatedAt: t0, LastSeenAt: t0, ExpiresAt: t0.Add(time.Hour), VerifiedAt: &t0}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.GetSession(ctx, "new"); got.VerifiedAt == nil || !got.VerifiedAt.Equal(t0) {

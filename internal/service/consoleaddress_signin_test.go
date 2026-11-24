@@ -17,7 +17,7 @@ func TestPasswordSignInAtTheNewConsoleDomain(t *testing.T) {
 	e := newAuthEnvWithAdmin(t)
 	session := signedIn(t, e)
 	addPasskey(t, e, session, rpOther, "At the old domain") // old.example.com is where the console was
-	if _, err := e.auth.SetPasswordSignIn(ctx, false, rpOther.ID); err != nil {
+	if _, err := e.auth.SetPasswordSignIn(ctx, e.owner, false, rpOther.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -27,7 +27,7 @@ func TestPasswordSignInAtTheNewConsoleDomain(t *testing.T) {
 	}
 	// At the new address, with no passkey there, it works: the session cookie is per host, so the owner
 	// signs in again, and this is how.
-	if ok, err := e.auth.PasswordSignInAllowed(ctx, rpNew.ID); err != nil || !ok {
+	if ok, err := e.auth.PasswordSignInAllowed(ctx, e.owner, rpNew.ID); err != nil || !ok {
 		t.Fatalf("PasswordSignInAllowed at the new domain = %v, %v; want true", ok, err)
 	}
 	atNew, err := e.auth.SignIn(ctx, testEmail, testPassword, rpNew.ID, addrA)

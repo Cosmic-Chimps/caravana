@@ -26,7 +26,11 @@ func (s *server) changePassword(w http.ResponseWriter, r *http.Request) error {
 	if len(r.Header.Values("Authorization")) == 0 {
 		keep, _ = httpx.SessionCookie(r, s.proxies.HTTPS(r))
 	}
-	if err := s.auth.ChangePassword(r.Context(), req.CurrentPassword, req.NewPassword, keep); err != nil {
+	id, err := callerID(r)
+	if err != nil {
+		return err
+	}
+	if err := s.auth.ChangePassword(r.Context(), id, req.CurrentPassword, req.NewPassword, keep); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)

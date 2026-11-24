@@ -238,12 +238,16 @@ func (c *console) passkeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	owner, err := st.FirstOwner(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	oldSession := func(name string) *labBrowser {
 		value := "lab-old-session-" + name + "-" + g.run
 		sum := sha256.Sum256([]byte(value))
 		now := time.Now().UTC()
 		if err := st.CreateSession(context.Background(), store.SessionRecord{
-			IDHash: hex.EncodeToString(sum[:]), CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+			IDHash: hex.EncodeToString(sum[:]), PersonID: owner.ID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
 			t.Fatal(err)
 		}
 		b := c.newLabBrowser(t, "localhost")

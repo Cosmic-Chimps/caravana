@@ -20,7 +20,7 @@ func TestCreateAPIToken(t *testing.T) {
 
 	t.Run("format and storage", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		created, err := e.auth.CreateAPIToken(ctx, "ci-github", nil)
+		created, err := e.auth.CreateAPIToken(ctx, e.owner, "ci-github", nil)
 		if err != nil {
 			t.Fatalf("CreateAPIToken: %v", err)
 		}
@@ -35,7 +35,7 @@ func TestCreateAPIToken(t *testing.T) {
 		}
 
 		// The store has a hash, never the token.
-		stored, err := e.store.ListAPITokens(ctx)
+		stored, err := e.store.ListAPITokens(ctx, e.owner)
 		if err != nil || len(stored) != 1 {
 			t.Fatalf("ListAPITokens = %v, %v", stored, err)
 		}
@@ -49,8 +49,8 @@ func TestCreateAPIToken(t *testing.T) {
 
 	t.Run("two tokens differ", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		a, _ := e.auth.CreateAPIToken(ctx, "a", nil)
-		b, _ := e.auth.CreateAPIToken(ctx, "b", nil)
+		a, _ := e.auth.CreateAPIToken(ctx, e.owner, "a", nil)
+		b, _ := e.auth.CreateAPIToken(ctx, e.owner, "b", nil)
 		if a.Token == b.Token || a.Info.ID == b.Info.ID {
 			t.Error("two tokens share a value or an ID")
 		}
@@ -58,7 +58,7 @@ func TestCreateAPIToken(t *testing.T) {
 
 	t.Run("needs an admin", func(t *testing.T) {
 		e := newAuthEnv(t)
-		if _, err := e.auth.CreateAPIToken(ctx, "ci", nil); !errors.Is(err, ErrNoAdmin) {
+		if _, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil); !errors.Is(err, ErrNoAdmin) {
 			t.Errorf("CreateAPIToken without admin = %v, want ErrNoAdmin", err)
 		}
 	})
@@ -66,14 +66,14 @@ func TestCreateAPIToken(t *testing.T) {
 	t.Run("name rules", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		for _, name := range []string{"", "-lead", ".lead", "_lead", "has space", "slash/name", "ünï", strings.Repeat("a", 65)} {
-			_, err := e.auth.CreateAPIToken(ctx, name, nil)
+			_, err := e.auth.CreateAPIToken(ctx, e.owner, name, nil)
 			var fe *app.FieldError
 			if !errors.As(err, &fe) || fe.Field != "name" {
 				t.Errorf("CreateAPIToken(%q) = %v, want a field error naming name", name, err)
 			}
 		}
 		for _, name := range []string{"a", "0", "ci.github_1-prod", strings.Repeat("a", 64)} {
-			if _, err := e.auth.CreateAPIToken(ctx, name, nil); err != nil {
+			if _, err := e.auth.CreateAPIToken(ctx, e.owner, name, nil); err != nil {
 				t.Errorf("CreateAPIToken(%q) = %v, want ok", name, err)
 			}
 		}
@@ -82,14 +82,14 @@ func TestCreateAPIToken(t *testing.T) {
 	t.Run("expiry must be in the future", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		for _, at := range []time.Time{e.clock.Now(), e.clock.Now().Add(-time.Hour)} {
-			_, err := e.auth.CreateAPIToken(ctx, "ci", &at)
+			_, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", &at)
 			var fe *app.FieldError
 			if !errors.As(err, &fe) || fe.Field != "expiresAt" {
 				t.Errorf("CreateAPIToken expiring at %v = %v, want a field error naming expiresAt", at, err)
 			}
 		}
 		future := e.clock.Now().Add(time.Hour)
-		created, err := e.auth.CreateAPIToken(ctx, "ci", &future)
+		created, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", &future)
 		if err != nil || created.Info.ExpiresAt == nil || !created.Info.ExpiresAt.Equal(future) {
 			t.Errorf("CreateAPIToken with a future expiry = %+v, %v", created.Info, err)
 		}
@@ -97,17 +97,17 @@ func TestCreateAPIToken(t *testing.T) {
 
 	t.Run("an active name is taken", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		if _, err := e.auth.CreateAPIToken(ctx, "ci", nil); err != nil {
+		if _, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := e.auth.CreateAPIToken(ctx, "ci", nil); !errors.Is(err, ErrTokenNameTaken) {
+		if _, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil); !errors.Is(err, ErrTokenNameTaken) {
 			t.Errorf("second CreateAPIToken(ci) = %v, want ErrTokenNameTaken", err)
 		}
 	})
 
 	t.Run("the creation is logged with the name, not the token", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		created, _ := e.auth.CreateAPIToken(ctx, "ci-github", nil)
+		created, _ := e.auth.CreateAPIToken(ctx, e.owner, "ci-github", nil)
 		out := e.logs.String()
 		if !strings.Contains(out, `"event":"token_created"`) || !strings.Contains(out, `"tokenName":"ci-github"`) {
 			t.Errorf("log lacks the token_created event with the name:\n%s", out)
@@ -123,7 +123,7 @@ func TestCheckAPIToken(t *testing.T) {
 
 	t.Run("accepts only an active token", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		created, _ := e.auth.CreateAPIToken(ctx, "ci", nil)
+		created, _ := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil)
 
 		if _, err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
 			t.Errorf("CheckAPIToken(valid) = %v", err)
@@ -145,7 +145,7 @@ func TestCheckAPIToken(t *testing.T) {
 
 	t.Run("a token without the cvat_ prefix never reaches the store", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		created, _ := e.auth.CreateAPIToken(ctx, "ci", nil)
+		created, _ := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil)
 		e.store.Close() // any lookup would now fail with a store error, not a 401
 
 		if _, err := e.auth.CheckAPIToken(ctx, "cvwh_abc"); !errors.Is(err, ErrNotAuthenticated) {
@@ -160,7 +160,7 @@ func TestCheckAPIToken(t *testing.T) {
 	t.Run("expiry follows the clock", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		exp := e.clock.Now().Add(time.Hour)
-		created, _ := e.auth.CreateAPIToken(ctx, "ci", &exp)
+		created, _ := e.auth.CreateAPIToken(ctx, e.owner, "ci", &exp)
 
 		e.clock.Advance(59 * time.Minute)
 		if _, err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
@@ -174,8 +174,8 @@ func TestCheckAPIToken(t *testing.T) {
 
 	t.Run("a revoked token is refused", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		created, _ := e.auth.CreateAPIToken(ctx, "ci", nil)
-		if _, err := e.store.RevokeAPIToken(ctx, created.Info.ID, e.clock.Now()); err != nil {
+		created, _ := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil)
+		if _, err := e.store.RevokeAPIToken(ctx, e.owner, created.Info.ID, e.clock.Now()); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := e.auth.CheckAPIToken(ctx, created.Token); !errors.Is(err, ErrNotAuthenticated) {
@@ -185,7 +185,7 @@ func TestCheckAPIToken(t *testing.T) {
 
 	t.Run("last use is written at most once a minute", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		created, _ := e.auth.CreateAPIToken(ctx, "ci", nil)
+		created, _ := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil)
 		lastUsed := func() *time.Time {
 			rec, err := e.store.GetAPITokenByHash(ctx, hashToken(created.Token))
 			if err != nil {
@@ -221,21 +221,21 @@ func TestListAPITokens(t *testing.T) {
 
 	// Created a minute apart: "old" first, then "gone" (revoked later),
 	// "short" (expires), "fresh".
-	old, _ := e.auth.CreateAPIToken(ctx, "old", nil)
+	old, _ := e.auth.CreateAPIToken(ctx, e.owner, "old", nil)
 	e.clock.Advance(time.Minute)
-	gone, _ := e.auth.CreateAPIToken(ctx, "gone", nil)
+	gone, _ := e.auth.CreateAPIToken(ctx, e.owner, "gone", nil)
 	e.clock.Advance(time.Minute)
 	soon := e.clock.Now().Add(time.Hour)
-	short, _ := e.auth.CreateAPIToken(ctx, "short", &soon)
+	short, _ := e.auth.CreateAPIToken(ctx, e.owner, "short", &soon)
 	e.clock.Advance(time.Minute)
-	fresh, _ := e.auth.CreateAPIToken(ctx, "fresh", nil)
+	fresh, _ := e.auth.CreateAPIToken(ctx, e.owner, "fresh", nil)
 
-	if err := e.auth.RevokeAPIToken(ctx, gone.Info.ID); err != nil {
+	if err := e.auth.RevokeAPIToken(ctx, e.owner, gone.Info.ID); err != nil {
 		t.Fatal(err)
 	}
 	e.clock.Advance(2 * time.Hour) // "short" has now expired
 
-	got, err := e.auth.ListAPITokens(ctx)
+	got, err := e.auth.ListAPITokens(ctx, e.owner)
 	if err != nil {
 		t.Fatalf("ListAPITokens: %v", err)
 	}
@@ -270,37 +270,37 @@ func TestRevokeAPIToken(t *testing.T) {
 
 	t.Run("then the check fails; twice is fine; unknown ID is not found", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		created, _ := e.auth.CreateAPIToken(ctx, "ci", nil)
+		created, _ := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil)
 		if _, err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
 			t.Fatal(err)
 		}
-		if err := e.auth.RevokeAPIToken(ctx, created.Info.ID); err != nil {
+		if err := e.auth.RevokeAPIToken(ctx, e.owner, created.Info.ID); err != nil {
 			t.Fatalf("RevokeAPIToken: %v", err)
 		}
 		if _, err := e.auth.CheckAPIToken(ctx, created.Token); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("CheckAPIToken after revoke = %v, want ErrNotAuthenticated", err)
 		}
-		if err := e.auth.RevokeAPIToken(ctx, created.Info.ID); err != nil {
+		if err := e.auth.RevokeAPIToken(ctx, e.owner, created.Info.ID); err != nil {
 			t.Errorf("second RevokeAPIToken = %v, want nil", err)
 		}
-		if err := e.auth.RevokeAPIToken(ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
+		if err := e.auth.RevokeAPIToken(ctx, e.owner, "nope"); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("RevokeAPIToken(nope) = %v, want store.ErrNotFound", err)
 		}
 	})
 
 	t.Run("by name", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		created, _ := e.auth.CreateAPIToken(ctx, "ci", nil)
-		if err := e.auth.RevokeAPITokenByName(ctx, "ci"); err != nil {
+		created, _ := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil)
+		if err := e.auth.RevokeAPITokenByName(ctx, e.owner, "ci"); err != nil {
 			t.Fatalf("RevokeAPITokenByName: %v", err)
 		}
 		if _, err := e.auth.CheckAPIToken(ctx, created.Token); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("CheckAPIToken after revoke by name = %v, want ErrNotAuthenticated", err)
 		}
-		if err := e.auth.RevokeAPITokenByName(ctx, "ci"); !errors.Is(err, store.ErrNotFound) {
+		if err := e.auth.RevokeAPITokenByName(ctx, e.owner, "ci"); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("RevokeAPITokenByName of a revoked name = %v, want store.ErrNotFound", err)
 		}
-		if err := e.auth.RevokeAPITokenByName(ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
+		if err := e.auth.RevokeAPITokenByName(ctx, e.owner, "nope"); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("RevokeAPITokenByName(nope) = %v, want store.ErrNotFound", err)
 		}
 	})
@@ -308,32 +308,32 @@ func TestRevokeAPIToken(t *testing.T) {
 	t.Run("a name is reusable once its token expired or was revoked", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		exp := e.clock.Now().Add(time.Hour)
-		if _, err := e.auth.CreateAPIToken(ctx, "ci", &exp); err != nil {
+		if _, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", &exp); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := e.auth.CreateAPIToken(ctx, "ci", nil); !errors.Is(err, ErrTokenNameTaken) {
+		if _, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil); !errors.Is(err, ErrTokenNameTaken) {
 			t.Fatalf("while active: %v, want ErrTokenNameTaken", err)
 		}
 		e.clock.Advance(2 * time.Hour)
-		second, err := e.auth.CreateAPIToken(ctx, "ci", nil)
+		second, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil)
 		if err != nil {
 			t.Fatalf("after expiry: %v", err)
 		}
-		if _, err := e.auth.CreateAPIToken(ctx, "ci", nil); !errors.Is(err, ErrTokenNameTaken) {
+		if _, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil); !errors.Is(err, ErrTokenNameTaken) {
 			t.Fatalf("while the second is active: %v, want ErrTokenNameTaken", err)
 		}
-		if err := e.auth.RevokeAPIToken(ctx, second.Info.ID); err != nil {
+		if err := e.auth.RevokeAPIToken(ctx, e.owner, second.Info.ID); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := e.auth.CreateAPIToken(ctx, "ci", nil); err != nil {
+		if _, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil); err != nil {
 			t.Errorf("after revoke: %v", err)
 		}
 	})
 
 	t.Run("the revocation is logged with the name", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		created, _ := e.auth.CreateAPIToken(ctx, "ci-github", nil)
-		if err := e.auth.RevokeAPIToken(ctx, created.Info.ID); err != nil {
+		created, _ := e.auth.CreateAPIToken(ctx, e.owner, "ci-github", nil)
+		if err := e.auth.RevokeAPIToken(ctx, e.owner, created.Info.ID); err != nil {
 			t.Fatal(err)
 		}
 		out := e.logs.String()

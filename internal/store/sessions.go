@@ -12,6 +12,7 @@ import (
 // value; the value itself is never stored.
 type SessionRecord struct {
 	IDHash     string
+	PersonID   string // whose session it is
 	CreatedAt  time.Time
 	LastSeenAt time.Time
 	ExpiresAt  time.Time
@@ -23,8 +24,8 @@ type SessionRecord struct {
 // CreateSession stores a new session.
 func (s *Store) CreateSession(ctx context.Context, r SessionRecord) error {
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO sessions (id_hash, created_at, last_seen_at, expires_at, verified_at) VALUES (?, ?, ?, ?, ?)",
-		r.IDHash, formatTime(r.CreatedAt), formatTime(r.LastSeenAt), formatTime(r.ExpiresAt), nullTime(r.VerifiedAt))
+		"INSERT INTO sessions (id_hash, person_id, created_at, last_seen_at, expires_at, verified_at) VALUES (?, ?, ?, ?, ?, ?)",
+		r.IDHash, r.PersonID, formatTime(r.CreatedAt), formatTime(r.LastSeenAt), formatTime(r.ExpiresAt), nullTime(r.VerifiedAt))
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
@@ -37,8 +38,8 @@ func (s *Store) GetSession(ctx context.Context, idHash string) (SessionRecord, e
 	var created, seen, expires string
 	var verified sql.NullString
 	err := s.db.QueryRowContext(ctx,
-		"SELECT created_at, last_seen_at, expires_at, verified_at FROM sessions WHERE id_hash = ?", idHash,
-	).Scan(&created, &seen, &expires, &verified)
+		"SELECT person_id, created_at, last_seen_at, expires_at, verified_at FROM sessions WHERE id_hash = ?", idHash,
+	).Scan(&r.PersonID, &created, &seen, &expires, &verified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SessionRecord{}, fmt.Errorf("session: %w", ErrNotFound)
 	}

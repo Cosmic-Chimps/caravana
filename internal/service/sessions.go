@@ -36,27 +36,36 @@ func newSessionValue() (string, error) {
 
 // SignIn checks the email and password and starts a session. address is the
 // client address (httpx.Proxies.ClientAddress): the sign-in limit counts per
-// address. consoleDomain is the domain the console is served at; when password
-// sign-in is off and a passkey exists for that domain ("" means any passkey),
-// SignIn answers ErrPasswordSignInOff without checking the password and without
-// counting a failure.
+// address. consoleDomain is the domain the console is served at; when the person's
+// password sign-in is off and they have a passkey for that domain ("" means any
+// passkey), SignIn answers ErrPasswordSignInOff without checking the password and
+// without counting a failure.
 //
-// A wrong email and a wrong password get the same error, and cost the same:
-// one password check each, the unknown email against a stand-in hash. A
-// failure is a *SigninFailure saying how many tries are left; from a locked
-// address the password isn't checked at all and the error is a
-// *SigninLimitError. Without an admin it is ErrNoAdmin.
+// Only an active person who hasn't passed their end date signs in. An unknown email, an
+// invited one and an ended one get the same error as a wrong password, and cost the
+// same: one password check each, against a stand-in hash when there is no password to
+// check. A failure is a *SigninFailure saying how many tries are left; from a locked
+// address the password isn't checked at all and the error is a *SigninLimitError.
+// Before anyone exists it is ErrNoAdmin.
 func (a *Auth) SignIn(ctx context.Context, email, password, consoleDomain, address string) (Session, error) {
-	admin, err := a.store.GetAdmin(ctx)
-	if errors.Is(err, store.ErrNotFound) {
-		return Session{}, ErrNoAdmin
-	} else if err != nil {
+	// The email is compared as typed, trimmed and lower-cased. A malformed one
+	// simply doesn't match: it is wrong credentials, not a field error.
+	person, err := a.store.GetPersonByEmail(ctx, strings.ToLower(strings.TrimSpace(email)))
+	known := err == nil
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		if err := a.anyone(ctx); err != nil {
+			return Session{}, err
+		}
+	case err != nil:
 		return Session{}, fmt.Errorf("sign in: %w", err)
 	}
+	// An invited person has no password, and one past their end date can't sign in.
+	live := known && person.State == personActive && (person.EndsAt == nil || a.now().UTC().Before(*person.EndsAt))
 
 	// Password sign-in turned off: nothing to guess, so nothing is counted.
-	if !admin.PasswordSignIn {
-		if n, err := a.store.CountPasskeys(ctx, consoleDomain); err != nil {
+	if live && !person.PasswordSignIn {
+		if n, err := a.store.CountPasskeys(ctx, person.ID, consoleDomain); err != nil {
 			return Session{}, fmt.Errorf("sign in: %w", err)
 		} else if n > 0 {
 			return Session{}, ErrPasswordSignInOff
@@ -75,14 +84,11 @@ func (a *Auth) SignIn(ctx context.Context, email, password, consoleDomain, addre
 	}
 	defer at.release() // a no-op once the result is recorded
 
-	// The email is compared as typed, trimmed and lower-cased. A malformed one
-	// simply doesn't match: it is wrong credentials, not a field error.
 	hash := a.dummyHash()
-	emailMatches := strings.ToLower(strings.TrimSpace(email)) == admin.Email
-	if emailMatches {
-		hash = admin.PasswordHash
+	if live {
+		hash = person.PasswordHash
 	}
-	if !a.check(password, hash) || !emailMatches {
+	if !a.check(password, hash) || !live {
 		a.event("signin_failed", "address", address)
 		triesLeft, err := a.recordFailure(ctx, at)
 		var limited *SigninLimitError
@@ -99,7 +105,7 @@ func (a *Auth) SignIn(ctx context.Context, email, password, consoleDomain, addre
 	if err := a.clearFailures(ctx, at); err != nil {
 		return Session{}, err
 	}
-	s, err := a.startSession(ctx)
+	s, err := a.startSession(ctx, person.ID)
 	if err != nil {
 		return Session{}, err
 	}
@@ -107,9 +113,9 @@ func (a *Auth) SignIn(ctx context.Context, email, password, consoleDomain, addre
 	return s, nil
 }
 
-// startSession makes a signed-in session, confirmed now (signing in is
+// startSession makes a signed-in session for a person, confirmed now (signing in is
 // proof of who is at the keyboard), and clears out expired ones.
-func (a *Auth) startSession(ctx context.Context) (Session, error) {
+func (a *Auth) startSession(ctx context.Context, personID string) (Session, error) {
 	value, err := newSessionValue()
 	if err != nil {
 		return Session{}, err
@@ -121,7 +127,7 @@ func (a *Auth) startSession(ctx context.Context) (Session, error) {
 	}
 	s := Session{Value: value, ExpiresAt: now.Add(sessionAbsolute)}
 	if err := a.store.CreateSession(ctx, store.SessionRecord{
-		IDHash: hashToken(value), CreatedAt: now, LastSeenAt: now, ExpiresAt: s.ExpiresAt, VerifiedAt: &now,
+		IDHash: hashToken(value), PersonID: personID, CreatedAt: now, LastSeenAt: now, ExpiresAt: s.ExpiresAt, VerifiedAt: &now,
 	}); err != nil {
 		return Session{}, fmt.Errorf("start session: %w", err)
 	}
@@ -141,13 +147,14 @@ func (a *Auth) SignOut(ctx context.Context, sessionValue string) error {
 	return nil
 }
 
-// CheckSession returns nil when sessionValue is a live session: not past its
-// absolute expiry and not idle for 12 hours. Anything else is
-// ErrNotAuthenticated. A use is recorded at most once a minute.
-func (a *Auth) CheckSession(ctx context.Context, sessionValue string) error {
-	id, rec, err := a.liveSession(ctx, sessionValue)
+// CheckSession returns who the session is when sessionValue is a live session: not past its
+// absolute expiry, not idle for 12 hours, and its person still active and not past their end
+// date. Anything else is ErrNotAuthenticated. The Principal is loaded fresh, so a changed role
+// applies at once. A use is recorded at most once a minute.
+func (a *Auth) CheckSession(ctx context.Context, sessionValue string) (Principal, error) {
+	id, rec, person, err := a.liveSession(ctx, sessionValue)
 	if err != nil {
-		return err
+		return Principal{}, err
 	}
 	now := a.now().UTC()
 	if now.Sub(rec.LastSeenAt) >= touchEvery {
@@ -155,33 +162,40 @@ func (a *Auth) CheckSession(ctx context.Context, sessionValue string) error {
 			a.log.Warn("could not record session use", "error", err)
 		}
 	}
-	return nil
+	return a.principalOf(ctx, person, nil, "")
 }
 
 // CheckSessionQuiet is CheckSession without renewing the session's idle time.
 // Live streams use it: an open page that nobody touches must not keep a
 // session alive forever (research R11).
-func (a *Auth) CheckSessionQuiet(ctx context.Context, sessionValue string) error {
-	_, _, err := a.liveSession(ctx, sessionValue)
-	return err
+func (a *Auth) CheckSessionQuiet(ctx context.Context, sessionValue string) (Principal, error) {
+	_, _, person, err := a.liveSession(ctx, sessionValue)
+	if err != nil {
+		return Principal{}, err
+	}
+	return a.principalOf(ctx, person, nil, "")
 }
 
-// liveSession finds the session and checks both expiry rules. It records
-// nothing. The returned id is the stored key (the SHA-256 of the value).
-func (a *Auth) liveSession(ctx context.Context, sessionValue string) (string, store.SessionRecord, error) {
+// liveSession finds the session, checks both expiry rules and that its person may still act.
+// It records nothing. The returned id is the stored key (the SHA-256 of the value).
+func (a *Auth) liveSession(ctx context.Context, sessionValue string) (string, store.SessionRecord, store.PersonRecord, error) {
 	if sessionValue == "" {
-		return "", store.SessionRecord{}, ErrNotAuthenticated
+		return "", store.SessionRecord{}, store.PersonRecord{}, ErrNotAuthenticated
 	}
 	id := hashToken(sessionValue)
 	rec, err := a.store.GetSession(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
-		return "", store.SessionRecord{}, ErrNotAuthenticated
+		return "", store.SessionRecord{}, store.PersonRecord{}, ErrNotAuthenticated
 	} else if err != nil {
-		return "", store.SessionRecord{}, fmt.Errorf("check session: %w", err) // the store failed: a 500, not a 401
+		return "", store.SessionRecord{}, store.PersonRecord{}, fmt.Errorf("check session: %w", err) // the store failed: a 500, not a 401
 	}
 	now := a.now().UTC()
 	if !now.Before(rec.ExpiresAt) || !now.Before(rec.LastSeenAt.Add(sessionIdle)) {
-		return "", store.SessionRecord{}, ErrNotAuthenticated
+		return "", store.SessionRecord{}, store.PersonRecord{}, ErrNotAuthenticated
 	}
-	return id, rec, nil
+	person, err := a.livePerson(ctx, rec.PersonID)
+	if err != nil {
+		return "", store.SessionRecord{}, store.PersonRecord{}, err
+	}
+	return id, rec, person, nil
 }

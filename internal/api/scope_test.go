@@ -45,7 +45,7 @@ var previewScoped = []string{
 // Authorization header value.
 func scopedToken(t *testing.T, e *testEnv, project, name string) string {
 	t.Helper()
-	created, err := e.Auth.CreateScopedAPIToken(context.Background(), project+"-"+name+"-ci", nil,
+	created, err := e.Auth.CreateScopedAPIToken(context.Background(), e.OwnerID, project+"-"+name+"-ci", nil,
 		&service.TokenScope{Project: project, App: name})
 	if err != nil {
 		t.Fatalf("CreateScopedAPIToken(%s, %s): %v", project, name, err)

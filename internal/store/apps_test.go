@@ -15,6 +15,19 @@ import (
 
 // openTestStore opens a store in a temp dir with a fake clock that moves one
 // second forward on every call, so timestamps are predictable.
+// openTestStoreWithPerson is openTestStore with one active owner, "p1", for the tests of
+// rows that belong to a person (sessions, API tokens, passkeys).
+func openTestStoreWithPerson(t *testing.T) *Store {
+	t.Helper()
+	s := openTestStore(t)
+	if err := s.CreatePerson(context.Background(), PersonRecord{ID: "p1", Email: "owner@example.com", OrgRole: "owner",
+		State: "active", PasswordHash: "hash", PasswordSignIn: true,
+		CreatedAt: time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)}, nil); err != nil {
+		t.Fatalf("CreatePerson: %v", err)
+	}
+	return s
+}
+
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
 	s, err := Open(context.Background(), t.TempDir())

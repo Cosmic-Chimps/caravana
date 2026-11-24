@@ -115,12 +115,12 @@ func checkTokenName(name string) error {
 	return nil
 }
 
-// CreateAPIToken creates a token named name that acts as the admin, expiring
-// at expiresAt (nil: never). Without an admin it is ErrNoAdmin; a bad name or
-// a past expiry is an *app.FieldError; a name an active token already has is
-// ErrTokenNameTaken.
-func (a *Auth) CreateAPIToken(ctx context.Context, name string, expiresAt *time.Time) (CreatedAPIToken, error) {
-	return a.CreateScopedAPIToken(ctx, name, expiresAt, nil)
+// CreateAPIToken creates a token named name that acts as the person with that ID, with their
+// rights and never more, expiring at expiresAt (nil: never). A person that doesn't exist is
+// ErrNoSuchPerson; a bad name or a past expiry is an *app.FieldError; a name an active token of
+// the same person already has is ErrTokenNameTaken.
+func (a *Auth) CreateAPIToken(ctx context.Context, personID, name string, expiresAt *time.Time) (CreatedAPIToken, error) {
+	return a.CreateScopedAPIToken(ctx, personID, name, expiresAt, nil)
 }
 
 // CreateScopedAPIToken is CreateAPIToken for a token that may be limited to one
@@ -128,9 +128,12 @@ func (a *Auth) CreateAPIToken(ctx context.Context, name string, expiresAt *time.
 // project must exist and the app must be a valid app name, but the app itself
 // need not exist yet: the token is made before the app's first deploy. A bad
 // scope is an *app.FieldError naming scope.project or scope.app.
-func (a *Auth) CreateScopedAPIToken(ctx context.Context, name string, expiresAt *time.Time, scope *TokenScope) (CreatedAPIToken, error) {
-	if _, err := a.store.GetAdmin(ctx); errors.Is(err, store.ErrNotFound) {
-		return CreatedAPIToken{}, ErrNoAdmin
+func (a *Auth) CreateScopedAPIToken(ctx context.Context, personID, name string, expiresAt *time.Time, scope *TokenScope) (CreatedAPIToken, error) {
+	if p, err := a.store.GetPerson(ctx, personID); errors.Is(err, store.ErrNotFound) || err == nil && p.State != personActive {
+		if err := a.anyone(ctx); err != nil {
+			return CreatedAPIToken{}, err // nobody exists yet: ErrNoAdmin
+		}
+		return CreatedAPIToken{}, ErrNoSuchPerson
 	} else if err != nil {
 		return CreatedAPIToken{}, fmt.Errorf("create api token %q: %w", name, err)
 	}
@@ -151,7 +154,7 @@ func (a *Auth) CreateScopedAPIToken(ctx context.Context, name string, expiresAt 
 	if err != nil {
 		return CreatedAPIToken{}, err
 	}
-	rec := store.APITokenRecord{ID: newTokenID(), Name: name, Hash: hashToken(token), CreatedAt: now}
+	rec := store.APITokenRecord{ID: newTokenID(), PersonID: personID, Name: name, Hash: hashToken(token), CreatedAt: now}
 	if scope != nil {
 		rec.ScopeProject, rec.ScopeApp = scope.Project, scope.App
 	}
@@ -189,38 +192,29 @@ func (a *Auth) checkScope(ctx context.Context, sc TokenScope) error {
 	return nil
 }
 
-// CheckAPIToken returns the token's scope (nil for a full token) when token is
-// an active API token and an admin exists, else ErrNotAuthenticated, whatever
-// the reason. A value without the cvat_ prefix (a webhook token, a typo) is
-// refused before any store lookup. It records the token's use at most once a
-// minute. Holding a deploy token to its scope is the caller's job (the API's
-// scope middleware); a session has no scope and never reaches this.
-func (a *Auth) CheckAPIToken(ctx context.Context, token string) (*TokenScope, error) {
-	scope, _, err := a.CheckAPITokenNamed(ctx, token)
-	return scope, err
-}
-
-// CheckAPITokenNamed is CheckAPIToken that also returns the token's name, which
-// the API puts in the request's context (WithTokenName) so a deploy records
-// which token made it.
-func (a *Auth) CheckAPITokenNamed(ctx context.Context, token string) (*TokenScope, string, error) {
+// CheckAPIToken returns who an API token acts as when token is an active API token whose
+// person may act (exists, accepted their invite, hasn't passed their end date), else
+// ErrNotAuthenticated, whatever the reason. The Principal carries the token's scope (nil for a
+// full token) and name. A value without the cvat_ prefix (a webhook token, a typo) is refused
+// before any store lookup. It records the token's use at most once a minute. Holding a deploy
+// token to its scope is the caller's job (the API's scope middleware).
+func (a *Auth) CheckAPIToken(ctx context.Context, token string) (Principal, error) {
 	if !strings.HasPrefix(token, apiTokenPrefix) {
-		return nil, "", ErrNotAuthenticated
+		return Principal{}, ErrNotAuthenticated
 	}
 	rec, err := a.store.GetAPITokenByHash(ctx, hashToken(token))
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, "", ErrNotAuthenticated
+		return Principal{}, ErrNotAuthenticated
 	} else if err != nil {
-		return nil, "", fmt.Errorf("check api token: %w", err) // the store failed: a 500, not a 401
+		return Principal{}, fmt.Errorf("check api token: %w", err) // the store failed: a 500, not a 401
 	}
 	now := a.now().UTC()
 	if tokenInfo(rec, now).State != TokenActive {
-		return nil, "", ErrNotAuthenticated
+		return Principal{}, ErrNotAuthenticated
 	}
-	if _, err := a.store.GetAdmin(ctx); errors.Is(err, store.ErrNotFound) {
-		return nil, "", ErrNotAuthenticated
-	} else if err != nil {
-		return nil, "", fmt.Errorf("check api token: %w", err)
+	person, err := a.livePerson(ctx, rec.PersonID)
+	if err != nil {
+		return Principal{}, err
 	}
 	if rec.LastUsedAt == nil || now.Sub(*rec.LastUsedAt) >= touchEvery {
 		// A failed touch must not fail the request that was authorized.
@@ -228,13 +222,13 @@ func (a *Auth) CheckAPITokenNamed(ctx context.Context, token string) (*TokenScop
 			a.log.Warn("could not record api token use", "tokenName", rec.Name, "error", err)
 		}
 	}
-	return scopeOf(rec), rec.Name, nil
+	return a.principalOf(ctx, person, scopeOf(rec), rec.Name)
 }
 
-// ListAPITokens returns every token, newest first, with its state as of now.
+// ListAPITokens returns the person's tokens, newest first, with their state as of now.
 // It never returns a token's value: only its hash is stored.
-func (a *Auth) ListAPITokens(ctx context.Context) ([]APITokenInfo, error) {
-	recs, err := a.store.ListAPITokens(ctx)
+func (a *Auth) ListAPITokens(ctx context.Context, personID string) ([]APITokenInfo, error) {
+	recs, err := a.store.ListAPITokens(ctx, personID)
 	if err != nil {
 		return nil, fmt.Errorf("list api tokens: %w", err)
 	}
@@ -246,11 +240,11 @@ func (a *Auth) ListAPITokens(ctx context.Context) ([]APITokenInfo, error) {
 	return out, nil
 }
 
-// RevokeAPIToken revokes the token with that ID: it is refused from now on
-// but stays in the list. An unknown ID is store.ErrNotFound; revoking twice
-// changes nothing.
-func (a *Auth) RevokeAPIToken(ctx context.Context, id string) error {
-	name, err := a.store.RevokeAPIToken(ctx, id, a.now().UTC())
+// RevokeAPIToken revokes the person's token with that ID: it is refused from now on
+// but stays in the list. An unknown ID, or another person's token, is store.ErrNotFound;
+// revoking twice changes nothing.
+func (a *Auth) RevokeAPIToken(ctx context.Context, personID, id string) error {
+	name, err := a.store.RevokeAPIToken(ctx, personID, id, a.now().UTC())
 	if err != nil {
 		return err // already says which token; an unknown one is store.ErrNotFound
 	}
@@ -258,12 +252,12 @@ func (a *Auth) RevokeAPIToken(ctx context.Context, id string) error {
 	return nil
 }
 
-// RevokeAPITokenByName revokes the active token with that name (for the host
+// RevokeAPITokenByName revokes the person's active token with that name (for the host
 // CLI). With none, it is store.ErrNotFound.
-func (a *Auth) RevokeAPITokenByName(ctx context.Context, name string) error {
-	rec, err := a.store.ActiveAPITokenByName(ctx, name, a.now().UTC())
+func (a *Auth) RevokeAPITokenByName(ctx context.Context, personID, name string) error {
+	rec, err := a.store.ActiveAPITokenByName(ctx, personID, name, a.now().UTC())
 	if err != nil {
 		return err
 	}
-	return a.RevokeAPIToken(ctx, rec.ID)
+	return a.RevokeAPIToken(ctx, personID, rec.ID)
 }

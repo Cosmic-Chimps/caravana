@@ -127,11 +127,11 @@ func TestPublicRoutesNeedNoCredentials(t *testing.T) {
 // TestUniformUnauthorized checks every credential failure gets the same body.
 func TestUniformUnauthorized(t *testing.T) {
 	e := newTestEnv(t, "")
-	revoked, err := e.Auth.CreateAPIToken(context.Background(), "old", nil)
+	revoked, err := e.Auth.CreateAPIToken(context.Background(), e.OwnerID, "old", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := e.Auth.RevokeAPIToken(context.Background(), revoked.Info.ID); err != nil {
+	if err := e.Auth.RevokeAPIToken(context.Background(), e.OwnerID, revoked.Info.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -267,7 +267,7 @@ func TestCrossSiteCookieRequestsAreRefused(t *testing.T) {
 	}
 
 	// Nothing was changed.
-	infos, err := e.Auth.ListAPITokens(context.Background())
+	infos, err := e.Auth.ListAPITokens(context.Background(), e.OwnerID)
 	if err != nil {
 		t.Fatal(err)
 	}

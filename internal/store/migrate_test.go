@@ -215,16 +215,17 @@ func TestOpenShared(t *testing.T) {
 		defer cli.Close()
 
 		now := time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
-		if err := cli.CreateAdmin(ctx, AdminRecord{Email: "a@example.com", PasswordHash: "h", CreatedAt: now, PasswordChangedAt: now}); err != nil {
-			t.Fatalf("CreateAdmin through the shared store: %v", err)
+		if err := cli.CreatePerson(ctx, PersonRecord{ID: "p1", Email: "a@example.com", OrgRole: "owner", State: "active",
+			PasswordHash: "h", PasswordSignIn: true, CreatedAt: now}, nil); err != nil {
+			t.Fatalf("CreatePerson through the shared store: %v", err)
 		}
-		if got, err := server.GetAdmin(ctx); err != nil || got.Email != "a@example.com" {
-			t.Errorf("server sees admin %+v, %v; want the CLI's", got, err)
+		if got, err := server.FirstOwner(ctx); err != nil || got.Email != "a@example.com" {
+			t.Errorf("server sees owner %+v, %v; want the CLI's", got, err)
 		}
-		if err := server.CreateAPIToken(ctx, APITokenRecord{ID: "id1", Name: "n", Hash: "h", CreatedAt: now}, now); err != nil {
+		if err := server.CreateAPIToken(ctx, APITokenRecord{ID: "id1", PersonID: "p1", Name: "n", Hash: "h", CreatedAt: now}, now); err != nil {
 			t.Fatal(err)
 		}
-		if got, err := cli.ListAPITokens(ctx); err != nil || len(got) != 1 {
+		if got, err := cli.ListAPITokens(ctx, "p1"); err != nil || len(got) != 1 {
 			t.Errorf("shared store lists %d tokens, %v; want the server's 1", len(got), err)
 		}
 	})
