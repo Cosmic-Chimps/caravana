@@ -7,6 +7,8 @@ import (
 	"crypto/x509"
 	"errors"
 	"time"
+
+	"github.com/cosmic-chimps/caravana/internal/certs"
 )
 
 // Certificate statuses.
@@ -41,6 +43,9 @@ type Certificate struct {
 	// RenewsAt is when Traefik should renew: NotAfter minus 30 days. Zero unless
 	// the certificate is issued or expiring.
 	RenewsAt time.Time
+	// Fingerprint is the SHA-256 of the presented leaf's DER, lower-case hex: how an uploaded
+	// certificate is told from an ACME one. Empty when no certificate was presented.
+	Fingerprint string
 }
 
 // Valid says Traefik presented a trusted certificate for the host (issued, or
@@ -94,6 +99,7 @@ func classifyCertificate(chain []*x509.Certificate, roots *x509.CertPool, host s
 		return Certificate{Status: CertError}
 	}
 	leaf := chain[0]
+	fingerprint := certs.Fingerprint(leaf)
 	nameErr := leaf.VerifyHostname(host)
 
 	if leaf.Subject.CommonName == traefikDefaultCN ||
@@ -102,10 +108,10 @@ func classifyCertificate(chain []*x509.Certificate, roots *x509.CertPool, host s
 		if resolverSet {
 			status = CertPending
 		}
-		return Certificate{Status: status, Issuer: TraefikOwn}
+		return Certificate{Status: status, Issuer: TraefikOwn, Fingerprint: fingerprint}
 	}
 
-	cert := Certificate{Issuer: issuerName(leaf), NotAfter: leaf.NotAfter.UTC()}
+	cert := Certificate{Issuer: issuerName(leaf), NotAfter: leaf.NotAfter.UTC(), Fingerprint: fingerprint}
 	if nameErr != nil {
 		cert.Status = CertError
 		return cert

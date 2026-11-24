@@ -2,11 +2,15 @@ package edge
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/certs"
 	"github.com/cosmic-chimps/caravana/internal/edge/edgetest"
 )
 
@@ -69,6 +73,14 @@ func TestCheckCertificate(t *testing.T) {
 			if got.Status != tt.want {
 				t.Fatalf("status = %q, want %q (%+v)", got.Status, tt.want, got)
 			}
+			// The fingerprint is the presented leaf's, on every path where there is one.
+			wantFingerprint := ""
+			if len(tt.chain) > 0 {
+				wantFingerprint = certs.Fingerprint(tt.chain[0])
+			}
+			if got.Fingerprint != wantFingerprint {
+				t.Errorf("fingerprint = %q, want %q", got.Fingerprint, wantFingerprint)
+			}
 			if got.Issuer != tt.wantIssuer {
 				t.Errorf("issuer = %q, want %q", got.Issuer, tt.wantIssuer)
 			}
@@ -110,5 +122,25 @@ func TestCheckCertificateSystemRootsByDefault(t *testing.T) {
 	d := &edgetest.FakeDialer{Chains: map[string][]*x509.Certificate{host: {ca.Issue(t, []string{host}, now.Add(-day), now.Add(60*day))}}}
 	if got := checkCertificate(context.Background(), d, "e:443", host, true, 14*day, now); got.Status != CertError {
 		t.Errorf("status = %q, want error (a private CA isn't a system root)", got.Status)
+	}
+}
+
+// The fingerprint is the SHA-256 of the DER in lower-case hex: 64 characters, and two certificates differ.
+func TestCertificateFingerprint(t *testing.T) {
+	const host = "shop.example.com"
+	now := time.Now()
+	ca := edgetest.NewCA(t, "Root Org")
+	a := ca.Issue(t, []string{host}, now.Add(-day), now.Add(60*day))
+	b := ca.Issue(t, []string{host}, now.Add(-day), now.Add(60*day))
+	check := func(c *x509.Certificate) Certificate {
+		d := &edgetest.FakeDialer{Chains: map[string][]*x509.Certificate{host: {c}}, RootCAs: ca.Pool()}
+		return checkCertificate(context.Background(), d, "e:443", host, true, 14*day, now)
+	}
+	fa, fb := check(a).Fingerprint, check(b).Fingerprint
+	if len(fa) != 64 || fa == fb || fa != strings.ToLower(fa) {
+		t.Errorf("fingerprints = %q, %q", fa, fb)
+	}
+	if want := sha256.Sum256(a.Raw); fa != hex.EncodeToString(want[:]) {
+		t.Errorf("fingerprint = %q, want the SHA-256 of the DER", fa)
 	}
 }
