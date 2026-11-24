@@ -36,11 +36,22 @@ type backupsTab struct {
 	Revision string
 	Defined  bool
 	Stopped  bool
-	// Destination says a destination is set; Bucket is its bucket's name.
+	// Destination says a destination is set; Bucket is what the count line says it is stored in: the
+	// bucket's name with one destination, their names with several (feature 052).
 	Destination bool
 	Bucket      string
-	BackedUp    int // services with a policy
-	Failing     int // of those, the ones whose newest run failed
+	// Dests are the installation's destinations, with the default marked (feature 052).
+	Dests []store.BackupDestination
+	// Places, an input, says where each backed-up service's policy resolves to (by service name):
+	// its destination (policy, project or installation default) and its copies.
+	Places map[string]resolvedPlaces
+	// PlacesFor names the service whose "Where backups go" form was refused: its row opens and the form
+	// draws Posted, with the refusal at PlacesField (destination, copyTo or copyKeep; "" for the form).
+	PlacesFor, PlacesField string
+	PlacesErr              sentence
+	Posted                 *placesPosted
+	BackedUp               int // services with a policy
+	Failing                int // of those, the ones whose newest run failed
 	// Gaps are the services that could be backed up and have no policy.
 	Gaps []backupGap
 	// Rows are the services with a policy, in the order of the definition.
@@ -56,6 +67,19 @@ type backupsTab struct {
 	ConfirmErr string
 	// ShowAll is the service whose whole run list is shown ("Show older").
 	ShowAll string
+}
+
+// resolvedPlaces is where a policy's backups go: the destination ("" when none exists) and its copies.
+type resolvedPlaces struct {
+	Primary string
+	Copies  []string
+}
+
+// placesPosted is what the "Where backups go" form was given, drawn again after a refusal.
+type placesPosted struct {
+	Destination string
+	CopyTo      []string
+	CopyKeep    string
 }
 
 // Not is how many services could be backed up and aren't.
@@ -135,6 +159,26 @@ type backupSvcRow struct {
 	ScheduleInput   string
 	LabelInput      string
 	DefaultSchedule string
+
+	// PlacesLine says where the backups go and are copied when that is more than the one destination
+	// ("to main, copied to offsite (keeps 14)"); empty with one destination and no copies (feature 052).
+	PlacesLine string
+	// CanPlaces says the "Where backups go" form is offered: more than one destination, or a policy that
+	// already names one. The form's inputs follow.
+	CanPlaces    bool
+	DestChoices  []backupPlaceChoice // the destination select; shown when there is more than one destination
+	ManyDests    bool
+	CopyChoices  []backupPlaceChoice // the "Also copy to" checkboxes
+	CopyKeepText string
+	// PlacesErr is the refusal of the form, drawn at PlacesField.
+	PlacesField string
+	PlacesErr   sentence
+}
+
+// backupPlaceChoice is one option of the destination select or one "Also copy to" checkbox.
+type backupPlaceChoice struct {
+	Value, Label string
+	On           bool
 }
 
 // backupRun is one backup run of a service, as the row lists it.
@@ -157,6 +201,11 @@ type backupRun struct {
 	// offered: a succeeded run that isn't pinned.
 	Pin    string
 	CanPin bool
+	// Where says where the backup is, once there is more than one place to say ("in main · copied to
+	// offsite", "copying to offsite…", "deleted from main, kept in offsite"); empty with one destination
+	// and no copies (feature 052). Places are the destinations that hold it, the ones a restore may read from.
+	Where  string
+	Places []string
 }
 
 // stripCell is one day of the restore-points strip. Kind is healthy (a day with
@@ -203,11 +252,13 @@ type restoreAskView struct {
 	Failed bool
 	// When is the run's time, as the button says it: "26 minutes ago".
 	When string
+	// Places are where the backup is, offered as "Restore from" when there is more than one.
+	Places []string
 }
 
 // restoreAskFor is the template function {{restoreAsk $ . ""}}.
 func restoreAskFor(tab backupsTab, run backupRun, prefix string) restoreAskView {
-	return restoreAskView{AppID: tab.ID, Run: run, Prefix: prefix, Failed: prefix == "" && tab.ConfirmErr == run.ID, When: run.Clock.Text}
+	return restoreAskView{AppID: tab.ID, Run: run, Prefix: prefix, Failed: prefix == "" && tab.ConfirmErr == run.ID, When: run.Clock.Text, Places: run.Places}
 }
 
 // dumpImageEngines maps the repository of a database image Caravana can dump
@@ -317,12 +368,14 @@ func upperFirst(s string) string {
 // destination (nil when none is set). extra carries what the answer to a post
 // adds. It is pure.
 func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupRecord, restores []store.RestoreRecord,
-	volumes []service.VolumeView, dest *store.BackupDestination, extra backupsTab) backupsTab {
+	volumes []service.VolumeView, dests []store.BackupDestination, extra backupsTab) backupsTab {
 	a := sum.App
 	tab := extra
 	tab.ID, tab.Revision, tab.Defined, tab.Stopped = a.ID, sum.Revision, a.Defined(), sum.StoppedAt != nil
-	if dest != nil {
-		tab.Destination, tab.Bucket = true, dest.Bucket
+	tab.Dests = dests
+	if len(dests) > 0 {
+		tab.Destination = true
+		tab.Bucket = storedIn(dests)
 	}
 
 	for _, svc := range a.Services {
@@ -358,7 +411,7 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 		if row.Mark == "failed" {
 			tab.Failing++
 		}
-		row.Open = len(tab.Rows) == 0 || svc.Name == tab.ShowAll || slices.ContainsFunc(row.Runs, func(r backupRun) bool { return r.ID == tab.ConfirmErr })
+		row.Open = len(tab.Rows) == 0 || svc.Name == tab.ShowAll || svc.Name == tab.PlacesFor || slices.ContainsFunc(row.Runs, func(r backupRun) bool { return r.ID == tab.ConfirmErr })
 		tab.Rows = append(tab.Rows, row)
 	}
 
@@ -388,6 +441,19 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 		tab.Restores = append(tab.Restores, row)
 	}
 	return tab
+}
+
+// storedIn is what the count line says the backups are stored in: the bucket with one destination (as it
+// always said), the destinations' names with several.
+func storedIn(dests []store.BackupDestination) string {
+	if len(dests) == 1 {
+		return dests[0].Bucket
+	}
+	names := make([]string, len(dests))
+	for i, d := range dests {
+		names[i] = d.Name
+	}
+	return strings.Join(names, ", ")
 }
 
 // whereIs says where a volume lives: "this host" with one server, else the server's name (or "this host" when
@@ -516,6 +582,7 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 			CanRestore: r.Status == store.BackupSucceeded && tab.Destination && !tab.Stopped,
 			ByYou:      r.Trigger == store.BackupTriggerOwner,
 			Pin:        r.Pin, CanPin: r.Status == store.BackupSucceeded && r.Pin == ""}
+		run.Where, run.Places = backupWhere(r, tab.Places[svc.Name].Primary, len(tab.Dests) > 1)
 		if r.Pin != "" {
 			row.Pinned++
 		}
@@ -553,6 +620,7 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 		row.OlderHref = "/apps/" + appID + "/backups?all=" + svc.Name + "#svc-" + svc.Name
 	}
 	row.State = stateText(svc.Name, row.Mark)
+	placesOf(&row, svc, tab)
 	if row.Pinned > 0 {
 		row.Keep += ", plus " + strconv.Itoa(row.Pinned) + " pinned"
 	}
@@ -560,6 +628,106 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 	row.Strip = restoreStrip(now, runs)
 	row.StripLabel = stripLabel(now, runs)
 	return row
+}
+
+// backupWhere says where a succeeded backup is (feature 052), and which destinations hold it. own is the
+// destination the record names, primary the one the service's policy resolves to now (a record from
+// before destinations had names says none). With one destination and no copies there is nothing to say.
+//
+//	in main · copied to offsite
+//	in main · copying to offsite…
+//	in main · copy to offsite failed: <message>
+//	deleted from main, kept in offsite
+func backupWhere(r store.BackupRecord, primary string, many bool) (where string, places []string) {
+	if r.Status != store.BackupSucceeded {
+		return "", nil
+	}
+	own := r.Destination
+	if own == "" {
+		own = primary
+	}
+	if !r.Expired && own != "" {
+		places = append(places, own)
+	}
+	var kept, going, failed []string
+	for _, c := range r.Copies {
+		if c.Expired || c.Destination == own {
+			continue
+		}
+		switch c.Status {
+		case store.CopySucceeded:
+			kept = append(kept, c.Destination)
+			places = append(places, c.Destination)
+		case store.CopyFailed:
+			text := "copy to " + c.Destination + " failed"
+			if c.Message != "" {
+				text += ": " + c.Message
+			}
+			failed = append(failed, text)
+		default:
+			going = append(going, c.Destination)
+		}
+	}
+	if !many && len(r.Copies) == 0 && !r.Expired {
+		return "", places
+	}
+	var parts []string
+	switch {
+	case r.Expired && len(kept) > 0:
+		parts = append(parts, "deleted from "+own+", kept in "+strings.Join(kept, ", "))
+	case r.Expired:
+		parts = append(parts, "deleted from "+own)
+	case own != "":
+		parts = append(parts, "in "+own)
+		if len(kept) > 0 {
+			parts = append(parts, "copied to "+strings.Join(kept, ", "))
+		}
+	}
+	if len(going) > 0 {
+		parts = append(parts, "copying to "+strings.Join(going, ", ")+"…")
+	}
+	parts = append(parts, failed...)
+	return strings.Join(parts, " · "), places
+}
+
+// placesOf fills the row's backup places (feature 052): the policy line, and the inputs of its "Where
+// backups go" form, which draws what was posted after a refusal of that form.
+func placesOf(row *backupSvcRow, svc app.Service, tab backupsTab) {
+	b := svc.Backup
+	pl := tab.Places[svc.Name]
+	many := len(tab.Dests) > 1
+	row.ManyDests = many
+	switch {
+	case len(pl.Copies) > 0:
+		line := "to " + pl.Primary + ", copied to " + strings.Join(pl.Copies, ", ") + " (keeps " + strconv.Itoa(b.CopyKeepOrDefault()) + ")"
+		if pl.Primary == "" {
+			line = "copied to " + strings.Join(pl.Copies, ", ") + " (keeps " + strconv.Itoa(b.CopyKeepOrDefault()) + ")"
+		}
+		row.PlacesLine = line
+	case many && pl.Primary != "":
+		row.PlacesLine = "to " + pl.Primary
+	}
+	row.CanPlaces = tab.Defined && !tab.Stopped && (many || b.Destination != "" || len(b.CopyTo) > 0)
+	if !row.CanPlaces {
+		return
+	}
+	dest, copies, keep := b.Destination, b.CopyTo, ""
+	if b.CopyKeep > 0 {
+		keep = strconv.Itoa(b.CopyKeep)
+	}
+	if tab.Posted != nil && tab.PlacesFor == svc.Name {
+		dest, copies, keep = tab.Posted.Destination, tab.Posted.CopyTo, tab.Posted.CopyKeep
+		row.PlacesField, row.PlacesErr = tab.PlacesField, tab.PlacesErr
+	}
+	row.CopyKeepText = keep
+	row.DestChoices = []backupPlaceChoice{{Value: "", Label: "The project's default, else the installation's", On: dest == ""}}
+	for _, d := range tab.Dests {
+		row.DestChoices = append(row.DestChoices, backupPlaceChoice{Value: d.Name, Label: d.Name, On: d.Name == dest})
+		// The destination the backups go to now can't also be a copy.
+		if d.Name != pl.Primary {
+			row.CopyChoices = append(row.CopyChoices, backupPlaceChoice{Value: d.Name, Label: d.Name, On: slices.Contains(copies, d.Name)})
+		}
+	}
 }
 
 // restoreScheduleOf fills the row's restore schedule (feature 036): the line that says it, how the
@@ -712,13 +880,26 @@ func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int,
 		s.serverError(w, r, "list backups", err)
 		return
 	}
-	var dest *store.BackupDestination
-	switch d, destErr := s.svc.GetBackupDestination(ctx); {
-	case destErr == nil:
-		dest = &d
-	case !errors.Is(destErr, store.ErrNotFound):
-		s.serverError(w, r, "read backup destination", destErr)
+	destViews, err := s.svc.ListBackupDestinations(ctx)
+	if err != nil {
+		s.serverError(w, r, "read backup destinations", err)
 		return
+	}
+	dests := make([]store.BackupDestination, len(destViews))
+	for i, v := range destViews {
+		dests[i] = v.BackupDestination
+	}
+	extra.Places = map[string]resolvedPlaces{}
+	for _, svc := range sum.App.Services {
+		if svc.Backup == nil {
+			continue
+		}
+		primary, copies, placesErr := s.svc.BackupPlaces(ctx, id, *svc.Backup)
+		if placesErr != nil {
+			s.serverError(w, r, "resolve where backups go", placesErr)
+			return
+		}
+		extra.Places[svc.Name] = resolvedPlaces{Primary: primary, Copies: copies}
 	}
 	head, err := s.shellPage(r, id+" backups", navProjects, s.appCrumbs(ctx, id)...)
 	if err != nil {
@@ -736,7 +917,7 @@ func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int,
 		extra.ShowAll = r.URL.Query().Get("all")
 	}
 	extra.MultiServer = s.multiServer(ctx)
-	tab := backupsTabOf(s.now(), sum, backups, restores, volumes, dest, extra)
+	tab := backupsTabOf(s.now(), sum, backups, restores, volumes, dests, extra)
 	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "backups"), Backups: &tab})
 }
 
@@ -904,7 +1085,7 @@ func (s *server) restoreBackup(w http.ResponseWriter, r *http.Request, session s
 		s.backupsPage(w, r, http.StatusUnprocessableEntity, id, backupsTab{ConfirmErr: backupID})
 		return
 	}
-	_, err := s.svc.Restore(r.Context(), id, backupID, "")
+	_, err := s.svc.Restore(r.Context(), id, backupID, strings.TrimSpace(r.PostForm.Get("from")))
 	if err == nil {
 		http.Redirect(w, r, "/apps/"+id+"/backups", http.StatusSeeOther)
 		return
@@ -1021,6 +1202,90 @@ func (s *server) setRestoreSchedule(w http.ResponseWriter, r *http.Request, sess
 		status, notice, ok := refusalOf(edited, err)
 		if !ok {
 			s.serverError(w, r, "set a restore schedule", err)
+			return
+		}
+		s.backupsPage(w, r, status, id, backupsTab{Notice: notice})
+	}
+}
+
+// setBackupPlaces answers POST /apps/{id}/backups/places (feature 052): where a service's backups go and
+// are copied, as a deploy of the stored app on the revision the page was drawn from. A refusal draws the
+// tab again with the form open, what was posted and the refusal at its field.
+func (s *server) setBackupPlaces(w http.ResponseWriter, r *http.Request, session string) {
+	ctx := r.Context()
+	id := r.PathValue("id")
+	if !s.readForm(w, r) {
+		return
+	}
+	revision, ok := s.formRevision(w, r, "set where backups go")
+	if !ok {
+		return
+	}
+	name := strings.TrimSpace(r.PostForm.Get("service"))
+	rec, err := s.svc.GetApp(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.appNotFound(w, r, id)
+		return
+	}
+	if err != nil {
+		s.serverError(w, r, "read app", err)
+		return
+	}
+	if i, found := serviceNamed(rec.App, name); !found || rec.App.Services[i].Backup == nil {
+		s.backupsPage(w, r, http.StatusUnprocessableEntity, id, backupsTab{Notice: sentence{plain("This app has no backed-up service "), mono(name), plain(".")}})
+		return
+	}
+
+	posted := &placesPosted{Destination: strings.TrimSpace(r.PostForm.Get("destination")), CopyKeep: strings.TrimSpace(r.PostForm.Get("copyKeep"))}
+	for _, c := range r.PostForm["copyTo"] {
+		if c = strings.TrimSpace(c); c != "" && !slices.Contains(posted.CopyTo, c) {
+			posted.CopyTo = append(posted.CopyTo, c)
+		}
+	}
+	refuse := func(status int, field, text string) {
+		s.backupsPage(w, r, status, id, backupsTab{PlacesFor: name, PlacesField: field, PlacesErr: sentence{plain(text)}, Posted: posted})
+	}
+	keep := 0
+	if posted.CopyKeep != "" {
+		n, convErr := strconv.Atoi(posted.CopyKeep)
+		if convErr != nil {
+			refuse(http.StatusUnprocessableEntity, "copyKeep", "The number of backups to keep in a copy must be a whole number.")
+			return
+		}
+		keep = n
+	}
+
+	deployment, err := s.svc.SetBackupPlaces(ctx, id, name, posted.Destination, posted.CopyTo, keep, service.Condition{IfRevision: revision}, app.TriggerConsole)
+	if err == nil {
+		http.Redirect(w, r, "/apps/"+id+"/deployments#deployment-"+deployment.Deployment.ID, http.StatusSeeOther)
+		return
+	}
+	var fieldErr *app.FieldError
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.appNotFound(w, r, id)
+	case errors.Is(err, service.ErrAppChanged):
+		s.backupsPage(w, r, http.StatusConflict, id, backupsTab{Notice: sentence{plain(changedSincePage)}})
+	case errors.Is(err, service.ErrAppStopped):
+		s.backupsPage(w, r, http.StatusConflict, id, backupsTab{Notice: sentence{plain(appStoppedText)}})
+	case errors.As(err, &fieldErr) && fieldErr.Field == "service":
+		s.backupsPage(w, r, http.StatusConflict, id, backupsTab{Notice: sentence{plain(fieldErr.Message + ". Reload the page.")}})
+	case errors.As(err, &fieldErr) && strings.Contains(fieldErr.Field, ".backup."):
+		field := ""
+		switch {
+		case strings.HasSuffix(fieldErr.Field, ".destination"):
+			field = "destination"
+		case strings.Contains(fieldErr.Field, ".copyTo"):
+			field = "copyTo"
+		case strings.HasSuffix(fieldErr.Field, ".copyKeep"):
+			field = "copyKeep"
+		}
+		refuse(http.StatusUnprocessableEntity, field, capital(strings.TrimSuffix(fieldErr.Message, "."))+".")
+	default:
+		edited := rec.App
+		status, notice, ok := refusalOf(edited, err)
+		if !ok {
+			s.serverError(w, r, "set where backups go", err)
 			return
 		}
 		s.backupsPage(w, r, status, id, backupsTab{Notice: notice})

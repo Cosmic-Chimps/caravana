@@ -79,6 +79,43 @@ func (s *Service) SetRestoreSchedule(ctx context.Context, appID, service string,
 	return recordOnly(s.saveAndDeploy(ctx, a, cond, trigger, m, nil))
 }
 
+// SetBackupPlaces sets where a service's backups go and are copied (feature 052)
+// and deploys, as SetRestoreSchedule does for the restore schedule: the same
+// condition, trigger and kept Compose file, and the rest of the policy as it was.
+// destination "" means the project's, else the installation's default; copyTo
+// and copyKeep are the policy's fields of those names. A service with no policy,
+// or an unknown one, is an *app.FieldError on "service"; a name the model refuses
+// is its *app.FieldError, and one that names no destination is the deploy's
+// *app.FieldError on services[i].backup.destination or .copyTo[k] (checkBackups).
+func (s *Service) SetBackupPlaces(ctx context.Context, appID, service, destination string, copyTo []string, copyKeep int, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
+	rec, err := s.store.GetApp(ctx, appID)
+	if err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	a := rec.App
+	i := slices.IndexFunc(a.Services, func(svc app.Service) bool { return svc.Name == service })
+	if i < 0 {
+		return store.DeploymentRecord{}, app.NewFieldError("service", "app %q has no service %q", appID, service)
+	}
+	if a.Services[i].Backup == nil {
+		return store.DeploymentRecord{}, app.NewFieldError("service", "service %q has no backup policy", service)
+	}
+	policy := *a.Services[i].Backup
+	policy.Destination = destination
+	policy.CopyTo = slices.Clone(copyTo)
+	policy.CopyKeep = copyKeep
+	services := slices.Clone(a.Services)
+	services[i].Backup = &policy
+	a.Services = services
+
+	var m made
+	if rec.Compose != nil {
+		file := withBackup(*rec.Compose, service, policy)
+		m.file = &file
+	}
+	return recordOnly(s.saveAndDeploy(ctx, a, cond, trigger, m, nil))
+}
+
 // withBackup returns a copy of file whose overlay for service sets policy as
 // the backup. The rest of the overlay stays. file is not changed.
 func withBackup(file compose.Request, service string, policy app.Backup) compose.Request {

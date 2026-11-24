@@ -400,6 +400,18 @@ func (s *Service) backupPlaces(ctx context.Context, appID string, b app.Backup) 
 	return primary, copies, nil
 }
 
+// BackupPlaces says where the backups of appID's policy b go and are copied
+// (feature 052): the destination's name, from the policy, its project or the
+// installation's default ("" when none of them exists), and each copy's name.
+// The console draws it; a deploy resolves it again at each use.
+func (s *Service) BackupPlaces(ctx context.Context, appID string, b app.Backup) (primary string, copies []string, err error) {
+	primary, copies, err = s.backupPlaces(ctx, appID, b)
+	if errors.Is(err, ErrNoBackupDestination) {
+		return "", copies, nil
+	}
+	return primary, copies, err
+}
+
 // projectBackupDestination is the default destination of the project the app
 // lives in, "" when it has none. An ID that reads as no place lives in Default.
 func (s *Service) projectBackupDestination(ctx context.Context, appID string) (string, error) {

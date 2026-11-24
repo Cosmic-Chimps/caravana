@@ -116,6 +116,12 @@ var composeSpecs = map[string]inputSpec{
 		Hint: "A cron expression with five fields. Leave it and the label empty for none."},
 	"backupRestoreFrom": {Name: "backupRestoreFrom", Label: "from the backup pinned as", Placeholder: "golden",
 		Hint: "Pin a backup under this label on the Backups tab."},
+	"backupDestination": {Name: "backupDestination", Label: "Backups go to", Placeholder: "main",
+		Hint: "A destination's name from Settings › Backup storage. Empty uses the project's default, else the installation's."},
+	"backupCopyTo": {Name: "backupCopyTo", Label: "Also copy to", Placeholder: "offsite",
+		Hint: "Other destinations' names, separated by commas. Each backup is copied to them once it succeeds."},
+	"backupCopyKeep": {Name: "backupCopyKeep", Numeric: true, Label: "Keep in each copy", Placeholder: "7",
+		Hint: "Empty keeps as many as the destination the backups go to."},
 	"backupFile": {Name: "backupFile", Label: "Database file", Placeholder: "/data/app.db",
 		Hint: "SQLite file only: the database's path inside the service, on one of its volumes."},
 }
@@ -152,6 +158,9 @@ func (s composeServiceView) BackupInputs() []editInput {
 		{inputSpec: composeSpecs["backupKeep"], Field: &s.BackupKeep},
 		{inputSpec: composeSpecs["backupRestoreSchedule"], Field: &s.BackupRestoreSchedule},
 		{inputSpec: composeSpecs["backupRestoreFrom"], Field: &s.BackupRestoreFrom},
+		{inputSpec: composeSpecs["backupDestination"], Field: &s.BackupDestination},
+		{inputSpec: composeSpecs["backupCopyTo"], Field: &s.BackupCopyTo},
+		{inputSpec: composeSpecs["backupCopyKeep"], Field: &s.BackupCopyKeep},
 	}
 }
 
@@ -186,7 +195,7 @@ func serviceViews(d composeDraft, a *app.App) []composeServiceView {
 // hasBackupInput says the service has something in its backup inputs, or an
 // error on them, so they must be drawn whatever the image is.
 func (s draftService) hasBackupInput() bool {
-	for _, f := range []formField{s.BackupEngine, s.BackupFile, s.BackupSchedule, s.BackupKeep, s.BackupRestoreSchedule, s.BackupRestoreFrom} {
+	for _, f := range []formField{s.BackupEngine, s.BackupFile, s.BackupSchedule, s.BackupKeep, s.BackupRestoreSchedule, s.BackupRestoreFrom, s.BackupDestination, s.BackupCopyTo, s.BackupCopyKeep} {
 		if f.Value != "" || len(f.Error) > 0 {
 			return true
 		}
@@ -335,6 +344,12 @@ func (d *composeDraft) fieldFor(path string) (field *formField, subject string) 
 		return &s.BackupRestoreSchedule, "The restore schedule"
 	case tail == "backup.restore.from":
 		return &s.BackupRestoreFrom, "The label"
+	case tail == "backup.destination":
+		return &s.BackupDestination, "The destination"
+	case hasPathPrefix(tail, "backup.copyTo"):
+		return &s.BackupCopyTo, "The copy"
+	case tail == "backup.copyKeep":
+		return &s.BackupCopyKeep, "The number to keep in a copy"
 	case tail == "backup.file":
 		return &s.BackupFile, "The database file"
 	case hasPathPrefix(tail, "backup"):

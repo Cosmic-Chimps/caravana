@@ -204,6 +204,7 @@ func (s *server) routeTable() []route {
 		{"GET", "/parts/projects/{project}/apps", s.requirePart(s.partProjectApps)},
 		{"GET", "/parts/projects/{project}/rail", s.requirePart(s.partProjectRail)},
 		{"POST", "/projects/{project}", s.protected(s.requireSession(s.updateProject))},
+		{"POST", "/projects/{project}/backups", s.protected(s.requireSession(s.updateProjectBackups))},
 		{"POST", "/projects/{project}/delete", s.protected(s.requireSession(s.deleteProject))},
 		{"POST", "/projects/{project}/environments", s.protected(s.requireSession(s.addEnvironment))},
 		{"POST", "/projects/{project}/environments/{environment}/delete", s.protected(s.requireSession(s.deleteEnvironment))},
@@ -254,6 +255,7 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/backups/{backupId}/pin", s.protected(s.requireSession(s.pinBackup))},
 		{"POST", "/apps/{id}/backups/{backupId}/unpin", s.protected(s.requireSession(s.unpinBackup))},
 		{"POST", "/apps/{id}/backups/restore-schedule", s.protected(s.requireSession(s.setRestoreSchedule))},
+		{"POST", "/apps/{id}/backups/places", s.protected(s.requireSession(s.setBackupPlaces))},
 		{"POST", "/apps/{id}/secrets/remove", s.protected(s.requireSession(s.removeSecret))},
 		{"POST", "/apps/{id}/services/{service}/placement", s.protected(s.requireSession(s.savePlacement))},
 		{"POST", "/apps/{id}/services/{service}/scale", s.protected(s.requireSession(s.saveScale))},
@@ -326,6 +328,9 @@ func (s *server) routeTable() []route {
 		{"POST", "/settings/tokens", s.protected(s.requireSession(s.createToken))},
 		{"POST", "/settings/tokens/{tokenId}/revoke", s.protected(s.requireSession(s.revokeToken))},
 		{"POST", "/settings/backups", s.protected(s.requireSession(s.setBackupDestination))},
+		{"POST", "/settings/backups/test", s.protected(s.requireSession(s.testBackupDestination))},
+		{"POST", "/settings/backups/default", s.protected(s.requireSession(s.makeDefaultBackupDestination))},
+		{"POST", "/settings/backups/remove", s.protected(s.requireSession(s.removeBackupDestination))},
 		{"POST", "/settings/certificates", s.protected(s.requireSession(s.setCertificates))},
 		{"POST", "/settings/dns", s.protected(s.requireSession(s.saveDNSZone))},
 		{"POST", "/settings/dns/test", s.protected(s.requireSession(s.testDNSZone))},
@@ -446,7 +451,7 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 			files = append(files, "templates/apps.html")
 		}
 		files = append(files, "templates/"+name+".html")
-		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "brandMark": brandMark, "destField": destField, "regField": regField, "providerForms": providerForms, "dnsFormView": dnsFormView, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor, "inc": func(i int) int { return i + 1 }}).ParseFS(templatesFS, files...)
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "brandMark": brandMark, "destFormView": destFormView, "regField": regField, "providerForms": providerForms, "dnsFormView": dnsFormView, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor, "inc": func(i int) int { return i + 1 }}).ParseFS(templatesFS, files...)
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)
 		}

@@ -84,6 +84,9 @@ type draftService struct {
 	// BackupRestoreSchedule and BackupRestoreFrom are the policy's restore schedule (feature 036):
 	// both or neither.
 	BackupRestoreSchedule, BackupRestoreFrom formField
+	// BackupDestination, BackupCopyTo and BackupCopyKeep are where the policy's backups go and are copied
+	// (feature 052): a destination's name, other names separated by commas, spaces or lines, and a number.
+	BackupDestination, BackupCopyTo, BackupCopyKeep formField
 
 	// Secrets are the names the service has: the ones the form was drawn
 	// with and the ones just typed. Their inputs are password inputs, always
@@ -145,6 +148,7 @@ func (s *draftService) inputs() []struct {
 		{"healthTimeout", &s.HealthTimeout}, {"healthPort", &s.HealthPort},
 		{"backupEngine", &s.BackupEngine}, {"backupFile", &s.BackupFile}, {"backupSchedule", &s.BackupSchedule}, {"backupKeep", &s.BackupKeep},
 		{"backupRestoreSchedule", &s.BackupRestoreSchedule}, {"backupRestoreFrom", &s.BackupRestoreFrom},
+		{"backupDestination", &s.BackupDestination}, {"backupCopyTo", &s.BackupCopyTo}, {"backupCopyKeep", &s.BackupCopyKeep},
 	}
 }
 
@@ -269,6 +273,7 @@ func (s *draftService) read(post url.Values, values map[string]string) bool {
 	s.BackupEngine.Value, s.BackupSchedule.Value, s.BackupKeep.Value = text("backupEngine"), text("backupSchedule"), text("backupKeep")
 	s.BackupFile.Value = text("backupFile")
 	s.BackupRestoreSchedule.Value, s.BackupRestoreFrom.Value = text("backupRestoreSchedule"), text("backupRestoreFrom")
+	s.BackupDestination.Value, s.BackupCopyTo.Value, s.BackupCopyKeep.Value = text("backupDestination"), text("backupCopyTo"), text("backupCopyKeep")
 
 	// The names of the secrets drawn, then the ones typed in the blank rows.
 	prefix := inputName(s.Name, "secret.")
@@ -370,17 +375,35 @@ func (s *draftService) build() bool {
 		restore = &app.RestoreSchedule{Schedule: spec, From: from}
 	}
 
+	// Where backups go and are copied (feature 052): names, which the model checks (app.Validate and the
+	// destinations that exist), and how many a copy keeps.
+	copyTo := strings.FieldsFunc(s.BackupCopyTo.Value, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '\r' || r == '\t' })
+	if len(copyTo) == 0 {
+		copyTo = nil // as the model has it, so a form without copies stores what it did before
+	}
+	copyKeep := 0
+	if s.BackupCopyKeep.Value != "" {
+		if n, err := strconv.Atoi(s.BackupCopyKeep.Value); err != nil || n < 1 || n > 100 {
+			refuse(&s.BackupCopyKeep, "Enter a whole number from 1 to 100.")
+		} else {
+			copyKeep = n
+		}
+	}
+
 	switch engine := s.BackupEngine.Value; {
 	case engine == "" && restore != nil:
 		refuse(&s.BackupEngine, "Choose an engine to restore on a schedule.")
 	case engine == "" && (s.BackupSchedule.Value != "" || s.BackupKeep.Value != "" || s.BackupFile.Value != ""):
 		refuse(&s.BackupEngine, "Choose an engine to set a schedule, a file or how many to keep.")
+	case engine == "" && (s.BackupDestination.Value != "" || len(copyTo) > 0 || s.BackupCopyKeep.Value != ""):
+		refuse(&s.BackupEngine, "Choose an engine to set where backups go.")
 	case engine != app.BackupSQLite && s.BackupFile.Value != "":
 		refuse(&s.BackupFile, "Only the SQLite engine backs up a file; clear it, or choose SQLite file.")
 	case app.DumpEngine(engine) || engine == app.BackupVolume || engine == app.BackupSQLite:
 		// The file's rules are the model's (app.Validate); its errors come back
 		// on this input (fieldFor).
-		b := app.Backup{Engine: engine, File: s.BackupFile.Value, Schedule: s.BackupSchedule.Value, Restore: restore}
+		b := app.Backup{Engine: engine, File: s.BackupFile.Value, Schedule: s.BackupSchedule.Value, Restore: restore,
+			Destination: s.BackupDestination.Value, CopyTo: copyTo, CopyKeep: copyKeep}
 		if s.BackupKeep.Value != "" {
 			if n, err := strconv.Atoi(s.BackupKeep.Value); err != nil || n < 1 || n > 100 {
 				refuse(&s.BackupKeep, "Enter a whole number from 1 to 100.")
@@ -485,6 +508,7 @@ func draftFrom(a app.App) composeDraft {
 			if r := b.Restore; r != nil {
 				s.BackupRestoreSchedule.Value, s.BackupRestoreFrom.Value = r.Schedule, r.From
 			}
+			s.BackupDestination.Value, s.BackupCopyTo.Value, s.BackupCopyKeep.Value = b.Destination, strings.Join(b.CopyTo, ", "), numberText(b.CopyKeep)
 		}
 		for _, sec := range svc.Secrets {
 			s.Secrets = append(s.Secrets, draftSecret{Name: sec.Name, Exists: true, From: sec.From,
@@ -531,6 +555,7 @@ func draftOf(req compose.Request) composeDraft {
 			if r := b.Restore; r != nil {
 				s.BackupRestoreSchedule.Value, s.BackupRestoreFrom.Value = r.Schedule, r.From
 			}
+			s.BackupDestination.Value, s.BackupCopyTo.Value, s.BackupCopyKeep.Value = b.Destination, strings.Join(b.CopyTo, ", "), numberText(b.CopyKeep)
 		}
 		for _, sec := range ov.Secrets {
 			s.Secrets = append(s.Secrets, draftSecret{Name: sec.Name, Exists: true, From: sec.From,

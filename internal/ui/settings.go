@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
-	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -92,7 +91,7 @@ type settingsData struct {
 	ExpiresErr      *fieldError
 	Scope           scopeForm
 	NewToken        *newToken
-	Dest            destinationForm
+	Dest            destData
 	Registries      registriesData
 	Providers       providersData
 	DNS             dnsData
@@ -114,53 +113,6 @@ type appearanceForm struct {
 	Err    *fieldError
 }
 
-// destinationForm is the Backup storage page: the saved destination (or what
-// was typed, after a refusal), never the secret key.
-type destinationForm struct {
-	Endpoint, Region, Bucket, Prefix, AccessKeyID string
-	HasSecret                                     bool // a secret key is kept: the field may stay empty
-	Saved                                         bool
-	Field                                         string // the field at fault, after a refusal
-	Err                                           *fieldError
-	// Row is the destination as the page's one connection row says it; nil when none is set.
-	Row *destRow
-	// Problem says no destination is set while a service has a backup policy.
-	Problem bool
-	// Open says the form under the row is shown open: it was refused.
-	Open bool
-}
-
-// destRow is the backup destination's connection row. Mark is backupStorageState's.
-type destRow struct {
-	Mark, Name, Kind, State string
-	StateFailed             bool
-	UsedBy                  string
-	// Failure is the note under a row whose last backup failed; nil otherwise.
-	Failure *backupFailure
-}
-
-// backupFailure says which run failed and why: the service and app, the plain cause
-// (page 2's table; "" when the message matches none), the raw message in mono and
-// where to look.
-type backupFailure struct {
-	Service, App, Cause, Detail, Href string
-}
-
-// destFieldView is one text field of the destination form.
-type destFieldView struct {
-	Name, Label, Value, Placeholder, Err string
-}
-
-// destField is the template function that builds one: name is the input's
-// name, which is also the field a refusal names.
-func destField(f destinationForm, name, label, value, placeholder string) destFieldView {
-	v := destFieldView{Name: name, Label: label, Value: value, Placeholder: placeholder}
-	if f.Field == name && f.Err != nil {
-		v.Err = f.Err.Text
-	}
-	return v
-}
-
 // setRow is the label and hint of a setting row, and the input the label is for
 // ("" when it labels no single input).
 type setRow struct{ Label, Hint, For, Class string }
@@ -174,13 +126,6 @@ func srowFor(label, hint, forID string, class ...string) setRow {
 // showSettings answers GET /settings: Account.
 func (s *server) showSettings(w http.ResponseWriter, r *http.Request, session string) {
 	s.renderSettings(w, r, entryAccount, settingsData{PasswordChanged: r.URL.Query().Get("password") == "changed"})
-}
-
-// showBackupStorage answers GET /settings/backup-storage.
-func (s *server) showBackupStorage(w http.ResponseWriter, r *http.Request, session string) {
-	data := settingsData{}
-	data.Dest.Saved = r.URL.Query().Get("backups") == "saved"
-	s.renderSettings(w, r, entryBackupStorage, data)
 }
 
 // showTokens answers GET /settings/tokens. ?older=1 lists every expired and revoked token.
@@ -211,44 +156,6 @@ func (s *server) saveAppearance(w http.ResponseWriter, r *http.Request, session 
 		return
 	}
 	http.Redirect(w, r, "/settings/appearance?saved=1", http.StatusSeeOther)
-}
-
-// setBackupDestination answers POST /settings/backups (feature 010). An
-// empty secret key keeps the one saved before. A refusal draws the page
-// again with what was typed, except the secret key.
-func (s *server) setBackupDestination(w http.ResponseWriter, r *http.Request, session string) {
-	if !s.readForm(w, r) {
-		return
-	}
-	in := service.DestinationInput{
-		Endpoint: strings.TrimSpace(r.PostFormValue("endpoint")), Region: strings.TrimSpace(r.PostFormValue("region")),
-		Bucket: strings.TrimSpace(r.PostFormValue("bucket")), Prefix: strings.TrimSpace(r.PostFormValue("prefix")),
-		AccessKeyID: strings.TrimSpace(r.PostFormValue("accessKeyId")),
-	}
-	if v := r.PostFormValue("secretAccessKey"); v != "" {
-		in.SecretAccessKey = &v
-	}
-	_, err := s.svc.SetBackupDestination(r.Context(), in)
-	if err == nil {
-		http.Redirect(w, r, "/settings/backup-storage?backups=saved", http.StatusSeeOther)
-		return
-	}
-	form := destinationForm{Endpoint: in.Endpoint, Region: in.Region, Bucket: in.Bucket, Prefix: in.Prefix, AccessKeyID: in.AccessKeyID, Open: true}
-	if _, err := s.svc.GetBackupDestination(r.Context()); err == nil {
-		form.HasSecret = true
-	}
-	var fieldErr *app.FieldError
-	switch {
-	case errors.As(err, &fieldErr):
-		form.Field, form.Err = fieldErr.Field, &fieldError{Text: fieldErr.Message}
-	case errors.Is(err, deploy.ErrNomadUnavailable), errors.Is(err, deploy.ErrNomadRejected):
-		s.log.Warn("can't save the backup destination", "error", err)
-		form.Err = &fieldError{Text: "Nomad couldn't keep the secret key, so nothing was saved: " + err.Error()}
-	default:
-		s.serverError(w, r, "set backup destination", err)
-		return
-	}
-	s.renderSettings(w, r, entryBackupStorage, settingsData{Dest: form})
 }
 
 // settingsFacts reads what the nav and the pages are decided from. Some tests
@@ -288,6 +195,9 @@ func (s *server) settingsFacts(ctx context.Context) (settingsFacts, error) {
 		f.Dest = &d
 	case !errors.Is(err, store.ErrNotFound):
 		return f, fmt.Errorf("read the backup destination: %w", err)
+	}
+	if f.Dests, err = s.svc.ListBackupDestinations(ctx); err != nil {
+		return f, fmt.Errorf("list the backup destinations: %w", err)
 	}
 	if f.LastBackup, f.FailingBackup, err = s.svc.BackupOutcome(ctx); err != nil {
 		return f, fmt.Errorf("read the last backup outcome: %w", err)
@@ -377,46 +287,6 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 		status = data.Status
 	}
 	s.render(w, status, "settings", data)
-}
-
-// destinationSection fills in the Backup storage page: the connection row and the
-// form's values. A refused form (Err set) keeps what was typed.
-func destinationSection(now time.Time, f settingsFacts, st entryState, form destinationForm) destinationForm {
-	if f.Dest == nil {
-		form.Problem = policyServices(f.Apps) > 0
-		return form
-	}
-	d := *f.Dest
-	if form.Err == nil {
-		saved := form.Saved
-		form = destinationForm{Endpoint: d.Endpoint, Region: d.Region, Bucket: d.Bucket, Prefix: d.Prefix,
-			AccessKeyID: d.AccessKeyID, HasSecret: true, Saved: saved}
-	}
-	row := &destRow{Mark: st.Rows[0], Name: endpointName(d), Kind: "S3-compatible · region " + d.Region,
-		UsedBy: usedBy(policyServices(f.Apps), "service")}
-	switch last := f.LastBackup; {
-	case last == nil:
-		row.State = "no backup yet"
-	case last.Status == store.BackupSucceeded:
-		row.State = "last backup " + backupWhen(now, last.StartedAt)
-		if last.Bytes > 0 {
-			row.State += " · " + humanBytes(last.Bytes)
-		}
-	default:
-		at := last.StartedAt
-		if last.FinishedAt != nil {
-			at = *last.FinishedAt
-		}
-		row.State, row.StateFailed = "last backup failed "+relative(now, at), true
-	}
-	// The note names the failing service: the destination's own newest run when that failed, or
-	// another service's newest run that failed while a later run of a service went well.
-	if fail := f.FailingBackup; fail != nil {
-		row.Failure = &backupFailure{Service: fail.Service, App: fail.AppID, Cause: causeOf(fail.Message), Detail: fail.Message,
-			Href: "/apps/" + fail.AppID + "/backups"}
-	}
-	form.Row = row
-	return form
 }
 
 // olderTokensShown is how many expired or revoked tokens the table lists before "Show older".

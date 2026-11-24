@@ -543,8 +543,8 @@ func TestSettingsBackupStorageStates(t *testing.T) {
 				t.Errorf("%s: the page lacks %q:\n%s", name, want, got)
 			}
 		}
-		if strings.Contains(got, "Remove") || strings.Contains(got, "No backup destination is set.") {
-			t.Errorf("%s: the page offers Remove or still has the problem panel:\n%s", name, got)
+		if strings.Contains(got, "No backup destination is set.") {
+			t.Errorf("%s: the page still has the problem panel:\n%s", name, got)
 		}
 	}
 	check("nothing ran", "no backup yet")
@@ -585,7 +585,7 @@ func TestSettingsBackupStorageStates(t *testing.T) {
 	if !strings.Contains(page, `<p class="cv-conn-detail">AccessDenied</p>`) || !strings.Contains(page, `<a href="/apps/duo/backups" class="cv-conn-link">Open its backups</a>`) {
 		t.Error("the raw message isn't its own mono line, or the link doesn't go to the app's Backups tab")
 	}
-	if !strings.Contains(page, `aria-label="Edit backup storage"`) {
+	if !strings.Contains(page, `aria-label="Edit main"`) {
 		t.Error("the destination's row has no short accessible name")
 	}
 }

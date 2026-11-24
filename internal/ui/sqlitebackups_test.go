@@ -21,7 +21,7 @@ func TestBackupsTabSQLiteRow(t *testing.T) {
 	sum := service.AppSummary{AppRecord: store.AppRecord{App: a}}
 	backups := []store.BackupRecord{{AppID: "notes", ID: "db-1", Service: "db", Engine: app.BackupSQLite,
 		Status: store.BackupSucceeded, Bytes: 2048, StartedAt: started, FinishedAt: &done}}
-	dest := &store.BackupDestination{Bucket: "backups"}
+	dest := []store.BackupDestination{{Name: "main", Bucket: "backups"}}
 
 	tab := backupsTabOf(now, sum, backups, nil, nil, dest, backupsTab{})
 	if len(tab.Rows) != 1 || len(tab.Gaps) != 0 {

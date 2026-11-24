@@ -60,6 +60,8 @@ func TestAttentionRows(t *testing.T) {
 			"warning", "2 copies of blog/web are failing its health check.", "View logs", "/apps/blog/logs?copy=c1"},
 		{"a failed backup", service.AttentionItem{Kind: service.AttentionBackupFailed, AppID: "blog", Service: "db"},
 			"failed", "The latest backup of blog/db failed.", "Open backups", "/apps/blog/backups"},
+		{"a backup that couldn't be copied", service.AttentionItem{Kind: service.AttentionBackupCopyFailed, AppID: "blog", Service: "db", Destination: "offsite"},
+			"warning", "The copy of blog/db's backup to offsite failed.", "Open backups", "/apps/blog/backups"},
 		{"a failed restore", service.AttentionItem{Kind: service.AttentionRestoreFailed, AppID: "blog", Service: "db"},
 			"failed", "The latest restore of blog/db failed.", "Open backups", "/apps/blog/backups"},
 		{"no destination", service.AttentionItem{Kind: service.AttentionNoBackupDestination},

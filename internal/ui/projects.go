@@ -66,7 +66,24 @@ type projectView struct {
 	Envs        []envView
 	AddEnv      formField
 	Previews    *previewsSummary
-	Delete      projectDelete
+	// Backups is the "Backups go to" section (feature 052); nil while there is nothing to choose
+	// between (one destination or none, and the project has no default of its own).
+	Backups *projectBackups
+	Delete  projectDelete
+}
+
+// projectBackups is the "Backups go to" section of a project's settings: the default destination of the
+// project's backups, as a select. Selected is "" for the installation's default.
+type projectBackups struct {
+	Selected string
+	Options  []projectDestOption
+	Field    formField // the select's id and its refusal
+}
+
+// projectDestOption is one choice of that select: "" is the installation's default.
+type projectDestOption struct {
+	Value, Label string
+	Selected     bool
 }
 
 // projectRow is one project on the Projects page: where it leads, its
@@ -194,6 +211,7 @@ type projectExtras struct {
 	Notice, Alert sentence
 	Name          *formField // the display name form, as typed
 	AddEnv        *formField
+	Backups       *formField     // the "Backups go to" select's refusal and the choice that was posted
 	Delete        *projectDelete // the Delete project section, with its refusal
 }
 
@@ -238,6 +256,12 @@ func (s *server) settingsPage(w http.ResponseWriter, r *http.Request, status int
 	if extra.AddEnv != nil {
 		v.AddEnv = *extra.AddEnv
 	}
+	dests, err := s.svc.ListBackupDestinations(ctx)
+	if err != nil {
+		s.serverError(w, r, "list backup destinations", err)
+		return
+	}
+	v.Backups = projectBackupsOf(dests, p.BackupDestination, extra.Backups)
 	if extra.Delete != nil {
 		v.Delete.Open, v.Delete.Error, v.Delete.Notice, v.Delete.Apps = extra.Delete.Open, extra.Delete.Error, extra.Delete.Notice, extra.Delete.Apps
 	}
@@ -263,6 +287,35 @@ func (s *server) settingsPage(w http.ResponseWriter, r *http.Request, status int
 		return
 	}
 	s.render(w, status, "projects", projectsPage{pageData: head, Project: v})
+}
+
+// projectBackupsOf is the "Backups go to" section: nil with fewer than two destinations unless the project
+// already has a default of its own (a project must be able to go back to the installation's). chosen is the
+// posted select after a refusal, nil otherwise.
+func projectBackupsOf(dests []service.DestinationView, current string, posted *formField) *projectBackups {
+	if len(dests) < 2 && current == "" {
+		return nil
+	}
+	selected := current
+	field := formField{ID: "backupDestination"}
+	if posted != nil {
+		selected, field = posted.Value, *posted
+	}
+	installDefault := ""
+	for _, d := range dests {
+		if d.IsDefault {
+			installDefault = d.Name
+		}
+	}
+	label := "The installation's default"
+	if installDefault != "" {
+		label += " (" + installDefault + ")"
+	}
+	b := &projectBackups{Selected: selected, Field: field, Options: []projectDestOption{{Value: "", Label: label, Selected: selected == ""}}}
+	for _, d := range dests {
+		b.Options = append(b.Options, projectDestOption{Value: d.Name, Label: d.Name, Selected: d.Name == selected})
+	}
+	return b
 }
 
 // cmpName is the name an app goes by in its environment.
@@ -293,6 +346,8 @@ func (s *server) showProjectSettings(w http.ResponseWriter, r *http.Request, ses
 		extra.Notice = sentence{plain("Display name saved.")}
 	case q.Get("saved") == "previews":
 		extra.Notice = sentence{plain("Preview settings saved.")}
+	case q.Get("saved") == "backups":
+		extra.Notice = sentence{plain("Where this project's backups go is saved. Their jobs use it from the next run.")}
 	case labelName.MatchString(q.Get("closed")):
 		extra.Notice = sentence{plain("Closed "), mono(q.Get("closed")), plain(": its apps and the environment are deleted.")}
 	}
@@ -319,6 +374,33 @@ func (s *server) updateProject(w http.ResponseWriter, r *http.Request, session s
 		s.settingsPage(w, r, http.StatusUnprocessableEntity, id, projectExtras{Name: &f})
 	default:
 		s.serverError(w, r, "set project display name", err)
+	}
+}
+
+// updateProjectBackups answers POST /projects/{project}/backups (feature 052): the destination the project's
+// backups go to when a policy names none, "" for the installation's default. It changes no app and deploys
+// nothing; the backup jobs are pointed at it at once and use it from their next run.
+func (s *server) updateProjectBackups(w http.ResponseWriter, r *http.Request, session string) {
+	id := r.PathValue("project")
+	if !s.readForm(w, r) {
+		return
+	}
+	typed := strings.TrimSpace(r.PostForm.Get("backupDestination"))
+	_, err := s.svc.UpdateProject(r.Context(), id, service.ProjectChanges{BackupDestination: &typed})
+	var fieldErr *app.FieldError
+	switch {
+	case err == nil:
+		http.Redirect(w, r, "/projects/"+url.PathEscape(id)+"/settings?saved=backups", http.StatusSeeOther)
+	case errors.Is(err, service.ErrProjectNotFound):
+		s.projectGone(w, r, id)
+	case errors.As(err, &fieldErr):
+		f := formField{ID: "backupDestination", Value: typed, Alert: true, Error: sentence{plain(capital(fieldErr.Message) + ".")}}
+		s.settingsPage(w, r, http.StatusUnprocessableEntity, id, projectExtras{Backups: &f})
+	case strings.HasPrefix(err.Error(), "saved, but"):
+		s.log.Warn("project backup destination saved, jobs not repointed", "project", id, "error", err)
+		s.settingsPage(w, r, http.StatusBadGateway, id, projectExtras{Alert: sentence{plain(capital(err.Error()) + ".")}})
+	default:
+		s.serverError(w, r, "set the project's backup destination", err)
 	}
 }
 

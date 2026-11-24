@@ -79,7 +79,7 @@ func TestBackupsTabNamesTheDump(t *testing.T) {
 		{Name: "backed", Image: "mariadb:11.4", Ports: port(3306), Health: &app.HealthCheck{}, Backup: &app.Backup{Engine: app.BackupMySQL}},
 		{Name: "docs", Image: "mongo:8.0", Ports: port(27017), Health: &app.HealthCheck{}, Backup: &app.Backup{Engine: app.BackupMongoDB}},
 	}}
-	tab := backupsTabOf(now, service.AppSummary{AppRecord: store.AppRecord{App: a}}, nil, nil, nil, &store.BackupDestination{Bucket: "b"}, backupsTab{})
+	tab := backupsTabOf(now, service.AppSummary{AppRecord: store.AppRecord{App: a}}, nil, nil, nil, []store.BackupDestination{{Name: "main", Bucket: "b"}}, backupsTab{})
 	gaps := map[string]backupGap{}
 	for _, g := range tab.Gaps {
 		gaps[g.Service] = g

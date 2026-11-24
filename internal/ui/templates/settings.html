@@ -579,47 +579,81 @@
 {{end}}
 
 {{/* ---------------------------------------------------------- Backup storage
-     One S3-compatible bucket (feature 010). The secret key is never shown; an empty field keeps
-     the saved one. The API has no delete of the destination, so there is no Remove. */}}
+     S3-compatible buckets for backups and their copies (features 010 and 052): one connection row each,
+     with Test, Make default, Edit and Remove, and a form to add one. The secret key is never shown; an
+     empty field keeps the saved one. Test is a post whose answer announces the outcome under the row; Edit
+     and Remove open a <details>, and a refusal opens the one it came from. */}}
 {{define "settings-backup-storage"}}
 {{with .Dest}}
 <header class="cv-sthead">
   <div class="cv-sthead-text">
     <h1 class="cv-headline">Backup storage</h1>
-    <p class="cv-lede">One S3-compatible bucket for database and volume backups.</p>
+    <p class="cv-lede">S3-compatible buckets for backups. One is the default; a service or a project may name another, and a service may copy each backup to others.</p>
   </div>
+  <a href="#destination" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add destination</a>
 </header>
-{{if .Saved}}
-<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>Saved. Every database's next backup goes here.</span></div>
+{{with .Notice}}
+{{if .Bad}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>
+{{else}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
 {{end}}
-{{if and .Err (not .Field)}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Err.Text}}</span></div>{{end}}
+{{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
 
-{{if .Row}}
+{{if .Rows}}
 <div class="cv-panel cv-conns">
-  <div class="cv-conn">
-  <details class="cv-conn-det"{{if .Open}} open{{end}}>
-    <summary class="cv-conn-row cv-conn-sum" aria-label="Edit backup storage">
-      <span class="cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Row.Mark}}" aria-hidden="true"></span></span>
+  {{range $i, $row := .Rows}}
+  <div class="cv-conn" id="destination-{{.Name}}">
+    <div class="cv-conn-row">
+      <span class="cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
       <div class="cv-conn-name">
-        <span class="cv-conn-title" title="{{.Row.Name}}">{{.Row.Name}}</span>
-        <span class="cv-conn-kind">{{.Row.Kind}}</span>
+        <span class="cv-conn-title" title="{{.Title}}"><span class="cv-inline-mono">{{.Name}}</span>{{if .Default}} <span class="cv-chip">default</span>{{end}}</span>
+        <span class="cv-conn-kind">{{.Title}} · {{.Kind}}</span>
       </div>
-      <div class="cv-conn-state"><span class="cv-conn-st{{if .Row.StateFailed}} cv-conn-st-failed{{end}}">{{.Row.State}}</span></div>
-      <span class="cv-conn-used">{{.Row.UsedBy}}</span>
-      <div class="cv-conn-acts"><span class="cv-btn cv-btn-sm cv-btn-secondary">Edit</span></div>
-    </summary>
-    <form method="post" action="/settings/backups" class="cv-conn-form" autocomplete="off">
-      {{template "dest-rows" .}}
-    </form>
-  </details>
-  {{with .Row.Failure}}
-  <div class="cv-conn-note">
-    <p><span class="cv-inline-mono">{{.Service}}</span> of <span class="cv-inline-mono">{{.App}}</span>: {{if .Cause}}{{.Cause}}{{else}}the last backup failed.{{end}}</p>
-    {{with .Detail}}<p class="cv-conn-detail">{{.}}</p>{{end}}
-    <p><a href="{{.Href}}" class="cv-conn-link">Open its backups</a></p>
+      <div class="cv-conn-state">
+        <span class="cv-conn-st{{if .StateFailed}} cv-conn-st-failed{{end}}">{{.State}}</span>
+        {{if .Clock}}<span class="cv-conn-ev">{{.Event}} {{template "clock" .Clock}}</span>{{end}}
+      </div>
+      <span class="cv-conn-used">{{.UsedBy}}</span>
+      <div class="cv-conn-acts">
+        <form method="post" action="/settings/backups/test">
+          <input type="hidden" name="name" value="{{.Name}}">
+          <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Test {{.Name}}">Test</button>
+        </form>
+        {{if not .Default}}
+        <form method="post" action="/settings/backups/default">
+          <input type="hidden" name="name" value="{{.Name}}">
+          <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Make {{.Name}} the default">Make default</button>
+        </form>
+        {{end}}
+        <details class="cv-confirm cv-confirm-row" id="destination-edit-{{$i}}" name="conn-{{$i}}"{{if .Open}} open{{end}}>
+          <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Edit {{.Name}}">Edit</summary>
+          <form method="post" action="/settings/backups" class="cv-confirm-body" autocomplete="off">
+            <input type="hidden" name="edit" value="1">
+            {{template "dest-fields" (destFormView .Edit (printf "dest-edit-%d" $i))}}
+            <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-primary">Save destination</button></div>
+          </form>
+        </details>
+        <details class="cv-confirm cv-confirm-row" name="conn-{{$i}}"{{if .RemoveOpen}} open{{end}}>
+          <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove {{.Name}}">Remove</summary>
+          <form method="post" action="/settings/backups/remove" class="cv-confirm-body">
+            <input type="hidden" name="name" value="{{.Name}}">
+            <p>Removes the destination and its secret key from Caravana. Backups already kept in the bucket stay there; delete them there if you no longer want them.</p>
+            <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Remove</button></div>
+          </form>
+        </details>
+      </div>
+    </div>
+    {{with .Err}}<p class="cv-conn-note" role="alert"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span> {{.Text}}</p>{{end}}
+    {{if .Tested}}<p class="cv-conn-note" role="status">{{if .TestOK}}Tested now: {{.TestMessage}}.{{else}}Tested now, and it can't be reached: {{.TestMessage}}{{end}}</p>
+    {{else if .StateFailed}}{{if .Detail}}<p class="cv-conn-note">Backups and copies that go here fail until it can be reached again.<span class="cv-conn-detail">{{.Detail}}</span></p>{{end}}{{end}}
+    {{with .Failure}}
+    <div class="cv-conn-note">
+      <p><span class="cv-inline-mono">{{.Service}}</span> of <span class="cv-inline-mono">{{.App}}</span>: {{if .Cause}}{{.Cause}}{{else}}the last backup failed.{{end}}</p>
+      {{with .Detail}}<p class="cv-conn-detail">{{.}}</p>{{end}}
+      <p><a href="{{.Href}}" class="cv-conn-link">Open its backups</a></p>
+    </div>
+    {{end}}
   </div>
   {{end}}
-  </div>
 </div>
 {{else}}
 {{if .Problem}}
@@ -628,36 +662,26 @@
   <p class="cv-banner-text">No backup destination is set. Backups can't run until there is one.</p>
 </div>
 {{end}}
+{{end}}
+
 <form method="post" action="/settings/backups" id="destination" class="cv-panel" autocomplete="off">
-  {{template "dest-rows" .}}
+  <input type="hidden" name="add" value="1">
+  <h2 class="cv-label cv-addhead">{{if .None}}Set the backup destination{{else}}Add a destination{{end}}</h2>
+  {{template "dest-fields" (destFormView .Add "dest-add")}}
+  <div class="cv-btnrow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">{{if .None}}Save destination{{else}}Add destination{{end}}</button></div>
 </form>
 {{end}}
 {{end}}
-{{end}}
 
-{{/* dest-rows: the destination form's setting rows and its Save. Takes the destinationForm. */}}
-{{define "dest-rows"}}
-{{template "srow-open" (srow "Endpoint" "AWS S3, Cloudflare R2, Backblaze B2, or one you run." "dest-endpoint")}}
-{{template "dest-input" (destField . "endpoint" "Endpoint" .Endpoint "https://s3.eu-west-1.amazonaws.com")}}
+{{/* dest-fields: the inputs of a destination form, as setting rows, and its "Make it the default". Takes a
+     destFormViewT. The secret key input never has a value. */}}
+{{define "dest-fields"}}
+{{template "provider-fields" .Form}}
+{{if not .IsDefault}}
+{{template "srow-open" (srow "Default" "Backups with no destination of their own go to the default." .DefaultID)}}
+<label class="cv-check"><input type="checkbox" id="{{.DefaultID}}" name="default" value="1"{{if .Default}} checked{{end}}><span>Make it the default</span></label>
 {{template "srow-close"}}
-{{template "srow-open" (srow "Region" "us-east-1 when the provider doesn't care." "dest-region")}}
-{{template "dest-input" (destField . "region" "Region" .Region "us-east-1")}}
-{{template "srow-close"}}
-{{template "srow-open" (srow "Bucket" "" "dest-bucket")}}
-{{template "dest-input" (destField . "bucket" "Bucket" .Bucket "")}}
-{{template "srow-close"}}
-{{template "srow-open" (srow "Prefix (optional)" "" "dest-prefix")}}
-{{template "dest-input" (destField . "prefix" "Prefix (optional)" .Prefix "caravana")}}
-{{template "srow-close"}}
-{{template "srow-open" (srow "Access key ID" "" "dest-accessKeyId")}}
-{{template "dest-input" (destField . "accessKeyId" "Access key ID" .AccessKeyID "")}}
-{{template "srow-close"}}
-{{template "srow-open" (srow "Secret access key" "" "dest-secretAccessKey")}}
-<input class="cv-field cv-field-mono" type="password" id="dest-secretAccessKey" name="secretAccessKey" autocomplete="new-password"{{if eq .Field "secretAccessKey"}} autofocus aria-invalid="true" aria-describedby="dest-secretAccessKey-error"{{else if .HasSecret}} aria-describedby="dest-secretAccessKey-keep"{{end}}>
-{{if eq .Field "secretAccessKey"}}<span id="dest-secretAccessKey-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Err.Text}}</span></span>
-{{else if .HasSecret}}<span id="dest-secretAccessKey-keep" class="cv-data-muted">Leave it empty to keep the current one.</span>{{end}}
-<button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save destination</button>
-{{template "srow-close"}}
+{{end}}
 {{end}}
 
 {{/* ------------------------------------------------------------ Certificates
@@ -1134,8 +1158,3 @@
 {{with .Err}}<span id="{{$.ID}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
 {{end}}
 
-{{/* dest-input: a text input of the destination form, its label being the row's. Takes a destFieldView. */}}
-{{define "dest-input"}}
-<input class="cv-field cv-field-mono" type="text" id="dest-{{.Name}}" name="{{.Name}}" value="{{.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false"{{if .Err}} autofocus aria-invalid="true" aria-describedby="dest-{{.Name}}-error"{{end}}>
-{{with .Err}}<span id="dest-{{$.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
-{{end}}

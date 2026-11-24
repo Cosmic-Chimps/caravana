@@ -208,6 +208,23 @@
     </div>
   </section>
 
+  {{with .Backups}}
+  <section id="backups" aria-labelledby="backups-title" class="cv-narrow flex flex-col gap-2">
+    <h2 id="backups-title" class="cv-label">Backups go to</h2>
+    <form method="post" action="/projects/{{$.Project.ID}}/backups" class="cv-panel p-4 flex flex-col gap-3">
+      <label class="cv-fld" for="{{.Field.ID}}">
+        <span class="cv-label">Destination</span>
+        <select class="cv-field cv-select" id="{{.Field.ID}}" name="backupDestination"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
+          {{range .Options}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+        </select>
+        <span class="cv-data-muted cv-hint">Where this project's backups go when a service's policy names no destination. Nothing is deployed: the backup jobs use it from their next run. <a href="/settings/backup-storage">Backup storage</a> lists the destinations.</span>
+        {{template "field-error" .Field}}
+      </label>
+      <div><button type="submit" class="cv-btn cv-btn-secondary">Save</button></div>
+    </form>
+  </section>
+  {{end}}
+
   {{with .Previews}}
   <section id="previews" aria-labelledby="previews-title" class="cv-narrow flex flex-col gap-2">
     <h2 id="previews-title" class="cv-label">Previews</h2>

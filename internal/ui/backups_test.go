@@ -61,7 +61,7 @@ func TestSettingsBackupDestination(t *testing.T) {
 	e := backupsEnv(t, true)
 	_, body := e.get(t, "/settings/backup-storage?backups=saved")
 	got := text(body)
-	for _, want := range []string{"Backup storage", "One S3-compatible bucket for database and volume backups.", "Saved. Every database's next backup goes here.",
+	for _, want := range []string{"Backup storage", "S3-compatible buckets for backups.", "Saved. Every backup that goes here uses it from its next run.",
 		"Leave it empty to keep the current one.", "10.0.0.5:9000/backups", "S3-compatible · region us-east-1", "no backup yet", "used by 1 service"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Settings lacks %q:\n%s", want, got)
@@ -72,7 +72,7 @@ func TestSettingsBackupDestination(t *testing.T) {
 	}
 
 	resp, body := e.postForm(t, "/settings/backups", url.Values{"endpoint": {"ftp://x"}, "region": {"r"}, "bucket": {"backups"}, "accessKeyId": {"AK"}})
-	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `id="dest-endpoint-error"`) || !strings.Contains(body, `value="ftp://x"`) {
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, `id="dest-edit-0-endpoint-error"`) || !strings.Contains(body, `value="ftp://x"`) {
 		t.Errorf("a bad endpoint = %d, want the form again with the error under it", resp.StatusCode)
 	}
 }

@@ -151,7 +151,10 @@ func dnsZonesState(list []service.DNSZoneInfo) entryState {
 // many services have a backup policy.
 type backupFacts struct {
 	Destination bool
-	Last        *store.BackupRecord
+	// Dests are the destinations with their last test (feature 052). With none, Destination says whether
+	// the one destination of the days of a single one is set.
+	Dests []store.BackupDestination
+	Last  *store.BackupRecord
 	// Failing is the newest of the services' newest runs that failed (nil for none): it can be
 	// another service's than Last, when a later run of that one went well.
 	Failing  *store.BackupRecord
@@ -164,6 +167,9 @@ type backupFacts struct {
 // one destination), follows the row, and shows ◆ when no destination is set while
 // a service has a policy.
 func backupStorageState(f backupFacts) entryState {
+	if len(f.Dests) > 0 {
+		return destinationsState(f)
+	}
 	var st entryState
 	if !f.Destination {
 		if f.Policies > 0 {
@@ -184,6 +190,51 @@ func backupStorageState(f backupFacts) entryState {
 		st.Rows = []string{"healthy"}
 	}
 	return st
+}
+
+// destinationsState is backupStorageState for several destinations (feature 052): a row is ■ when its last
+// test failed or the last backup that went there failed, ◆ when a service's newest backup that went there failed
+// while the last went well, ● when its last test passed or the last backup that went there succeeded, and ○
+// otherwise. The nav shows the worst row's mark, else the number of destinations when there is more than one.
+func destinationsState(f backupFacts) entryState {
+	st := entryState{Rows: make([]string, len(f.Dests))}
+	for i, d := range f.Dests {
+		testFailed := d.Test != nil && !d.Test.OK
+		switch {
+		case testFailed:
+			st.Rows[i] = "failed"
+			if st.Mark != "failed" {
+				st.Mark, st.Why = "failed", "a destination failed its test"
+			}
+		case destBelongs(d, f.Last) && f.Last.Status != store.BackupSucceeded:
+			st.Rows[i] = "failed"
+			if st.Mark != "failed" {
+				st.Mark, st.Why = "failed", "the last backup failed"
+			}
+		case destBelongs(d, f.Failing):
+			st.Rows[i] = "warning"
+			if st.Mark == "" {
+				st.Mark, st.Why = "warning", "a service's last backup failed"
+			}
+		case d.Test != nil || destBelongs(d, f.Last):
+			st.Rows[i] = "healthy"
+		default:
+			st.Rows[i] = "idle"
+		}
+	}
+	if st.Mark == "" && len(f.Dests) > 1 {
+		st.Count = len(f.Dests)
+	}
+	return st
+}
+
+// destFactsOf is the destinations of the views, in their order.
+func destFactsOf(views []service.DestinationView) []store.BackupDestination {
+	out := make([]store.BackupDestination, len(views))
+	for i, v := range views {
+		out[i] = v.BackupDestination
+	}
+	return out
 }
 
 // channelFacts is what a channel's state is decided from: paused, and its last
@@ -316,6 +367,8 @@ type settingsFacts struct {
 	Tokens     []service.APITokenInfo
 	Certs      []service.CertificateView // problems first
 	Dest       *store.BackupDestination
+	// Dests are the backup destinations with their last test and what uses each (feature 052).
+	Dests      []service.DestinationView
 	LastBackup *store.BackupRecord
 	// FailingBackup is the newest of the services' newest runs that failed; see backupFacts.Failing.
 	FailingBackup *store.BackupRecord
@@ -346,7 +399,7 @@ func (f settingsFacts) states(now time.Time) map[string]entryState {
 	return map[string]entryState{
 		entryRegistries:      registriesState(f.Registries),
 		entrySecretProviders: secretProvidersState(f.SecretProviders),
-		entryBackupStorage:   backupStorageState(backupFacts{Destination: f.Dest != nil, Last: f.LastBackup, Failing: f.FailingBackup, Policies: policyServices(f.Apps)}),
+		entryBackupStorage:   backupStorageState(backupFacts{Destination: f.Dest != nil, Dests: destFactsOf(f.Dests), Last: f.LastBackup, Failing: f.FailingBackup, Policies: policyServices(f.Apps)}),
 		entryNotifications:   notificationsState(chs),
 		entryCertificates:    certificatesState(f.Certs),
 		entryDNS:             dnsZonesState(f.DNSZones),

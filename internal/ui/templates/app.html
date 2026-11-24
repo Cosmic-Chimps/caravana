@@ -510,6 +510,7 @@
         {{if .Volume}}<span class="cv-bnote">The service stops while it runs.</span>{{end}}
         {{if .SQLite}}<span class="cv-bnote">The service keeps running.</span>{{end}}
         <span class="cv-bmeta">{{.Keep}}</span>
+        {{with .PlacesLine}}<span class="cv-bmeta">{{.}}</span>{{end}}
       </span>
       <span class="cv-blast">
         {{if .LastNow}}<span class="cv-blast-now">running now</span>
@@ -571,6 +572,7 @@
             {{end}}
             </span>
           </span>
+          {{with .Where}}<p class="cv-brun-msg"><span class="cv-brun-detail">{{.}}</span></p>{{end}}
           {{if or .Cause .Message}}<p class="cv-brun-msg">{{with .Cause}}<span class="cv-brun-cause">{{.}}</span>{{end}}{{with .Message}}<span class="cv-brun-detail">{{.}}</span>{{end}}</p>{{end}}
         </div>
         {{end}}
@@ -603,6 +605,42 @@
           <button type="submit" class="cv-btn {{if eq $row.Mark "failed"}}cv-btn-primary{{else}}cv-btn-secondary{{end}} cv-btn-sm">{{icon "play" 14}}Back up now</button>
         </form>
         {{end}}
+        {{end}}
+        {{if .CanPlaces}}
+        <details class="cv-confirm"{{if .PlacesErr}} open{{end}}>
+          <summary class="cv-btn cv-btn-secondary cv-btn-sm">Where backups go…</summary>
+          <form method="post" action="/apps/{{$.ID}}/backups/places" class="cv-confirm-body">
+            <input type="hidden" name="revision" value="{{$.Revision}}">
+            <input type="hidden" name="service" value="{{.Name}}">
+            <p>Where this service's backups are kept, and the other destinations each backup is copied to once it succeeds. This deploys the app.</p>
+            {{if .ManyDests}}
+            <label class="cv-fld" for="pl-dest-{{.Name}}">
+              <span class="cv-label">Backups go to</span>
+              <select class="cv-field cv-select" id="pl-dest-{{.Name}}" name="destination"{{if eq .PlacesField "destination"}} aria-invalid="true" aria-describedby="pl-dest-{{.Name}}-error"{{end}}>
+                {{range .DestChoices}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{.Label}}</option>{{end}}
+              </select>
+              {{if eq .PlacesField "destination"}}<span id="pl-dest-{{.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .PlacesErr}}</span></span>{{end}}
+            </label>
+            {{end}}
+            {{if .CopyChoices}}
+            <fieldset class="cv-fieldset"{{if eq .PlacesField "copyTo"}} aria-invalid="true" aria-describedby="pl-copy-{{.Name}}-error"{{end}}>
+              <legend class="cv-label">Also copy to</legend>
+              {{range .CopyChoices}}
+              <label class="cv-check" for="pl-copy-{{$row.Name}}-{{.Value}}"><input type="checkbox" id="pl-copy-{{$row.Name}}-{{.Value}}" name="copyTo" value="{{.Value}}"{{if .On}} checked{{end}}><span class="cv-inline-mono">{{.Label}}</span></label>
+              {{end}}
+              {{if eq .PlacesField "copyTo"}}<span id="pl-copy-{{.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .PlacesErr}}</span></span>{{end}}
+            </fieldset>
+            {{end}}
+            <label class="cv-fld" for="pl-keep-{{.Name}}">
+              <span class="cv-label">Keep in each copy</span>
+              <input class="cv-field cv-field-mono" id="pl-keep-{{.Name}}" type="text" inputmode="numeric" name="copyKeep" value="{{.CopyKeepText}}" maxlength="3" autocomplete="off"{{if eq .PlacesField "copyKeep"}} aria-invalid="true" aria-describedby="pl-keep-{{.Name}}-error"{{end}}>
+              <span class="cv-data-muted cv-hint">1 to 100 backups. Empty keeps as many as {{.Name}} does.</span>
+              {{if eq .PlacesField "copyKeep"}}<span id="pl-keep-{{.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .PlacesErr}}</span></span>{{end}}
+            </label>
+            {{if and .PlacesErr (not .PlacesField)}}<span role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .PlacesErr}}</span></span>{{end}}
+            <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy</button></div>
+          </form>
+        </details>
         {{end}}
         {{if .CanSchedule}}
         <details class="cv-confirm">
@@ -677,6 +715,15 @@
   {{if .Run.Volume}}<p>The service stops, its volumes are replaced by the files of the backup from {{.When}}, and it starts again. Files added since the backup are deleted.</p>
   {{else if .Run.SQLite}}<p>The backup from {{.When}} is downloaded and checked while <span class="cv-inline-mono">{{.Run.Service}}</span> runs. Then the service stops for a few seconds while <span class="cv-inline-mono">{{.Run.File}}</span> is replaced, and starts again. Changes made since the backup are lost.</p>
   {{else}}<p>This replaces everything <span class="cv-inline-mono">{{.Run.Service}}</span> holds now with the backup from {{.When}}. Clients connected meanwhile may see errors. It can't be undone, except by restoring another backup.</p>{{end}}
+  {{if gt (len .Places) 1}}
+  <label class="cv-fld" for="from-{{.Prefix}}{{.Run.ID}}">
+    <span class="cv-label">Restore from</span>
+    <select class="cv-field cv-select" id="from-{{.Prefix}}{{.Run.ID}}" name="from">
+      <option value="">Automatic: the first that has it</option>
+      {{range .Places}}<option value="{{.}}">{{.}}</option>{{end}}
+    </select>
+  </label>
+  {{end}}
   <label class="cv-fld" for="confirm-{{.Prefix}}{{.Run.ID}}">
     <span class="cv-label">Type <span class="cv-inline-mono">{{.Run.Service}}</span> to confirm</span>
     <input class="cv-field cv-field-mono" id="confirm-{{.Prefix}}{{.Run.ID}}" type="text" name="confirm" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Failed}} autofocus aria-invalid="true"{{end}}>

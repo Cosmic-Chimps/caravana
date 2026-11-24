@@ -14,7 +14,7 @@ import (
 // no operation and no reason is a mistake, not a decision).
 // settingsReads are what every Settings page reads for its nav.
 var settingsReads = []string{"listTokens", "listRegistries", "listNotificationChannels", "listNotificationDeliveries",
-	"getBackupDestination", "listApps", "listBackups", "listCertificates", "listSecretProviders", "listDNSZones"}
+	"getBackupDestination", "listBackupDestinations", "listApps", "listBackups", "listCertificates", "listSecretProviders", "listDNSZones"}
 
 type parity struct {
 	ops []string
@@ -184,11 +184,19 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/backups/{backupId}/pin":   {ops: []string{"pinBackup"}},
 	"POST /apps/{id}/backups/{backupId}/unpin": {ops: []string{"unpinBackup"}},
 	"POST /apps/{id}/backups/restore-schedule": {ops: []string{"getApp", "deployApp"}},
+	// Where backups go and are copied (feature 052): a deploy with the service's backup.destination, copyTo and copyKeep.
+	"POST /apps/{id}/backups/places": {ops: []string{"getApp", "deployApp"}},
 	// Backups (feature 010).
-	"GET /apps/{id}/backups":                     {ops: []string{"getApp", "listBackups", "listVolumes", "getBackupDestination"}},
+	"GET /apps/{id}/backups":                     {ops: []string{"getApp", "listBackups", "listVolumes", "getBackupDestination", "listBackupDestinations", "getProject"}},
 	"POST /apps/{id}/backups":                    {ops: []string{"createBackup"}},
 	"POST /apps/{id}/backups/{backupId}/restore": {ops: []string{"restoreBackup"}},
-	"POST /settings/backups":                     {ops: []string{"setBackupDestination"}},
+	"POST /settings/backups":                     {ops: []string{"setBackupDestination", "putBackupDestination"}},
+	// Backup destinations (feature 052): Test, Make default (a PUT with default true) and Remove, one destination each.
+	"POST /settings/backups/test":    {ops: []string{"testBackupDestination"}},
+	"POST /settings/backups/default": {ops: []string{"putBackupDestination"}},
+	"POST /settings/backups/remove":  {ops: []string{"deleteBackupDestination"}},
+	// The project's default backup destination (feature 052).
+	"POST /projects/{project}/backups": {ops: []string{"updateProject"}},
 	// Registry credentials (feature 017): the add and edit forms are one PUT, an empty password leaves it out.
 	"POST /settings/registries":              {ops: []string{"putRegistry"}},
 	"POST /settings/registries/test":         {ops: []string{"testRegistry"}},
@@ -223,7 +231,7 @@ var consoleParity = map[string]parity{
 	// environment's newest deployments (listRecentDeployments; the API has no environment filter yet, the
 	// page reads the store by place). The settings page is the project and its apps, for the delete reasons.
 	"GET /projects/{project}":                                    {ops: []string{"getProject", "listEnvironmentApps", "listAttention", "listRecentDeployments"}},
-	"GET /projects/{project}/settings":                           {ops: []string{"getProject", "listEnvironmentApps", "getPreviews"}},
+	"GET /projects/{project}/settings":                           {ops: []string{"getProject", "listEnvironmentApps", "getPreviews", "listBackupDestinations"}},
 	"GET /parts/projects/{project}/apps":                         {ops: []string{"getProject", "listEnvironmentApps"}},
 	"GET /parts/projects/{project}/rail":                         {ops: []string{"getProject", "listEnvironmentApps", "listAttention", "listRecentDeployments"}},
 	"POST /projects/{project}":                                   {ops: []string{"updateProject"}},

@@ -246,3 +246,83 @@ func TestSetRestoreScheduleKeepsFile(t *testing.T) {
 		t.Errorf("overlay = %+v, want the schedule set and the rest kept", web)
 	}
 }
+
+// SetBackupPlaces (feature 052) changes only where a service's backups go and are copied, on the
+// revision the caller read, and refuses a destination that doesn't exist at its field.
+func TestSetBackupPlaces(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	setDestination(t, e)
+	saveDestination(t, e, "offsite", destinationSentinel)
+	deployHealthy(t, e, kuma(false))
+	rec, _ := e.svc.GetApp(ctx, "whoami")
+
+	got, err := e.svc.SetBackupPlaces(ctx, "whoami", "web", "", []string{"offsite"}, 14, Condition{IfRevision: rec.Revision}, app.TriggerConsole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Deployment.Trigger != app.TriggerConsole {
+		t.Errorf("trigger = %s, want console", got.Deployment.Trigger)
+	}
+	waitFinal(t, e.store, got.Deployment.ID)
+	stored, _ := e.svc.GetApp(ctx, "whoami")
+	b := stored.App.Services[0].Backup
+	if b == nil || b.Engine != app.BackupVolume || b.Destination != "" || len(b.CopyTo) != 1 || b.CopyTo[0] != "offsite" || b.CopyKeep != 14 {
+		t.Errorf("backup = %+v, want the policy with offsite as a copy kept 14", b)
+	}
+
+	t.Run("removing the copies", func(t *testing.T) {
+		got, err := e.svc.SetBackupPlaces(ctx, "whoami", "web", "", nil, 0, Condition{}, app.TriggerConsole)
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitFinal(t, e.store, got.Deployment.ID)
+		stored, _ := e.svc.GetApp(ctx, "whoami")
+		if b := stored.App.Services[0].Backup; b == nil || len(b.CopyTo) != 0 || b.CopyKeep != 0 || b.Engine != app.BackupVolume {
+			t.Errorf("backup = %+v, want no copies and the rest kept", b)
+		}
+	})
+
+	t.Run("refusals", func(t *testing.T) {
+		n := len(mustDeployments(t, e))
+		var fe *app.FieldError
+		if _, err := e.svc.SetBackupPlaces(ctx, "whoami", "web", "nowhere", nil, 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "services[0].backup.destination" {
+			t.Errorf("an unknown destination: %v, want a field error on its field", err)
+		}
+		if _, err := e.svc.SetBackupPlaces(ctx, "whoami", "web", "", []string{"nowhere"}, 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "services[0].backup.copyTo[0]" {
+			t.Errorf("an unknown copy: %v", err)
+		}
+		if _, err := e.svc.SetBackupPlaces(ctx, "whoami", "nope", "", nil, 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "service" {
+			t.Errorf("an unknown service: %v", err)
+		}
+		if _, err := e.svc.SetBackupPlaces(ctx, "ghost", "web", "", nil, 0, Condition{}, app.TriggerConsole); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("an unknown app: %v", err)
+		}
+		if _, err := e.svc.SetBackupPlaces(ctx, "whoami", "web", "", nil, 0, Condition{IfRevision: "0000000000000000"}, app.TriggerConsole); !errors.Is(err, ErrAppChanged) {
+			t.Errorf("a stale revision: %v", err)
+		}
+		if len(mustDeployments(t, e)) != n {
+			t.Error("a refused change deployed")
+		}
+	})
+
+	t.Run("a kept file follows", func(t *testing.T) {
+		e := newEnv(t)
+		setDestination(t, e)
+		saveDestination(t, e, "offsite", destinationSentinel)
+		const file = "# kuma\nservices:\n  web:\n    image: traefik/whoami:latest\n    volumes: [\"data:/data\"]\nvolumes:\n  data: {}\n"
+		composeHealthy(t, e, compose.Request{Compose: file, Services: map[string]compose.Overlay{
+			"web": {Backup: &app.Backup{Engine: app.BackupVolume, Keep: 3}},
+		}})
+		got, err := e.svc.SetBackupPlaces(ctx, "whoami", "web", "", []string{"offsite"}, 0, Condition{}, app.TriggerConsole)
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitFinal(t, e.store, got.Deployment.ID)
+		stored, _ := e.svc.GetApp(ctx, "whoami")
+		web := stored.Compose.Services["web"]
+		if stored.Compose.Compose != file || web.Backup == nil || len(web.Backup.CopyTo) != 1 || web.Backup.Keep != 3 {
+			t.Errorf("kept file = %+v, want the same text and the overlay's backup with the copy", stored.Compose)
+		}
+	})
+}
