@@ -333,6 +333,13 @@ var consoleParity = map[string]parity{
 	"GET /parts/ops/servers/{name}":                    {ops: []string{"getServer", "getHost", "listCopies", "listAttention", "listActivity", "listApps", "listProjects", "getServerSpace"}},
 	"GET /parts/ops/apps":                              {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
 	"GET /parts/ops/activity":                          {ops: []string{"listActivity"}},
+	// The console's address (feature 051): the page and its panel read getConsoleAddress (and getUpdates for the sidebar's
+	// mark) and the change (getConsoleAddressChange). Check starts a change, Switch and Cancel act on it.
+	"GET /ops/console-address":                      {ops: []string{"getConsoleAddress", "getUpdates"}},
+	"GET /parts/ops/console-address":                {ops: []string{"getConsoleAddressChange"}},
+	"POST /ops/console-address/changes":             {ops: []string{"startConsoleAddressChange"}},
+	"POST /ops/console-address/changes/{id}/switch": {ops: []string{"switchConsoleAddress"}},
+	"POST /ops/console-address/changes/{id}/cancel": {ops: []string{"cancelConsoleAddressChange"}},
 	// The Operator Updates page (feature 027 page 3): what is waiting (getUpdates) and the needs-you items about
 	// the OS (listAttention). The part is the same regions drawn again on the updates notice. The two forms start a
 	// check in the background (checkUpdates, what=release or packages) and save the one setting caravana owns

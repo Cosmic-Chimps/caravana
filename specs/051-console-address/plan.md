@@ -175,3 +175,26 @@ redirects its pages and serves its `/v1/` and `/.well-known/`.
   the wait is 60 looks one second apart through `Agent.Sleep`, so tests don't wait.
 - **API.** `syncNode`'s answer carries `consoleURL` and `consoleAddress`; `NodeReport` and `NodeSyncAnswer` in
   `api/openapi.yaml` list the new members; the version stays 0.56.0 (no test needed the bump).
+
+## Deviations (phase C)
+
+- **API 0.57.0 now.** Phase B left the version at 0.56.0; the five operations, the two schemas
+  (`ConsoleAddress`, `ConsoleAddressChange`, with `StartConsoleAddressChange` for the body) and the new tag
+  `console-address` bump it. Every answer, an error too, is `Cache-Control: no-store` (a change moves by the minute);
+  `redirectDays` in the body is a pointer in the handler so that an explicit `0` is "don't keep it" and a missing one is 30.
+- **The scope walk needed no edit.** The deploy-token default deny and `TestScopedTokenWalksEveryRoute` iterate the route
+  table, so the five routes are denied (and tested as denied) without being listed anywhere; `allowedForDeployTokens` is
+  untouched.
+- **`no_agent` names no field.** `consoleAddressError` runs before `spaceError` in `mapError`, so the switch's
+  `ConsoleNoAgentError` is 409 `no_agent` with no field (045's cleanup route names `name`, which means nothing here).
+- **The panel polls `checking` and `switching` only, and answers 286 for every other state, `ready` included.** A `ready`
+  panel has to be swapped once to show Switch and Cancel, and nothing about it changes by itself after that. No live stream
+  is opened: Caravana restarts at another address at the switch, which would end a stream anyway, and the contract asks for
+  a poll. The page has a `<noscript>` refresh (5 s) while a change is open.
+- **Where a refusal of the start lands.** `domain` errors (not a host name, the current domain, an app's domain,
+  `domain_not_here`, a DNS provider's refusal) are drawn at the Domain field; a `redirectDays` error (a select the page
+  can't get wrong; a crafted post can) is a notice at the form's top; `console_address_change_open` and
+  `console_address_unsupported` are the page's notice. Statuses follow the API's: 400, 409, 422, 502.
+- **Words.** A switch or cancel of an unknown change says "No such change of the console's address: it may have been
+  removed." (the service's error holds the ID in quotes). A `lost` change says "No answer" in its pill.
+- **No new CSS.** The page uses the Updates and Security page's classes, so `tools/ui-css.sh check` passes without a build.

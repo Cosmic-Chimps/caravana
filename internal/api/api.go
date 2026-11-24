@@ -82,6 +82,11 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/updates/check", s.checkUpdates, false, false},
 		{http.MethodPost, "/v1/updates/runs", s.requestUpdate, false, false},
 		{http.MethodGet, "/v1/updates/runs", s.listUpdateRuns, false, false},
+		{http.MethodGet, "/v1/console-address", s.getConsoleAddress, false, false},
+		{http.MethodPost, "/v1/console-address/changes", s.startConsoleAddressChange, false, false},
+		{http.MethodGet, "/v1/console-address/changes/{id}", s.getConsoleAddressChange, false, false},
+		{http.MethodDelete, "/v1/console-address/changes/{id}", s.cancelConsoleAddressChange, false, false},
+		{http.MethodPost, "/v1/console-address/changes/{id}/switch", s.switchConsoleAddress, false, false},
 		{http.MethodGet, "/v1/templates", s.listTemplates, false, false},
 		{http.MethodPost, "/v1/templates/check", s.checkTemplates, false, false},
 		{http.MethodPut, "/v1/templates/settings", s.putTemplateSettings, false, false},
@@ -418,6 +423,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := serversError(err); e != nil {
+		return e
+	}
+	if e := consoleAddressError(err); e != nil {
 		return e
 	}
 	if e := spaceError(err); e != nil {

@@ -47,11 +47,11 @@
 
 ## Phase C — API and console
 
-- [ ] T014 `internal/api`: the five operations, error mapping, `api/openapi.yaml` 0.57.0 (schemas and codes), the
+- [x] T014 `internal/api`: the five operations, error mapping, `api/openapi.yaml` 0.57.0 (schemas and codes), the
   deploy-token scope walk lists them as denied, parity test.
-- [ ] T015 `internal/ui`: Operator › Console address per contracts/page.md; nav entry; tests (page, refusal at field,
+- [x] T015 `internal/ui`: Operator › Console address per contracts/page.md; nav entry; tests (page, refusal at field,
   panel polling 286, switch/cancel posts, no-JS forms); `tools/ui-css.sh build` if classes are new.
-- [ ] T016 `docs/console-address.md` (operator doc: what changes, the window, passkeys, issuer, cluster, lab facts),
+- [x] T016 `docs/console-address.md` (operator doc: what changes, the window, passkeys, issuer, cluster, lab facts),
   `changelog.d/console-address.md` (Added, Upgrade: rerun the installer once).
 
 ## Phase D — lab

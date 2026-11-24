@@ -179,6 +179,11 @@ func (s *server) routeTable() []route {
 		{"POST", "/ops/updates/caravana", s.protected(s.requireSession(s.requestOpsUpdate))},
 		{"POST", "/ops/updates/check", s.protected(s.requireSession(s.checkOpsUpdates))},
 		{"POST", "/ops/updates/settings", s.protected(s.requireSession(s.saveOpsUpdateSettings))},
+		{"GET", "/ops/console-address", s.requireSession(s.showConsoleAddress)},
+		{"GET", "/parts/ops/console-address", s.requirePart(s.partConsoleAddress)},
+		{"POST", "/ops/console-address/changes", s.protected(s.requireSession(s.startConsoleChange))},
+		{"POST", "/ops/console-address/changes/{id}/switch", s.protected(s.requireSession(s.switchConsoleChange))},
+		{"POST", "/ops/console-address/changes/{id}/cancel", s.protected(s.requireSession(s.cancelConsoleChange))},
 		{"GET", "/ops/security", s.requireSession(s.showOpsSecurity)},
 		{"GET", "/parts/ops/security", s.requirePart(s.partOpsSecurity)},
 		{"POST", "/ops/security/install", s.protected(s.requireSession(s.installScanner))},
@@ -408,7 +413,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "previews", "promote", "stop", "terminal", "schedules", "domains", "logs", "requests", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "previews", "promote", "stop", "terminal", "schedules", "domains", "logs", "requests", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "opsconsoleaddress", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which
