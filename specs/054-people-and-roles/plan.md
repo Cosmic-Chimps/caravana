@@ -357,3 +357,33 @@ operations now act on the caller's own. MCP: a read tool `get_me`; nothing else 
 | --- | --- | --- |
 | Route tables plus checks inside a few service methods | The default deny of 020 makes every route a decision; state-dependent checks (images-only, promote's source) need the stored app | Checks only inside every service method: hundreds of methods, and a forgotten one is an open door; route tables only: can't see a deploy body's diff |
 | `POST /invite` in `consoleOnly` | it starts a browser session, like `POST /login` | none: the API's `acceptInvite` does the rest |
+
+## Deviations (review fixes, 2026-11-24)
+
+- **A preview's secret references (changes D12).** `ConfigureLevel` makes deploy enough to define apps in `pr-<n>`, and a
+  secret provider allowed for a project is open to every app there, so a deploy-level person could define a preview app
+  with `from` or template refs to any path and have their own image send the values away. `allowPreviewReferences`
+  (`service/allow.go`) now holds a principal below maintain, and any deploy token (whoever made it), to the provider and path
+  pairs the app of the same name has in a non-preview environment of the project (`baseReferences`; 049 records no base
+  environment for a preview, CI picks it, so every non-preview environment counts). A reference that isn't there is a
+  `*NotAllowedError` with `Reason` and `Field` `services[i].secrets[j].from` or `….refs.<name>`, 403 `not_allowed`. It is asked
+  by `allowSave` (every body, Compose and secret-edit deploy and so template installs), `CreateApp`, `CreateAppOnly`, `CopyApp`
+  and `Promote` (a service new to a preview). Strict on purpose: a preview app that holds a reference its base has dropped
+  can't be deployed with a body below maintain. Typed values aren't references and stay free; the `previews` lab step uses
+  typed values only, so it is unchanged.
+- **`docs/people.md` says what roles don't protect**: deploy rights are in effect access to the app's secrets, view includes
+  logs, a provider's allowed places are a security boundary, and the preview rule.
+- **The SQLite DSN escapes the data directory's path** (`dsnPath`): a `#` or `?` in it opened another file (CodeAlta task n5sb),
+  and the `foreign_keys(1)` pragma this feature adds to the same DSN made that worse.
+- **Foreign keys on old data.** The schema at 0042 declares 17 foreign keys in 15 tables: `backups`, `deployments`,
+  `restores`, `schedules`, `volume_sizes` and `webhook_tokens` to `apps(id)` (no action); `backup_copies` to `backups(app_id, id)`,
+  `builds` to `deployments`, `environments` to `projects`, `image_cleanups` and `server_moves` to `servers`, `image_findings` to
+  `image_scans`, `metrics_samples` to `metrics_series` and `metrics_layouts`, `notification_deliveries` to
+  `notification_channels`, `schedule_runs` to `schedules` (cascade, except the layout key). SQLite never enforced them before, so
+  a database may hold orphans. `TestOrphansFromBeforeForeignKeysAreKept` seeds one orphan in each table at 0042 with
+  enforcement off and opens it as Caravana does: 0043 applies, every orphan is **kept** (16 violations in
+  `PRAGMA foreign_key_check`), and updates of other columns and deletes on them work, because SQLite checks a child row only when
+  its key columns change and `DROP TABLE` in 0043 touches no parent. So 0043 repairs and deletes nothing. A database that
+  gets there through older migrations is safe too: the only older rebuilds of a referenced table (0037's channels) drop the
+  children first. Someone who wants to see their orphans runs `sqlite3 <data dir>/caravana.db 'PRAGMA foreign_key_check'`;
+  `caravana admin check-store` was not added.

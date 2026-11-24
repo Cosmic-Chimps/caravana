@@ -2216,6 +2216,9 @@ doc: `docs/people.md`. Migration 0043, API 0.60.0 (0.59.0 is 053, secret templat
   environment of the project (`allowPreviewReferences` in `service/allow.go`, asked by `allowSave`, `CreateApp`, `CreateAppOnly`, `CopyApp` and
   `Promote`); anything else is 403 `not_allowed` naming the `…from` or `…refs.<name>` field, because a provider allowed for a project is open to
   every app there. `docs/people.md` says plainly that deploy rights are in effect access to an app's secrets and view includes logs.
+  The store's DSN escapes the database path (a `#` or `?` in it opened another file). Foreign keys are enforced now, which older migrations
+  never did: orphan rows from before (17 declared keys in 15 tables) are kept, not repaired, and every write still works on them
+  (`TestOrphansFromBeforeForeignKeysAreKept`; see the plan's Deviations, review fixes); `PRAGMA foreign_key_check` lists them.
 - Not in 053: single sign-on, custom roles, teams, an audit log, per-project Nomad namespaces, sending the invite by mail, a roles page per
   app, and an invite for someone who already has an account.
 
