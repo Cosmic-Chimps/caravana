@@ -6,7 +6,7 @@ Tests are required (constitution VIII): each layer's tests are in the task that 
 
 ## Phase 1: Foundation (blocks everything)
 
-- [ ] **T001** Migration `0027_byo_certificates.sql` (data-model.md) · internal/store/migrations
+- [ ] **T001** Migration `0044_byo_certificates.sql` (data-model.md) · internal/store/migrations
 - [ ] **T002** [P] `internal/certs`: `Parse` (chain + key → names, subject, issuer, dates, fingerprint, key type, trusted, normalized PEMs; typed field errors), `Covers`/`CoveredBy`, `CheckDirectory`; table tests with generated chains · internal/certs
 - [ ] **T003** [P] Store: issuer columns (`ACMEIssuer`, `SetACMEIssuer`, `ClearACMEIssuer`), `cert_fingerprint` on domain checks, `uploaded_certificates` CRUD; tests · internal/store
 - [ ] **T004** [P] Edge: `Certificate.Fingerprint` set whenever a leaf was presented; tests · internal/edge
@@ -21,7 +21,7 @@ Tests are required (constitution VIII): each layer's tests are in the task that 
 
 - [ ] **T008** [US2] Service: `UploadCertificate` (replace on equal names, limit 30), list, get, delete, `domains`/`keptEarlier`, an uploaded leaf judged by its dates in `probe`, a re-check of covered hosts after a change; tests · internal/service
 - [ ] **T009** [US2] Needs-you kind `certificate_expiring` (attention, `ProblemParts`, notify event `certificate`/`names`), no `domain_cert_expiring` for a domain presenting an uploaded certificate; tests · internal/service, internal/notify
-- [ ] **T010** [US2] API: the four upload operations; openapi 0.37.0; scope walk; tests · internal/api, api/openapi.yaml
+- [ ] **T010** [US2] API: the four upload operations; openapi 0.61.0; `admin()` rules in `access.go` and the console's `consoleAccess`, scope and role walks; tests · internal/api, api/openapi.yaml
 
 ## Phase 4: User Story 3 — who issued it (P2)
 

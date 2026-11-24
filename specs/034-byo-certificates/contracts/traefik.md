@@ -62,7 +62,8 @@ first, as they already do.
   3. `secrets/dynamic/certificates.yml`, `change_mode = "noop"`: `tls.certificates` with one entry per
      variable under `caravana/certificates` (`certFile` and `keyFile` as `toJSON` content), or `{}`.
   4. `secrets/dynamic/team.yml` (023, moved from `local/dynamic`) and, on a host,
-     `secrets/dynamic/caravana.yml` (the console's route, moved).
+     `secrets/dynamic/caravana.yml` (the console's route of 051, which reads `nomad/jobs/traefik/traefik`, moved).
+  5. The access log of 047, the metrics of 025 and the stderr log file stay as they are, now in the file.
 - The lab's job keeps its ports and dashboard; the host's job keeps its volume, constraint, redirect and
   loopback dashboard.
 

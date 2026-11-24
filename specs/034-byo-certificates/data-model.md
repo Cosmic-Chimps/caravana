@@ -1,6 +1,6 @@
 # Data model (034)
 
-## SQLite, migration `0027_byo_certificates.sql` (0026 is feature 033's)
+## SQLite, migration `0044_byo_certificates.sql`
 
 `certificate_settings` gains (all about the custom issuer; empty = the installer's):
 

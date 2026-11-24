@@ -1,6 +1,6 @@
-# Contract: API (034) — `api/openapi.yaml` 0.37.0
+# Contract: API (034) — `api/openapi.yaml` 0.61.0
 
-(0.36.0 is feature 033's, on another branch.) Every new operation needs a session or a full API token;
+Every new operation is `admin()` in `internal/api/access.go` (054), like the certificate operations of 023;
 deploy tokens are refused by the default deny. No answer ever holds a private key or the EAB HMAC key.
 
 ## Changed
