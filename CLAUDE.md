@@ -2021,6 +2021,54 @@ repository on the host. `plan.md` D1–D12 are the decisions and its Deviations 
 - Not in 050: Compose `build:`, more than one built service, polling a repository, build arguments and secrets, multi-architecture
   images, a registry run by Caravana, Git providers as installation-wide accounts, a pool of build servers.
 
+Feature 051 (`specs/051-console-address`, CodeAlta task `xbf5`, worktree branch `alta/loyal-wombat-v69b`): Operator › Console
+address changes the console's domain without SSH, and the console still never gets root. `plan.md` D1–D12 are the decisions and
+its Deviations sections (phases A–C, R1) the changes; operator doc: `docs/console-address.md`. Migration 0041, API 0.57.0, no new
+module, no policy change, constitution unchanged (the console route stays a static route of Traefik's file provider).
+- The route: `traefik.nomad.hcl`'s `caravana.yml` template reads the item `hosts` of the Nomad Variable `nomad/jobs/traefik/traefik`
+  (the job's own group path: no policy line), one router per host (`caravana`, `caravana-1`…, so each host has its own certificate),
+  `change_mode = "noop"`, and falls back to `var.console_domain`. Caravana writes it (`deploy.SetConsoleHosts`) only once a change
+  exists: the current host, the change being checked or switched (and while switching the old one), then each old domain whose
+  window hasn't ended. A change never restarts Traefik. Lab, observed (R1): `nomadVar` yields struct items, so `eq $item ""` fails
+  to render and kills the task; the template reads `{{ with index . "hosts" }}{{ $hosts = printf "%s" . }}{{ end }}`, and the Go
+  test's fake returns struct items. A Traefik job from before 051 is detected (`deploy.ConsoleRouteSupported`) and refused with
+  `console_address_unsupported`: rerun the installer once (Traefik restarts once).
+- Checks (`service/consoleaddress.go`, `consolechecks.go`): before anything is recorded, the host name (`mesh.ValidConsoleDomain`,
+  the installer's rule in lower case, no IP), not an app's (`domain_taken`), DNS via `edge.Check` against `hostAddresses`
+  (422 `domain_not_here`; with a 048 zone and no record, `createDNSRecord` makes A/AAAA records commented `caravana:console`, no
+  `dns_records` row). Then the domain joins the route and a goroutine waits up to 5 minutes for the route (`GET /v1/health`
+  through the edge with the domain as SNI and Host) and a valid certificate (Traefik's own with `CARAVANA_ACME=none`). One change
+  open at a time (`checking`, `ready`, `switching`; then `applied`, `failed`, `refused`, `lost`, `check_failed`, `cancelled`).
+- The switch (D1): the server agent that `runsConsole` (its node env URL is `http://127.0.0.1:7070` and `/etc/caravana/caravana.env`
+  exists) gets `consoleAddress {id, domain}` in its sync answer while a change is switching, checks both as text, saves `running`
+  in `state.json`, rewrites only the `CARAVANA_PUBLIC_URL=` line of `caravana.env` and the `CARAVANA_DOMAIN=` line of
+  `/var/lib/caravana-host/install.env` (temp file and rename, mode and owner kept), restarts `caravana` and waits 60 s for health;
+  unhealthy puts both files back and reports `failed` (`internal/nodeagent/consoleaddress.go`). No request file exists for root to
+  read. Caravana settles `applied` at start when its public URL's host is the domain, `lost` after 5 minutes. Joined agents get
+  `consoleURL` in every answer and switch their node env URL once `/v1/health` answers there. The issuer follows the public URL
+  (038's `issuerFor`, one Nomad restart per server).
+- Old domains: for `redirectDays` (0, 7, 30 by default, 90) the old domain stays routed and keeps its certificate; `cmd/caravana`'s
+  `root` serves `/v1/` and `/.well-known/` there (CI tokens and Git hosts' webhooks don't follow a redirect to another host) and
+  answers anything else 308 to the same path on the new address (`Service.ConsoleRedirect`); the pass (every minute) drops ended
+  windows from the route. An app domain equal to a pending or old console domain is refused like the console's own.
+- Passkeys: 033's rule already keeps password sign-in on at a domain with no passkey (`consoleaddress_signin_test.go`).
+- API 0.57.0: `getConsoleAddress`, `startConsoleAddressChange` (202), `getConsoleAddressChange`, `cancelConsoleAddressChange`,
+  `switchConsoleAddress` (202), codes `domain_not_here`, `console_address_change_open`, `console_address_unsupported`,
+  `console_address_check_failed`, `console_address_change_not_found`, `console_address_not_cancellable`,
+  `console_address_not_ready` (and 045's `no_agent`); the node sync gained `runsConsole`, `consoleAddress` and `consoleURL`. Deploy
+  tokens are denied by the default deny. Console (`internal/ui/consoleaddress.go`, `templates/opsconsoleaddress.html`):
+  `/ops/console-address` after Updates (now, what depends on it, the form, the change panel polled from
+  `/parts/ops/console-address` every 3 s while checking or switching, 286 once not), posts answer 303. No designer pass.
+- Lab: `TestConsoleLab` step `console-address` (the lab's Traefik has no console route: the sentence and 409
+  `console_address_unsupported`). `install-test.sh`'s `check_console_address_host` (`ONLY=console-address` runs just it on a fresh
+  VM, about 4 minutes): `/etc/hosts` names `caravana.test` and `console2.caravana.test`, `nowhere.caravana.test` refused with
+  nothing changed, a crafted file runs nothing, the change ready with Traefik's allocation unchanged, the switch (env files, 308 on
+  the old domain's pages, 200 on its `/v1/health`, the issuer in discovery and `nomad.hcl`, whoami answering, Traefik never
+  restarted), password sign-in at the new domain, and a rerun of the installer keeping it. It passed on 2026-11-24 on Ubuntu 24.04.
+  A valid Let's Encrypt certificate on a real domain is the maintainer's check on a real host (the VM uses `--acme none`).
+- Not in 051: moving the console to another server, a console on several servers, removing a DNS record made for an old domain,
+  a "stop redirecting now" button.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
