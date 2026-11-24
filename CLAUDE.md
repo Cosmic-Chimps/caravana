@@ -2222,7 +2222,7 @@ Phase 3 (Cluster) has started with 031 Add a server, built from a CodeAlta task 
 1.0; its gate is three servers that survive the loss of one (`deploy/dev/cluster-test.sh` is its first form).
 
 Out of scope for now: the rest of Phase 3 unless asked (moving work off a server, a proxy per server,
-cluster certificates and updates), teams and roles, secrets from Bella Baxter (backlog),
+cluster certificates and updates), single sign-on and per-project Nomad namespaces (053 built people and roles), secrets from Bella Baxter (backlog),
 GPUs and binaries, Amazon ECR (backlog).
 
 ## Architecture
@@ -2248,7 +2248,7 @@ curl -s localhost:7070/v1/health
 ```
 
 ```bash
-go run ./cmd/caravana admin init --email you@example.com      # the one admin (asks for a password); works while the server runs
+go run ./cmd/caravana admin init --email you@example.com      # the first owner (asks for a password); works while the server runs
 go run ./cmd/caravana admin status | reset-password
 TOKEN="$(go run ./cmd/caravana admin create-token --name local)"   # an API token, printed once
 curl -s -H "Authorization: Bearer $TOKEN" localhost:7070/v1/tokens
