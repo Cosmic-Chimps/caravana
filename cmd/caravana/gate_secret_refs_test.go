@@ -35,6 +35,12 @@ import (
 //     files (printenv's own answers are left out: they show the value on purpose);
 //  8. the app, the provider and the project are removed.
 //
+// Feature 053 adds a secret template to the same app: GATE_CONN is
+// "Host=db;Password=${pw};Note=$$5" with pw read from Bella, and printenv in the
+// copy shows it rendered (the literal text, the value and the "$"); a Refresh after
+// the value changes in Bella shows it re-rendered, and a template whose ref points
+// at a path Bella doesn't have is 422 secret_not_found on that ref's path.
+//
 // It needs the fake Bella on Caravana's loopback, so it runs only in the lab.
 func (g *gate) secretRefsStep(t *testing.T) {
 	bella := g.target.Bella
@@ -99,6 +105,8 @@ func (g *gate) secretRefsStep(t *testing.T) {
 	web["secrets"] = []map[string]any{
 		{"name": "GATE_REF", "from": map[string]string{"provider": provider, "path": "GATE_REF"}},
 		{"name": "GATE_TYPED", "value": "typed-" + g.run},
+		{"name": "GATE_CONN", "template": "Host=db;Password=${pw};Note=$$5",
+			"refs": map[string]any{"pw": map[string]string{"provider": provider, "path": "GATE_REF"}}},
 	}
 	deployBody := labApp(web)
 	raw = g.sendWant(t, http.StatusAccepted, http.MethodPost, "/v1/apps/"+id+"/deployments", deployBody)
@@ -139,6 +147,9 @@ func (g *gate) secretRefsStep(t *testing.T) {
 	if got, ok := envIs("GATE_TYPED", "typed-"+g.run); !ok {
 		t.Errorf("GATE_TYPED in the copy = %q, want the typed value", got)
 	}
+	if got, ok := envIs("GATE_CONN", "Host=db;Password="+sentinel+";Note=$5"); !ok {
+		t.Errorf("GATE_CONN in the copy is not the template rendered with Bella's value (%d bytes)", len(got))
+	}
 
 	// 3. Rotate in Bella, then Refresh secrets.
 	bella.Set("GATE_REF", rotated)
@@ -161,6 +172,9 @@ func (g *gate) secretRefsStep(t *testing.T) {
 	}
 	if got, ok := envIs("GATE_REF", rotated); !ok {
 		t.Fatalf("GATE_REF after the refresh is not the rotated value (%d bytes)", len(got))
+	}
+	if got, ok := envIs("GATE_CONN", "Host=db;Password="+rotated+";Note=$5"); !ok {
+		t.Errorf("GATE_CONN after the refresh is not re-rendered with the rotated value (%d bytes)", len(got))
 	}
 	raw = g.sendWant(t, http.StatusOK, http.MethodPost, "/v1/apps/"+id+"/secrets/refresh", "")
 	answers["refreshSecrets unchanged"] = string(raw)
@@ -205,6 +219,14 @@ func (g *gate) secretRefsStep(t *testing.T) {
 		t.Fatalf("the deploy body has no GATE_REF path to replace: %s", deployBody)
 	}
 	g.refusal(t, http.StatusUnprocessableEntity, "secret_not_found", ref+".path", http.MethodPost, "/v1/apps/"+id+"/deployments", missing)
+	// A template's ref names its own field.
+	tplWeb := actionsWeb("", 1)
+	tplWeb["secrets"] = []map[string]any{{"name": "GATE_CONN", "template": "p=${pw}",
+		"refs": map[string]any{"pw": map[string]string{"provider": provider, "path": "GATE_MISSING"}}}}
+	g.refusal(t, http.StatusUnprocessableEntity, "secret_not_found", "services[0].secrets[0].refs.pw.path", http.MethodPost, "/v1/apps/"+id+"/deployments", labApp(tplWeb))
+	tplWeb["secrets"] = []map[string]any{{"name": "GATE_CONN", "template": "p=$pw",
+		"refs": map[string]any{"pw": map[string]string{"provider": provider, "path": "GATE_REF"}}}}
+	g.refusal(t, http.StatusBadRequest, "invalid_field", "services[0].secrets[0].template", http.MethodPost, "/v1/apps/"+id+"/deployments", labApp(tplWeb))
 
 	// 7. Nothing secret anywhere.
 	for _, p := range []string{

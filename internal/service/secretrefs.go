@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -26,7 +27,8 @@ var ErrSecretNotFound = errors.New("secret not found in the provider")
 // ReferenceError is a reference a deploy couldn't resolve. Field is the
 // definition's field at fault: services[i].secrets[j].from.path when the
 // provider doesn't have the path, services[i].secrets[j].from when the
-// provider as a whole refused or couldn't be reached. Err is
+// provider as a whole refused or couldn't be reached (a template's refs say
+// …refs.<name>.path and …refs.<name>). Err is
 // ErrSecretNotFound or a *secrets.SourceError, so errors.Is finds
 // ErrSecretNotFound, secrets.ErrSourceRefused or secrets.ErrSourceUnavailable.
 // It names the provider and the path, never a value or the provider's text.
@@ -47,30 +49,56 @@ func (e *ReferenceError) Error() string {
 // Unwrap lets errors.Is and errors.As find Err.
 func (e *ReferenceError) Unwrap() error { return e.Err }
 
-// referenceAt is one reference of an app, with where it is.
+// referenceAt is one reference of an app, with where it is. A secret's `from`
+// is one reference; a secret's template (feature 053) has one per ref.
 type referenceAt struct {
 	service, secret string
 	ref             app.SecretRef
-	field           string // services[i].secrets[j].from
+	field           string // services[i].secrets[j].from, or ….refs.<name>
+	refName         string // the template's name for the ref; "" for a from
 }
 
-// referencesOf lists a's references in definition order.
+// referencesOf lists a's references in definition order (a template's refs in
+// the order its text first uses them).
 func referencesOf(a app.App) []referenceAt {
 	var out []referenceAt
 	for i, svc := range a.Services {
 		for j, sec := range svc.Secrets {
-			if sec.From != nil {
-				out = append(out, referenceAt{
-					service: svc.Name, secret: sec.Name, ref: *sec.From,
-					field: fmt.Sprintf("services[%d].secrets[%d].from", i, j),
-				})
+			sf := fmt.Sprintf("services[%d].secrets[%d]", i, j)
+			switch {
+			case sec.From != nil:
+				out = append(out, referenceAt{service: svc.Name, secret: sec.Name, ref: *sec.From,
+					field: sf + ".from"})
+			case sec.Template != "":
+				for _, name := range app.TemplateRefNames(sec.Template) {
+					ref, ok := sec.Refs[name]
+					if !ok {
+						continue // validation refuses this; nothing to read
+					}
+					out = append(out, referenceAt{service: svc.Name, secret: sec.Name, ref: ref,
+						field: sf + ".refs." + name, refName: name})
+				}
 			}
 		}
 	}
 	return out
 }
 
-// HasSecretReferences reports whether any secret of a is a reference.
+// referencedBy lists the references one secret holds: its `from`, or its
+// template's refs in name order.
+func referencedBy(sec app.Secret) []app.SecretRef {
+	if sec.From != nil {
+		return []app.SecretRef{*sec.From}
+	}
+	var out []app.SecretRef
+	for _, name := range slices.Sorted(maps.Keys(sec.Refs)) {
+		out = append(out, sec.Refs[name])
+	}
+	return out
+}
+
+// HasSecretReferences reports whether any secret of a is a reference: a `from`
+// or a template.
 func HasSecretReferences(a app.App) bool { return len(referencesOf(a)) > 0 }
 
 // placeOfApp is where a's ID puts it. An ID that doesn't read as a place (one
@@ -94,7 +122,8 @@ func providerAllows(p store.SecretProvider, place app.Place) bool {
 
 // checkReferences runs the static checks of every reference of a: its provider
 // exists and may be used by a's place. Errors are *app.FieldError on
-// services[i].secrets[j].from.provider. Nothing is read from a provider.
+// services[i].secrets[j].from.provider (a template's refs: …refs.<name>.provider).
+// Nothing is read from a provider.
 func (s *Service) checkReferences(ctx context.Context, a app.App) error {
 	refs := referencesOf(a)
 	if len(refs) == 0 {
@@ -146,6 +175,9 @@ func (s *Service) resolveReferences(ctx context.Context, a app.App) (secrets.Set
 	}
 
 	resolved := secrets.Sets{}
+	// A template's refs' values, by service, secret and the template's name for
+	// the ref. They live only until the templates are rendered below.
+	refValues := map[string]map[string]map[string]string{}
 	for _, name := range order {
 		group := byProvider[name]
 		values, err := s.readProvider(ctx, name, group)
@@ -162,10 +194,43 @@ func (s *Service) resolveReferences(ctx context.Context, a app.App) (secrets.Set
 				return nil, &ReferenceError{Field: r.field + ".path", Provider: name, Path: r.ref.Path,
 					Err: secrets.Refused("the value is not text (UTF-8 without a NUL byte)")}
 			}
+			if r.refName != "" {
+				if refValues[r.service] == nil {
+					refValues[r.service] = map[string]map[string]string{}
+				}
+				if refValues[r.service][r.secret] == nil {
+					refValues[r.service][r.secret] = map[string]string{}
+				}
+				refValues[r.service][r.secret][r.refName] = v
+				continue
+			}
 			if resolved[r.service] == nil {
 				resolved[r.service] = map[string]string{}
 			}
 			resolved[r.service][r.secret] = v
+		}
+	}
+
+	// Render each template from its refs' values (feature 053). The rendered
+	// value is checked as a read one is; no error here holds it.
+	for i, svc := range a.Services {
+		for j, sec := range svc.Secrets {
+			if sec.Template == "" {
+				continue
+			}
+			v, err := app.RenderTemplate(sec.Template, refValues[svc.Name][sec.Name])
+			if err != nil {
+				// Defensive: validation and the reads above cover every ref.
+				return nil, app.NewFieldError(fmt.Sprintf("services[%d].secrets[%d].template", i, j), "the template can't be rendered")
+			}
+			if !utf8.ValidString(v) || strings.ContainsRune(v, 0) {
+				return nil, app.NewFieldError(fmt.Sprintf("services[%d].secrets[%d].template", i, j),
+					"the rendered value is not text (UTF-8 without a NUL byte)")
+			}
+			if resolved[svc.Name] == nil {
+				resolved[svc.Name] = map[string]string{}
+			}
+			resolved[svc.Name][sec.Name] = v
 		}
 	}
 	return resolved, nil

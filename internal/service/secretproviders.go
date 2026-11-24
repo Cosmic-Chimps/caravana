@@ -150,9 +150,11 @@ func (s *Service) providerUsers(ctx context.Context) (map[string][]string, error
 		seen := map[string]bool{}
 		for _, svc := range rec.App.Services {
 			for _, sec := range svc.Secrets {
-				if sec.From != nil && !seen[sec.From.Provider] {
-					seen[sec.From.Provider] = true
-					used[sec.From.Provider] = append(used[sec.From.Provider], rec.App.ID)
+				for _, ref := range referencedBy(sec) {
+					if !seen[ref.Provider] {
+						seen[ref.Provider] = true
+						used[ref.Provider] = append(used[ref.Provider], rec.App.ID)
+					}
 				}
 			}
 		}

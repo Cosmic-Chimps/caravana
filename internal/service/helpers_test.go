@@ -35,6 +35,7 @@ type env struct {
 	nomad    *deploytest.Nomad
 	secrets  *secretstest.Store
 	sources  *fakeSources
+	dir      string // the store's folder
 }
 
 // newEnv opens a store in a temp dir and starts a service on it. The fake
@@ -48,12 +49,13 @@ func newEnv(t *testing.T) *env {
 // service starts: a stream it refuses, say, which the service finds at its start.
 func newEnvPrepared(t *testing.T, prepare func(*deploytest.Nomad)) *env {
 	t.Helper()
-	st, err := store.Open(context.Background(), t.TempDir())
+	dir := t.TempDir()
+	st, err := store.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	e := &env{store: st, registry: registrytest.New(t), nomad: deploytest.New(t), secrets: secretstest.New()}
+	e := &env{store: st, dir: dir, registry: registrytest.New(t), nomad: deploytest.New(t), secrets: secretstest.New()}
 	e.registry.AddIndex("traefik/whoami", "latest", whoamiDigest)
 	e.nomad.Succeed()
 	if prepare != nil {
