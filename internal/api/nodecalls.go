@@ -177,8 +177,12 @@ func (s *server) syncNode(w http.ResponseWriter, r *http.Request) error {
 		Issuer    string     `json:"issuer,omitempty"`
 		// Clean is the clean-up this server's agent is asked to run (feature 045), absent for none.
 		Clean *service.CleanRequest `json:"clean,omitempty"`
+		// ConsoleURL is the console's public URL for every agent to follow; ConsoleAddress is a change of
+		// the console's address, only for the agent that runs beside Caravana (feature 051).
+		ConsoleURL     string                      `json:"consoleURL,omitempty"`
+		ConsoleAddress *service.NodeConsoleAddress `json:"consoleAddress,omitempty"`
 	}{ans.Name, ans.Index, ans.Pool, ans.Role, serversOrEmpty(ans.Servers), toPeersJSON(ans.Peers), ans.GossipKey, ans.Renew, ans.State,
-		toServerChecksJSON(ans.Checks), ans.Issuer, ans.Clean}
+		toServerChecksJSON(ans.Checks), ans.Issuer, ans.Clean, ans.ConsoleURL, ans.ConsoleAddress}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

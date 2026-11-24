@@ -12086,6 +12086,21 @@ components:
           description: The issuer the agent last rendered into Nomad's config; absent when it rendered none.
         space:
           $ref: "#/components/schemas/NodeSpace"
+        runsConsole:
+          type: boolean
+          description: |
+            True when this agent runs beside Caravana's console (its node.env URL is the console's loopback
+            listener and Caravana's env file is on the server). Only such an agent is handed a change of the
+            console's address. Left out when false.
+        consoleAddress:
+          type: object
+          additionalProperties: false
+          description: How the last request to change the console's address went, from the agent's state. Left out when it handled none.
+          required: [id, state]
+          properties:
+            id: {type: string, pattern: "^[0-9a-f]{32}$"}
+            state: {type: string, enum: [applied, failed, refused, running]}
+            reason: {type: string, maxLength: 300, description: One printable line.}
         reach:
           type: array
           description: One ping over the private network per peer.
@@ -12132,6 +12147,23 @@ components:
             console has no https public URL. Nomad servers receive a new value one at a time.
         clean:
           $ref: "#/components/schemas/NodeClean"
+        consoleURL:
+          type: string
+          description: |
+            The console's public URL, `https://host[:port]`, for every agent to follow: a joined server whose
+            `node.env` URL differs switches to it once its `/v1/health` answers. Absent when the console has
+            no https public URL.
+        consoleAddress:
+          type: object
+          additionalProperties: false
+          description: |
+            A change of the console's address (`switchConsoleAddress`) for the agent to apply: present only
+            while the change is switching, and only for an agent that reported `runsConsole`. The agent
+            checks both members before it acts and reports the outcome in its next report.
+          required: [id, domain]
+          properties:
+            id: {type: string, pattern: "^[0-9a-f]{32}$"}
+            domain: {type: string, description: A lowercase host name.}
     AttentionItem:
       type: object
       additionalProperties: false

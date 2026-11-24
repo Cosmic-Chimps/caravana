@@ -60,6 +60,13 @@ type Answer struct {
 	// Clean is a clean-up for this server to run (spec 045), present only while the console has one
 	// open for it. A console that predates it sends none.
 	Clean *CleanRequest `json:"clean"`
+	// ConsoleURL is the console's public URL, https://host[:port] (feature 051), for a joined server to
+	// follow; "" for none. ConsoleAddress is a change of the console's address for the agent that runs
+	// beside Caravana, present only while one is switching. It is not checked here: a request that
+	// can't be trusted is a `refused` outcome (applyConsole), not a refused answer. Both are ignored by
+	// an agent older than this member, since the answer is decoded without DisallowUnknownFields.
+	ConsoleURL     string          `json:"consoleURL"`
+	ConsoleAddress *ConsoleRequest `json:"consoleAddress"`
 }
 
 // Expect is what an answer is checked against.
@@ -234,6 +241,11 @@ func validateCommon(ans *Answer, ex Expect, own int) error {
 	if err := validateClean(ans.Clean); err != nil {
 		return err
 	}
+	consoleURL, ok := mesh.CleanIssuer(ans.ConsoleURL)
+	if !ok {
+		return refuse("consoleURL", "must be empty, or https:// and a host name with an optional port")
+	}
+	ans.ConsoleURL = consoleURL
 	if ans.Role == RoleServer {
 		raw, err := base64.StdEncoding.DecodeString(ans.GossipKey)
 		if err != nil || (len(raw) != 16 && len(raw) != 24 && len(raw) != 32) {

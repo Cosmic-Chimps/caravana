@@ -65,6 +65,9 @@ type Agent struct {
 	Now func() time.Time
 	// Sleep waits between checks of something that takes time; nil means time.Sleep. Tests set it.
 	Sleep func(time.Duration)
+	// Health answers whether Caravana's own listener answers its health check, after a change of the
+	// console's address (feature 051); nil means a GET of http://127.0.0.1:7070/v1/health. Tests set it.
+	Health func(ctx context.Context) bool
 	// Version is this agent's version, sent in the facts and the report.
 	Version string
 	// NomadAddr is the local Nomad's HTTP address; empty means http://127.0.0.1:4646.

@@ -46,6 +46,11 @@ type Report struct {
 	// Space is what Docker and Nomad's volume directories hold (spec 045); absent when Docker doesn't
 	// answer, and for a console that predates it, which ignores it.
 	Space *SpaceReport `json:"space,omitempty"`
+	// RunsConsole says this agent runs beside Caravana's console (feature 051): its node.env URL is the
+	// loopback listener and Caravana's env file is here. Left out when false. ConsoleAddress is how the
+	// last request to change the console's address went; left out when there was none.
+	RunsConsole    bool            `json:"runsConsole,omitempty"`
+	ConsoleAddress *ConsoleOutcome `json:"consoleAddress,omitempty"`
 }
 
 // Facts are what a join tells the console about a new server (api.md §4, POST /v1/join).
@@ -93,7 +98,7 @@ func (a *Agent) Report(ctx context.Context, st State) Report {
 	r := Report{
 		Agent: f.Agent, Nomad: f.Nomad, Docker: f.Docker, DockerRunning: dockerRunning,
 		DiskFreeMB: f.DiskFreeMB, DiskTotalMB: f.DiskTotalMB, MemoryMB: f.MemoryMB, Kernel: f.Kernel,
-		Role: st.Role, Issuer: st.Issuer, Reach: []Reach{},
+		Role: st.Role, Issuer: st.Issuer, Reach: []Reach{}, ConsoleAddress: st.ConsoleAddress.reported(),
 	}
 	if b, ok, err := readIfExists(a.path(agentCert)); err == nil && ok {
 		if end, err := clusterca.NotAfter(b); err == nil {

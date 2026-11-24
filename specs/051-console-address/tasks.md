@@ -36,14 +36,14 @@
 
 ## Phase B — the agent
 
-- [ ] T010 `nodeagent`: `Report.RunsConsole`, `Report.ConsoleAddress`, `Answer.ConsoleURL`, `Answer.ConsoleAddress`,
+- [x] T010 `nodeagent`: `Report.RunsConsole`, `Report.ConsoleAddress`, `Answer.ConsoleURL`, `Answer.ConsoleAddress`,
   `State.ConsoleAddress`; validation per contracts/agent.md; table tests with crafted answers (newline, space, quote,
   `$(`, `/`, `:`, port, scheme, IP, uppercase, 254 bytes, bad ID) — each leaves both files and the unit untouched.
-- [ ] T011 Apply (contracts/agent.md §Apply) with the files under the agent's root (`a.path`) and `a.run` for
+- [x] T011 Apply (contracts/agent.md §Apply) with the files under the agent's root (`a.path`) and `a.run` for
   systemctl, the health wait behind a seam; tests: applied, unhealthy → files back + `failed`, interrupted `running`,
   repeated ID not applied twice, the other lines of both files kept byte for byte, mode/owner kept.
-- [ ] T012 Follow (joined servers) with tests: loopback URL ignored, health 200 → node env rewritten, failure kept.
-- [ ] T013 Service side wired (T006) against the real types; `go test ./internal/nodeagent ./internal/service`.
+- [x] T012 Follow (joined servers) with tests: loopback URL ignored, health 200 → node env rewritten, failure kept.
+- [x] T013 Service side wired (T006) against the real types; `go test ./internal/nodeagent ./internal/service`.
 
 ## Phase C — API and console
 

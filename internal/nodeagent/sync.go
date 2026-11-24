@@ -48,6 +48,7 @@ func (a *Agent) Sync(ctx context.Context, o SyncOptions) error {
 		}
 	}
 	report := a.Report(ctx, st)
+	report.RunsConsole = a.RunsConsole(env)
 	status, body, err := a.postJSON(ctx, env.URL, "/v1/node/sync", env.Token, report)
 	if err != nil {
 		a.warn("caravana node sync: the console can't be reached: %v", err)
@@ -107,7 +108,8 @@ func (a *Agent) ensureMeshKeyPublic() (private, public string, err error) {
 	return private, public, nil
 }
 
-// applySync does §6's three steps, and the clean-up of spec 045 as a fourth, with a validated answer.
+// applySync does §6's three steps, the console's address (feature 051) after the first, and the clean-up
+// of spec 045 as a last one, with a validated answer.
 func (a *Agent) applySync(ctx context.Context, env NodeEnv, st State, ans *Answer, caPEM []byte, renew bool) error {
 	priv, _, err := a.ensureMeshKeyPublic()
 	if err != nil {
@@ -163,6 +165,13 @@ func (a *Agent) applySync(ctx context.Context, env NodeEnv, st State, ans *Answe
 		}
 		st = next
 	}
+
+	// 1c. The console's address (feature 051): a change on the server that runs Caravana, and the new
+	// URL for a joined server. After the issuer, which follows the address by itself once Caravana runs
+	// under it, and before the role, the renewal and the clean-up: a promotion returns early, and a
+	// clean-up takes minutes, while the console is waiting a few for this. Neither can fail the sync.
+	st = a.applyConsole(ctx, env, st, ans.ConsoleAddress)
+	a.followConsoleURL(ctx, env, ans.ConsoleURL)
 
 	// 2. The role: a client that is to be a Nomad server.
 	if st.Role == RoleClient && ans.Role == RoleServer {
