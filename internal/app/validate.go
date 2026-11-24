@@ -491,6 +491,14 @@ func validateSecrets(field string, secrets []Secret, envNames map[string]bool) e
 				return err
 			}
 		}
+		if s.Template != "" || len(s.Refs) > 0 {
+			if s.Template == "" {
+				return NewFieldError(f+".refs", "refs belong to a template: add the template or remove refs")
+			}
+			if err := validateSecretTemplate(f, s); err != nil {
+				return err
+			}
+		}
 		if s.Value == nil {
 			continue
 		}
@@ -514,10 +522,16 @@ func validateSecretRef(field string, s Secret) error {
 	if s.Value != nil {
 		return NewFieldError(field, "a secret has a value or a reference, not both")
 	}
-	if err := ValidName(field+".provider", s.From.Provider); err != nil {
+	return validateSecretRefValue(field, *s.From)
+}
+
+// validateSecretRefValue checks one reference's provider name and path; field
+// is the reference's own field.
+func validateSecretRefValue(field string, r SecretRef) error {
+	if err := ValidName(field+".provider", r.Provider); err != nil {
 		return err
 	}
-	p := s.From.Path
+	p := r.Path
 	switch {
 	case p == "":
 		return NewFieldError(field+".path", "is required")

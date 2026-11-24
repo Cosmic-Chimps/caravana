@@ -55,7 +55,9 @@ const MaxSize = 60 * 1024
 // sets a deploy must make live: a secret with a value takes it, a secret
 // without one keeps its current value, and every secret a doesn't name is
 // gone. A secret with a reference (From) takes the value the provider gave,
-// in resolved (feature 037; nil when the app has none). Errors are
+// in resolved (feature 037; nil when the app has none), and one with a
+// template takes the value rendered from its refs (feature 053), also from
+// resolved. Errors are
 // *app.FieldError.
 func Build(a app.App, current, resolved Sets) (Sets, error) {
 	out := Sets{}
@@ -74,6 +76,14 @@ func Build(a app.App, current, resolved Sets) (Sets, error) {
 					// Defensive: the deploy reads every reference before it builds.
 					return nil, app.NewFieldError(fmt.Sprintf("services[%d].secrets[%d].from.path", i, j),
 						"secret %q was not read from %q", s.Name, s.From.Provider)
+				}
+				v = ref
+			case s.Template != "":
+				// A template was rendered from its refs' values (feature 053).
+				ref, ok := resolved[svc.Name][s.Name]
+				if !ok {
+					return nil, app.NewFieldError(fmt.Sprintf("services[%d].secrets[%d].template", i, j),
+						"secret %q was not read from its providers", s.Name)
 				}
 				v = ref
 			case s.Value != nil:

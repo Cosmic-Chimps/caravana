@@ -308,6 +308,67 @@ func TestValidate(t *testing.T) {
 			a.Services[0].Secrets = []Secret{{Name: "A", From: &SecretRef{Provider: "bella", Path: "\xff"}}}
 		}, "services[0].secrets[0].from.path"},
 
+		// Secret templates (feature 053).
+		{"valid template", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: "Host=db;Password=${pw}$$", Refs: map[string]SecretRef{"pw": {Provider: "bella", Path: "DB"}}}}
+		}, ""},
+		{"valid template with two refs", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: "${u}:${p}", Refs: map[string]SecretRef{"u": {Provider: "bella", Path: "U"}, "p": {Provider: "bella", Path: "P"}}}}
+		}, ""},
+		{"template with a value", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Value: new("x"), Template: "${a}", Refs: map[string]SecretRef{"a": {Provider: "bella", Path: "A"}}}}
+		}, "services[0].secrets[0].template"},
+		{"template with a from", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", From: &SecretRef{Provider: "bella", Path: "A"}, Template: "${a}", Refs: map[string]SecretRef{"a": {Provider: "bella", Path: "A"}}}}
+		}, "services[0].secrets[0].template"},
+		{"refs without a template", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Refs: map[string]SecretRef{"a": {Provider: "bella", Path: "A"}}}}
+		}, "services[0].secrets[0].refs"},
+		{"template using a ref it doesn't have", func(a *App, d *Deployment) {
+			a.Services[1].Secrets = []Secret{{Name: "A", Template: "x${a}"}}
+		}, "services[1].secrets[0].template"},
+		{"template with no reference", func(a *App, d *Deployment) {
+			a.Services[1].Secrets = []Secret{{Name: "A", Template: "plain"}}
+		}, "services[1].secrets[0].refs"},
+		{"template with a lone dollar", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: "p$w"}}
+		}, "services[0].secrets[0].template"},
+		{"template names an unknown ref", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: "${b}", Refs: map[string]SecretRef{"a": {Provider: "bella", Path: "A"}}}}
+		}, "services[0].secrets[0].template"},
+		{"ref not used", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: "${a}", Refs: map[string]SecretRef{"a": {Provider: "bella", Path: "A"}, "b": {Provider: "bella", Path: "B"}}}}
+		}, "services[0].secrets[0].refs.b"},
+		{"ref name invalid", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: "x", Refs: map[string]SecretRef{"1a": {Provider: "bella", Path: "A"}}}}
+		}, "services[0].secrets[0].refs.1a"},
+		{"ref provider uppercase", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: "${a}", Refs: map[string]SecretRef{"a": {Provider: "Bella", Path: "A"}}}}
+		}, "services[0].secrets[0].refs.a.provider"},
+		{"ref path empty", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: "${a}", Refs: map[string]SecretRef{"a": {Provider: "bella"}}}}
+		}, "services[0].secrets[0].refs.a.path"},
+		{"ref path with a control character", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: "${a}", Refs: map[string]SecretRef{"a": {Provider: "bella", Path: "a\nb"}}}}
+		}, "services[0].secrets[0].refs.a.path"},
+		{"template too long", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: strings.Repeat("a", 4097)}}
+		}, "services[0].secrets[0].template"},
+		{"template one byte over the limit", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: strings.Repeat("a", 4093) + "${a}", Refs: map[string]SecretRef{"a": {Provider: "bella", Path: "A"}}}}
+		}, "services[0].secrets[0].template"},
+		{"template at the limit", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: strings.Repeat("a", 4092) + "${a}", Refs: map[string]SecretRef{"a": {Provider: "bella", Path: "A"}}}}
+		}, ""},
+		{"template not UTF-8", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: "\xff"}}
+		}, "services[0].secrets[0].template"},
+		{"template with a NUL", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Template: "a\x00b"}}
+		}, "services[0].secrets[0].template"},
+		{"too many refs", func(a *App, d *Deployment) { a.Services[0].Secrets = []Secret{manyRefs(17)} }, "services[0].secrets[0].refs"},
+		{"sixteen refs", func(a *App, d *Deployment) { a.Services[0].Secrets = []Secret{manyRefs(16)} }, ""},
+
 		// Source kinds and volumes.
 		{"valid compose source", func(a *App, d *Deployment) { a.Source.Kind = SourceCompose }, ""},
 		{"unknown source", func(a *App, d *Deployment) { a.Source.Kind = "git" }, "source.kind"},
@@ -1075,4 +1136,16 @@ func TestReservedPortsSayWhatUsesThem(t *testing.T) {
 			t.Errorf("reserved port %d has no explanation", p)
 		}
 	}
+}
+
+// manyRefs is a template secret with n refs, all used.
+func manyRefs(n int) Secret {
+	refs := map[string]SecretRef{}
+	var tpl strings.Builder
+	for i := 0; i < n; i++ {
+		name := "r" + strings.Repeat("x", i)
+		refs[name] = SecretRef{Provider: "bella", Path: "P"}
+		tpl.WriteString("${" + name + "}")
+	}
+	return Secret{Name: "A", Template: tpl.String(), Refs: refs}
 }

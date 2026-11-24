@@ -11,6 +11,7 @@
 package app
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -170,6 +171,14 @@ type Secret struct {
 	// Variable like a typed one. A secret has a Value or a From, not both. The
 	// reference is not secret, so it is stored, recorded and shown as written.
 	From *SecretRef `json:"from,omitempty"`
+	// Template builds the value from text and references (feature 053): `${name}`
+	// inserts the value of Refs[name], `$$` is a literal "$". A secret has a
+	// Value, a From or a Template, only one. The template and its refs hold no
+	// secret, so they are stored, recorded and shown as written.
+	Template string `json:"template,omitempty"`
+	// Refs are the references a Template names, by the name it uses. Required
+	// with a Template, refused without one.
+	Refs map[string]SecretRef `json:"refs,omitempty"`
 }
 
 // SecretRef points at one secret of an outside provider.
@@ -184,10 +193,14 @@ type SecretRef struct {
 }
 
 // WithoutValue returns s as Caravana stores and shows it: the name and the
-// reference, never the value.
+// reference or template, never the value.
 func (s Secret) WithoutValue() Secret {
-	return Secret{Name: s.Name, From: s.From}
+	return Secret{Name: s.Name, From: s.From, Template: s.Template, Refs: maps.Clone(s.Refs)}
 }
+
+// IsReference reports whether s gets its value from an outside provider at a
+// deploy: a From, or a Template with refs.
+func (s Secret) IsReference() bool { return s.From != nil || s.Template != "" }
 
 // Volume is a named directory of the app on one node, mounted into one
 // service. It is created on the first deploy that names it and deleted with
