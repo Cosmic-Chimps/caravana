@@ -187,6 +187,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"terminal", false, g.terminalStep},
 		{"deploy-from-ci", false, g.deployFromCIStep},
 		{"previews", false, g.previewsStep},
+		{"people-roles", false, g.peopleRolesStep},
 		{"build-from-git", false, g.buildFromGitStep},
 		{"private-registry", false, g.privateRegistryStep},
 		{"templates", false, g.templatesStep},

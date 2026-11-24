@@ -279,9 +279,10 @@ More build sources (buildpacks, monorepos), more app templates (the first catalo
 (needs legal review of Nomad's BSL first). Git sources with a Dockerfile moved to Phase 2.5 (020).
 Drawn as:
 
-- `MembersScreen`: organization roles (owner, admin, member), a role per project with an
-  override per environment (view, deploy, maintain), guests whose access ends, invites. Nomad
-  namespaces per project arrive with this (019's finding).
+- `MembersScreen`: built by feature 053 (people and roles): organization roles (owner, admin,
+  member), a role per project with an override per environment (view, deploy, maintain), guests whose
+  access ends, invites and API tokens that act as their person. Still to come: Nomad namespaces per
+  project (019's finding), single sign-on and the audit log (below).
 - `SsoSettings`, `AuditSettings`, `SshSettings`: single sign-on with join-automatically and
   require-SSO, the 90-day audit log with diffs, SSH keys placed on every server.
 - The org switcher and `NewOrgScreen`: an organization on the shared servers with a memory
@@ -319,7 +320,7 @@ sense, even where the layout differs (007 and 014 record the differences).
 | `PreviewsScreen` | the project settings page's Previews section and a Close preview on each preview environment (049) | the handoff's page in Phase 4 |
 | `PlacementScreen` | — | Phase 3 |
 | `SettingsScreen` | one page: password, tokens, destination, registries, notifications | the nav in 021; git providers with the build server in Phase 3; SSH keys, SSO, audit in Phase 3 and 4; DNS providers (Cloudflare) built in 048 |
-| `MembersScreen` | — | Phase 4 |
+| `MembersScreen` | Settings › People: the list, Invite, a person's page and Remove, and the page an invite link opens (053) | namespaces per project, SSO and the audit log in Phase 4 |
 | `NewOrgScreen`, org switcher | — | Phase 4 |
 | `NowScreen` | Overview for one host (027) | the cluster version in Phase 3 (its Capacity panel for one host in 025) |
 | `ServerScreens` (list, server, add) | `NodeScreen`, the server page (027); the list and Add a server (031) | "Move work off" and "Open shell" in Phase 3 |
@@ -557,7 +558,7 @@ names the feature (Phase 2.6 is the handoff's Developer view, screen by screen).
 | 8 | A shell into a copy | "Open Terminal" per container | Nomad alloc exec over a websocket. A terminal needs scripted UI; the no-JavaScript first step is "Run a command" with captured output | none | Run a command: done in 2.6 (020.5). The terminal into a copy: done in 2.6 (020.6). A shell into a server: 3 |
 | 9 | Databases as a kind | Postgres, MySQL, MariaDB, Mongo, Redis with generated credentials, an internal connection URL, an optional external port | A database stays a service. Missing: dump engines for MySQL, MariaDB, Mongo and Redis ("Backups for more than Postgres" above; sqlite is done in 029), the internal address on the app page, and exposing a TCP port (done in 041 on the first server, as Nomad's static port: no ufw rule, since the mapping bypasses the firewall's input rules) | partly | 3 (a proxy on every server) |
 | 10 | Preview deployments | A pull request gets its own deploy on a wildcard domain | An environment per pull request on top of 019 and 020. **Built: feature 049** (`specs/049-previews`, 2026-11-22): an environment `pr-<number>` that a deploy token opens and closes, caravana-action's `preview: true`, a limit of open previews and an expiry per project, one project preview password (Team only on every preview address), API 0.54.0. The one wildcard DNS record is set by hand (`docs/previews.md`); DNS records through a provider are feature 048. Still to build: the handoff's `PreviewsScreen`, sleeping previews, starting data | `PreviewsScreen` | 4 (the page); the mechanics shipped with 049 |
-| 11 | Account security | 2FA, passkeys, a Sessions page, invitations, custom roles and an audit log (enterprise) | Teams are Phase 4. 2FA or a passkey for the one admin, a sessions list with "sign out everywhere" and an audit trail keyed by token name are cheap now | `LoginScreen`, `MembersScreen` | 2.6 (2-step for the admin), 4 (teams) |
+| 11 | Account security | 2FA, passkeys, a Sessions page, invitations (built in 053), custom roles and an audit log (enterprise) | Teams are Phase 4. 2FA or a passkey for the one admin, a sessions list with "sign out everywhere" and an audit trail keyed by token name are cheap now | `LoginScreen`, `MembersScreen` | 2.6 (2-step for the admin), 4 (teams) |
 | 12 | Shared variables | Project-level env referenced as `${{project.VAR}}` | Variables shared by an environment would help the staging and production split from 019 | `VariablesScreen` | 4 (`VariablesScreen` grid) |
 | 13 | Requests log | Traefik's access log, filterable, with a cleanup schedule | Traefik's JSON access log, shown as per-app request counts and status mix. Watch disk use | none | 2.6 (025 reads Traefik's metrics); the log itself: done: feature 047 |
 | 14 | Updates and host upkeep | "Check for updates", a cleanup button, Let's Encrypt email in settings | "Updates from the console" above. Nomad's docker driver removes unused images by default, so a daily image cleanup is covered; 020's build cache will need its own pruning | `UpdatesScreen` | 2.6 (027, the notice; 030, updating one host), 3 (updating every node) |

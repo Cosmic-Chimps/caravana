@@ -41,6 +41,6 @@
 
 ## Phase E: lab and docs
 
-- [ ] T013 Gate step `people-roles` (API and MCP) and console step `console-people`; run in the lab.
-- [ ] T014 `docs/people.md`, `changelog.d/053-people-and-roles.md`, CLAUDE.md entry, `docs/plan.md` (Phase 4's
+- [x] T013 Gate step `people-roles` (API and MCP) and console step `console-people`; run in the lab.
+- [x] T014 `docs/people.md`, `changelog.d/053-people-and-roles.md`, CLAUDE.md entry, `docs/plan.md` (Phase 4's
       `MembersScreen` row).

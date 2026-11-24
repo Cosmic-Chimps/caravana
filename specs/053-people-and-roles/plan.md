@@ -337,6 +337,16 @@ operations now act on the caller's own. MCP: a read tool `get_me`; nothing else 
   templates that have the page's data; the app's regions are separate views, so each carries what it needs (`Caps`,
   `NoDeploy`, `NoMaintain`, `NoConfigure`, `ReadOnly`) and the same flags leave the parts.
 
+## Deviations (Phase E)
+
+- **People get tokens through their own session.** The gate step has no host shell to ask `admin create-token --email`; a
+  person who accepted an invite signs in through the console's `POST /login` (the lab serves it on the API's address) and
+  asks `POST /v1/tokens` with that session, which acts on the caller's own. No helper was added.
+- **A guest is made with an end date a minute ahead** (an invite refuses one in the past) and the step waits for it; the
+  same wait covers a person whose end date passed and a member whose project role ended.
+- **The member's staging deploy is the stored app with one new image** (`getApp`, then the same body), which is what
+  `deploy_image` and the CI action send, so the step proves the images-only rule on what the clients really send.
+
 ## Complexity tracking
 
 | Choice | Why | Simpler option rejected |

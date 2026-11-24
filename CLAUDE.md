@@ -2122,6 +2122,67 @@ second copy of every backup. `plan.md` D1–D15 are the decisions and its Deviat
 - Not in 052: other kinds of destination, encryption, moving backups between destinations, renaming a destination, a third copy,
   provider-side replication, per-copy pinning.
 
+Feature 053 (`specs/053-people-and-roles`, worktree branch `alta/dewy-quince-q5ss`, phases A to E): an installation has several people, each
+with their own sign-in, tokens and role. `plan.md` D1–D12 are the decisions and its Deviations sections (phases B to D) the changes; operator
+doc: `docs/people.md`. Migration 0043, API 0.59.0, no new module, no policy change, constitution unchanged.
+- Store (`store/people.go`): `people` (email, `org_role` owner/admin/member, `state` invited/active, password hash, `invite_hash`, `ends_at`),
+  `project_roles` (view/deploy/maintain, `ends_at`) and `environment_roles` (none/view/deploy/maintain); the one `admin` row became the first
+  owner (same email, hash, passkeys, sessions, tokens), `sessions`, `api_tokens` and `passkeys` belong to a person, and `deployments`,
+  `app_actions`, `backups` and `restores` gained `actor` (the person's email). Foreign keys are on.
+- `Principal{PersonID, Email, OrgRole, Roles, Scope, TokenName}` is loaded fresh at every request (`Auth.CheckSession`, `CheckAPIToken`), so a
+  role change or a removal applies to the next call; a person past `ends_at` is refused as one who isn't there. `service.Need`
+  (`NeedSignedIn/Admin/Owner/App/Place/Project`), `Target` and the pure `Principal.Allow` give a `*NotAllowedError` ("your role in shop ›
+  production is view; this needs deploy", with the `Field` for a deploy that changes more than images); `Service.Allow` reads the principal
+  from the context and a context without one is Caravana itself (watchers, notifier, CLI): allowed, not filtered. `LevelAt` takes the
+  environment's override over the project role; a preview (`pr-<n>`) takes the project role and its configure level is deploy
+  (`ConfigureLevel`).
+- One decision, two default-deny tables: `internal/api/access.go` (`accessRules`, 169, keyed like `scopeRules`) runs after a deploy token's
+  scope, and `internal/ui/access.go` (`consoleAccess`, 211 plus `openRoutes`) is applied by `requireSession`/`requirePart`/
+  `requireSessionJSON` by `r.Pattern`. A route with no rule is refused for everyone, owners too; a test fails for a route without one and
+  a walk (`TestRolesWalkEveryRoute` ~1740 requests, `TestConsoleRolesWalkEveryRoute` ~1800) tries every route with an owner, an admin, a member
+  and an ended guest against a table written apart from the rules. Schedules by ID are judged in the service by their app
+  (`allowSchedule`); a followed log stream and a terminal re-run the route's rule at every re-check, so a role taken away ends them.
+- Rights: view reads; deploy deploys (a body below maintain may change only `image`s: `app.ImagesOnlyChange`), redeploys, restarts, starts, runs a
+  schedule, backs up now, refreshes secrets, promotes into the place; maintain changes the setup, stops, deletes, runs a command and opens
+  a terminal, restores and pins, makes tokens and Git access, makes apps and changes the project; the installation's pages are admin.
+  Lists filter (`visibility`: apps, projects, recent deployments, attention, previews, schedules, domains); reads of one place refuse below
+  view; an app a person can't see is "not found". Admins manage members only, owners anyone; the last owner stays (`last_owner`).
+- People (`service/people.go`): `InvitePerson` (token `cvin_`, SHA-256 stored, 7 days, shown once; Caravana sends no mail), `ReinvitePerson`,
+  `AcceptInvite` (a wrong token counts against the address like a wrong password, 429 when locked), `UpdatePerson`, `RemovePerson`
+  (credentials go in one transaction), `People`, `Person`, `Me`, plus `InviteFor` (the invite page names who the link is for) and
+  `Auth.StartSessionFor` (a session for the person `AcceptInvite` returned; nothing else calls it).
+- API 0.59.0: `getMe`, `listPeople`, `invitePerson`, `getPerson`, `updatePerson`, `removePerson`, `reinvitePerson`, public `acceptInvite`, `actor`
+  on Deployment, AppAction, Backup and Restore, codes `not_allowed` (403, with `field`), `person_not_found`, `email_taken`, `invite_invalid`,
+  `not_invited`, `last_owner`; `listTokens`/`createToken`/`revokeToken` and the passkey and sign-in operations act on the caller's own.
+  `Me` is a full object (an `allOf` over `Person` rejects `token`: `additionalProperties: false`). A deploy token is outside 020's
+  allowlist for `getMe`. MCP: a read tool `get_me`.
+- Console (`internal/ui/people.go`, `templates/people.html`, `invite.html`): Settings › People (list, Invite with a role per project and an
+  override per environment, the link once at 200 `no-store`, a person's page, New invite link, Remove… with a confirmation), `/invite?token=`
+  (email, password and confirmation, a session, 303 to `/apps`; `POST /invite` is in `consoleOnly`), and what each role sees: the
+  Developer/Operator toggle, installation Settings, the host panels (Platform, Monitoring's host) for admins only; a member's Settings is
+  account, sign-in, tokens and appearance; New app, Deploy, Redeploy, Restart/Start, Stop, Run a command, Terminal, Promote/Copy, Delete,
+  Configure's forms (read-only with "Your role here is to look"), Variables, Domains, Backups, Schedules and a project's settings are
+  drawn for what the role allows, in the parts too (flags in the views: `Caps`, `NoDeploy`, `NoMaintain`, `NoConfigure`, `ReadOnly`);
+  `/logs`, `/requests` and `/monitoring` with no place send a member to their first visible place. Live notices: an app's only to a person who
+  may see it, the installation's (servers, host, updates, scans, the console's address, the sampler's metrics) to admins; the metrics notice
+  also reaches a member on the Monitoring page's own stream. A refusal inside any handler (`ErrNotAllowed`) is the 403 page.
+- Who-words: `mine()` says "you" for the viewer's own email before `deployWho` runs, so the one set of words needs no viewer: "by you", "by
+  ana@example.com", "through the API by ci (ana@example.com)"; rows with no actor keep the old words (the Previews page doesn't say "you").
+- Lab (2026-11-24, each run alone): the gate step `people-roles` (`gate_people_test.go`: lab053 with staging and production and lab053b, an admin
+  and a member (deploy in staging, view in production) who accept their invites, sign in through `POST /login` and make their tokens with
+  that session; listApps shows the member two apps, an images-only deploy to staging is healthy and production, an env change
+  (`services[0].env`), registries, servers and another project are `not_allowed`; the member's deploy token deploys staging and is refused
+  production; the admin lists people and deploys production; `actor` on each deployment; `caravana mcp` with the member's token: `get_me`,
+  `list_apps`, `deploy_image` refused on production and working on staging; a person whose end date passed and a member whose role
+  ended; removal makes the token, the deploy token and the session 401 at the next call) passed in 122.1 s, and the console step
+  `console-people` (`console_people_test.go`: the forms, the link once, `/invite`, only lab053c on the member's Apps, no Deploy form and a 403
+  POST on production, no Operator toggle or installation Settings, removal sends the next page to `/login`) in 47.8 s
+  (`-run 'TestLab/^(api-needs-token|people-roles)$'` and `-run 'TestConsoleLab/^console-(sign-in|people)$'`). The steps Phase A and C
+  touched were run again: `console-passkeys` and `console-appearance` (1.6 s with `console-sign-in`), and `deploy-from-ci` (49.7 s) and
+  `previews` (110.3 s), whose tokens now go through their owner's role.
+- Not in 053: single sign-on, custom roles, teams, an audit log, per-project Nomad namespaces, sending the invite by mail, a roles page per
+  app, and an invite for someone who already has an account.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
