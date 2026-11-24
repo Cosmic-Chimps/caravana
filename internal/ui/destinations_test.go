@@ -80,6 +80,7 @@ func TestBackupStorageAddRefusals(t *testing.T) {
 		{"no name", "name", func() url.Values { v := destForm("", "bkt-x"); v.Set("secretAccessKey", "s"); return v }()},
 		{"a bad name", "name", func() url.Values { v := destForm("Off_Site", "bkt-x"); v.Set("secretAccessKey", "s"); return v }()},
 		{"no key", "secretAccessKey", destForm("offsite", "bkt-x")},
+		{"a name that is taken", "name", func() url.Values { v := destForm("main", "bkt-x"); v.Set("secretAccessKey", "s"); return v }()},
 		{"a bad bucket", "bucket", func() url.Values { v := destForm("offsite", "No_Such"); v.Set("secretAccessKey", "s"); return v }()},
 	} {
 		tc.form.Set("add", "1")
@@ -100,6 +101,9 @@ func TestBackupStorageAddRefusals(t *testing.T) {
 	}
 	if _, err := e.Svc.GetBackupDestinationNamed(t.Context(), "offsite"); err == nil {
 		t.Error("a refused add stored a destination")
+	}
+	if main, err := e.Svc.GetBackupDestinationNamed(t.Context(), "main"); err != nil || main.Bucket == "bkt-x" {
+		t.Errorf("an add under a taken name changed it: %+v, %v", main, err)
 	}
 }
 

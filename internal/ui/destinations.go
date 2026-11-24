@@ -161,6 +161,10 @@ func (s *server) setBackupDestination(w http.ResponseWriter, r *http.Request, se
 
 	var err error
 	switch {
+	case add && form.Name != "" && s.destinationExists(r, form.Name):
+		// SaveBackupDestination creates or updates: an add under a name that is taken would
+		// overwrite that destination's settings and keys.
+		err = app.NewFieldError("name", "%q is already a destination; edit it in its row instead", form.Name)
 	case form.Name != "":
 		_, err = s.svc.SaveBackupDestination(r.Context(), form.Name, in)
 	case add:
@@ -211,6 +215,13 @@ func (s *server) setBackupDestination(w http.ResponseWriter, r *http.Request, se
 		return
 	}
 	s.renderSettings(w, r, entryBackupStorage, settingsData{Dest: data, Status: status})
+}
+
+// destinationExists reports whether a destination is called name. A read that fails counts as no: the save
+// that follows reads it again and reports the failure.
+func (s *server) destinationExists(r *http.Request, name string) bool {
+	_, err := s.svc.GetBackupDestinationNamed(r.Context(), name)
+	return err == nil
 }
 
 // capital is s with its first letter in upper case.
