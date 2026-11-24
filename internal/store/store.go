@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -160,12 +161,20 @@ func (s *Store) checkSchema(ctx context.Context) error {
 	return nil
 }
 
+// dsnPathEscaper writes the characters that end or change a SQLite URI's path as %HH, which SQLite
+// decodes: '%' first, then '?' (the query starts) and '#' (the fragment starts), and a space.
+var dsnPathEscaper = strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23", " ", "%20")
+
+// dsnPath is path as it goes into a "file:" DSN. Without it a '#' or '?' in the data directory
+// cut the path short and SQLite opened another file (feature 054's review, CodeAlta task n5sb).
+func dsnPath(path string) string { return dsnPathEscaper.Replace(path) }
+
 // openDB opens the SQLite file with the settings Caravana relies on.
 func openDB(path string) (*sql.DB, error) {
 	// _txlock=immediate: a transaction takes the write lock when it begins,
 	// so busy_timeout covers it. A deferred one that reads first can fail at
 	// once with "database is locked" when the CLI writes at the same moment.
-	dsn := "file:" + path +
+	dsn := "file:" + dsnPath(path) +
 		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_txlock=immediate"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
