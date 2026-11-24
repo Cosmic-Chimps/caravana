@@ -58,6 +58,10 @@ type gateTarget struct {
 	// directory, returning once it is healthy; only the lab sets it (the
 	// schedules step restarts it during a run).
 	RestartCaravana func(t *testing.T)
+	// SetEnv sets a setting the lab's Caravana reads at its next start, in place of the lab's own;
+	// "" gives the lab's back. Only the lab sets it: the certificates step restarts Caravana with
+	// CARAVANA_CERT_RESOLVER so routers ask the ACME issuer (feature 034).
+	SetEnv func(key, value string)
 	// ServerLog is everything Caravana has logged so far, and DataDir its data
 	// directory; only the lab has them, for the checks that nothing secret is
 	// logged or stored.
@@ -180,6 +184,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"schedule-in-copy", false, g.scheduleInCopyStep},
 		{"domains", false, g.domainsStep},
 		{"dns-records", false, g.dnsRecordsStep},
+		{"certificates", false, g.certificatesStep},
 		{"logs", false, g.logsStep},
 		{"requests", false, g.requestsStep},
 		{"monitoring", false, g.monitoringStep},

@@ -102,7 +102,18 @@ func startLab(t *testing.T) labEnv {
 	// A fake Cloudflare on loopback, which the in-process Caravana's DNS provider reaches like the real
 	// one (feature 048). It accepts no token until a step sets one with SetToken.
 	cloudflare := dnstest.NewServer(t, "lab-no-token")
+	// envOverride holds what a step sets with gateTarget.SetEnv; Caravana reads it at its next start.
+	var (
+		envMu       sync.Mutex
+		envOverride = map[string]string{}
+	)
 	getenv := func(key string) string {
+		envMu.Lock()
+		v, ok := envOverride[key]
+		envMu.Unlock()
+		if ok {
+			return v
+		}
 		if key == "NOMAD_TOKEN" {
 			return scoped
 		}
@@ -225,6 +236,15 @@ func startLab(t *testing.T) labEnv {
 				t.Helper()
 				stop(t)
 				start(t)
+			},
+			SetEnv: func(key, value string) {
+				envMu.Lock()
+				defer envMu.Unlock()
+				if value == "" {
+					delete(envOverride, key)
+					return
+				}
+				envOverride[key] = value
 			},
 			ServerLog: stderr.String,
 			DataDir:   dataDir,

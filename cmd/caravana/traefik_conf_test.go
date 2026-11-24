@@ -167,7 +167,7 @@ func TestTraefikUploadedCertificatesRender(t *testing.T) {
 			out := renderTraefik(t, data, map[string]map[string]string{
 				"caravana/certificates/crt_000000000001": {"certificate": "CHAIN-1\n", "key": "KEY-1\n", "names": "*.a.test"},
 				"caravana/certificates/crt_000000000002": {"certificate": "CHAIN-2\n", "key": "KEY-2\n", "names": "b.test"},
-				"caravana/acme": {"server": "x"},
+				"caravana/acme":                          {"server": "x"},
 			})
 			if !strings.HasPrefix(strings.TrimSpace(out), "tls:\n  certificates:") || strings.Count(out, "- certFile:") != 2 {
 				t.Errorf("want two certificates under tls.certificates:\n%s", out)
