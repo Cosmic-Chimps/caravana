@@ -57,7 +57,7 @@
   </details>
   {{end}}
 </div>
-<p class="cv-dmfoot">Checks run every minute while this page is open, and every 15 minutes otherwise. Certificates come from Let's Encrypt and renew by themselves.</p>
+<p class="cv-dmfoot">{{.Footer}}</p>
 {{else if .NoMatch}}
 <div class="cv-panel">
   <div class="cv-empty">
@@ -80,6 +80,7 @@
   <div class="cv-dmbanner-text">
     <p class="cv-dmbanner-line">{{template "sentence" .Line}}</p>
     <p class="cv-dmbanner-explain">{{template "sentence" .Explain}}</p>
+    {{with .Link}}<p class="cv-dmbanner-explain"><a href="{{.Href}}">{{.Label}}</a></p>{{end}}
   </div>
   {{if not .NoCheck}}{{template "domain-check" .Check}}{{end}}
 </div>

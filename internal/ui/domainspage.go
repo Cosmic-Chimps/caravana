@@ -73,6 +73,8 @@ type domainsRegion struct {
 	// answers out-of-band fragments while it still names the hosts there are, a whole region when
 	// it doesn't.
 	Known string
+	// Footer is the line under the table: how often domains are checked and who issues certificates.
+	Footer string
 }
 
 // hostsKey is a short name for a set of hosts, whatever their order: what a page was drawn with.
@@ -96,6 +98,8 @@ type domainBanner struct {
 	Check   domainCheckForm
 	// NoCheck says the person may not check the domain again (maintain on its app).
 	NoCheck bool
+	// Link is where the owner goes to fix it, when it isn't Check again: an uploaded certificate's replacement.
+	Link *actionLink
 }
 
 // domainMore is "and N more", linking to the first row without a banner.
@@ -271,11 +275,13 @@ func dayCount(d time.Duration) string {
 }
 
 // certCellOf is the Certificate column of a row.
-func certCellOf(now time.Time, v service.DomainView) domainCertCell {
+func certCellOf(now time.Time, issuerName string, v service.DomainView) domainCertCell {
 	if v.State == edge.StateNotServed {
 		return domainCertCell{Text: "—"}
 	}
-	return certCellFor(now, v.Certificate)
+	cell := certCellFor(now, v.Certificate)
+	cell.Text = withIssuer(cell.Text, issuerName)
+	return cell
 }
 
 // certCellFor is the Certificate column's words for a certificate: the state table's when the
@@ -462,8 +468,9 @@ func expectedTexts(d edge.DNS) []string {
 }
 
 // certFact is the certificate fact of a live row: "Let's Encrypt · renews in
-// 61 d" and the expiry as a clock time.
-func certFact(now time.Time, c edge.Certificate) domainFact {
+// 61 d" and the expiry as a clock time. An uploaded certificate says "uploaded: <subject>"
+// instead (nothing renews it); issuerName is the installation's issuer for the pending words.
+func certFact(now time.Time, issuerName string, c edge.Certificate, uploaded *service.UploadedRef) domainFact {
 	f := domainFact{Key: "certificate"}
 	issuer := c.Issuer
 	if issuer == "" {
@@ -471,16 +478,18 @@ func certFact(now time.Time, c edge.Certificate) domainFact {
 	}
 	switch c.Status {
 	case edge.CertIssued, edge.CertExpiring:
-		words := issuer
-		if c.RenewsAt.After(now) {
+		words, sep := issuer, " · expires "
+		if uploaded != nil {
+			words, sep = "uploaded: "+uploaded.Subject, ", expires "
+		} else if c.RenewsAt.After(now) {
 			words += " · renews in " + dayCount(c.RenewsAt.Sub(now))
 		}
-		f.Value = plainS(words + " · expires ")
+		f.Value = plainS(words + sep)
 		f.Expires = new(clockOf(now, c.NotAfter))
 	case edge.CertSelf:
 		f.Value = plainS(edge.TraefikOwn)
 	case edge.CertPending:
-		f.Value = plainS("waiting for Let's Encrypt")
+		f.Value = plainS(withIssuer("waiting for Let's Encrypt", issuerName))
 	case edge.CertError:
 		f.Value = plainS("the handshake failed")
 	default:
@@ -495,8 +504,8 @@ func certFact(now time.Time, c edge.Certificate) domainFact {
 // banner says the row's problem banner is on the page, which already says what is wrong and holds
 // Check again: the detail then says it once, with the fix. A DNS-elsewhere row leads with the record
 // to change it to, and keeps what DNS says now and the last check; an expiring one keeps its facts.
-func domainDetailOf(now time.Time, v service.DomainView, box recordBox, check domainCheckForm, opts domainOptions, banner bool) domainDetail {
-	d := domainStateDetail(now, v, box, check, opts, banner)
+func domainDetailOf(now time.Time, issuerName string, v service.DomainView, box recordBox, check domainCheckForm, opts domainOptions, banner bool) domainDetail {
+	d := domainStateDetail(now, issuerName, v, box, check, opts, banner)
 	if v.Record != nil {
 		// Caravana made this domain's record (feature 048): the fact comes with every state.
 		how := "direct"
@@ -510,7 +519,7 @@ func domainDetailOf(now time.Time, v service.DomainView, box recordBox, check do
 }
 
 // domainStateDetail is domainDetailOf's part that depends on the state alone.
-func domainStateDetail(now time.Time, v service.DomainView, box recordBox, check domainCheckForm, opts domainOptions, banner bool) domainDetail {
+func domainStateDetail(now time.Time, issuerName string, v service.DomainView, box recordBox, check domainCheckForm, opts domainOptions, banner bool) domainDetail {
 	d := domainDetail{Host: v.Host, Options: opts}
 	appName := domainAppText(v)
 	checked := checkedWhen(now, v.CheckedAt)
@@ -541,7 +550,7 @@ func domainStateDetail(now time.Time, v service.DomainView, box recordBox, check
 	case v.State == edge.StateCertExpiring && banner:
 		d.Wide = true
 		d.Facts = []domainFact{
-			certFact(now, v.Certificate),
+			certFact(now, issuerName, v.Certificate, v.Uploaded),
 			{Key: "DNS", Value: plainS(dnsFactText(v.DNS))},
 			{Key: "checked", Checked: &checked},
 		}
@@ -569,10 +578,13 @@ func domainStateDetail(now time.Time, v service.DomainView, box recordBox, check
 		}
 		d.Check = &check
 	case edge.StateCertExpiring:
-		d.Sentence = plainS(expiringSentence(now, v.Certificate) + " Let's Encrypt renews 30 days before expiry, so renewal has been failing: check that DNS points here and that port 80 reaches this host.")
+		d.Sentence = plainS(expiringSentence(now, v.Certificate, v.Uploaded != nil) + " " + expiringExplain(issuerName, v.Uploaded != nil))
 		d.Check = &check
+		if v.Uploaded != nil {
+			d.Link = &actionLink{Label: "Upload a replacement", Href: "/settings/certificates"}
+		}
 	case edge.StateSelfSigned, edge.StateCertPending:
-		d.Sentence, d.Quiet = plainS(stateInfo(v.State).Sentence), true
+		d.Sentence, d.Quiet = plainS(withIssuer(stateInfo(v.State).Sentence, issuerName)), true
 		if v.State == edge.StateCertPending {
 			// Traefik asks Let's Encrypt for a certificate on the first request it gets for the host.
 			d.Link = &actionLink{Label: "Open it once", Href: "https://" + v.Host + "/", External: true}
@@ -588,7 +600,7 @@ func domainStateDetail(now time.Time, v service.DomainView, box recordBox, check
 		}
 		d.Wide = true
 		d.Facts = []domainFact{
-			certFact(now, v.Certificate),
+			certFact(now, issuerName, v.Certificate, v.Uploaded),
 			{Key: "DNS", Value: plainS(dnsFactText(v.DNS))},
 			{Key: "router", Value: router},
 			{Key: "checked", Checked: &checked},
@@ -618,17 +630,32 @@ func domainStateDetail(now time.Time, v service.DomainView, box recordBox, check
 }
 
 // expiringSentence is "The certificate expires in 6 days and hasn't been
-// renewed." (or "expired … ago").
-func expiringSentence(now time.Time, c edge.Certificate) string {
+// renewed." (or "expired … ago"). An uploaded certificate is never renewed, so it says only when.
+func expiringSentence(now time.Time, c edge.Certificate, uploaded bool) string {
 	left := c.NotAfter.Sub(now)
 	if left <= 0 {
+		if uploaded {
+			return "The uploaded certificate expired " + relative(now, c.NotAfter) + "."
+		}
 		return "The certificate expired " + relative(now, c.NotAfter) + " and hasn't been renewed."
+	}
+	if uploaded {
+		return "The uploaded certificate expires in " + plural(int(left/(24*time.Hour)), "day") + "."
 	}
 	return "The certificate expires in " + plural(int(left/(24*time.Hour)), "day") + " and hasn't been renewed."
 }
 
+// expiringExplain says why an expiring certificate needs the owner: the issuer renews 30 days
+// before the end, so a renewal has been failing; nothing renews an uploaded certificate.
+func expiringExplain(issuerName string, uploaded bool) string {
+	if uploaded {
+		return "Nothing renews an uploaded certificate: upload its replacement in Settings › Certificates."
+	}
+	return withIssuer("Let's Encrypt renews 30 days before expiry, so renewal has been failing: check that DNS points here and that port 80 reaches this host.", issuerName)
+}
+
 // bannerOf is the banner of a problem row; ok is false for a row that has none.
-func bannerOf(now time.Time, v service.DomainView, check domainCheckForm) (domainBanner, bool) {
+func bannerOf(now time.Time, issuerName string, v service.DomainView, check domainCheckForm) (domainBanner, bool) {
 	b := domainBanner{Host: v.Host, Mark: stateInfo(v.State).Mark, Check: check}
 	switch v.State {
 	case edge.StateDNSElsewhere:
@@ -643,12 +670,19 @@ func bannerOf(now time.Time, v service.DomainView, check domainCheckForm) (domai
 		b.Explain = sentence{plain("Until it changes, caravana can't get a certificate and visitors won't reach "), mono(domainAppText(v)), plain(". Change the record where you manage DNS.")}
 	case edge.StateCertExpiring:
 		left := v.Certificate.NotAfter.Sub(now)
-		if left <= 0 {
-			b.Line = sentence{mono(v.Host), plain(" expired " + relative(now, v.Certificate.NotAfter) + " and hasn't been renewed.")}
-		} else {
-			b.Line = sentence{mono(v.Host), plain(" expires in " + plural(int(left/(24*time.Hour)), "day") + " and hasn't been renewed.")}
+		tail := " and hasn't been renewed."
+		if v.Uploaded != nil {
+			tail = "."
 		}
-		b.Explain = plainS("Let's Encrypt renews 30 days before expiry, so renewal has been failing: check that DNS points here and that port 80 reaches this host.")
+		if left <= 0 {
+			b.Line = sentence{mono(v.Host), plain(" expired " + relative(now, v.Certificate.NotAfter) + tail)}
+		} else {
+			b.Line = sentence{mono(v.Host), plain(" expires in " + plural(int(left/(24*time.Hour)), "day") + tail)}
+		}
+		b.Explain = plainS(expiringExplain(issuerName, v.Uploaded != nil))
+		if v.Uploaded != nil {
+			b.Link = &actionLink{Label: "Upload a replacement", Href: "/settings/certificates"}
+		}
 	default:
 		return domainBanner{}, false
 	}
@@ -786,7 +820,7 @@ func redirectsUnderTargets(list []service.DomainView) []service.DomainView {
 // it, the first row whose state needs the owner opens by itself. appPage says
 // the rows are drawn on the app's own page, so Check again comes back there.
 // draft is a refused Options post, drawn back in its row.
-func domainViewsOf(now time.Time, list []service.DomainView, apps map[string]domainAppInfo, box func(host string) recordBox, open string, appPage bool, draft *domainDraft) ([]domainRowView, []domainBanner, *domainMore) {
+func domainViewsOf(now time.Time, issuerName string, list []service.DomainView, apps map[string]domainAppInfo, box func(host string) recordBox, open string, appPage bool, draft *domainDraft) ([]domainRowView, []domainBanner, *domainMore) {
 	explicit := open != "" && slices.ContainsFunc(list, func(v service.DomainView) bool { return v.Host == open })
 	var rows []domainRowView
 	var banners []domainBanner
@@ -802,7 +836,7 @@ func domainViewsOf(now time.Time, list []service.DomainView, apps map[string]dom
 		row := domainRowView{Host: v.Host, Anchor: domainAnchor(v.Host), URL: "https://" + v.Host + v.Path,
 			State: v.Host + ", " + pill.Word, TeamOnly: v.TeamOnly, Path: v.Path, Pill: pill,
 			Project: info.project, App: domainAppText(v), AppID: v.App, Environment: v.Environment, RedirectTo: v.RedirectOf,
-			Cert: certCellOf(now, v), ShowOpen: v.State != edge.StateDNSElsewhere}
+			Cert: certCellOf(now, issuerName, v), ShowOpen: v.State != edge.StateDNSElsewhere}
 		if row.Environment == "" {
 			row.Environment = app.DefaultEnvironment
 		}
@@ -818,8 +852,8 @@ func domainViewsOf(now time.Time, list []service.DomainView, apps map[string]dom
 		case !opened && domainProblem(v.State):
 			row.Open, opened = true, true
 		}
-		b, hasBanner := bannerOf(now, v, check)
-		row.Detail = domainDetailOf(now, v, box(v.Host), check, domainOptionsOf(v, info, appPage, draft), hasBanner && len(banners) < maxDomainBanners)
+		b, hasBanner := bannerOf(now, issuerName, v, check)
+		row.Detail = domainDetailOf(now, issuerName, v, box(v.Host), check, domainOptionsOf(v, info, appPage, draft), hasBanner && len(banners) < maxDomainBanners)
 		if hasBanner {
 			if len(banners) < maxDomainBanners {
 				banners = append(banners, b)
@@ -938,7 +972,12 @@ func (s *server) loadDomains(ctx context.Context, q domainsQuery, empty emptyVie
 
 	region.Known = hostsKey(list)
 	region.Count = domainsCount(list)
-	region.Rows, region.Banners, region.More = domainViewsOf(s.now(), list, apps, box, q.Open, appPage, q.Draft)
+	issuer, err := s.svc.IssuerName(ctx)
+	if err != nil {
+		return domainsRegion{}, err
+	}
+	region.Rows, region.Banners, region.More = domainViewsOf(s.now(), issuer, list, apps, box, q.Open, appPage, q.Draft)
+	region.Footer = domainsFooter(issuer, list)
 	s.gateDomainRows(ctx, &region)
 	if len(list) == 0 {
 		if q.filterQuery() != "" && !appPage {
@@ -948,6 +987,21 @@ func (s *server) loadDomains(ctx context.Context, q domainsQuery, empty emptyVie
 		}
 	}
 	return region, nil
+}
+
+// domainsFooter is the line under the table. Uploaded certificates are known from the rows that
+// present one (a member may see Domains but not the uploads themselves).
+func domainsFooter(issuerName string, list []service.DomainView) string {
+	line := "Checks run every minute while this page is open, and every 15 minutes otherwise. Certificates come from " + withIssuerOrDefault(issuerName) + " and renew by themselves"
+	if slices.ContainsFunc(list, func(v service.DomainView) bool { return v.Uploaded != nil }) {
+		line += ", or from the certificates uploaded in Settings"
+	}
+	return line + "."
+}
+
+// withIssuerOrDefault is the issuer's name, Let's Encrypt when the installation names none.
+func withIssuerOrDefault(issuerName string) string {
+	return withIssuer(letsEncrypt, issuerName)
 }
 
 // domainsEmpty is /domains' empty state.

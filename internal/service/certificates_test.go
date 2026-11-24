@@ -12,6 +12,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/edge"
 	"github.com/cosmic-chimps/caravana/internal/edge/edgetest"
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 func TestCertificateSettings(t *testing.T) {
@@ -147,5 +148,29 @@ func TestCertificates(t *testing.T) {
 	empty := newEnv(t)
 	if list, err := empty.svc.Certificates(ctx); err != nil || list == nil || len(list) != 0 {
 		t.Errorf("no domains = %v (%v), want an empty list, not nil", list, err)
+	}
+}
+
+// IssuerName says the issuer in words from SQLite and the installer's setting only (feature 034).
+func TestIssuerName(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	for mode, want := range map[string]string{"production": "Let's Encrypt", "staging": "Let's Encrypt (staging)", "none": "", "": ""} {
+		e.svc.SetACME(mode, "")
+		if got, err := e.svc.IssuerName(ctx); err != nil || got != want {
+			t.Errorf("CARAVANA_ACME=%q: IssuerName = %q, %v; want %q", mode, got, err, want)
+		}
+	}
+	e.svc.SetACME("production", "")
+	for server, want := range map[string]string{
+		"https://dv.acme-v02.api.pki.goog/directory": "Google Trust Services",
+		"https://acme.example.org/directory":         "acme.example.org",
+	} {
+		if err := e.store.SetACMEIssuer(ctx, store.ACMEIssuer{Server: server, Email: "ops@example.com"}); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := e.svc.IssuerName(ctx); err != nil || got != want {
+			t.Errorf("custom %s: IssuerName = %q, %v; want %q", server, got, err, want)
+		}
 	}
 }

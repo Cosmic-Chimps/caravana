@@ -31,6 +31,8 @@ type domainAddInput struct {
 
 // domainAddView is the Add panel as the page draws it.
 type domainAddView struct {
+	// Issuer is the installation's issuer in words (service.CertificateSettings.IssuerName), "" for none.
+	Issuer string
 	Action string // where it posts
 	// FixedApp is the app the form adds to on the app's own page: it is drawn
 	// as text (Fixed), not a select, and Revision is its revision.
@@ -172,6 +174,11 @@ func (s *server) domainAddFor(ctx context.Context, in domainAddInput, fixedApp s
 		Cert:    checkLine{Mark: "idle", Words: "HTTPS certificate"},
 		Primary: true}
 	v.Records = recordBoxFor(in.Host, s.hostAddressTexts(ctx))
+	issuer, err := s.svc.IssuerName(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v.Issuer = issuer
 	zones, err := s.svc.DNSZones(ctx)
 	if err != nil {
 		return nil, err
@@ -332,10 +339,12 @@ func (v *domainAddView) applyCheck(chk service.DomainCheck) {
 	info := stateInfo(certState(c.Status))
 	v.Cert.Mark, v.Cert.Reason = info.Mark, plainS(info.Words)
 	switch {
+	case c.Status == edge.CertIssued && chk.Uploaded != nil:
+		v.Cert.Reason = plainS("uploaded: " + chk.Uploaded.Subject)
 	case c.Status == edge.CertIssued:
 		v.Cert.Reason = plainS("issued by " + c.Issuer)
 	case info.Cert != "" && info.Cert != "—":
-		v.Cert.Reason = plainS(info.Cert) // waiting for Let's Encrypt, Traefik's own
+		v.Cert.Reason = plainS(withIssuer(info.Cert, v.Issuer)) // waiting for Let's Encrypt, Traefik's own
 	}
 }
 

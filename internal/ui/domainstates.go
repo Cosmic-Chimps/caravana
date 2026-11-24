@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/cosmic-chimps/caravana/internal/edge"
+import (
+	"strings"
+
+	"github.com/cosmic-chimps/caravana/internal/edge"
+)
 
 // One table of states (feature 023, the critique's "one fact, three vocabularies"). What a
 // domain's state is called, how it is marked and what its certificate column says are written
@@ -40,6 +44,20 @@ var domainStates = map[edge.State]domainState{
 	edge.StateRedirect: {Mark: "idle", Words: "redirects"},
 	edge.StateLive:     {Mark: "healthy", Words: "live · HTTPS"},
 	edge.StateUnknown:  {Mark: "idle", Words: "couldn't check", Cert: "—", Expiry: "—"},
+}
+
+// The state table names Let's Encrypt, today's words for an installation with no issuer of its own
+// (installer's issuer, none, unknown). withIssuer puts the installation's issuer in their place
+// (feature 034: Google Trust Services, ZeroSSL, a private CA's host).
+const letsEncrypt = "Let's Encrypt"
+
+// withIssuer is s with Let's Encrypt replaced by the issuer's name (service.CertificateSettings.IssuerName);
+// "" for none and unknown, which keep today's words.
+func withIssuer(s, issuerName string) string {
+	if issuerName == "" || issuerName == letsEncrypt {
+		return s
+	}
+	return strings.ReplaceAll(s, letsEncrypt, issuerName)
 }
 
 // stateInfo is the table's row for s; a state it doesn't know reads as unknown.

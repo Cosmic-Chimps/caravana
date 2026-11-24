@@ -111,6 +111,21 @@ func (s *Service) CertificateSettings(ctx context.Context) (CertificateSettings,
 	return out, nil
 }
 
+// IssuerName is the name of the issuer certificates come from, in words ("Let's Encrypt", a custom
+// issuer's name; "" when the installation has none or doesn't say). It reads only SQLite and the
+// installer's setting, never Nomad, so pages that only name the issuer (Domains) stay cheap.
+func (s *Service) IssuerName(ctx context.Context) (string, error) {
+	custom, ok, err := s.store.ACMEIssuer(ctx)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return customIssuerName(custom.Server), nil
+	}
+	mode, _ := s.ACME()
+	return issuerNameOf(mode), nil
+}
+
 // issuerOf names the issuer of CARAVANA_ACME's mode.
 func issuerOf(mode string) string {
 	switch mode {
