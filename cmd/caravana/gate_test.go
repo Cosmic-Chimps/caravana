@@ -163,6 +163,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"backup-restore", false, g.backupRestoreStep},
 		{"volume-backup-restore", false, g.volumeBackupRestoreStep},
 		{"sqlite-backup-restore", false, g.sqliteBackupRestoreStep},
+		{"backup-copies", false, g.backupCopiesStep},
 		{"mysql-backup-restore", false, g.mysqlBackupRestoreStep},
 		{"mongodb-backup-restore", false, g.mongodbBackupRestoreStep},
 		{"stop-timeout", false, g.stopTimeoutStep},
@@ -548,7 +549,7 @@ func gateS3Job(secret string) *api.Job {
 					// The image Caravana's backup jobs use, so the node pulls it once.
 					"image":      nomadjob.DefaultBackupImage,
 					"entrypoint": []string{"/bin/sh", "-c"},
-					"args":       []string{"mkdir -p /data/backups && exec rclone serve s3 /data --addr :9000 --auth-key GATEKEY," + secret},
+					"args":       []string{"mkdir -p /data/backups /data/offsite && exec rclone serve s3 /data --addr :9000 --auth-key GATEKEY," + secret},
 				},
 				Resources: &api.Resources{CPU: new(100), MemoryMB: new(128)},
 			}},

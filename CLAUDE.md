@@ -2058,7 +2058,19 @@ second copy of every backup. `plan.md` D1–D15 are the decisions and its Deviat
   (`backupWhere`) and "Restore from" with more than one place, and the Compose form's backup part carries `backupDestination`,
   `backupCopyTo` and `backupCopyKeep`. Forms work without JavaScript; the key input never holds a value. Sentinel tests in `service`,
   `api` and `ui` (`TestDestinationKeyNeverShows`).
-- Lab (to run in Phase E): the gate step `backup-copies` and the console step `console-backup-destinations` (plan D15) are not run yet.
+- Lab (2026-11-24, each run alone): the gate step `backup-copies` (`gate_backup_copies_test.go`: offsite added through the API, Test of main and
+  offsite ok, a destination with a missing bucket fails Test with no key in its message and is removed, a Postgres service with
+  `copyTo: ["offsite"]`, Back up now, the backup and its copy succeed with the object under `/data/offsite/`, the data changed, the object
+  deleted from main **through the bucket's S3 API**, a restore with no `from` reads offsite and brings the data back, removing offsite while
+  used is 409 `destination_in_use`, and the key in no answer, log line, job (the copy and check jobs are read while they live), export or
+  SQLite file) passed in 60.6 s with `-run 'TestLab/^(api-needs-token|backup-copies)$'`; the console step `console-backup-destinations`
+  (`console_backup_destinations_test.go`: offsite through the Settings form and Test, a busybox volume app whose "Where backups go…" sets
+  Also copy to offsite, Back up now, the row says "in main · copied to offsite", the restore form offers both places, the app deleted and
+  offsite removed) passed in 132.9 s with `-run 'TestConsoleLab/^console-(sign-in|backup-destinations)$'`; the existing `backup-restore`
+  (48.7 s) and `volume-backup-restore` (335.3 s) passed unchanged with `-run 'TestLab/^(api-needs-token|backup-restore|volume-backup-restore)$'`.
+  The gate's bucket job now makes `/data/offsite` beside `/data/backups`. Lab fact: `rclone serve s3` caches its listings, so a file removed
+  under it with `rm` is still listed and sized (the check job finds it) while a download gets 404; delete through the S3 API instead, and
+  write the endpoint in a connection string quoted (`endpoint='http://127.0.0.1:9000'`), or rclone can't parse it.
 - Not in 052: other kinds of destination, encryption, moving backups between destinations, renaming a destination, a third copy,
   provider-side replication, per-copy pinning.
 

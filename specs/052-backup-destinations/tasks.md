@@ -53,5 +53,5 @@
 
 ## Phase E: lab
 
-- [ ] T018 Gate step `backup-copies` (D15).
-- [ ] T019 Console step `console-backup-destinations` (D15).
+- [x] T018 Gate step `backup-copies` (D15).
+- [x] T019 Console step `console-backup-destinations` (D15).

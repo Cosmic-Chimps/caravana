@@ -285,3 +285,18 @@ Spec: `spec.md`. Task `mv6m`. Branch: the worktree branch `alta/robust-monsoon-c
   lines) and `backupCopyKeep`, kept through `draftOf` and `parseComposeDraft`; the model's refusals come back on them (`fieldFor`).
 - No new class or token: `tools/ui-css.sh build` leaves `app.css` as it was.
 
+## Deviations (phase E)
+
+- **D15 gate.** The bucket job's `mkdir` makes both folders for every step that starts it (`mkdir -p /data/backups /data/offsite`). The step adds
+  `offsite` and the bucket-less destination through `PUT /v1/backups/destinations/{name}` (201) with the endpoint of the default `startBucket`
+  made, and deletes the first copy's object through the bucket's own S3 API, not with `rm` (lab fact below). It reads the copy and check jobs
+  with a poller that lists `_backup-check-*` and `<app>_*` jobs every 500 ms while the step runs, since those jobs are purged when they end,
+  and fails if it saw none of either kind. The restore's record and the backup's `expired` flag are asserted too: after the restore the backup
+  is gone from main and kept in offsite.
+- **Lab fact.** `rclone serve s3` keeps its directory listings: after `rm` of a file under it, `lsf` and `size` still report the object while a
+  download is 404 `NoSuchKey`. The first two runs of the step failed on it (the check job found the object in main, then the restore's
+  download failed "object not found", or timed out), which is a quirk of the lab's stand-in and not of the feature: on a real bucket a deletion
+  is seen at once. rclone's connection-string form needs the endpoint quoted (`endpoint='http://…'`).
+- **D15 console.** The step calls `startBucket` always (the default destination points at the live bucket job) and removes offsite through the
+  Remove form after the app that copied to it is deleted, which also shows the refusal gone.
+

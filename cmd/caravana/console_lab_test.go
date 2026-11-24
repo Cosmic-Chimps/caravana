@@ -111,6 +111,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-mcp", c.mcpServer},
 		{"console-domains", c.domains},
 		{"console-backup-daily", c.backupDaily},
+		{"console-backup-destinations", c.backupDestinations},
 		{"console-schedules", c.schedules},
 		{"console-schedule-in-copy", c.scheduleInCopy},
 		{"console-domains-states", c.domainsStates},
