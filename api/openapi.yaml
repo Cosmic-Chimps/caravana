@@ -13179,6 +13179,48 @@ components:
           description: The issuer the agent last rendered into Nomad's config; absent when it rendered none.
         space:
           $ref: "#/components/schemas/NodeSpace"
+        io:
+          type: object
+          additionalProperties: false
+          description: |
+            The network and disk counters since boot, read from `/proc` (feature 055). Caravana keeps the
+            previous report of each server and turns two of them, 20 to 120 seconds apart, into the rates
+            `getHost` answers; a counter that went down is a reset and makes no rate. Left out when the
+            agent can't read them or is older than the feature. A block that doesn't fit these rules is
+            dropped and the sync still succeeds.
+          required: [at, net, disks]
+          properties:
+            at: {type: integer, minimum: 1, description: "When the counters were read, Unix milliseconds by the agent's clock; it must be within 10 minutes of Caravana's."}
+            net:
+              type: array
+              maxItems: 4
+              description: The interface of the default route and `caravana-mesh`; never a virtual interface of the apps.
+              items:
+                type: object
+                additionalProperties: false
+                required: [name, kind, rxBytes, txBytes]
+                properties:
+                  name: {type: string, minLength: 1, maxLength: 64}
+                  kind: {type: string, enum: [default, mesh]}
+                  rxBytes: {type: integer, minimum: 0}
+                  txBytes: {type: integer, minimum: 0}
+            disks:
+              type: array
+              maxItems: 4
+              description: The block devices that hold Nomad's data and Docker's root (one entry when it is one device).
+              items:
+                type: object
+                additionalProperties: false
+                required: [name, holds, readBytes, writeBytes, busyMs]
+                properties:
+                  name: {type: string, minLength: 1, maxLength: 64}
+                  holds:
+                    type: array
+                    maxItems: 2
+                    items: {type: string, enum: [nomad, docker]}
+                  readBytes: {type: integer, minimum: 0, description: "Sectors read times 512."}
+                  writeBytes: {type: integer, minimum: 0}
+                  busyMs: {type: integer, minimum: 0, description: "The kernel's io_ticks: milliseconds the device was busy."}
         runsConsole:
           type: boolean
           description: |

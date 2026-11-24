@@ -280,6 +280,32 @@ check_servers_api() {
   ! grep -q 'cvnd_' <<<"$out" || die "the servers list holds a node token"
 }
 
+# check_host_io: feature 055. The agent reads /proc's network and disk counters every 30 seconds and the console
+# turns two reports into rates: within four minutes GET /v1/host?server=<the first server> has no reason, the
+# network's and the disk's rates as numbers (never null), the default-route interface and at least one device.
+# Needs TOKEN.
+check_host_io() {
+  local name out end reason
+  name="$(api -fsS "https://$DOMAIN/v1/servers" | jsonq 'd["servers"][0]["name"]')" || die "GET /v1/servers failed"
+  end=$((SECONDS + 240))
+  while :; do
+    out="$(api -fsS "https://$DOMAIN/v1/host?server=$name")" || die "GET /v1/host?server=$name failed"
+    reason="$(jsonq 'd["io"]["reason"]' <<<"$out")"
+    [ "$reason" = None ] && break
+    [ "$SECONDS" -lt "$end" ] || die "the first server's network and disk rates are still unknown after 4 minutes (reason $reason):\n$(jsonq 'd["io"]' <<<"$out")"
+    sleep 10
+  done
+  for f in 'd["io"]["network"]["rxBytesPerSec"]' 'd["io"]["network"]["txBytesPerSec"]' 'd["io"]["disk"]["readBytesPerSec"]' \
+    'd["io"]["disk"]["writeBytesPerSec"]' 'd["io"]["disk"]["busyPercent"]'; do
+    [ "$(jsonq "$f is not None" <<<"$out")" = True ] || die "$f is null although the I/O is known:\n$(jsonq 'd["io"]' <<<"$out")"
+  done
+  [ "$(jsonq 'any(i["kind"] == "default" for i in d["io"]["network"]["interfaces"])' <<<"$out")" = True ] ||
+    die "the I/O has no default-route interface:\n$(jsonq 'd["io"]' <<<"$out")"
+  [ "$(jsonq 'len(d["io"]["disk"]["devices"]) >= 1' <<<"$out")" = True ] ||
+    die "the I/O has no disk device:\n$(jsonq 'd["io"]' <<<"$out")"
+  [ "$(jsonq '0 <= d["io"]["disk"]["busyPercent"] <= 100' <<<"$out")" = True ] || die "the disk's busy share isn't 0 to 100:\n$(jsonq 'd["io"]' <<<"$out")"
+}
+
 # identity_claims EXPR: EXPR over the claims of the workload identity token of idapp's copy, read
 # inside its container. The token never leaves this function's pipe and is never printed.
 identity_claims() {
@@ -1189,6 +1215,9 @@ PY
 
   say "the requests Traefik served are read from its access log (feature 047)"
   check_requests_host
+
+  say "network and disk rates from the agent's counters (feature 055)"
+  check_host_io
 
   say "the cluster's issuer, its discovery documents and an identity token (feature 038)"
   check_issuer_host

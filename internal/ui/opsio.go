@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -32,15 +33,12 @@ type ioRow struct {
 // "1.2 MB/s".
 func bytesRateText(bps int64) string { return humanBytes(bps) + "/s" }
 
-// holdsWords says what a device holds: "Nomad", "Docker" or "Nomad and Docker".
+// holdsWords says what a device holds, in a fixed order: "Nomad", "Docker" or "Nomad and Docker".
 func holdsWords(holds []string) string {
-	words := make([]string, 0, len(holds))
-	for _, h := range holds {
-		switch h {
-		case "nomad":
-			words = append(words, "Nomad")
-		case "docker":
-			words = append(words, "Docker")
+	var words []string
+	for _, h := range []struct{ key, word string }{{"nomad", "Nomad"}, {"docker", "Docker"}} {
+		if slices.Contains(holds, h.key) {
+			words = append(words, h.word)
 		}
 	}
 	return strings.Join(words, " and ")

@@ -2222,6 +2222,44 @@ doc: `docs/people.md`. Migration 0043, API 0.60.0 (0.59.0 is 053, secret templat
 - Not in 053: single sign-on, custom roles, teams, an audit log, per-project Nomad namespaces, sending the invite by mail, a roles page per
   app, and an invite for someone who already has an account.
 
+Feature 055 (`specs/055-host-io`, branch `055-host-io`, stacked on 054's work): network and disk throughput per server, read by the node agent
+from `/proc` (the maintainer's decision, 2026-11-24; a Beszel add-on went to the backlog). `plan.md` D1–D13 are the decisions; operator doc:
+`docs/host-io.md`. Migration 0044, API 0.61.0, no new module, no policy change, no new route (so no access-table work), constitution unchanged.
+- The agent (`internal/nodeagent/io.go`): `Report.IO *IOReport` (`io`, `omitempty`, so an old console ignores it): `{at (Unix ms), net[{name, kind
+  "default"|"mesh", rxBytes, txBytes}], disks[{name, holds ["nomad","docker"], readBytes, writeBytes, busyMs}]}`, cumulative since boot. The
+  parsers are pure (`parseNetDev`, `parseDiskstats`, `parseMountinfo`, `deviceOf`); files are read under the agent's `Root`
+  (`/proc/net/dev`, `/proc/diskstats`, `/proc/self/mountinfo`; fixtures in `testdata/proc/`). Interfaces: the default route's (`State.PublicInterface`
+  or `ip -4 route show default`) and `caravana-mesh`, never `lo`, `veth*`, `docker*`, `cni*`, `br-*`, `nomad`, `caravana0`. Devices: the ones holding
+  `/opt/nomad/data` and Docker's root (`docker info --format {{.DockerRootDir}}`, `/var/lib/docker` otherwise), by the longest mount point and its
+  `major:minor`, one entry with both `holds` when it is one disk; loop, RAM and zram devices and mounts with no `diskstats` line (btrfs) are skipped.
+  The agent sends bytes (sectors × 512), not sectors; a counter over 2^63 leaves its entry out. A failed read leaves the block out; the sync never fails.
+- The console (`service/hostio.go`): `NodeIO` decodes leniently (`UnmarshalJSON` marks a block that doesn't read `Invalid`), `checkIO` refuses a block
+  by a reason (names ≤ 64 printable bytes, ≤ 4 interfaces and devices, known kinds and holds, non-negative counters, no twins, the block's time within
+  10 minutes of the console's) and `NodeSync` drops it with one log line; the io block is not stored in the server's report. `ioRates(prev, cur)`
+  makes rates only when the samples are 20 to 120 s apart; a counter that went down is a reset of that interface or device alone; busy % = Δbusy/Δt capped
+  at 100. `hostIOState` (memory only, by server index) keeps the previous block and the newest rates, fresh for 3 minutes; after a restart the first
+  rates come with the second report; a removed server is forgotten. Deviation from the brief: the **network headline is the default-route interface's**,
+  not a sum over interfaces (the mesh's bytes leave on the default interface again, so a sum counted them twice); the mesh is listed beside it. Disk read
+  and write are summed over devices, busy is the busiest device's.
+- Reasons (`HostIO.Reason`, `""` when known): `no_agent` (a node with no server row: the lab's), `agent_too_old` (syncs, no usable block), `stale` (no sync for
+  3 minutes, with `Since`), and `waiting` (one sample so far, a gap too long, a reset, or Caravana just started; an addition to the brief's three).
+  A number that isn't known is `null` in the API, NULL in the database and "—" on the pages, never 0.
+- Storage: migration `0044_host_io.sql` adds `net_rx_bps`, `net_tx_bps`, `disk_read_bps`, `disk_write_bps`, `disk_busy_pct` (nullable INTEGER) to `metrics_host`
+  (`TestMigration0019OnAStoreWith0018Data` skips 0044 too, since 0044 alters 0019's table). The sampler's `addHostRows` writes a node's fresh rates by
+  its server row (`serverNode.Index`, set by `buildServerDirectory`), `foldHosts` takes the median of each. `Service.HostIOSeries(server, range)` reads
+  them back into points of the range's step.
+- API 0.61.0: `getHost.io` (schema `HostIO`: `reason`, `since`, `at`, `network{rxBytesPerSec, txBytesPerSec, interfaces[]}`,
+  `disk{readBytesPerSec, writeBytesPerSec, busyPercent, devices[]}`). Console: the server page's **Network and disk** section (`internal/ui/opsio.go`,
+  `srv-io`: rows in B/s, KB/s, MB/s by `humanBytes`, names in mono, "—" rows with one sentence per reason, drawn with the Space section's classes) and
+  Monitoring's host section: two charts under the memory chart, network (in solid, out dashed) and disk (read solid, write dashed) over the page's range
+  (`internal/ui/monitoringio.go`, the existing plot helpers and a hidden table), or the line that says why there are none. No new CSS.
+- Tests: parsers and report building on fixtures, `checkIO`, `ioRates`, `hostIOState`, the sampler writing values and NULLs, the fold, `HostIOSeries`, the store
+  round trip and the migration over a 0043 store, `getHost.io` through a real agent join (`internal/api/host_io_test.go`), and the pages for known data and each
+  reason (`internal/ui/opsio_test.go`). `deploy/dev/install-test.sh` has `check_host_io` (after two syncs `GET /v1/host?server=<first>` has non-null rates): written and
+  shellchecked, **not run**. The lab's node is unmanaged, so a `TestConsoleLab` step could only show `no_agent`, which the UI tests cover.
+- Not in 055: alerts or needs-you items for I/O, per-container I/O, IOPS, latency, a threshold setting, a monitoring add-on. Rerun the installer on a server to get an
+  agent that reports I/O.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

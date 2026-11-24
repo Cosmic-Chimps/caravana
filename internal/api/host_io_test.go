@@ -32,6 +32,7 @@ func TestGetHostIO(t *testing.T) {
 	env, _ := os.ReadFile(filepath.Join(root, "etc/caravana-node/node.env"))
 	auth := "Bearer " + regexp.MustCompile(`cvnd_[A-Za-z0-9_-]{43}`).FindString(string(env))
 
+	wellFormed := func(io any) bool { m, _ := io.(map[string]any); _, ok := m["disks"]; return ok } // the bad block has no disks
 	sync := func(io any) int {
 		report := map[string]any{
 			"agent": "0.0.1", "nomad": "2.0.7", "docker": "27.5.1", "dockerRunning": true, "diskFreeMb": 1, "diskTotalMb": 2,
@@ -41,6 +42,9 @@ func TestGetHostIO(t *testing.T) {
 			report["io"] = io
 		}
 		b, _ := json.Marshal(report)
+		if io != nil && wellFormed(io) {
+			checkSchema(t, loadContract(t), b, "NodeReport") // what an agent sends is what the contract says
+		}
 		status, _, _ := callWith(t, auth, http.MethodPost, e.RawURL+"/v1/node/sync", "application/json", string(b))
 		return status
 	}
@@ -116,4 +120,22 @@ func TestGetHostIOWithoutAnAgent(t *testing.T) {
 			t.Errorf("a number without an agent: %v in %v", v, io)
 		}
 	}
+}
+
+// What the real agent puts in its report is what the contract says: the io block of a report built by the
+// agent's own types validates against NodeReport.
+func TestAgentIOBlockMatchesTheContract(t *testing.T) {
+	r := nodeagent.Report{Agent: "0.0.1", Nomad: "2.0.7", Docker: "27.5.1", DockerRunning: true, DiskFreeMB: 1, DiskTotalMB: 2, MemoryMB: 3,
+		Kernel: "6", Role: "client", Reach: []nodeagent.Reach{},
+		IO: &nodeagent.IOReport{At: time.Now().UnixMilli(),
+			Net:   []nodeagent.NetCounter{{Name: "eth0", Kind: "default", RxBytes: 1, TxBytes: 2}, {Name: "caravana-mesh", Kind: "mesh", RxBytes: 3, TxBytes: 4}},
+			Disks: []nodeagent.DiskIO{{Name: "vda1", Holds: []string{"docker", "nomad"}, ReadBytes: 5, WriteBytes: 6, BusyMs: 7}}}}
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkSchema(t, loadContract(t), b, "NodeReport")
+	r.IO = &nodeagent.IOReport{At: 1, Net: []nodeagent.NetCounter{}, Disks: []nodeagent.DiskIO{}}
+	b, _ = json.Marshal(r)
+	checkSchema(t, loadContract(t), b, "NodeReport")
 }
