@@ -36,31 +36,31 @@
 
 ## Phase B — the agent
 
-- [ ] T010 `nodeagent`: `Report.RunsConsole`, `Report.ConsoleAddress`, `Answer.ConsoleURL`, `Answer.ConsoleAddress`,
+- [x] T010 `nodeagent`: `Report.RunsConsole`, `Report.ConsoleAddress`, `Answer.ConsoleURL`, `Answer.ConsoleAddress`,
   `State.ConsoleAddress`; validation per contracts/agent.md; table tests with crafted answers (newline, space, quote,
   `$(`, `/`, `:`, port, scheme, IP, uppercase, 254 bytes, bad ID) — each leaves both files and the unit untouched.
-- [ ] T011 Apply (contracts/agent.md §Apply) with the files under the agent's root (`a.path`) and `a.run` for
+- [x] T011 Apply (contracts/agent.md §Apply) with the files under the agent's root (`a.path`) and `a.run` for
   systemctl, the health wait behind a seam; tests: applied, unhealthy → files back + `failed`, interrupted `running`,
   repeated ID not applied twice, the other lines of both files kept byte for byte, mode/owner kept.
-- [ ] T012 Follow (joined servers) with tests: loopback URL ignored, health 200 → node env rewritten, failure kept.
-- [ ] T013 Service side wired (T006) against the real types; `go test ./internal/nodeagent ./internal/service`.
+- [x] T012 Follow (joined servers) with tests: loopback URL ignored, health 200 → node env rewritten, failure kept.
+- [x] T013 Service side wired (T006) against the real types; `go test ./internal/nodeagent ./internal/service`.
 
 ## Phase C — API and console
 
-- [ ] T014 `internal/api`: the five operations, error mapping, `api/openapi.yaml` 0.57.0 (schemas and codes), the
+- [x] T014 `internal/api`: the five operations, error mapping, `api/openapi.yaml` 0.57.0 (schemas and codes), the
   deploy-token scope walk lists them as denied, parity test.
-- [ ] T015 `internal/ui`: Operator › Console address per contracts/page.md; nav entry; tests (page, refusal at field,
+- [x] T015 `internal/ui`: Operator › Console address per contracts/page.md; nav entry; tests (page, refusal at field,
   panel polling 286, switch/cancel posts, no-JS forms); `tools/ui-css.sh build` if classes are new.
-- [ ] T016 `docs/console-address.md` (operator doc: what changes, the window, passkeys, issuer, cluster, lab facts),
+- [x] T016 `docs/console-address.md` (operator doc: what changes, the window, passkeys, issuer, cluster, lab facts),
   `changelog.d/console-address.md` (Added, Upgrade: rerun the installer once).
 
 ## Phase D — lab
 
-- [ ] T017 `deploy/dev/install-test.sh` `check_console_address_host`: `/etc/hosts` names for `caravana.test` and
+- [x] T017 (passed on 2026-11-24 on Ubuntu 24.04 in 3 min 48 s; `ONLY=console-address deploy/dev/install-test.sh` runs just it) `deploy/dev/install-test.sh` `check_console_address_host`: `/etc/hosts` names for `caravana.test` and
   `console2.caravana.test`; `nowhere.caravana.test` refused 422 with the env file and the route unchanged; the change to
   `console2.caravana.test` ready, switched, applied; env file, `install.env`, `/v1/console-address`, the issuer, the
   old domain's 308 for `/` and 200 for `/v1/health`, whoami answering throughout, Traefik's allocation unchanged; a
-  rerun of the installer keeps the new domain. Run it.
-- [ ] T018 `TestConsoleLab` step `console-address` (the lab's Traefik has no console route: the page shows the
+  rerun of the installer keeps the new domain.
+- [x] T018 `TestConsoleLab` step `console-address` (the lab's Traefik has no console route: the page shows the
   sentence, the API answers `console_address_unsupported`).
-- [ ] T019 CLAUDE.md entry; plan deviations; task `xbf5` complete.
+- [x] T019 CLAUDE.md entry; plan deviations; task `xbf5` complete.

@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-23
 
-**Status**: In progress
+**Status**: Implemented, unreleased
 
 **Input**: CodeAlta task `xbf5` ("11 · Change the console's domain from the console", raised by the maintainer on
 2026-11-23 while setting up a GCP VM for Codemagic Patch: "there should be a way to change the domain in the UI").

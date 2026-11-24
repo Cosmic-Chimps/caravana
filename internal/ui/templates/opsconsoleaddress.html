@@ -1,0 +1,96 @@
+{{/* Operator › Console address (/ops/console-address, feature 051): the domain the console answers on, what
+     depends on it, the form that checks a new one, and the change panel. The page is complete without script:
+     the form, Switch and Cancel are plain posts that answer 303. The change panel (#console-change) is read
+     again from /parts/ops/console-address every 3 s while the change is checking or switching, and the part
+     answers 286 when it has settled so htmx stops; without script a <noscript> refresh reloads the page. The
+     form sits outside the panel, so a refresh never replaces what is being typed. Takes a consoleAddressPage. */}}
+
+{{define "page-class"}} cv-page-upd{{end}}
+
+{{/* console-change: the panel's inside: the status, the checks, one sentence, the reason and the actions that
+     fit. Takes a consoleChangeView. */}}
+{{define "console-change"}}
+<div class="cv-def">
+  <p>{{template "status-pill" .Status}}</p>
+  {{with .Refusal}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+  {{if .Checks}}
+  <dl class="cv-def-rows">
+    {{range .Checks}}<div class="cv-def-row"><dt class="cv-label">{{.Label}}</dt><dd>{{template "status-quiet" .Status}} <span class="text-fg-2">{{.Message}}</span></dd></div>
+    {{end}}
+  </dl>
+  {{end}}
+  <p class="text-base text-fg-1" role="status">{{template "sentence" .Summary}}</p>
+  {{with .Reason}}<p class="text-sm text-fg-2">{{.}}</p>{{end}}
+  {{if .Link}}<p class="text-sm"><a href="{{.Link}}" class="cv-inline-mono">{{.Link}}</a></p>{{end}}
+  {{if or .CanSwitch .CanCancel}}
+  <div class="cv-actions">
+    {{if .CanSwitch}}<form method="post" action="/ops/console-address/changes/{{.ID}}/switch"><button type="submit" class="cv-btn cv-btn-primary">Switch to {{.Domain}}</button></form>{{end}}
+    {{if .CanCancel}}<form method="post" action="/ops/console-address/changes/{{.ID}}/cancel"><button type="submit" class="cv-btn cv-btn-secondary">Cancel</button></form>{{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "content"}}
+<header class="cv-pagehead">
+  <h1 class="cv-headline">Console address</h1>
+  <p class="cv-lede">The domain this console answers on. A change is checked before anything moves, and the old address keeps redirecting for a while.</p>
+</header>
+{{with .Refusal}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+<div class="cv-upbody">
+  <section class="cv-upsec" aria-labelledby="console-now-title">
+    <div class="cv-mnsec"><h2 class="cv-label" id="console-now-title">Now</h2></div>
+    <div class="cv-panel cv-def">
+      <dl class="cv-def-rows">
+        <div class="cv-def-row"><dt class="cv-label">Address</dt><dd>{{if .Now.URL}}<a href="{{.Now.URL}}" class="cv-inline-mono">{{.Now.URL}}</a>{{else}}<span class="text-fg-2">This console has no public https address.</span>{{end}}</dd></div>
+        {{with .Now.Issuer}}<div class="cv-def-row"><dt class="cv-label">Issuer</dt><dd><span class="cv-inline-mono">{{.}}</span></dd></div>{{end}}
+        {{range .Now.Old}}<div class="cv-def-row"><dt class="cv-label">Old address</dt><dd><span class="cv-inline-mono">{{.Domain}}</span> <span class="text-fg-2">still redirecting until {{template "clock" .Until}}</span></dd></div>
+        {{end}}
+      </dl>
+    </div>
+  </section>
+
+  <section class="cv-upsec" aria-labelledby="console-change-title">
+    <div class="cv-mnsec"><h2 class="cv-label" id="console-change-title">Change</h2><span class="cv-mnsec-link">times in UTC</span></div>
+    {{with .Change}}
+    <div id="console-change" class="cv-panel" aria-live="polite"{{if .Open}} hx-get="{{.PartHref}}" hx-trigger="every 3s" hx-swap="innerHTML"{{end}}>{{template "console-change" .}}</div>
+    {{end}}
+    {{if .ShowForm}}
+    <form method="post" action="/ops/console-address/changes" class="cv-panel cv-sform">
+      {{with .Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+      <div class="cv-setrow">
+        <div class="cv-setrow-text"><label class="cv-setrow-label" for="console-domain">New domain</label>
+          <p class="cv-setrow-hint" id="console-domain-hint">Point its DNS record at this server first, or let Caravana create it in a connected zone.{{with .Form.Hint}} This server's sslip.io name: <span class="cv-inline-mono">{{.}}</span>.{{end}}</p></div>
+        <div class="cv-setrow-ctl">
+          <input class="cv-field cv-field-mono" id="console-domain" type="text" name="domain" value="{{.Form.Domain.Value}}" placeholder="console.example.com" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="console-domain-hint{{if .Form.Domain.Error}} console-domain-error{{end}}"{{if .Form.Domain.Error}} aria-invalid="true" autofocus{{end}}>
+          {{template "field-error" .Form.Domain}}
+        </div>
+      </div>
+      <div class="cv-setrow">
+        <div class="cv-setrow-text"><label class="cv-setrow-label" for="console-days">Keep the old address for</label>
+          <p class="cv-setrow-hint">Its pages redirect to the new address, and its API and webhook calls keep answering, for this long.</p></div>
+        <div class="cv-setrow-ctl">
+          <select class="cv-field cv-select" id="console-days" name="redirectDays">{{range .Form.Days}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+        </div>
+      </div>
+      <div class="cv-setrow"><div class="cv-setrow-text"></div><div class="cv-setrow-ctl cv-actions">
+        <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Check</button>
+        {{with .Form.Zone}}<button type="submit" name="createDNSRecord" value="1" class="cv-btn cv-btn-secondary cv-btn-sm">Create the record in {{.}} and check</button>{{end}}
+      </div></div>
+    </form>
+    {{else if not .CanChange}}
+    <div class="cv-panel cv-def"><p class="text-base text-fg-1">{{.CannotChange}}</p></div>
+    {{end}}
+  </section>
+
+  <section class="cv-upsec" aria-labelledby="console-deps-title">
+    <div class="cv-mnsec"><h2 class="cv-label" id="console-deps-title">Depends on it</h2></div>
+    <div class="cv-panel cv-def">
+      <ul class="flex flex-col gap-2 text-sm text-fg-1">
+        {{range .Deps}}<li>{{template "sentence" .}}</li>
+        {{end}}
+      </ul>
+    </div>
+  </section>
+</div>
+{{end}}

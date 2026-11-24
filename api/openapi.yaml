@@ -2883,6 +2883,241 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /v1/console-address:
+    get:
+      operationId: getConsoleAddress
+      summary: Read the console's address and what depends on it.
+      description: |
+        The current domain (the host of the public URL; empty when Caravana has none), the issuer, this
+        server's `<a-b-c-d>.sslip.io` name, whether the address can change here (`canChange`; `cannotChange`
+        says why not in one sentence), whether a server agent that runs beside Caravana reported in the
+        last 10 minutes (`agent`: a switch needs it), the old domains that are still routed and redirected
+        until their `until`, the open change or else the newest one that ended (`change`, null before any),
+        and what holds the current address (`dependents`): passkeys registered on it, apps with a webhook
+        token, active deploy tokens and full API tokens, and joined servers (they follow by themselves).
+        Deploy tokens are refused. Answers are `Cache-Control: no-store`.
+      tags: [console-address]
+      responses:
+        "200":
+          description: The console's address.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleAddress"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/console-address/changes:
+    post:
+      operationId: startConsoleAddressChange
+      summary: Check a new domain for the console and start a change to it.
+      description: |
+        Checks the name and its DNS before anything is recorded or changed, then records the change as
+        `checking` and answers 202 with it (and its `Location`). Caravana then puts the domain beside the
+        current one in Traefik's console route and, every 10 seconds for at most 5 minutes, checks that
+        Traefik routes it to Caravana and presents a certificate for it: poll `getConsoleAddressChange`
+        until it is `ready` (or `check_failed`). Nothing else changes until `switchConsoleAddress`.
+
+        `redirectDays` is how long the old domain keeps redirecting after the switch: 0 (don't keep it),
+        7, 30 or 90; 30 when left out. With `createDNSRecord`, a domain that has no DNS record under a zone
+        connected to a DNS provider (`putDNSZone`) gets its A and AAAA records made there. Deploy tokens
+        are refused. Answers are `Cache-Control: no-store`.
+
+        400 `invalid_field` (`field` `domain`): not a host name, an IP address or the current domain; or
+        (`redirectDays`) not 0, 7, 30 or 90. 409 `domain_taken` (`domain`): an app has it. 409
+        `console_address_change_open`: a change is checking, ready or switching. 409
+        `console_address_unsupported`: this installation can't change its address (no public https URL,
+        Traefik not running, or its job is from before this feature: run the installer again once);
+        `message` says which. 422 `domain_not_here` (`domain`): its DNS doesn't point at this server;
+        `message` says what was seen, and when a connected zone covers it and it has no record, to send
+        `createDNSRecord`. 422 `dns_provider_refused` / 502 `dns_provider_unavailable` while making the
+        record.
+      tags: [console-address]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartConsoleAddressChange"
+      responses:
+        "202":
+          description: The change is recorded and its checks are running.
+          headers:
+            Location:
+              schema: {type: string}
+              description: "`/v1/console-address/changes/{id}`."
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleAddressChange"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "409":
+          description: "`domain_taken`, `console_address_change_open` or `console_address_unsupported`; `message` says why. Nothing was recorded."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`domain_not_here` (field `domain`) or `dns_provider_refused`; `message` says what was seen. Nothing was recorded."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          description: "`dns_provider_unavailable`: the DNS provider couldn't be reached while making the record."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/console-address/changes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The change's ID, as `startConsoleAddressChange` gave it.
+        schema: {type: string}
+    get:
+      operationId: getConsoleAddressChange
+      summary: Read one change of the console's address.
+      description: "Poll it after `startConsoleAddressChange` and after `switchConsoleAddress`. Answers are `Cache-Control: no-store`."
+      tags: [console-address]
+      responses:
+        "200":
+          description: The change.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleAddressChange"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`console_address_change_not_found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: cancelConsoleAddressChange
+      summary: Cancel a change before it is switched.
+      description: |
+        Ends a change that is `checking`, `ready` or `check_failed` (status `cancelled`) and takes its
+        pending domain out of Traefik's route. 409 `console_address_not_cancellable` once it is
+        `switching` or has ended. Deploy tokens are refused.
+      tags: [console-address]
+      responses:
+        "200":
+          description: The cancelled change.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleAddressChange"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`console_address_change_not_found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`console_address_not_cancellable`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/console-address/changes/{id}/switch:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The change's ID.
+        schema: {type: string}
+    post:
+      operationId: switchConsoleAddress
+      summary: Switch the console to the checked domain.
+      description: |
+        Checks the name's DNS, the route and the certificate once more, without waiting, and answers 202
+        with the change `switching`. The console never gets root: the server agent that runs beside
+        Caravana, as root, receives the request (an ID and the domain only) in its next sync answer, within
+        about a minute, rewrites the public URL in Caravana's env file and the domain in the installer's
+        record, restarts Caravana and reports the outcome. Caravana comes back at the new address (sign in
+        again there); poll `getConsoleAddressChange` there or at the old address, which keeps serving `/v1/`
+        and `/.well-known/` for the redirect window. The change ends `applied`, `failed` (the agent put the
+        files back), `refused` or, with no outcome after 5 minutes, `lost`. Deploy tokens are refused.
+
+        409 `console_address_not_ready`: the change isn't `ready`. 409 `no_agent`: no agent that runs beside
+        Caravana reported in the last 10 minutes. 422 `domain_not_here` or `console_address_check_failed`
+        (`field` `domain`): the fresh check failed; the change stays `ready` with its checks updated.
+      tags: [console-address]
+      responses:
+        "202":
+          description: The change is switching.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleAddressChange"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`console_address_change_not_found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`console_address_not_ready` or `no_agent`; `message` says why. Nothing changed."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "`domain_not_here` or `console_address_check_failed` (field `domain`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/templates:
     get:
       operationId: listTemplates
@@ -12313,6 +12548,93 @@ components:
         archiveObject: {type: string, description: "Where the archive is in the backup destination; empty for none."}
         bytes: {type: integer, minimum: 0, description: "The size last measured; 0 when unknown."}
         error: {type: string}
+    ConsoleAddress:
+      type: object
+      additionalProperties: false
+      description: The console's address, what depends on it and the open or newest change.
+      required: [domain, publicUrl, issuer, sslipHint, canChange, cannotChange, agent, oldDomains, change, dependents]
+      properties:
+        domain: {type: string, description: "The host of the public URL; empty when Caravana has none."}
+        publicUrl: {type: string}
+        issuer: {type: string, description: "The cluster's workload identity issuer; empty for none."}
+        sslipHint: {type: string, description: "This server's `<a-b-c-d>.sslip.io` name; empty when its IPv4 address isn't known."}
+        canChange: {type: boolean}
+        cannotChange: {type: string, description: "One sentence saying why not when `canChange` is false."}
+        agent: {type: boolean, description: "A server agent that runs beside Caravana reported in the last 10 minutes."}
+        oldDomains:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [domain, until]
+            properties:
+              domain: {type: string}
+              until: {type: string, format: date-time}
+        change:
+          oneOf:
+            - $ref: "#/components/schemas/ConsoleAddressChange"
+            - type: "null"
+        dependents:
+          type: object
+          additionalProperties: false
+          required: [passkeys, webhooks, deployTokens, apiTokens, servers]
+          properties:
+            passkeys: {type: integer, minimum: 0, description: "Passkeys registered on the current domain."}
+            webhooks: {type: integer, minimum: 0, description: "Apps with a webhook token."}
+            deployTokens: {type: integer, minimum: 0, description: "Active scoped API tokens."}
+            apiTokens: {type: integer, minimum: 0, description: "Active full API tokens."}
+            servers: {type: integer, minimum: 0, description: "Joined servers; they follow by themselves."}
+    ConsoleAddressChange:
+      type: object
+      additionalProperties: false
+      description: |
+        One change of the console's address. `checking` then `ready` or `check_failed`; `ready` then
+        `switching` or `cancelled`; `switching` then `applied`, `failed`, `refused` or `lost`.
+      required: [id, domain, oldDomain, redirectDays, status, checks, reason, dnsRecordCreated, createdAt,
+        readyAt, switchAt, settledAt, redirectUntil]
+      properties:
+        id: {type: string, description: "32 hex digits."}
+        domain: {type: string}
+        oldDomain: {type: string}
+        redirectDays: {type: integer, enum: [0, 7, 30, 90]}
+        status: {type: string, enum: [checking, ready, check_failed, switching, applied, failed, refused, lost, cancelled]}
+        checks:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, state, message]
+            properties:
+              name: {type: string, enum: [hostname, dns, route, certificate]}
+              state: {type: string, enum: [ok, failed, waiting, skipped]}
+              message: {type: string}
+        reason: {type: string, description: "One line for `check_failed`, `failed`, `refused` and `lost`."}
+        dnsRecordCreated: {type: boolean, description: "Caravana made the DNS records of the domain."}
+        createdAt: {type: string, format: date-time}
+        readyAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
+        switchAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
+        settledAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
+        redirectUntil:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
+    StartConsoleAddressChange:
+      type: object
+      additionalProperties: false
+      required: [domain]
+      properties:
+        domain: {type: string, description: "The new host name, such as `console.example.com`."}
+        redirectDays: {type: integer, enum: [0, 7, 30, 90], description: "How long the old domain keeps redirecting after the switch; 30 when left out."}
+        createDNSRecord: {type: boolean, description: "Let Caravana make the DNS record in a connected zone when the domain has none."}
     CleanupSettings:
       type: object
       additionalProperties: false
@@ -12423,6 +12745,21 @@ components:
           description: The issuer the agent last rendered into Nomad's config; absent when it rendered none.
         space:
           $ref: "#/components/schemas/NodeSpace"
+        runsConsole:
+          type: boolean
+          description: |
+            True when this agent runs beside Caravana's console (its node.env URL is the console's loopback
+            listener and Caravana's env file is on the server). Only such an agent is handed a change of the
+            console's address. Left out when false.
+        consoleAddress:
+          type: object
+          additionalProperties: false
+          description: How the last request to change the console's address went, from the agent's state. Left out when it handled none.
+          required: [id, state]
+          properties:
+            id: {type: string, pattern: "^[0-9a-f]{32}$"}
+            state: {type: string, enum: [applied, failed, refused, running]}
+            reason: {type: string, maxLength: 300, description: One printable line.}
         reach:
           type: array
           description: One ping over the private network per peer.
@@ -12469,6 +12806,23 @@ components:
             console has no https public URL. Nomad servers receive a new value one at a time.
         clean:
           $ref: "#/components/schemas/NodeClean"
+        consoleURL:
+          type: string
+          description: |
+            The console's public URL, `https://host[:port]`, for every agent to follow: a joined server whose
+            `node.env` URL differs switches to it once its `/v1/health` answers. Absent when the console has
+            no https public URL.
+        consoleAddress:
+          type: object
+          additionalProperties: false
+          description: |
+            A change of the console's address (`switchConsoleAddress`) for the agent to apply: present only
+            while the change is switching, and only for an agent that reported `runsConsole`. The agent
+            checks both members before it acts and reports the outcome in its next report.
+          required: [id, domain]
+          properties:
+            id: {type: string, pattern: "^[0-9a-f]{32}$"}
+            domain: {type: string, description: A lowercase host name.}
     AttentionItem:
       type: object
       additionalProperties: false
@@ -14178,6 +14532,8 @@ tags:
     description: "The HTTP requests Traefik served for an environment's apps, read from its access log."
   - name: templates
     description: Known apps that install from a few answers, and the catalog they come from.
+  - name: console-address
+    description: The console's own domain, checking a new one and switching to it.
   - name: servers
     description: The servers of the cluster, how one joins, and the calls their agents make.
   - name: tokens

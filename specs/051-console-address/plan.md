@@ -141,3 +141,60 @@ redirects its pages and serves its `/v1/` and `/.well-known/`.
   "%s" . }}{{ end }}`; with it the file re-rendered with `noop` and no restart for a new list, and fell back to
   `console_domain` for a variable without `hosts` and for a deleted variable. The Go test's fake now returns struct
   items, so the old form fails there too.
+
+## Deviations (phase B)
+
+- **Where the agent's step is.** `applySync` step 1c, after the issuer (1b) and before the role, the renewal and the
+  clean-up. The issuer first, because it follows the console's address by itself once Caravana runs under it (the
+  e2e test sees the Nomad server restart for the new issuer at the sync after the change); before the role,
+  because a promotion returns early and would delay the change by a sync; before the renewal and the clean-up,
+  because a clean-up takes minutes and the console waits a few for the outcome. `applyConsole` returns the state
+  and never an error, so a failure is an outcome or a line on stderr and the other steps run (a test checks a
+  clean-up still runs after a failed change and that the state it saves keeps the outcome).
+- **The domain is kept in `state.json`, not reported.** `ConsoleOutcome.Domain` (`json:"domain,omitempty"`) is
+  stored so a request found `running` after a crash is settled: the report's member has `id`, `state` and `reason`
+  only. The settling *finishes* the change when `caravana.env` already names the domain (it is written first):
+  `CARAVANA_DOMAIN` is added to the installer's record, Caravana is restarted and waited for, and the outcome is
+  `applied`, or `failed` when it doesn't answer (the old files can't be put back: their values weren't kept). One
+  that doesn't name the domain was never changed: `failed` "The agent stopped during the change." This is a step
+  beyond the contract's "applied if the env file names it and Caravana is healthy", which could report `applied`
+  for a Caravana still running under the old address.
+- **"Loopback" is the console's own listener.** Both `runsConsole` and follow use `http://127.0.0.1:7070` exactly
+  (a trailing slash is ignored), not any loopback host, so a joined server pointed at another local port follows
+  and the first server never does.
+- **What refuses the whole answer.** An invalid `consoleURL` (not empty, not `https://host[:port]` by
+  `mesh.CleanIssuer`) refuses the answer like a bad issuer, in `validateCommon`. `consoleAddress` is never refused
+  at parse: a bad domain or an agent that doesn't run the console is the `refused` outcome, a bad ID is ignored
+  with one line (the answer's other steps go on).
+- **File rules.** Caravana's env file must have exactly one `CARAVANA_PUBLIC_URL=` line (else `refused`, files
+  untouched); unreadable or unwritable files are `failed`; a missing `caravana.env` means this agent doesn't run
+  the console (`refused`); a missing `install.env` is `failed` (the agent doesn't create the installer's record);
+  every `CARAVANA_DOMAIN=` line is set and one is appended when there is none. A line's own ending (`\n`, `\r\n`)
+  and everything else are kept byte for byte; the temporary file gets the original's mode, owner and group.
+- **Health seam.** `Agent.Health` (nil: GET `http://127.0.0.1:7070/v1/health` through the agent's client, 200);
+  the wait is 60 looks one second apart through `Agent.Sleep`, so tests don't wait.
+- **API.** `syncNode`'s answer carries `consoleURL` and `consoleAddress`; `NodeReport` and `NodeSyncAnswer` in
+  `api/openapi.yaml` list the new members; the version stays 0.56.0 (no test needed the bump).
+
+## Deviations (phase C)
+
+- **API 0.57.0 now.** Phase B left the version at 0.56.0; the five operations, the two schemas
+  (`ConsoleAddress`, `ConsoleAddressChange`, with `StartConsoleAddressChange` for the body) and the new tag
+  `console-address` bump it. Every answer, an error too, is `Cache-Control: no-store` (a change moves by the minute);
+  `redirectDays` in the body is a pointer in the handler so that an explicit `0` is "don't keep it" and a missing one is 30.
+- **The scope walk needed no edit.** The deploy-token default deny and `TestScopedTokenWalksEveryRoute` iterate the route
+  table, so the five routes are denied (and tested as denied) without being listed anywhere; `allowedForDeployTokens` is
+  untouched.
+- **`no_agent` names no field.** `consoleAddressError` runs before `spaceError` in `mapError`, so the switch's
+  `ConsoleNoAgentError` is 409 `no_agent` with no field (045's cleanup route names `name`, which means nothing here).
+- **The panel polls `checking` and `switching` only, and answers 286 for every other state, `ready` included.** A `ready`
+  panel has to be swapped once to show Switch and Cancel, and nothing about it changes by itself after that. No live stream
+  is opened: Caravana restarts at another address at the switch, which would end a stream anyway, and the contract asks for
+  a poll. The page has a `<noscript>` refresh (5 s) while a change is open.
+- **Where a refusal of the start lands.** `domain` errors (not a host name, the current domain, an app's domain,
+  `domain_not_here`, a DNS provider's refusal) are drawn at the Domain field; a `redirectDays` error (a select the page
+  can't get wrong; a crafted post can) is a notice at the form's top; `console_address_change_open` and
+  `console_address_unsupported` are the page's notice. Statuses follow the API's: 400, 409, 422, 502.
+- **Words.** A switch or cancel of an unknown change says "No such change of the console's address: it may have been
+  removed." (the service's error holds the ID in quotes). A `lost` change says "No answer" in its pill.
+- **No new CSS.** The page uses the Updates and Security page's classes, so `tools/ui-css.sh check` passes without a build.

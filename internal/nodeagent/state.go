@@ -49,6 +49,10 @@ type State struct {
 	VolumeSizes       map[string]int64 `json:"volumeSizes,omitempty"`
 	VolumesMeasuredAt string           `json:"volumesMeasuredAt,omitempty"`
 	LastClean         *CleanOutcome    `json:"lastClean,omitempty"`
+	// ConsoleAddress is how the last request to change the console's address went (feature 051). Its ID
+	// is how a request is told from one that was handled, and a `running` one is a change the agent was
+	// stopped in the middle of. A state.json written before it loads with none.
+	ConsoleAddress *ConsoleOutcome `json:"consoleAddress,omitempty"`
 }
 
 // interfaceRE is what an interface's name may be: Linux allows 15 characters, and the agent refuses
@@ -75,7 +79,7 @@ func (s State) Validate() error {
 	if s.PublicInterface != "" && !interfaceRE.MatchString(s.PublicInterface) {
 		return errors.New("state.json: publicInterface isn't an interface name")
 	}
-	return nil
+	return s.ConsoleAddress.validate()
 }
 
 // LoadState reads state.json. A missing file is an error that satisfies errors.Is(err, fs.ErrNotExist).

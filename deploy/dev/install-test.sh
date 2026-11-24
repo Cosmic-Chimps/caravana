@@ -26,6 +26,10 @@
 # Feature 045's clean-up is checked with four versions of an app: Nomad forgets the images it pulled when it
 # restarts, the agent reports them, and a clean-up removes the one the keep rule doesn't keep.
 #
+# Feature 051's change of the console's address runs last, before the uninstall: it leaves the VM on
+# console2.caravana.test. ONLY=console-address runs just that check on a fresh VM (install, admin, whoami,
+# the check: about ten minutes); KEEP=1 keeps the VM.
+#
 # Let's Encrypt and the public ports need a real VM: deploy/vm/host.sh prove covers those.
 set -euo pipefail
 
@@ -533,6 +537,165 @@ check_space_host() {
   api -fsS -o /dev/null -X DELETE "https://$DOMAIN/v1/apps/spaceapp" || die "deleting spaceapp failed"
 }
 
+# api_at HOST CURL_ARGS...: curl inside the VM through Traefik's HTTPS port with HOST resolved to the VM itself,
+# as the API token. The URL is in CURL_ARGS.
+api_at() {
+  local host="$1"
+  shift
+  vm curl -ksS --max-time 5 --resolve "$host:443:127.0.0.1" -H "Authorization: Bearer $TOKEN" "$@"
+}
+
+# ca_call HOST METHOD PATH [BODY]: one call to the API at HOST. Leaves the status in CA_CODE and the answer in CA_BODY.
+CA_CODE="" CA_BODY=""
+ca_call() {
+  local host="$1" method="$2" path="$3" resp
+  if [ $# -ge 4 ]; then
+    resp="$(api_at "$host" -X "$method" -H 'Content-Type: application/json' -w '\n%{http_code}' "https://$host$path" -d "$4")" || resp=$'\n000'
+  else
+    resp="$(api_at "$host" -X "$method" -w '\n%{http_code}' "https://$host$path")" || resp=$'\n000'
+  fi
+  CA_CODE="${resp##*$'\n'}"
+  CA_BODY="${resp%$'\n'*}"
+}
+
+# traefik_alloc: the ID of Traefik's running allocation, to see that nothing restarted it.
+traefik_alloc() {
+  vm sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}} {{end}}{{end}}' traefik | awk '{print $1}'
+}
+
+# console_change_status HOST ID: the status of a change of the console's address, or nothing while Caravana
+# doesn't answer.
+console_change_status() {
+  api_at "$1" -fsS "https://$1/v1/console-address/changes/$2" 2>/dev/null | jsonq 'd["status"]' 2>/dev/null || true
+}
+
+# wait_console_change HOST ID STATUS SECONDS: wait until the change has STATUS; any other end state fails the check.
+wait_console_change() {
+  local host="$1" id="$2" want="$3" end=$((SECONDS + $4)) got=""
+  until [ "$got" = "$want" ]; do
+    case "$got" in check_failed | failed | refused | lost | cancelled)
+      die "the change should be $want, it is $got:\n$(api_at "$host" -sS "https://$host/v1/console-address/changes/$id")"
+      ;;
+    esac
+    [ "$SECONDS" -lt "$end" ] || die "the change should be $want within $4 s; last seen: ${got:-nothing}\n$(api_at "$host" -sS "https://$host/v1/console-address/changes/$id" 2>&1 | head -c 1500)"
+    sleep 5
+    got="$(console_change_status "$host" "$id")"
+  done
+}
+
+# check_console_address_host VERSION: feature 051, changing the console's address from the console, on the
+# installed first server (--domain caravana.test --acme none, so Traefik presents its own certificate and
+# Caravana's check accepts it). /etc/hosts gives caravana.test and console2.caravana.test this server's address
+# (the public resolvers say NXDOMAIN for .test, which Caravana reads as DNS that hasn't caught up). A domain
+# that resolves nowhere is refused and changes nothing; a crafted file on disk runs nothing (the agent takes
+# a request only from the sync answer, whose crafted cases are tests in internal/nodeagent/consoleaddress_test.go);
+# the change to console2 is checked, routed beside the old domain without a Traefik restart, switched by the
+# agent, and the old domain redirects. VERSION is the release that is installed: the check ends with a rerun of it.
+# It leaves the VM with the new domain, so it runs after every check that names $DOMAIN as the console.
+check_console_address_host() {
+  local ver="$1" new=console2.caravana.test nowhere=nowhere.caravana.test
+  local out id end alloc0 alloc1 hosts hdr
+  alloc0="$(traefik_alloc)"
+  [ -n "$alloc0" ] || die "Traefik has no running allocation"
+  vm sudo sh -c "echo '$ADDR $DOMAIN $new' >>/etc/hosts"
+
+  say "the console says it can change its address and has heard from the agent that runs it"
+  end=$((SECONDS + 90))
+  until out="$(api_at "$DOMAIN" -fsS "https://$DOMAIN/v1/console-address" 2>/dev/null)" &&
+    [ "$(jsonq 'str(d["agent"])' <<<"$out" 2>/dev/null)" = True ]; do
+    [ "$SECONDS" -lt "$end" ] || die "GET /v1/console-address should say agent true within 90 s (does the agent report runsConsole?):\n$out"
+    sleep 5
+  done
+  [ "$(jsonq 'd["domain"]' <<<"$out")" = "$DOMAIN" ] || die "the console's domain should be $DOMAIN:\n$out"
+  [ "$(jsonq 'str(d["canChange"])' <<<"$out")" = True ] || die "canChange should be true:\n$out"
+  [ "$(jsonq 'str(d["change"])' <<<"$out")" = None ] || die "no change should exist yet:\n$out"
+
+  say "a domain that resolves nowhere is refused, and nothing changes"
+  ca_call "$DOMAIN" POST /v1/console-address/changes '{"domain":"'"$nowhere"'","redirectDays":30}'
+  [ "$CA_CODE" = 422 ] || die "a domain with no DNS should be 422, got $CA_CODE: $CA_BODY"
+  [ "$(jsonq 'd["error"]["code"] + " " + d["error"]["field"]' <<<"$CA_BODY")" = "domain_not_here domain" ] ||
+    die "the refusal should be domain_not_here on domain: $CA_BODY"
+  vm sudo grep -qx "CARAVANA_PUBLIC_URL=https://$DOMAIN" /etc/caravana/caravana.env || die "a refused change touched caravana.env"
+  ! vm sudo caravana-nomad var get -item hosts nomad/jobs/traefik/traefik >/dev/null 2>&1 ||
+    die "a refused change wrote Traefik's route variable"
+  out="$(api_at "$DOMAIN" -fsS "https://$DOMAIN/v1/console-address")"
+  [ "$(jsonq 'str(d["change"])' <<<"$out")" = None ] || die "a refused change was recorded:\n$out"
+
+  say "a crafted file on disk runs nothing"
+  # shellcheck disable=SC2016 # the $( ) is the point: it must stay text
+  printf 'ID=%s\nDOMAIN=%s\n' "$(printf '%032x' "$(date +%s)")" 'x.test; $(touch /tmp/pwned-051)' >"$WORK/domain-request"
+  vm sudo install -m 0600 -o caravana -g caravana "$WORK/domain-request" /var/lib/caravana/domain-request
+  sleep 65 # two runs of the agent
+  vm sudo grep -qx "CARAVANA_PUBLIC_URL=https://$DOMAIN" /etc/caravana/caravana.env || die "a crafted file changed caravana.env"
+  vm test ! -e /tmp/pwned-051 || die "a crafted file ran something"
+  vm sudo rm -f /var/lib/caravana/domain-request
+
+  say "a change to $new: checked, routed beside $DOMAIN, with Traefik left running"
+  ca_call "$DOMAIN" POST /v1/console-address/changes '{"domain":"'"$new"'","redirectDays":30}'
+  [ "$CA_CODE" = 202 ] || die "the change to $new should be 202, got $CA_CODE: $CA_BODY"
+  id="$(jsonq 'd["id"]' <<<"$CA_BODY")"
+  [ "${#id}" = 32 ] || die "the change's id should be 32 characters: $CA_BODY"
+  wait_console_change "$DOMAIN" "$id" ready 360
+  hosts="$(vm sudo caravana-nomad var get -item hosts nomad/jobs/traefik/traefik)"
+  grep -qw "$DOMAIN" <<<"$hosts" || die "Traefik's route should carry $DOMAIN, it has: $hosts"
+  grep -qw "$new" <<<"$hosts" || die "Traefik's route should carry $new, it has: $hosts"
+  alloc1="$(traefik_alloc)"
+  [ "$alloc1" = "$alloc0" ] || die "Traefik's allocation changed ($alloc0 -> $alloc1): the route should reload without a restart"
+  vm sudo grep -qx "CARAVANA_PUBLIC_URL=https://$DOMAIN" /etc/caravana/caravana.env || die "a ready change touched caravana.env before the switch"
+  [ "$(vm_curl -o /dev/null -w '%{http_code}' "https://$DOMAIN/v1/health")" = 200 ] || die "the old domain should still answer"
+  app_answers || die "whoami stopped answering while the route took $new"
+
+  say "the switch: the agent changes the address, Caravana restarts, the old domain redirects"
+  ca_call "$DOMAIN" POST "/v1/console-address/changes/$id/switch"
+  [ "$CA_CODE" = 202 ] || die "the switch should be 202, got $CA_CODE: $CA_BODY"
+  [ "$(jsonq 'd["status"]' <<<"$CA_BODY")" = switching ] || die "the change should be switching: $CA_BODY"
+  end=$((SECONDS + 180))
+  until out="$(api_at "$new" -fsS "https://$new/v1/console-address" 2>/dev/null)" &&
+    [ "$(jsonq 'd["domain"] + " " + d["change"]["status"]' <<<"$out" 2>/dev/null)" = "$new applied" ]; do
+    [ "$SECONDS" -lt "$end" ] || die "https://$new should answer as the console with the change applied within 3 minutes:\n$out"
+    sleep 5
+  done
+  [ "$(jsonq 'str(d["change"]["redirectUntil"] is not None) + " " + d["oldDomains"][0]["domain"]' <<<"$out")" = "True $DOMAIN" ] ||
+    die "the applied change should keep $DOMAIN as an old domain until a date:\n$out"
+  vm sudo grep -qx "CARAVANA_PUBLIC_URL=https://$new" /etc/caravana/caravana.env || die "caravana.env should name https://$new"
+  vm sudo grep -qx "CARAVANA_DOMAIN=$new" /var/lib/caravana-host/install.env || die "install.env should name $new"
+  hdr="$(vm_curl -D - -o /dev/null "https://$DOMAIN/apps" | tr -d '\r')"
+  [ "$(sed -n '1s/^[^ ]* \([0-9]*\).*/\1/p' <<<"$hdr")" = 308 ] || die "the old domain's /apps should answer 308:\n$hdr"
+  grep -qix "location: https://$new/apps" <<<"$hdr" || die "the old domain should send /apps to https://$new/apps:\n$hdr"
+  [ "$(vm_curl -o /dev/null -w '%{http_code}' "https://$DOMAIN/v1/health")" = 200 ] || die "the old domain's /v1/health should still answer 200"
+  # 038: the issuer reaches Nomad through the agent's next sync, then one Nomad restart.
+  end=$((SECONDS + 180))
+  until [ "$(api_at "$new" -fsS "https://$new/.well-known/openid-configuration" 2>/dev/null | jsonq 'd.get("issuer")' 2>/dev/null)" = "https://$new" ]; do
+    [ "$SECONDS" -lt "$end" ] || die "the discovery document should name https://$new within 3 minutes (the agent's sync, then Nomad's restart)"
+    sleep 5
+  done
+  vm sudo grep -qx "  oidc_issuer = \"https://$new\"" /etc/nomad.d/nomad.hcl || die "nomad.hcl should set oidc_issuer to https://$new"
+  end=$((SECONDS + 60))
+  until app_answers; do
+    [ "$SECONDS" -lt "$end" ] || die "whoami should answer after the switch"
+    sleep 3
+  done
+  [ "$(traefik_alloc)" = "$alloc0" ] || die "Traefik's allocation changed during the switch: nothing should have restarted it"
+
+  say "password sign-in works at $new"
+  hdr="$(vm curl -ksS --max-time 10 --resolve "$new:443:127.0.0.1" -D - -o /dev/null --data-urlencode "email=$EMAIL" --data-urlencode "password=$PASSWORD" "https://$new/login")"
+  grep -qi '^location: /apps' <<<"$hdr" || die "signing in at $new didn't redirect to /apps:\n$hdr"
+  grep -qi '^set-cookie: __Host-caravana_session=.*Secure' <<<"$hdr" || die "signing in at $new should set the __Host- session cookie:\n$hdr"
+
+  say "a rerun of the installer keeps $new"
+  out="$(install "$ver")" || { echo "$out"; die "the rerun failed"; }
+  vm sudo grep -qx "CARAVANA_PUBLIC_URL=https://$new" /etc/caravana/caravana.env || die "the rerun put the old domain back in caravana.env"
+  vm sudo grep -qx "CARAVANA_DOMAIN=$new" /var/lib/caravana-host/install.env || die "the rerun put the old domain back in install.env"
+  end=$((SECONDS + 90))
+  until [ "$(vm_curl -o /dev/null -w '%{http_code}' --resolve "$new:443:127.0.0.1" "https://$new/v1/health")" = 200 ]; do
+    [ "$SECONDS" -lt "$end" ] || die "https://$new/v1/health should answer 200 after the rerun"
+    sleep 3
+  done
+  hdr="$(vm_curl -D - -o /dev/null "https://$DOMAIN/apps" | tr -d '\r')"
+  [ "$(sed -n '1s/^[^ ]* \([0-9]*\).*/\1/p' <<<"$hdr")" = 308 ] || die "after the rerun the old domain's /apps should still answer 308:\n$hdr"
+  api_at "$new" -fsS "https://$new/v1/tokens" >/dev/null || die "the API token should still work at $new"
+}
+
 # refuses LABEL EXPECTED ARGS...: the installer exits 2 and says EXPECTED.
 refuses() {
   local label="$1" expected="$2" out code
@@ -819,6 +982,59 @@ check_console_update() {
 }
 
 V1="" ADDR="" OS_ID=""
+
+# start_vm: a fresh VM of $IMAGE. Sets OS_ID and ADDR.
+start_vm() {
+  say "a fresh $IMAGE VM"
+  limactl delete --force "$NAME" >/dev/null 2>&1 || true
+  limactl start --name "$NAME" --tty=false --cpus 2 --memory 2 --containerd none "template:$IMAGE" >/dev/null
+  # What the VM says it is (ID of /etc/os-release): the Updates page must name the same.
+  # shellcheck disable=SC2016 # $ID expands inside the VM
+  OS_ID="$(vm sh -c '. /etc/os-release && echo "$ID"')"
+  [ -n "$OS_ID" ] || die "can't read the VM's /etc/os-release"
+  # The address other servers would reach this one at (--address), so the run needs no lookup of a public IP.
+  ADDR="$(vm ip -4 -o route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
+  [ -n "$ADDR" ] || die "can't find the VM's address"
+}
+
+# deploy_whoami: deploy whoami on $APP and wait until it answers through Traefik.
+deploy_whoami() {
+  api -o /dev/null -X POST -H 'Content-Type: application/json' "https://$DOMAIN/v1/apps/whoami/deployments" -d '{
+    "source": {"kind": "image"},
+    "services": [{"name": "web", "image": "traefik/whoami:latest",
+      "ports": [{"name": "http", "containerPort": 80}],
+      "domains": [{"host": "'"$APP"'", "port": "http"}],
+      "health": {"path": "/", "interval": "5s", "timeout": "2s"}}]}'
+  local end=$((SECONDS + 180))
+  until app_answers; do
+    [ "$SECONDS" -lt "$end" ] || die "whoami didn't answer within 3 minutes"
+    sleep 3
+  done
+}
+
+# main_console_address: ONLY=console-address. A fresh VM, one install, the admin, whoami and
+# check_console_address_host: about ten minutes instead of the whole run. KEEP=1 keeps the VM.
+main_console_address() {
+  command -v limactl >/dev/null || die "Lima isn't installed"
+  trap cleanup EXIT
+  rm -rf "$WORK" && mkdir -p "$WORK"
+  local v1 out
+  v1="0.0.0-dev.$(date +%s)"
+  V1="$v1"
+  say "building release $v1"
+  release "$v1"
+  start_vm
+  say "install $v1"
+  out="$(install "$v1" --email "$EMAIL" --domain "$DOMAIN" --acme none --address "$ADDR")" || { echo "$out"; die "install"; }
+  printf '%s\n' "$PASSWORD" | vm sudo caravana admin init --email "$EMAIL" >/dev/null
+  TOKEN="$(vm sudo caravana admin create-token --name install-test </dev/null)"
+  say "deploy whoami"
+  deploy_whoami
+  say "changing the console's address (feature 051)"
+  check_console_address_host "$v1"
+  echo "INSTALL TEST PASSED (console-address, $IMAGE)"
+}
+
 main() {
   command -v limactl >/dev/null || die "Lima isn't installed"
   trap cleanup EXIT
@@ -839,16 +1055,7 @@ main() {
   release "$u2"
   broken "$ubad" "$u1"
 
-  say "a fresh $IMAGE VM"
-  limactl delete --force "$NAME" >/dev/null 2>&1 || true
-  limactl start --name "$NAME" --tty=false --cpus 2 --memory 2 --containerd none "template:$IMAGE" >/dev/null
-  # What the VM says it is (ID of /etc/os-release): the Updates page must name the same.
-  # shellcheck disable=SC2016 # $ID expands inside the VM
-  OS_ID="$(vm sh -c '. /etc/os-release && echo "$ID"')"
-  [ -n "$OS_ID" ] || die "can't read the VM's /etc/os-release"
-  # The address other servers would reach this one at (--address), so the run needs no lookup of a public IP.
-  ADDR="$(vm ip -4 -o route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
-  [ -n "$ADDR" ] || die "can't find the VM's address"
+  start_vm
   # What check_mesh_host asks of Nomad's RPC: a TLS handshake with the cluster's CA and no plain RPC.
   cat >"$WORK/rpc-tls.py" <<'PY'
 import socket, ssl, sys
@@ -978,17 +1185,7 @@ PY
 
   say "Updates reads the host's files (and apt or pro run) inside the unit's sandbox (feature 027)"
   check_updates_host packages
-  api -o /dev/null -X POST -H 'Content-Type: application/json' "https://$DOMAIN/v1/apps/whoami/deployments" -d '{
-    "source": {"kind": "image"},
-    "services": [{"name": "web", "image": "traefik/whoami:latest",
-      "ports": [{"name": "http", "containerPort": 80}],
-      "domains": [{"host": "'"$APP"'", "port": "http"}],
-      "health": {"path": "/", "interval": "5s", "timeout": "2s"}}]}'
-  local end=$((SECONDS + 180))
-  until app_answers; do
-    [ "$SECONDS" -lt "$end" ] || die "whoami didn't answer within 3 minutes"
-    sleep 3
-  done
+  deploy_whoami
 
   say "the requests Traefik served are read from its access log (feature 047)"
   check_requests_host
@@ -1038,6 +1235,9 @@ PY
   set -e
   [ "$code" = 2 ] || die "an older version should exit 2, got $code"
 
+  say "changing the console's address: checks, route, switch, redirect and a rerun (feature 051)"
+  check_console_address_host "$u2"
+
   say "uninstall: Caravana goes, whoami keeps answering throughout"
   touch "$flag"
   watch_app "$flag" >"$WORK/fails" &
@@ -1069,4 +1269,8 @@ PY
   echo "INSTALL TEST PASSED ($IMAGE)"
 }
 
-main "$@"
+case "${ONLY:-}" in
+  "") main "$@" ;;
+  console-address) main_console_address "$@" ;;
+  *) echo "ONLY=$ONLY isn't a check: console-address" >&2; exit 2 ;;
+esac
