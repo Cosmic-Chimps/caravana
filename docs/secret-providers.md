@@ -26,6 +26,12 @@ This page is about the second way. Bella Baxter is the first provider.
    can't (the key refused, no private key registered for this key, not this key's environment, Bella
    unreachable, an answer that couldn't be decrypted).
 
+> [!IMPORTANT]
+> **Allowed in** is a security boundary. Everyone who can configure apps in an allowed place (maintain, see
+> [people and roles](people.md)) can point an app there at any path the provider's key can read, and anyone who
+> may deploy an app can run an image that reads what the app has. In a preview (`pr-<n>`), a person below
+> maintain, or a deploy token, may only use the references the base app already has.
+
 > [!WARNING]
 > Bella encrypts every answer to the private key (zero-knowledge encryption), and Caravana decrypts it to
 > copy the values into Nomad Variables. So Caravana holds the private key: give it a key made for

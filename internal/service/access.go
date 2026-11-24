@@ -188,6 +188,9 @@ type NotAllowedError struct {
 	// Field is the field of the request that needs Need, when one does ("services[0].env"): a
 	// deploy-level person may change only images.
 	Field string
+	// Reason, when set, is the sentence that says why, in place of "this needs <level>": a rule
+	// that is about more than the level (a preview's secret references).
+	Reason string
 }
 
 func (e *NotAllowedError) Unwrap() error { return ErrNotAllowed }
@@ -202,6 +205,13 @@ func (e *NotAllowedError) Error() string {
 	where := e.Project
 	if e.Environment != "" {
 		where += " › " + e.Environment
+	}
+	if e.Reason != "" {
+		msg := fmt.Sprintf("your role in %s is %s; %s", where, e.Have, e.Reason)
+		if e.Field != "" {
+			msg += " (" + e.Field + ")"
+		}
+		return msg
 	}
 	msg := fmt.Sprintf("your role in %s is %s; this needs %s", where, e.Have, e.Need)
 	if e.Field != "" {

@@ -87,6 +87,15 @@ wildcard record by hand**, pointing at the server like your other records:
   previews doesn't help; reusing a host name does (the same pull request gets the same address every time).
 - Caravana doesn't create or remove DNS records for previews. A provider key that does is a separate feature.
 
+## Secrets in a preview
+
+A preview is defined by CI's deploy token, so it is deploy-level work. Typed secret values (the action's
+`preview-secrets`) work as for any app. A secret that is a reference to a secret provider (`from`, or a template's
+refs) is allowed only if the app of the same name already has that same provider and path in one of the project's
+other (non-preview) environments, which is what a copy of the base app gives. A deploy-level person or token that adds
+another reference is refused with `403 not_allowed`, naming the reference; maintain on the project may add one. See
+[people and roles](people.md#what-a-role-does-not-protect).
+
 ## The password
 
 A preview is unreleased code on a public address. Set **one preview password per project** and every domain of every

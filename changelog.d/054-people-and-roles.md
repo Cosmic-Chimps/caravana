@@ -18,6 +18,13 @@
 - The console's live updates, lists and pages follow the person's role: a member's Apps, Projects, Logs, Requests,
   Monitoring and Schedules show their places only, and the buttons they can't use aren't drawn.
 
+### Security
+- In a preview (`pr-<n>`), a person with only the deploy role, or a deploy token, may use only the secret references
+  (a `from` or a template's refs: provider and path) that the app of the same name already has in the project's other
+  environments. Any other reference is `403 not_allowed`, naming it; maintain may add one. `docs/people.md` now also
+  says plainly what roles don't protect: deploy rights on an app are in effect access to its secrets, view includes
+  logs, and a secret provider's allowed places are a security boundary.
+
 ### Upgrade
 - The one admin becomes the **owner** (same email, password, passkeys, sessions and tokens). Rerunning the
   installer is all: nothing else to rerun on the host. Records made before have no `actor`.

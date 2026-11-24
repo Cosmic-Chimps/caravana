@@ -349,6 +349,9 @@ func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger)
 	if err := s.allowCreate(ctx, a.ID); err != nil {
 		return store.DeploymentRecord{}, err
 	}
+	if err := s.allowPreviewReferences(ctx, a); err != nil {
+		return store.DeploymentRecord{}, err
+	}
 	a = a.WithLowercaseHosts()
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
@@ -396,6 +399,9 @@ var ErrAppNotDefined = errors.New("the app has no definition yet: deploy it with
 // dropped; secret names are kept. The ID's project and environment must exist.
 func (s *Service) CreateAppOnly(ctx context.Context, a app.App) (store.AppRecord, error) {
 	if err := s.allowCreate(ctx, a.ID); err != nil {
+		return store.AppRecord{}, err
+	}
+	if err := s.allowPreviewReferences(ctx, a); err != nil {
 		return store.AppRecord{}, err
 	}
 	a = a.WithLowercaseHosts()

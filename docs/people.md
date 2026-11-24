@@ -32,13 +32,33 @@ A few rules that follow:
   services' `image`; anything else (an env value, a port, a domain) is `403 not_allowed` naming the first field. This is
   what the CI action and MCP's `deploy_image` send, so a deploy-level token works for them.
 - **Previews** (`pr-<n>` environments) take the project role, never an override. Because CI opens and defines them with
-  a deploy token, deploy is enough to open, define and close one.
-- **Run a command and the terminal need maintain**: a command can print any secret. No role can read a secret's value.
+  a deploy token, deploy is enough to open, define and close one. One limit keeps that from reaching a maintainer's
+  secrets: below maintain (and for a deploy token), a preview app may only use the secret references (`from`, or a
+  template's refs: provider and path) that the app of the same name already has in the project's other, non-preview
+  environments. A new one is `403 not_allowed` naming the reference ("a preview may only use the secret references its
+  base app already has; adding one needs maintain on the project"). Maintain and above are not held to it. An
+  existing preview app that holds a reference its base has since dropped needs maintain to be deployed with a body.
 - The installation's pages are admin only: Operator view, servers, host, updates, the activity feed, Registries,
   Builds, Secret providers, Backup storage, Notifications, Certificates, DNS providers, the image scanner, console
   address, templates catalog settings, creating or deleting a project, and People.
 - A role may have an **end date** (`endsAt`): after it the role counts as none, and the person stays. A person may have
   one too: after it they can't sign in and their tokens stop working. That is a **guest**.
+
+## What a role does not protect
+
+Roles decide who may click and call. They do not make a secret unreadable to someone who may run the app's code or
+read its output. Plainly:
+
+- **Deploy rights on an app are, in effect, access to that app's secrets.** A deploy may run a new image, and the image
+  reads the app's secrets when it starts. Give deploy only to people and tokens you trust with those secrets.
+- **View rights include logs.** Logs show anything an app writes, secrets included if the app prints them. Caravana
+  masks the secret values it knows in a schedule run's output, but it can't know what an app writes to its own log.
+- **Run a command and the terminal need maintain**, because a command can print any secret.
+- **Caravana shows a secret's value to no role.** No page or answer carries one, only its name. That is a rule about
+  what Caravana displays, not a promise about what a running app can do with it.
+- **A secret provider that a project may use is usable by everyone who can configure apps there.** Its "allowed places"
+  are therefore a security boundary: list only the projects (or project and environment places) whose maintainers may
+  read everything the provider's key can read. Previews are held to the rule above.
 
 ## Inviting someone
 

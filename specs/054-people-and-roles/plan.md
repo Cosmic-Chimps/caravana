@@ -244,8 +244,12 @@ operations now act on the caller's own. MCP: a read tool `get_me`; nothing else 
 - **Nomad namespaces per project:** later. Caravana is the only Nomad client and enforces roles itself; 019's reason
   (Traefik's provider watches one namespace) still holds.
 - **What each role sees:** view reads logs, requests, metrics and a schedule run's output (app output, like logs, masked
-  of secrets); Run a command and the terminal need maintain (a command can print any secret); a secret's value is never
-  readable by anyone; its name is view.
+  of secrets, but an app's own log shows whatever the app writes); Run a command and the terminal need maintain (a
+  command can print any secret). Caravana displays a secret's value to no role (its name is view), but that is not
+  secrecy from the code: deploy rights on an app are in effect access to its secrets (a deploy may run a new image that
+  reads them), a provider allowed for a project is usable by everyone who can configure apps there (its allowed places
+  are a security boundary), and in a preview a person below maintain, or a deploy token, may use only the secret
+  references the base app already has (Deviations, review fixes). `docs/people.md` says this plainly.
 - **Webhook tokens and the update request:** an app's webhook token stays the app's credential (made and rotated with
   maintain; the call itself is public with its token, as today). Updating Caravana (030) is admin.
 

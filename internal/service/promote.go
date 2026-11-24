@@ -134,6 +134,10 @@ func (s *Service) Promote(ctx context.Context, appID, to string, cond Condition,
 	if err := s.Allow(ctx, NeedApp(LevelDeploy), Target{AppID: p.target.App.ID}); err != nil {
 		return store.DeploymentRecord{}, err
 	}
+	// A service that is new to a preview arrives with the source's secret references.
+	if err := s.allowPreviewReferences(ctx, p.result); err != nil {
+		return store.DeploymentRecord{}, err
+	}
 	switch cond.IfRevision {
 	case "":
 		cond.IfRevision = p.target.Revision
@@ -532,6 +536,10 @@ func (s *Service) CopyApp(ctx context.Context, appID, to string) (store.AppRecor
 
 	a := src.App.WithoutSecretValues() // already names only; a copy of the services
 	a.ID = place.ID()
+	// A copy into a preview keeps the source's secret references: they must be ones the base has.
+	if err := s.allowPreviewReferences(ctx, a); err != nil {
+		return store.AppRecord{}, nil, err
+	}
 	for i := range a.Services {
 		a.Services[i].Domains = nil
 		a.Services[i].Ports = unpublished(a.Services[i].Ports) // an address belongs to an environment

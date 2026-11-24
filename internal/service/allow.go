@@ -133,7 +133,8 @@ func (s *Service) allowSave(ctx context.Context, a app.App, m made) error {
 	have := p.LevelAt(project, environment, s.clock.Now())
 	configure := ConfigureLevel(environment)
 	if have >= configure {
-		return nil // nothing a deploy does needs more
+		// Nothing a deploy does needs more, except a preview's secret references (below).
+		return s.allowPreviewReferences(ctx, a)
 	}
 	refuse := func(need Level, field string) error {
 		return &NotAllowedError{Have: have, Need: need, Project: project, Environment: environment, Field: field}
@@ -156,4 +157,69 @@ func (s *Service) allowSave(ctx context.Context, a app.App, m made) error {
 		return refuse(LevelDeploy, "")
 	}
 	return nil
+}
+
+// previewReferencesReason is what a refusal of a preview's new secret reference says.
+const previewReferencesReason = "a preview may only use the secret references its base app already has; adding one needs maintain on the project"
+
+// allowPreviewReferences is the rule that keeps a preview's lower level from reaching a
+// maintainer's secrets (feature 054, plan D12). In a preview environment (pr-<n>) a deploy-level
+// person defines apps (ConfigureLevel), and a secret provider that the project may use is open to
+// every app in the project's places, previews included. So a person below maintain, or a deploy
+// token (CI's), may define or change a preview app only if every secret reference in it (each
+// `from`, each template ref: provider and path) is one the app of the same name already has in a
+// base environment of the project, any environment that isn't a preview. A reference that isn't
+// is a *NotAllowedError whose Field names it. Maintain and above, and Caravana itself, are not
+// held to it. A deploy token is held to it whoever made it, since CI's token is what a pull
+// request's workflow holds.
+func (s *Service) allowPreviewReferences(ctx context.Context, a app.App) error {
+	p, ok := PrincipalFrom(ctx)
+	if !ok {
+		return nil
+	}
+	place := placeOfApp(a)
+	if !app.IsPreviewEnvironment(place.Environment) {
+		return nil
+	}
+	have := p.LevelAt(place.Project, place.Environment, s.clock.Now())
+	if have >= LevelMaintain && p.Scope == nil {
+		return nil
+	}
+	refs := referencesOf(a)
+	if len(refs) == 0 {
+		return nil
+	}
+	base, err := s.baseReferences(ctx, place)
+	if err != nil {
+		return err
+	}
+	for _, r := range refs {
+		if base[r.ref] {
+			continue
+		}
+		return &NotAllowedError{Have: min(have, LevelDeploy), Need: LevelMaintain, Project: place.Project,
+			Environment: place.Environment, Field: r.field, Reason: previewReferencesReason}
+	}
+	return nil
+}
+
+// baseReferences is every reference (provider and path) of the apps named like place's app in the
+// project's environments that aren't previews: the apps a preview is a copy of. The store doesn't
+// record which environment a preview was opened from (CI chooses it), so every base environment
+// counts.
+func (s *Service) baseReferences(ctx context.Context, place app.Place) (map[app.SecretRef]bool, error) {
+	recs, err := s.store.ListAppsIn(ctx, place.Project, "")
+	if err != nil {
+		return nil, err
+	}
+	out := map[app.SecretRef]bool{}
+	for _, rec := range recs {
+		if rec.Place.Name != place.Name || app.IsPreviewEnvironment(rec.Place.Environment) {
+			continue
+		}
+		for _, r := range referencesOf(rec.App) {
+			out[r.ref] = true
+		}
+	}
+	return out, nil
 }
