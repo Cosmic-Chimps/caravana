@@ -44,12 +44,12 @@
 
 ## Phase D: console and docs
 
-- [ ] T014 Settings › Backup storage (D14): list, add, edit, Test, Make default, Remove with refusals; the nav state.
-- [ ] T015 Project page "Backups go to"; Backups tab: the policy line, "Where backups go" (`SetBackupPlaces`), the
+- [x] T014 Settings › Backup storage (D14): list, add, edit, Test, Make default, Remove with refusals; the nav state.
+- [x] T015 Project page "Backups go to"; Backups tab: the policy line, "Where backups go" (`SetBackupPlaces`), the
       copies on each row, "Restore from"; Compose form draft carries destination and copies; the attention row.
       Sentinel test in `ui`. `tools/ui-css.sh build`.
-- [ ] T016 Constitution 1.2.3 (PATCH: II names `<app>_<service>_copy-<id>` and `_backup-check-<id>`), its own commit.
-- [ ] T017 `docs/backup-destinations.md`, `changelog.d/backup-destinations.md`, `CLAUDE.md`'s feature paragraph.
+- [x] T016 Constitution 1.2.3 (PATCH: II names `<app>_<service>_copy-<id>` and `_backup-check-<id>`), its own commit.
+- [x] T017 `docs/backup-destinations.md`, `changelog.d/backup-destinations.md`, `CLAUDE.md`'s feature paragraph.
 
 ## Phase E: lab
 

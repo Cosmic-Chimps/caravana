@@ -2021,6 +2021,47 @@ repository on the host. `plan.md` D1–D12 are the decisions and its Deviations 
 - Not in 050: Compose `build:`, more than one built service, polling a repository, build arguments and secrets, multi-architecture
   images, a registry run by Caravana, Git providers as installation-wide accounts, a pool of build servers.
 
+Feature 052 (`specs/052-backup-destinations`, worktree branch `alta/robust-monsoon-cn34`): several named backup destinations and a
+second copy of every backup. `plan.md` D1–D15 are the decisions and its Deviations sections (phases A to D) the changes; operator doc:
+`docs/backup-destinations.md`. Migration 0042, API 0.58.0, constitution 1.2.3 (names the copy and check jobs), no new module, no policy change.
+- Destinations: table `backup_destinations` (name, endpoint, region, bucket, prefix, access key ID, `secret_path`, `is_default` with a
+  partial unique index, the last test); the secret key only in a Nomad Variable (`caravana/backup-destinations/<name>`, item
+  `secretAccessKey`). The migration makes the old row `main`, the default, with its key left at `caravana/backup-destination`, and
+  `backups.destination`/`restores.destination` say `main` on old rows. `service.ListBackupDestinations` (with `UsedBy`),
+  `SaveBackupDestination` (the first is the default; `default: false` on the default is a field error), `SetDefaultBackupDestination`,
+  `DeleteBackupDestination` (`ErrDestinationNotFound`, `ErrDestinationIsDefault`, `*DestinationInUseError`), `TestBackupDestination`.
+  `GetBackupDestination`/`SetBackupDestination` still mean the default (the old route, 045's archive, 035's templates).
+- Policy: `app.Backup.Destination`, `CopyTo` (at most 2, distinct, never the destination) and `CopyKeep` (`destination`, `copyTo`,
+  `copyKeep`; omitempty/omitzero, so no revision moved). `backupPlaces` resolves policy, then `projects.backup_destination`, then the
+  default; `checkBackups` refuses unknown names naming `services[i].backup.destination` or `.copyTo[k]`. `Service.BackupPlaces` exports
+  the resolution for the console, `SetBackupPlaces` is a deploy with those three fields changed (like `SetRestoreSchedule`, kept Compose
+  file through the overlay), `UpdateProject{BackupDestination}` sets a project's. `repointBackups` points the jobs of every affected
+  service at a new destination from their next run (`Deployer.PointBackups`), without a deploy.
+- Copies (`service/backupcopies.go`, `nomadjob/backupcopy.go`): a succeeded backup queues a `pending` row in `backup_copies` per `copyTo`
+  name; `copyPass` (end of every `recordBackups`) settles `running` rows and starts `pending` ones, two at a time, as the batch job
+  `<app>_<service>_copy-<id>` (rclone `copyto`/`copy`, a size check, then the target's retention with pins kept). The job's keys are in
+  its own Nomad Variable. A restart keeps the queue. `store.BackupRecord.Gone()` (deleted from its own destination and every copy)
+  replaces `Expired` for liveness. `_backup-check-<id>` (`nomadjob/backupcheck.go`, modes `test` and `locate`) tests a destination and
+  finds which place still holds an object.
+- Restore: `Service.Restore(ctx, appID, backupID, from)`; the places are the backup's destination and its live copies, `locate` picks
+  the first that has it, `ErrBackupMissing` (409 `backup_missing`) when none, a `from` outside them is a field error on `from`. The
+  restore record keeps its `destination`. Needs-you `backup_copy_failed` (a warning; key `…|<app>|<service>|<dest>`), and
+  `backup_failed` and the notifications name the destination.
+- API 0.58.0: `listBackupDestinations`, `putBackupDestination`, `deleteBackupDestination`, `testBackupDestination`,
+  `BackupPolicy.destination/copyTo/copyKeep`, `Backup.destination/copies/expired`, `Restore.destination`, the restore's `{from}`,
+  `Project.backupDestination`, codes `destination_not_found`, `destination_is_default`, `destination_in_use`, `backup_missing`; deploy
+  tokens are denied by the default deny.
+- Console: Settings › Backup storage is a list (`internal/ui/destinations.go`: `POST /settings/backups` for add and edit, `/test`,
+  `/default`, `/remove`; the nav state follows the destinations), the project page has "Backups go to" (`POST
+  /projects/{project}/backups`, shown with two destinations or when the project has one), the Backups tab has the policy line, "Where
+  backups go…" (`POST /apps/{id}/backups/places`, shown with more than one destination or a policy that names one), a line per backup
+  (`backupWhere`) and "Restore from" with more than one place, and the Compose form's backup part carries `backupDestination`,
+  `backupCopyTo` and `backupCopyKeep`. Forms work without JavaScript; the key input never holds a value. Sentinel tests in `service`,
+  `api` and `ui` (`TestDestinationKeyNeverShows`).
+- Lab (to run in Phase E): the gate step `backup-copies` and the console step `console-backup-destinations` (plan D15) are not run yet.
+- Not in 052: other kinds of destination, encryption, moving backups between destinations, renaming a destination, a third copy,
+  provider-side replication, per-copy pinning.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

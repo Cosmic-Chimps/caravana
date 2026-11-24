@@ -263,3 +263,25 @@ Spec: `spec.md`. Task `mv6m`. Branch: the worktree branch `alta/robust-monsoon-c
   and `backup_missing` (409). The "couldn't be reached" restore is the existing 502 `nomad_unavailable`. `putBackupDestination`
   decides 201 or 200 by reading the destination first.
 
+## Deviations (phase D)
+
+- **D14 settings.** `POST /settings/backups` serves the add form (hidden `add=1`), a row's edit form (`edit=1`) and, with no name and
+  no `add`, the old single-destination form (it writes the default), so older callers and tests keep working; an add with no name is a
+  field error on `name`. Test, Make default and Remove are `POST /settings/backups/test|default|remove` with the destination in
+  `name`. A refusal is a 4xx page (422 a field, 409 default or in use, 502 Nomad) drawn on the row; a success is a 303. The nav's
+  Backup storage state is failed when any destination's last test failed, or a backup failed, as the old rule had it.
+- **D14 project.** "Backups go to" is `POST /projects/{project}/backups` (not the display name's route) and calls
+  `Service.UpdateProject`. It is drawn only when the installation has two destinations or the project already has a default of its
+  own (so it can go back to the installation's). A refusal is drawn at the select; "saved, but the jobs …" is a 502 notice.
+- **D14 Backups tab.** `Service.BackupPlaces(ctx, appID, policy)` exports the resolution (primary "" when none exists) for the page,
+  and `Service.SetBackupPlaces` is the deploy behind `POST /apps/{id}/backups/places`. The form is offered with more than one
+  destination or when the policy already names one; its destination select only with more than one; its copy checkboxes leave out the
+  destination the backups go to now. A refusal re-draws the tab with the service's row open, what was posted, and the sentence under
+  its field (`destination`, `copyTo`, `copyKeep`). The policy line shows with a copy, or with several destinations ("to main"); a
+  backup's "where" line only with several destinations, a copy, or a backup retention deleted from its own destination; "Restore
+  from" only when the backup has more than one place. A refused `from` (a stale page) is the tab's notice, not drawn at the select.
+  The count line says "stored in <bucket>" with one destination as before and lists the names with several.
+- **D14 Compose.** The backup part has three plain inputs, `backupDestination`, `backupCopyTo` (names separated by commas, spaces or
+  lines) and `backupCopyKeep`, kept through `draftOf` and `parseComposeDraft`; the model's refusals come back on them (`fieldFor`).
+- No new class or token: `tools/ui-css.sh build` leaves `app.css` as it was.
+
