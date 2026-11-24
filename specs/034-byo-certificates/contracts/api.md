@@ -14,7 +14,7 @@ deploy tokens are refused by the default deny. No answer ever holds a private ke
 | `issuer` | enum + `custom` | `custom`: the issuer set here |
 | `issuerName` | string | "Let's Encrypt", "Let's Encrypt (staging)", a preset's name ("Google Trust Services", "ZeroSSL", "DigiCert") when `server` is its address, else the server's host; "" for `none`/`unknown` |
 | `acme` | `ACMEIssuer` or null | the custom issuer; null with the installer's |
-| `issuerUnavailable` | string | "" when the issuer can be changed, else `installed_without_issuer` (`--acme none`), `installer_not_known`, `traefik_outdated`, `nomad_unreachable` |
+| `issuerUnavailable` | string | "" when the issuer can be changed, else `installed_without_issuer` (`--acme none`), `traefik_outdated`, `nomad_unreachable` (Traefik's job is read from Nomad on every read: a rerun of the installer shows at once) |
 | `uploadUnavailable` | string | "" when certificates can be uploaded, else `traefik_outdated` or `nomad_unreachable` |
 
 `contactEmail` is the custom issuer's email when there is one.
@@ -60,14 +60,15 @@ can't be written.
 
 `uploadCertificate` body (`CertificateUpload`): `certificate` (PEM: the certificate and its intermediates, any
 order; may also hold the key) and `key` (PEM; may be empty when `certificate` holds it); each at most 64 KiB.
-Refusals: 422 `invalid_field` on `certificate` or `key` (see `internal/certs`), 409
+Refusals: 422 `invalid_field` on `certificate` or `key` (see `internal/certs`; these two routes answer field errors with 422, like `putCertificateSettings`), 409
 `too_many_certificates` (30), 409 `certificates_unavailable`.
 
 `UploadedCertificate`: `id`, `names`, `subject`, `issuer`, `notBefore`, `notAfter`, `fingerprint`, `keyType`
 ("RSA 2048", "ECDSA P-256"), `trusted` (chains to a root this server trusts), `status`
 (`valid`, `expiring`, `expired`, by the warning window), `uploadedAt`, `domains` (served domains whose last
-check presented it), `keptEarlier` (served domains it covers whose last check presented another certificate
-that isn't Traefik's own).
+check presented it), `keptEarlier` (`[{host, alsoAsks}]`: served domains it covers whose last check presented
+another certificate that isn't Traefik's own; `alsoAsks` are the other hosts of that host's route the upload doesn't
+cover, research R4's limit).
 
 New error codes: `issuer_unavailable`, `certificates_unavailable`, `too_many_certificates`,
 `certificate_not_found`.

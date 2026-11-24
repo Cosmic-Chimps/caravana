@@ -22,7 +22,9 @@ func TestCertificateSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := CertificateSettings{Issuer: IssuerUnknown, WarnBeforeDays: 14, EdgeAddress: "127.0.0.1:443"}
+	// This Nomad has no Traefik job, so neither the issuer nor uploads can be offered (feature 034).
+	want := CertificateSettings{Issuer: IssuerUnknown, WarnBeforeDays: 14, EdgeAddress: "127.0.0.1:443",
+		IssuerUnavailable: UnavailableTraefikOutdated, UploadUnavailable: UnavailableTraefikOutdated}
 	if got != want {
 		t.Errorf("before the installer said = %+v, want %+v", got, want)
 	}

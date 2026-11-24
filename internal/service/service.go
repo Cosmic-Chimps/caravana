@@ -198,6 +198,15 @@ type Service struct {
 	// Console address (feature 051), see consoleaddress.go.
 	consoleAddr consoleAddressState
 
+	// Certificates (feature 034), see certissuer.go and uploadedcerts.go: acmeClient reads a custom
+	// issuer's directory (nil: the default), issuerCA is the issuer's CA for the domain checks,
+	// certRecheck is how long after an upload or removal the covered hosts are checked again, and
+	// certMu makes the uploads and removals one at a time.
+	acmeClient  atomic.Pointer[func(ca string) *http.Client]
+	issuerCA    issuerCAState
+	certRecheck time.Duration
+	certMu      sync.Mutex
+
 	// Previews (feature 049), see previews.go.
 	previewGap    time.Duration // between two passes of the reaper
 	previewExpiry atomic.Int64  // when positive, how long every preview may sit idle, in nanoseconds (the lab's shortcut)
@@ -299,6 +308,8 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		deleting:   map[string]bool{},
 
 		previewGap: defaultPreviewReapGap,
+
+		certRecheck: defaultCertRecheck,
 
 		consoleAddr: newConsoleAddressState(),
 	}

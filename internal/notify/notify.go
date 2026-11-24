@@ -111,6 +111,11 @@ type Event struct {
 	Advisory       string   `json:"advisory,omitempty"`
 	Severity       string   `json:"severity,omitempty"`
 	Image          string   `json:"image,omitempty"`
+	// Certificate is the ID of the uploaded certificate of a certificate_expiring problem (feature 034)
+	// when it opens, and Names are the DNS names it covers; ExpiresAt is when it ends. Such an event
+	// has no app, project or environment.
+	Certificate string   `json:"certificate,omitempty"`
+	Names       []string `json:"names,omitempty"`
 	// Destination is the name of the backup destination of a problem about a backup (feature 052):
 	// where a failed backup was going (backup_failed), or the one a failed copy was going to
 	// (backup_copy_failed), when it opens.

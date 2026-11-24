@@ -146,6 +146,10 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 		ev.Package, ev.PackageVersion, ev.FixedIn = it.Package, it.PackageVersion, it.FixedIn
 		ev.Advisory, ev.Severity, ev.Image = it.Advisory, it.Severity, it.Image
+	case AttentionCertificateExpiring:
+		ev.Title = certificateTitle(it)
+		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
+		ev.Certificate, ev.Names = it.Certificate, it.Names
 	default: // a kind added to the list and not yet worded here: still say something
 		ev.Title = fmt.Sprintf("%s: needs you (%s)", where, it.Kind)
 		ev.Text = ev.Title + "."
@@ -284,6 +288,8 @@ func problemPath(kind AttentionKind, appID, subject string) string {
 		return "/ops/servers/" + url.PathEscape(subject)
 	case AttentionImageVulnerable:
 		return deploymentPath(appID, "")
+	case AttentionCertificateExpiring:
+		return "/settings/certificates"
 	case AttentionDomainDNSElsewhere, AttentionDomainCertExpiring:
 		return "/domains?open=" + url.QueryEscape(subject) + "#domain-" + subject
 	}
@@ -422,6 +428,9 @@ func problemSubject(it AttentionItem) string {
 	}
 	if it.Kind == AttentionImageVulnerable {
 		return it.Package // one problem per package, whichever advisory is the worst now
+	}
+	if it.Kind == AttentionCertificateExpiring {
+		return it.Certificate // one problem per uploaded certificate
 	}
 	// The OS kinds name their server once there are several, and keep their key (feature 031).
 	if it.Server != "" && it.Kind != AttentionOSRebootRequired && it.Kind != AttentionOSSecurityUpdates {

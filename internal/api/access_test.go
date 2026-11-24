@@ -72,6 +72,9 @@ var walkClasses = map[string][]string{
 		"DELETE /v1/notifications/channels/{id}", "POST /v1/notifications/channels/{id}/test",
 		"GET /v1/notifications/channels/{id}/deliveries", "POST /v1/notifications/channels/{id}/secret",
 		"GET /v1/settings/certificates", "PUT /v1/settings/certificates", "GET /v1/certificates",
+		"PUT /v1/settings/certificates/issuer", "DELETE /v1/settings/certificates/issuer",
+		"GET /v1/certificates/uploaded", "POST /v1/certificates/uploaded", "GET /v1/certificates/uploaded/{id}",
+		"DELETE /v1/certificates/uploaded/{id}",
 		"GET /v1/builds/settings", "PUT /v1/builds/settings",
 	},
 	"app:view": {

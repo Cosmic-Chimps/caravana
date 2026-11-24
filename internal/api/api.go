@@ -192,7 +192,13 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/apps/{id}/domains/{host}/team-password", s.rotateTeamPassword, false, false},
 		{http.MethodGet, "/v1/settings/certificates", s.getCertificateSettings, false, false},
 		{http.MethodPut, "/v1/settings/certificates", s.putCertificateSettings, false, false},
+		{http.MethodPut, "/v1/settings/certificates/issuer", s.putCertificateIssuer, false, false},
+		{http.MethodDelete, "/v1/settings/certificates/issuer", s.deleteCertificateIssuer, false, false},
 		{http.MethodGet, "/v1/certificates", s.listCertificates, false, false},
+		{http.MethodGet, "/v1/certificates/uploaded", s.listUploadedCertificates, false, false},
+		{http.MethodPost, "/v1/certificates/uploaded", s.uploadCertificate, false, false},
+		{http.MethodGet, "/v1/certificates/uploaded/{id}", s.getUploadedCertificate, false, false},
+		{http.MethodDelete, "/v1/certificates/uploaded/{id}", s.deleteUploadedCertificate, false, false},
 		{http.MethodGet, "/v1/apps/{id}/backups", s.listBackups, false, false},
 		{http.MethodPost, "/v1/apps/{id}/backups", s.createBackup, false, false},
 		{http.MethodPost, "/v1/apps/{id}/backups/{backupId}/restore", s.restoreBackup, false, false},
@@ -425,6 +431,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := domainError(err); e != nil {
+		return e
+	}
+	if e := certificatesError(err); e != nil {
 		return e
 	}
 	if e := dnsError(err); e != nil {

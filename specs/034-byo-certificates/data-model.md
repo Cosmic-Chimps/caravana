@@ -27,4 +27,4 @@ INTEGER, `uploaded_at`. No key, no chain.
 ## Derived, never stored
 
 - `issuerName`, `status` of an uploaded certificate, `domains`, `keptEarlier`, the attention items.
-- Whether the ingress supports the feature: job `traefik`'s meta `caravana_certificates`, cached a minute.
+- Whether the ingress supports the feature: job `traefik`'s meta `caravana_certificates`, read on every settings read.

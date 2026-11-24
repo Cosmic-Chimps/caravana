@@ -58,6 +58,9 @@ const (
 	// AttentionImageVulnerable: a service's live image has an advisory at or above the notify level
 	// that has a known fix (feature 044), one item per package. A warning, failed when one is critical.
 	AttentionImageVulnerable AttentionKind = "image_vulnerable"
+	// AttentionCertificateExpiring: an uploaded certificate (feature 034) ends inside the warning window
+	// or has ended. One item per certificate; nothing renews it. A warning, failed once it has ended.
+	AttentionCertificateExpiring AttentionKind = "certificate_expiring"
 )
 
 // skippingAt is how many skipped slots in a row make a schedule an item: each
@@ -163,7 +166,12 @@ type AttentionItem struct {
 	Image                   string
 	MoreAdvisories          int
 	KEV                     bool
-	When                    time.Time
+	// Certificate is the ID of the uploaded certificate of certificate_expiring (feature 034) and
+	// Names its DNS names; ExpiresAt is when it ends. The item has no app: Detail is its sentence, and
+	// Level says warning or failed (once it has ended).
+	Certificate string
+	Names       []string
+	When        time.Time
 	// Detail is the raw fact: Nomad's description, the deploy or backup error,
 	// or, for the schedule kinds, a sentence in Caravana's words. Never a
 	// run's output.
@@ -277,6 +285,14 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 	}
 	out.ScansOff = scansOff
 	out.Items = append(out.Items, scanItems...)
+	certItems, err := s.certificateItems(ctx)
+	if err != nil {
+		return Attention{}, fmt.Errorf("attention: %w", err)
+	}
+	out.Items = append(out.Items, certItems...)
+	if out.Items, err = s.withoutUploadedExpiring(ctx, out.Items, domains); err != nil {
+		return Attention{}, fmt.Errorf("attention: %w", err)
+	}
 	// A member sees the items of the places where their role is view or more; the items that
 	// belong to no place (servers, disks, the host's updates, Caravana's own update, a missing
 	// backup destination) are for owners and admins (feature 053).
@@ -598,6 +614,7 @@ func sortAttention(items []AttentionItem) {
 			strings.Compare(string(a.Kind), string(b.Kind)),
 			strings.Compare(a.ScheduleID, b.ScheduleID),
 			strings.Compare(a.Domain, b.Domain),
+			strings.Compare(a.Certificate, b.Certificate),
 			strings.Compare(a.Mount, b.Mount),
 		)
 	})

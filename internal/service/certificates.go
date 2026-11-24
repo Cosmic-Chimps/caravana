@@ -14,10 +14,11 @@ import (
 
 // Settings › Certificates (feature 023, research R5). The certificate
 // authority and its contact email are the installer's (CARAVANA_ACME,
-// CARAVANA_ACME_EMAIL): Traefik reads them at start, so they are shown, not
-// edited. The one setting Caravana owns is how long before a certificate's
-// end it counts as expiring (7, 14 or 30 days; 14 until changed), which every
-// check reads from the store.
+// CARAVANA_ACME_EMAIL) until the owner sets an issuer of their own (feature
+// 034, certissuer.go), and uploads certificates (uploadedcerts.go). The other
+// setting Caravana owns is how long before a certificate's end it counts as
+// expiring (7, 14 or 30 days; 14 until changed), which every check reads from
+// the store.
 
 // The issuers CertificateSettings names.
 const (
@@ -25,6 +26,7 @@ const (
 	IssuerLetsEncryptStaging = "letsencrypt-staging"
 	IssuerNone               = "none"    // Traefik serves its own certificate
 	IssuerUnknown            = "unknown" // the installer hasn't said (it predates 023): rerun it
+	IssuerCustom             = "custom"  // the issuer the owner set (feature 034)
 )
 
 // CertificateSettings is how this installation gets its certificates.
@@ -38,6 +40,26 @@ type CertificateSettings struct {
 	WarnBeforeDays int `json:"warnBeforeDays"`
 	// EdgeAddress is where the certificate checks reach Traefik.
 	EdgeAddress string `json:"edgeAddress"`
+	// IssuerName is the issuer in words: "Let's Encrypt", "Let's Encrypt (staging)", a preset's name
+	// when the custom issuer's server is its address, else the server's host. "" for none and unknown.
+	IssuerName string `json:"issuerName"`
+	// ACME is the custom issuer; nil while the installer's applies (feature 034).
+	ACME *ACMEIssuerView `json:"acme"`
+	// IssuerUnavailable is "" when the issuer can be changed, else why not: Unavailable… below.
+	IssuerUnavailable string `json:"issuerUnavailable"`
+	// UploadUnavailable is "" when certificates can be uploaded, else why not.
+	UploadUnavailable string `json:"uploadUnavailable"`
+}
+
+// ACMEIssuerView is the custom issuer as the API and the console show it. The EAB HMAC key is
+// never in it: EABKeySet says one is stored.
+type ACMEIssuerView struct {
+	Server    string    `json:"server"`
+	Email     string    `json:"email"`
+	EABKeyID  string    `json:"eabKeyId"`
+	EABKeySet bool      `json:"eabKeySet"`
+	PrivateCA bool      `json:"privateCA"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // CertificateView is one row of the certificates table: the certificate the
@@ -54,21 +76,39 @@ type CertificateView struct {
 	Status   string     `json:"status"`
 	NotAfter *time.Time `json:"notAfter"`
 	RenewsAt *time.Time `json:"renewsAt"`
+	// Fingerprint is the SHA-256 of the leaf the handshake showed, hex; "" when none. Uploaded is the
+	// uploaded certificate the host presents, nil for any other (feature 034).
+	Fingerprint string       `json:"fingerprint"`
+	Uploaded    *UploadedRef `json:"uploaded"`
 }
 
-// CertificateSettings answers how this installation gets its certificates.
+// CertificateSettings answers how this installation gets its certificates. It asks Nomad for the
+// features of Traefik's job (feature 034) and never fails on that: a Nomad that can't be read is a
+// reason in IssuerUnavailable and UploadUnavailable.
 func (s *Service) CertificateSettings(ctx context.Context) (CertificateSettings, error) {
 	days, _, err := s.store.CertificateSettings(ctx)
 	if err != nil {
 		return CertificateSettings{}, err
 	}
 	mode, email := s.ACME()
-	return CertificateSettings{
+	out := CertificateSettings{
 		Issuer:         issuerOf(mode),
 		ContactEmail:   email,
 		WarnBeforeDays: days,
 		EdgeAddress:    s.edgeSettings().edgeAddress,
-	}, nil
+		IssuerName:     issuerNameOf(mode),
+	}
+	custom, ok, err := s.store.ACMEIssuer(ctx)
+	if err != nil {
+		return CertificateSettings{}, err
+	}
+	if ok {
+		out.Issuer, out.ContactEmail, out.IssuerName = IssuerCustom, custom.Email, customIssuerName(custom.Server)
+		out.ACME = &ACMEIssuerView{Server: custom.Server, Email: custom.Email, EABKeyID: custom.EABKeyID,
+			EABKeySet: custom.EABKeySet, PrivateCA: custom.CA != "", UpdatedAt: custom.UpdatedAt}
+	}
+	out.IssuerUnavailable, out.UploadUnavailable = s.certificateFeatures(ctx, mode)
+	return out, nil
 }
 
 // issuerOf names the issuer of CARAVANA_ACME's mode.
@@ -82,6 +122,17 @@ func issuerOf(mode string) string {
 		return IssuerNone
 	}
 	return IssuerUnknown
+}
+
+// issuerNameOf is the installer's issuer in words, "" when it has none or isn't known.
+func issuerNameOf(mode string) string {
+	switch mode {
+	case "production":
+		return "Let's Encrypt"
+	case "staging":
+		return "Let's Encrypt (staging)"
+	}
+	return ""
 }
 
 // SetWarnBeforeDays sets how many days before its end a certificate counts as
@@ -171,7 +222,8 @@ func (s *Service) Certificates(ctx context.Context) ([]CertificateView, error) {
 		if v.State == edge.StateNotServed || v.CheckedAt == nil || v.Certificate.Status == edge.CertNone {
 			continue
 		}
-		c := CertificateView{Host: v.Host, App: v.App, Service: v.Service, Issuer: v.Certificate.Issuer, Status: v.Certificate.Status}
+		c := CertificateView{Host: v.Host, App: v.App, Service: v.Service, Issuer: v.Certificate.Issuer, Status: v.Certificate.Status,
+			Fingerprint: v.Certificate.Fingerprint, Uploaded: v.Uploaded}
 		if !v.Certificate.NotAfter.IsZero() {
 			c.NotAfter = new(v.Certificate.NotAfter.UTC())
 		}

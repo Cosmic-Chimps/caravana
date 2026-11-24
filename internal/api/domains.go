@@ -56,6 +56,10 @@ type certificateJSON struct {
 	Issuer   string     `json:"issuer"`
 	NotAfter *time.Time `json:"notAfter"`
 	RenewsAt *time.Time `json:"renewsAt"`
+	// Fingerprint is the SHA-256 of the presented leaf, hex ("" when none), and Uploaded the uploaded
+	// certificate the host presents, null for any other (feature 034).
+	Fingerprint string               `json:"fingerprint"`
+	Uploaded    *service.UploadedRef `json:"uploaded"`
 }
 
 // domainJSON is one domain (schema Domain).
@@ -93,8 +97,8 @@ func addrList(in []netip.Addr) []string {
 	return out
 }
 
-func toCertificateJSON(c edge.Certificate) certificateJSON {
-	j := certificateJSON{Status: c.Status, Issuer: c.Issuer}
+func toCertificateJSON(c edge.Certificate, uploaded *service.UploadedRef) certificateJSON {
+	j := certificateJSON{Status: c.Status, Issuer: c.Issuer, Fingerprint: c.Fingerprint, Uploaded: uploaded}
 	if !c.NotAfter.IsZero() {
 		j.NotAfter = new(c.NotAfter.UTC())
 	}
@@ -109,7 +113,7 @@ func toDomainJSON(v service.DomainView) domainJSON {
 		Host: v.Host, App: v.App, Project: v.Project, Environment: v.Environment, AppName: v.AppName,
 		Service: v.Service, Port: v.Port, Path: v.Path, WWWRedirect: v.WWWRedirect, TeamOnly: v.TeamOnly,
 		Router: v.Router, RedirectOf: v.RedirectOf, State: string(v.State),
-		DNS: toDNSJSON(v.DNS), Certificate: toCertificateJSON(v.Certificate), CheckedAt: v.CheckedAt,
+		DNS: toDNSJSON(v.DNS), Certificate: toCertificateJSON(v.Certificate, v.Uploaded), CheckedAt: v.CheckedAt,
 		Record: toManagedRecordJSON(v.Record),
 	}
 }
@@ -202,7 +206,7 @@ func (s *server) checkDomain(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	out := domainCheckJSON{Host: c.Host, Record: make([]dnsRecordJSON, 0, len(c.Records)),
-		DNS: toDNSJSON(c.DNS), Certificate: toCertificateJSON(c.Certificate), CheckedAt: c.CheckedAt, ManagedZone: c.ManagedZone}
+		DNS: toDNSJSON(c.DNS), Certificate: toCertificateJSON(c.Certificate, c.Uploaded), CheckedAt: c.CheckedAt, ManagedZone: c.ManagedZone}
 	for _, rec := range c.Records {
 		out.Record = append(out.Record, dnsRecordJSON(rec))
 	}

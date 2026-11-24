@@ -49,6 +49,11 @@ const (
 	codeDestinationInUse      = "destination_in_use"
 	codeBackupMissing         = "backup_missing"
 	codeNotAllowed            = "not_allowed"
+	// The certificate codes (feature 034).
+	codeIssuerUnavailable       = "issuer_unavailable"
+	codeCertificatesUnavailable = "certificates_unavailable"
+	codeTooManyCertificates     = "too_many_certificates"
+	codeCertificateNotFound     = "certificate_not_found"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with
