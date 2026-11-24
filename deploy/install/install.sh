@@ -796,6 +796,83 @@ store_cluster_secrets() {
   fi
 }
 
+# drop_covered_acme_certificates: Traefik keeps serving and renewing an ACME certificate it already
+# holds, and one for an exact name beats an uploaded wildcard (feature 034, research R5). So each run
+# drops from every store file of Traefik's volume the ACME certificates whose every name is covered by
+# a certificate uploaded in Settings › Certificates, and says which. Traefik is stopped first when
+# there is something to drop (it holds the store in memory and would write it back); run_traefik
+# starts it again. Nothing else in the store is touched. Needs python3; without it, says so and goes on.
+drop_covered_acme_certificates() {
+  local stores=("$STATE"/traefik/acme*.json) names="" path covered
+  [ -e "${stores[0]}" ] || return 0
+  while read -r path; do
+    [ -n "$path" ] || continue
+    names+="$(nomad_cli var get -item names "$path" 2>/dev/null || true),"
+  done < <(nomad_cli var list -out json caravana/certificates/ 2>/dev/null |
+    grep -o '"Path": *"caravana/certificates/crt_[0-9a-f]*"' | grep -o 'caravana/certificates/crt_[0-9a-f]*')
+  [ -n "$names" ] || return 0
+  if ! command -v python3 >/dev/null; then
+    echo "  python3 isn't installed: certificates issued before an upload aren't dropped"
+    return 0
+  fi
+  covered="$(acme_covered "$names" list "${stores[@]}")" || fail "reading Traefik's certificate store failed"
+  [ -n "$covered" ] || return 0
+  nomad_cli job stop -detach traefik >/dev/null 2>&1 || true
+  timeout 60s bash -c 'while docker ps --format "{{.Image}}" | grep -q "^traefik:"; do sleep 1; done' || true
+  acme_covered "$names" drop "${stores[@]}" >/dev/null || fail "rewriting Traefik's certificate store failed"
+  echo "  dropped the earlier certificates of $covered: an uploaded certificate covers them"
+  changed+=(certificates)
+}
+
+# acme_covered NAMES list|drop STORE...: the names of the ACME certificates whose every name NAMES
+# (comma-separated) covers, exactly or as a wildcard *.rest for one label more; with drop, the stores
+# are written again without them (through a temporary file, mode and owner kept).
+acme_covered() {
+  python3 -I - "$@" <<'PYTHON'
+import json, os, sys, tempfile
+names = [n.strip().lower() for n in sys.argv[1].split(",") if n.strip()]
+mode, stores = sys.argv[2], sys.argv[3:]
+
+def covers(host):
+    host = host.lower()
+    for n in names:
+        if n == host or (n.startswith("*.") and "." in host and host.split(".", 1)[1] == n[2:]):
+            return True
+    return False
+
+dropped = []
+for path in stores:
+    with open(path) as f:
+        text = f.read()
+    if not text.strip():
+        continue
+    data = json.loads(text)
+    changed = False
+    for resolver in (data or {}).values():
+        if not isinstance(resolver, dict):
+            continue
+        keep = []
+        for c in resolver.get("Certificates") or []:
+            d = c.get("domain") or {}
+            hosts = [h for h in [d.get("main", "")] + list(d.get("sans") or []) if h]
+            if hosts and all(covers(h) for h in hosts):
+                dropped.append("+".join(hosts))
+                changed = True
+            else:
+                keep.append(c)
+        resolver["Certificates"] = keep
+    if changed and mode == "drop":
+        st = os.stat(path)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path))
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        os.chmod(tmp, st.st_mode & 0o777)
+        os.chown(tmp, st.st_uid, st.st_gid)
+        os.replace(tmp, path)
+print(", ".join(dropped))
+PYTHON
+}
+
 # run_traefik [CONSOLE_DOMAIN]: run Traefik, routing CONSOLE_DOMAIN to Caravana when given.
 run_traefik() {
   local console="${1:-}" before
@@ -812,27 +889,15 @@ run_traefik() {
     fi
     echo "$acme" >"$STATE/acme"
   fi
-  # Feature 023: Team only's password hashes reach Traefik through its file provider, which
-  # watches a directory instead of one file. An existing Traefik job still has the file, so
-  # this run restarts it once.
+  # Feature 034: Traefik's static configuration is a file rendered from Nomad Variables, so the
+  # issuer can change from the console and uploaded certificates are served. A job from before
+  # has none of it (nor, if it is older still, the file provider of 023, the request numbers of
+  # 025, the access log of 047 or the console route of 051): this run restarts it once.
   if [ "$before" != none ]; then
-    local spec
-    spec="$(nomad_cli job inspect traefik 2>/dev/null || true)"
-    grep -q 'providers.file.directory' <<<"$spec" ||
-      echo "  Traefik is restarted once for the file provider (a few seconds without HTTP)"
-    # Feature 025: Monitoring reads Traefik's request numbers (Prometheus text on its loopback
-    # entrypoint). An existing Traefik job doesn't have the two metrics arguments yet.
-    grep -q 'metrics.prometheus' <<<"$spec" ||
-      echo "  Traefik is restarted once for its request numbers (a few seconds without HTTP)"
-    # Feature 047: the Requests page reads Traefik's access log. An existing Traefik job doesn't
-    # write it yet.
-    grep -q 'accesslog' <<<"$spec" ||
-      echo "  Traefik is restarted once for its access log (a few seconds without HTTP)"
-    # Feature 051: the console's address can change from the console, because the console's route
-    # reads its domains from a Nomad Variable. An existing Traefik job doesn't name it yet.
-    grep -q 'nomad/jobs/traefik/traefik' <<<"$spec" ||
-      echo "  Traefik is restarted once for the console address (a few seconds without HTTP)"
+    nomad_cli job inspect traefik 2>/dev/null | grep -q 'caravana_certificates' ||
+      echo "  Traefik is restarted once for your own certificates (a few seconds without HTTP)"
   fi
+  drop_covered_acme_certificates
   local out
   out="$(nomad_cli job run -detach \
     -var "console_domain=$console" \

@@ -85,7 +85,7 @@ func consoleRouteTemplate(t *testing.T, consoleDomain string) string {
 		t.Fatal(err)
 	}
 	src := string(b)
-	i := strings.Index(src, `destination = "local/dynamic/caravana.yml"`)
+	i := strings.Index(src, `destination = "secrets/dynamic/caravana.yml"`)
 	if i < 0 {
 		t.Fatal("traefik.nomad.hcl: no caravana.yml template")
 	}

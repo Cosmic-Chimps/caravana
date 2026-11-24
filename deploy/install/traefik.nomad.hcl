@@ -36,6 +36,12 @@ locals {
 job "traefik" {
   type = "system" # one instance on every client node that passes the constraint below
 
+  # Feature 034: Caravana reads this to know the job renders its static configuration from
+  # caravana/acme and serves uploaded certificates. A job from before has neither.
+  meta {
+    caravana_certificates = "1"
+  }
+
   # One ingress: Traefik runs on the first server only, whose Nomad client has
   # meta { caravana_ingress = "true" } (the installer's --first sets it). Let's Encrypt's
   # HTTP-01 challenge must reach the server that holds the certificates, and a
@@ -62,7 +68,8 @@ job "traefik" {
       driver = "docker"
 
       # Puts a workload identity token in NOMAD_TOKEN. What it may read is set by the ACL
-      # policy traefik-read (deploy/dev/traefik-policy.hcl), attached to this job by setup.sh.
+      # policy traefik-read (traefik-policy.hcl), which install.sh attaches to this job before
+      # it runs it: without the policy the templates of caravana/ wait and the task never starts.
       identity {
         env = true
       }
@@ -70,6 +77,158 @@ job "traefik" {
       volume_mount {
         volume      = "acme"
         destination = "/acme"
+      }
+
+      # Feature 034, Traefik's static configuration. It is rendered into secrets/ (Nomad's fs API
+      # can't read that folder) from the job's variables and, when the owner chose another ACME
+      # issuer in Settings › Certificates, from the Nomad Variable caravana/acme, which the
+      # job-scoped policy traefik-read lets this task read. restart: a new issuer restarts the
+      # task once, in place (a few seconds without HTTP). Without the variable it is the issuer
+      # the installer chose (--acme), as before. Each issuer keeps its account and certificates
+      # in its own file of the acme volume (the variable's item storage), so going back to an
+      # issuer finds its certificates. The resolver keeps the name letsencrypt whatever the
+      # issuer: every deployed router names it. The Nomad provider takes the task's NOMAD_TOKEN
+      # by itself. Every item of caravana/acme is always written (Caravana writes "" for unset),
+      # and an item prints as its value but is no string, so each goes through printf.
+      template {
+        destination = "secrets/traefik.yml"
+        change_mode = "restart"
+        data        = <<-YAML
+          entryPoints:
+            web:
+              address: ":80"
+              http:
+                redirections:
+                  entryPoint:
+                    to: websecure
+                    scheme: https
+            websecure:
+              address: ":443"
+            traefik:
+              # Dashboard and API on loopback only; reach them through an SSH tunnel.
+              address: "127.0.0.1:8081"
+          api:
+            dashboard: true
+            insecure: true
+          providers:
+            nomad:
+              exposedByDefault: false
+              # Follow Nomad's event stream instead of polling every 15 s, so a route is
+              # dropped within the translator's 5 s shutdown_delay when an allocation stops.
+              watch: true
+              endpoint:
+                address: "http://127.0.0.1:4646"
+            file:
+              directory: /secrets/dynamic
+              watch: true
+          # Feature 025: request counts and durations per service, on the traefik entrypoint
+          # (/metrics next to the dashboard). The buckets are finer than Traefik's default
+          # (0.1, 0.3, 1.2, 5), which would read any fast app as 95 ms: with these a p95 of
+          # 40 ms stays 25-50 ms. Caravana reads them once a minute (internal/metrics).
+          metrics:
+            prometheus:
+              buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
+          # Feature 047: the access log, one JSON line per request on Traefik's stdout, which
+          # Nomad keeps in alloc/logs/traefik.stdout.<n> (the logs block below says how much)
+          # and the Requests page reads back through Nomad's fs API. Only the fields the page
+          # needs are kept: no header, and no query string (tokens travel in them).
+          accessLog:
+            format: json
+            fields:
+              defaultMode: drop
+              names:
+                StartUTC: keep
+                RouterName: keep
+                ServiceName: keep
+                RequestMethod: keep
+                RequestHost: keep
+                RequestPath: keep
+                DownstreamStatus: keep
+                Duration: keep
+                DownstreamContentSize: keep
+                ClientHost: keep
+                TLSVersion: keep
+                RetryAttempts: keep
+                entryPointName: keep
+              headers:
+                defaultMode: drop
+              queryParameters:
+                defaultMode: drop
+          log:
+            level: INFO
+            filePath: /dev/stderr # Traefik's own log on stderr, so stdout is the access log alone
+          certificatesResolvers:
+            letsencrypt:
+              acme:
+                httpChallenge:
+                  entryPoint: web
+          {{- $server := "" }}{{ $email := "" }}{{ $storage := "" }}{{ $kid := "" }}{{ $hmac := "" }}{{ $ca := "" }}
+          {{- if nomadVarExists "caravana/acme" }}
+          {{- with nomadVar "caravana/acme" }}
+          {{- with index . "server" }}{{ $server = printf "%s" . }}{{ end }}
+          {{- with index . "email" }}{{ $email = printf "%s" . }}{{ end }}
+          {{- with index . "storage" }}{{ $storage = printf "%s" . }}{{ end }}
+          {{- with index . "eab_kid" }}{{ $kid = printf "%s" . }}{{ end }}
+          {{- with index . "eab_hmac" }}{{ $hmac = printf "%s" . }}{{ end }}
+          {{- with index . "ca" }}{{ $ca = printf "%s" . }}{{ end }}
+          {{- end }}
+          {{- end }}
+          {{- if eq $server "" }}
+                caServer: "${local.acme_ca}"
+                email: "${var.acme_email}"
+                storage: /acme/acme.json
+          {{- else }}
+                caServer: {{ $server | toJSON }}
+                email: {{ $email | toJSON }}
+                storage: {{ printf "/acme/%s" $storage | toJSON }}
+          {{- if ne $kid "" }}
+                eab:
+                  kid: {{ $kid | toJSON }}
+                  hmacEncoded: {{ $hmac | toJSON }}
+          {{- end }}
+          {{- if ne $ca "" }}
+                caCertificates: [/secrets/acme-ca.pem]
+                caSystemCertPool: true
+          {{- end }}
+          {{- end }}
+          YAML
+      }
+
+      # The custom issuer's own CA, when it has one (an issuer with a private CA, or the lab's
+      # Pebble): Traefik trusts it for the ACME server's HTTPS. Empty otherwise.
+      template {
+        destination = "secrets/acme-ca.pem"
+        change_mode = "restart"
+        data        = <<-PEM
+          {{- if nomadVarExists "caravana/acme" }}{{ with nomadVar "caravana/acme" }}{{ with index . "ca" }}{{ printf "%s" . }}{{ end }}{{ end }}{{ end }}
+          PEM
+      }
+
+      # Feature 034, uploaded certificates: one Nomad Variable per certificate under
+      # caravana/certificates/ (items certificate, key and names), written by Caravana. Traefik
+      # serves each for every name it covers, and doesn't ask the ACME issuer for those names
+      # (it skips a name its store already holds). noop: the provider watches the directory, so
+      # an upload, a replacement or a removal needs no restart. secrets/: the keys are in this
+      # file. Without a certificate the file is {}.
+      template {
+        destination = "secrets/dynamic/certificates.yml"
+        change_mode = "noop"
+        data        = <<-YAML
+          {{- $any := false }}
+          {{- range nomadVarList "caravana/certificates" }}{{ $any = true }}{{ end }}
+          {{- if $any }}
+          tls:
+            certificates:
+          {{- range nomadVarList "caravana/certificates" }}
+          {{- with nomadVar .Path }}
+              - certFile: {{ printf "%s" (index . "certificate") | toJSON }}
+                keyFile: {{ printf "%s" (index . "key") | toJSON }}
+          {{- end }}
+          {{- end }}
+          {{- else }}
+          {}
+          {{- end }}
+          YAML
       }
 
       # The one route not made from Nomad service tags: the console's domains, to Caravana's
@@ -93,7 +252,7 @@ job "traefik" {
       # task (lab, 2026-11-23), so it goes through printf first. The HCL interpolations
       # (${...}) are replaced when the job is registered; the {{ }} ones when the file is rendered.
       template {
-        destination = "local/dynamic/caravana.yml"
+        destination = "secrets/dynamic/caravana.yml"
         change_mode = "noop"
         data        = <<-YAML
           {{- $hosts := "" }}
@@ -135,7 +294,7 @@ job "traefik" {
       # `{}`: a file with `http:` and nothing under it is refused by Traefik (the old
       # middlewares would stay), and a template that fails to render kills the task.
       template {
-        destination = "local/dynamic/team.yml"
+        destination = "secrets/dynamic/team.yml"
         change_mode = "noop"
         data        = <<-YAML
           {{- $any := false }}
@@ -170,59 +329,11 @@ job "traefik" {
       config {
         image        = "traefik:v3.7.13"
         network_mode = "host"
-        args = [
-          "--entrypoints.web.address=:80",
-          "--entrypoints.web.http.redirections.entrypoint.to=websecure",
-          "--entrypoints.web.http.redirections.entrypoint.scheme=https",
-          "--entrypoints.websecure.address=:443",
-          # Dashboard and API on loopback only; reach them through an SSH tunnel.
-          "--entrypoints.traefik.address=127.0.0.1:8081",
-          "--api.dashboard=true",
-          "--api.insecure=true",
-          "--providers.nomad=true",
-          "--providers.nomad.exposedByDefault=false",
-          "--providers.nomad.endpoint.address=http://127.0.0.1:4646",
-          "--providers.nomad.endpoint.token=${NOMAD_TOKEN}",
-          # Follow Nomad's event stream instead of polling every 15 s, so a route is
-          # dropped within the translator's 5 s shutdown_delay when an allocation stops.
-          "--providers.nomad.watch=true",
-          "--providers.file.directory=/local/dynamic",
-          "--providers.file.watch=true",
-          # Feature 025: request counts and durations per service, on the traefik entrypoint
-          # (/metrics next to the dashboard). The buckets are finer than Traefik's default
-          # (0.1, 0.3, 1.2, 5), which would read any fast app as 95 ms: with these a p95 of 40 ms
-          # stays 25-50 ms. Caravana reads them once a minute (internal/metrics).
-          "--metrics.prometheus=true",
-          "--metrics.prometheus.buckets=0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10",
-          # Feature 047: the access log, one JSON line per request on Traefik's stdout, which
-          # Nomad keeps in alloc/logs/traefik.stdout.<n> (the logs block below says how much)
-          # and the Requests page reads back through Nomad's fs API. Only the fields the page
-          # needs are kept: no header, and no query string (tokens travel in them).
-          "--accesslog=true",
-          "--accesslog.format=json",
-          "--accesslog.fields.defaultmode=drop",
-          "--accesslog.fields.names.StartUTC=keep",
-          "--accesslog.fields.names.RouterName=keep",
-          "--accesslog.fields.names.ServiceName=keep",
-          "--accesslog.fields.names.RequestMethod=keep",
-          "--accesslog.fields.names.RequestHost=keep",
-          "--accesslog.fields.names.RequestPath=keep",
-          "--accesslog.fields.names.DownstreamStatus=keep",
-          "--accesslog.fields.names.Duration=keep",
-          "--accesslog.fields.names.DownstreamContentSize=keep",
-          "--accesslog.fields.names.ClientHost=keep",
-          "--accesslog.fields.names.TLSVersion=keep",
-          "--accesslog.fields.names.RetryAttempts=keep",
-          "--accesslog.fields.names.entryPointName=keep",
-          "--accesslog.fields.headers.defaultmode=drop",
-          "--accesslog.fields.queryparameters.defaultmode=drop",
-          "--certificatesresolvers.letsencrypt.acme.email=${var.acme_email}",
-          "--certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json",
-          "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web",
-          "--certificatesresolvers.letsencrypt.acme.caserver=${local.acme_ca}",
-          "--log.level=INFO",
-          "--log.filepath=/dev/stderr", # Traefik's own log on stderr, so stdout is the access log alone
-        ]
+        # Feature 034: the whole static configuration is the file the first template below
+        # renders. Traefik reads one source, a file or flags, never both, and the issuer's EAB key
+        # can't be a flag (an empty one would break Let's Encrypt, a set one would be in the
+        # process list).
+        args = ["--configFile=/secrets/traefik.yml"]
       }
 
       # The access log's files: 10 of 20 MB, about 500,000 requests, before the oldest is

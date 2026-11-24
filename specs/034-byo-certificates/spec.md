@@ -108,7 +108,8 @@ is an uploaded one.
 - **FR-010** Domains and certificates say the issuer and, for an uploaded certificate, its subject and
   expiry (matched by the leaf's SHA-256 fingerprint from the real handshake).
 - **FR-011** A covered host that still presents another certificate is reported (`keptEarlier` on the
-  uploaded certificate); the installer's next run drops ACME certificates whose every name is covered.
+  uploaded certificate), with the reason when its route also names hosts the upload doesn't cover (research
+  R4's limit); the installer's next run drops ACME certificates whose every name is covered.
 - **FR-012** The private key and the EAB HMAC key appear in no page, answer, log, record, export or job
   (sentinel tests in `service`, `api` and `ui`, and in the lab).
 - **FR-013** Deploy tokens can use none of the new operations (default deny).

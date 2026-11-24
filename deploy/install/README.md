@@ -33,7 +33,7 @@ address. Sign in there and deploy your first app.
 | --- | --- | --- |
 | `--email` | (required the first time) | The admin's email; you sign in with it. |
 | `--domain` | `<ip>.sslip.io` | The console's domain. It serves the console, the API and webhooks. |
-| `--acme` | `production` | `staging`: Let's Encrypt's staging CA (no rate limits, untrusted certificates). `none`: Traefik's own certificate, for private networks. |
+| `--acme` | `production` | `staging`: Let's Encrypt's staging CA (no rate limits, untrusted certificates). `none`: Traefik's own certificate, for private networks. Another ACME issuer (Google Trust Services, ZeroSSL, DigiCert, your own) is chosen later in Settings › Certificates, and certificates you bought are uploaded there ([certificates](../../docs/certificates.md)). |
 | `--acme-email` | `--email` | The Let's Encrypt account email (expiry notices). |
 | `--address` | the public IP (first server) | The address the other servers reach this one at, an IPv4 or IPv6 address. Only the first server needs it when it has no public IP to find. |
 | `--first` | (the default) | This is the first server, the one that runs Caravana and Traefik. |
@@ -56,7 +56,7 @@ sudo caravana admin init --email you@example.com
 | `/opt/caravana/<version>/` | Caravana's binary and the files it was installed with; `current` points at the running one |
 | `/var/lib/caravana/` | Caravana's data (one SQLite file) |
 | `/etc/caravana/caravana.env` | Caravana's settings, including its own Nomad token (limited to what Caravana does) |
-| `/var/lib/caravana-host/` | The installer's choices (`install.env`), Nomad's management token, Traefik's certificates |
+| `/var/lib/caravana-host/` | The installer's choices (`install.env`), Nomad's management token, Traefik's ACME certificates (`traefik/acme*.json`, one file per issuer). Each run drops from them the certificates an uploaded one covers. |
 | `/usr/local/libexec/caravana-update` | The updater: a root script that runs an update the console asked for (see Updating) |
 | `caravana-update.timer`, `caravana-update.service` | The timer starts the updater every minute; it does nothing unless a request is waiting |
 | `/var/lib/caravana-update/` | The updater's status and logs. Only root writes here; Caravana reads the status |

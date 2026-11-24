@@ -56,28 +56,38 @@ die() {
 vm() { limactl shell --workdir / "$NAME" "$@"; }
 # https GET inside the VM, with DOMAIN or APP resolved to the VM itself (Traefik's own certificate).
 vm_curl() { vm curl -ksS --max-time 5 --resolve "$DOMAIN:443:127.0.0.1" --resolve "$APP:443:127.0.0.1" "$@"; }
+# traefik_exec CMD...: runs CMD in Traefik's running task. Traefik's rendered files are in the task's
+# secrets/ folder (feature 034), which Nomad's fs API can't read.
+traefik_exec() {
+  local alloc
+  alloc="$(vm sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}} {{end}}{{end}}' traefik | awk '{print $1}')"
+  [ -n "$alloc" ] || die "Traefik has no running allocation"
+  vm sudo caravana-nomad alloc exec -task traefik "$alloc" "$@"
+}
+# traefik_conf: Traefik's static configuration as its task rendered it. Without a custom issuer it holds
+# no secret.
+traefik_conf() { traefik_exec cat /secrets/traefik.yml; }
 
 # check_domains_host: Caravana's env file has the three lines feature 023 added, and Traefik's job
 # reads a directory with the Team only template, whose file exists in the running allocation.
 check_domains_host() {
-  local env spec alloc
+  local env spec conf
   env="$(vm sudo cat /etc/caravana/caravana.env)"
   grep -q '^CARAVANA_ACME=none$' <<<"$env" || die "the env file has no CARAVANA_ACME=none:\n$(grep -v NOMAD_TOKEN <<<"$env")"
   grep -q "^CARAVANA_ACME_EMAIL=$EMAIL$" <<<"$env" || die "the env file has no CARAVANA_ACME_EMAIL"
   grep -q '^CARAVANA_EDGE_ADDRESS=127.0.0.1:443$' <<<"$env" || die "the env file has no CARAVANA_EDGE_ADDRESS"
   spec="$(vm sudo caravana-nomad job inspect traefik)"
-  grep -q 'providers.file.directory=/local/dynamic' <<<"$spec" || die "Traefik doesn't read /local/dynamic"
-  grep -q 'local/dynamic/team.yml' <<<"$spec" || die "Traefik's job has no team.yml template"
-  alloc="$(vm sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}} {{end}}{{end}}' traefik | awk '{print $1}')"
-  [ -n "$alloc" ] || die "Traefik has no running allocation"
-  vm sudo caravana-nomad alloc fs "$alloc" traefik/local/dynamic/team.yml >/dev/null || die "team.yml isn't in Traefik's allocation"
+  grep -q 'secrets/dynamic/team.yml' <<<"$spec" || die "Traefik's job has no team.yml template"
+  conf="$(traefik_conf)"
+  grep -A1 '^  file:' <<<"$conf" | grep -q 'directory: /secrets/dynamic' || die "Traefik doesn't read /secrets/dynamic:\n$conf"
+  traefik_exec test -f /secrets/dynamic/team.yml || die "team.yml isn't in Traefik's allocation"
 }
 
 # check_monitoring_host: what feature 025 needs from the host. Caravana's env file names Docker's
 # root as Docker says it, Caravana's Nomad policy lets it read nodes, and Traefik's job has the
 # two metrics arguments and serves its numbers on the loopback entrypoint.
 check_monitoring_host() {
-  local env spec policy root code
+  local env conf policy root code
   env="$(vm sudo cat /etc/caravana/caravana.env)"
   root="$(vm sudo docker info --format '{{.DockerRootDir}}')"
   [ -n "$root" ] || die "docker info didn't say where Docker's root is"
@@ -85,10 +95,9 @@ check_monitoring_host() {
     die "the env file should say CARAVANA_DOCKER_ROOT=$root:\n$(grep -v NOMAD_TOKEN <<<"$env")"
   policy="$(vm sudo caravana-nomad acl policy info caravana | tr -d '\n')"
   grep -Eq 'node \{ *policy = "write" *\}' <<<"$policy" || die "Caravana's Nomad policy has no node { policy = \"write\" }"
-  spec="$(vm sudo caravana-nomad job inspect traefik)"
-  grep -q -- '--metrics.prometheus=true' <<<"$spec" || die "Traefik's job doesn't turn on its metrics"
-  grep -q -- '--metrics.prometheus.buckets=0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10' <<<"$spec" ||
-    die "Traefik's job doesn't have the finer buckets"
+  conf="$(traefik_conf)"
+  grep -A1 '^  prometheus:' <<<"$conf" | grep -q 'buckets: \[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10\]' ||
+    die "Traefik doesn't turn on its metrics with the finer buckets:\n$conf"
   local end=$((SECONDS + 60))
   until code="$(vm curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/metrics 2>/dev/null)" && [ "$code" = 200 ]; do
     [ "$SECONDS" -lt "$end" ] || die "http://127.0.0.1:8081/metrics answers $code, not 200"
@@ -101,12 +110,11 @@ check_monitoring_host() {
 # accessLog true and, once the app has been called, a request of it. Needs TOKEN and the app whoami
 # answering, so it runs after "deploy whoami".
 check_requests_host() {
-  local spec body
-  spec="$(vm sudo caravana-nomad job inspect traefik)"
-  grep -q -- '--accesslog=true' <<<"$spec" || die "Traefik's job doesn't write its access log"
-  grep -q -- '--accesslog.format=json' <<<"$spec" || die "Traefik's access log isn't JSON"
-  grep -q -- '--accesslog.fields.headers.defaultmode=drop' <<<"$spec" || die "Traefik's access log doesn't drop the headers"
-  grep -q -- '--accesslog.fields.queryparameters.defaultmode=drop' <<<"$spec" || die "Traefik's access log doesn't drop the query string"
+  local conf body
+  conf="$(traefik_conf)"
+  grep -A1 '^accessLog:' <<<"$conf" | grep -q 'format: json' || die "Traefik doesn't write its access log as JSON:\n$conf"
+  grep -A1 '^    headers:' <<<"$conf" | grep -q 'defaultMode: drop' || die "Traefik's access log doesn't drop the headers"
+  grep -A1 '^    queryParameters:' <<<"$conf" | grep -q 'defaultMode: drop' || die "Traefik's access log doesn't drop the query string"
   local end=$((SECONDS + 60))
   until body="$(api -fsS "https://$DOMAIN/v1/requests?app=whoami" 2>/dev/null)" &&
     grep -q '"accessLog":true' <<<"$body" && grep -q '"path":"/"' <<<"$body"; do
@@ -1169,14 +1177,15 @@ PY
   say "a rerun rewrites a mesh unit from before task c6wd and reloads systemd"
   check_mesh_unit_rewritten "$v1"
 
-  say "a Traefik job from before feature 025 is restarted once for its request numbers, and says so"
-  vm sudo bash -c "grep -v 'metrics.prometheus' /opt/caravana/$v1/traefik.nomad.hcl >/tmp/traefik-old.hcl &&
+  say "a Traefik job from before feature 034 is restarted once for the certificates, and says so"
+  vm sudo bash -c "grep -v 'caravana_certificates' /opt/caravana/$v1/traefik.nomad.hcl >/tmp/traefik-old.hcl &&
     caravana-nomad job run -detach -var console_domain=$DOMAIN -var acme=none -var acme_email=$EMAIL /tmp/traefik-old.hcl >/dev/null" ||
-    die "couldn't put back a Traefik job without the metrics arguments"
-  ! grep -q -- 'metrics.prometheus' < <(vm sudo caravana-nomad job inspect traefik) || die "the old Traefik job still has the metrics arguments"
+    die "couldn't put back a Traefik job without the certificates meta"
+  ! grep -q 'caravana_certificates' < <(vm sudo caravana-nomad job inspect traefik) || die "the old Traefik job still has the certificates meta"
   out="$(install "$v1")"
-  grep -q 'Traefik is restarted once for its request numbers (a few seconds without HTTP)' <<<"$out" ||
-    die "the rerun over an older Traefik job should say it is restarted for its request numbers:\n$out"
+  grep -q 'Traefik is restarted once for your own certificates (a few seconds without HTTP)' <<<"$out" ||
+    die "the rerun over an older Traefik job should say it is restarted for the certificates:\n$out"
+  grep -q 'caravana_certificates' < <(vm sudo caravana-nomad job inspect traefik) || die "the rerun didn't put back the certificates meta"
   check_monitoring_host
 
   say "deploy whoami"
