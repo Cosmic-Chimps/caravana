@@ -1,4 +1,4 @@
-# API 0.59.0: people and roles
+# API 0.60.0: people and roles
 
 Every protected route is checked against its access rule (plan D4) after the credentials and, for a deploy token, its
 scope. Refusal: 403

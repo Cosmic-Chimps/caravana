@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.59.0
+  version: 0.60.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -56,6 +56,11 @@ info:
     shown. A provider that refuses Caravana or can't be reached fails that deploy (`422
     secret_provider_refused`, `502 secret_provider_unavailable`) and leaves the values the
     running copies have; `refreshSecrets` rolls the live version out again when a value changed.
+    A secret may also be a template, `template` with `refs`: text with `${name}` places that take
+    the value of the reference `refs.name` and `$$` for a dollar sign, so a password kept in a
+    provider can sit inside a connection string. A deploy reads every reference of every
+    template, renders each one and keeps the result like a typed value; the template and its
+    references are not secret and are shown as written, the rendered value never is.
 
     A domain may be Team only (`teamOnly`): HTTP basic auth, user `team`, with a password
     Caravana makes. The password is shown in two answers only, each once and sent with
@@ -9800,10 +9805,40 @@ components:
           writeOnly: true
           description: |
             UTF-8 text without NUL. Leave it out to keep the value the secret has now. Never
-            returned. A secret has a `value` or a `from`, not both (400 `invalid_field` on
+            returned. A secret has a `value`, a `from` or a `template`, only one (400 `invalid_field` on
             `services[i].secrets[j].from`).
         from:
           $ref: "#/components/schemas/SecretRef"
+        template:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: |
+            Builds the value from text and references (feature 053): `${name}` inserts the value
+            of `refs.name`, and `$$` is a literal `$`. Any other `$` (a lone one, `${` with no `}`,
+            a name that isn't letters, digits and `_` starting with a letter or `_`) is 400
+            `invalid_field` on `services[i].secrets[j].template`, with the byte offset. A value is
+            inserted as it is: a `$` or `${x}` inside it is never expanded again. A secret has a
+            `value`, a `from` or a `template`, only one (400 `invalid_field` on
+            `services[i].secrets[j].template`), and a template needs `refs`. Not secret: stored,
+            recorded in the deployment and returned as written. The rendered value is UTF-8 text
+            without NUL, like a `value`.
+        refs:
+          type: object
+          maxProperties: 16
+          propertyNames:
+            pattern: "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+          additionalProperties:
+            $ref: "#/components/schemas/SecretRef"
+          description: |
+            The references a `template` names, by the name it uses in `${name}`. Required with
+            `template` and refused without it (400 `invalid_field` on
+            `services[i].secrets[j].refs`). Every `${name}` must have an entry (error on
+            `…template`) and every entry must be used (error on `…refs.<name>`). Each is checked
+            like a `from`: an unknown provider is 400 on `…refs.<name>.provider`, a path the
+            provider doesn't have is 422 `secret_not_found` on `…refs.<name>.path`, a provider
+            that refuses or is down is 422 `secret_provider_refused` or 502
+            `secret_provider_unavailable` on `…refs.<name>`. Each provider is read once per deploy.
 
     SecretRef:
       type: object

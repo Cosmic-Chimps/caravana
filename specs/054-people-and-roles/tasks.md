@@ -1,4 +1,4 @@
-# Tasks 053: People and roles
+# Tasks 054: People and roles
 
 ## Phase A: store, Auth per person, principal (existing behaviour unchanged with one owner)
 
@@ -29,7 +29,7 @@
 - [x] T009 `accessRules` for every route, the order in `authenticate`, 403 `not_allowed`; `TestRolesWalkEveryRoute`
       (every route × owner, admin, member with deploy on staging and view on production, a deploy token of that member,
       an ended guest) against a written-out expectation, as `TestScopedTokenWalksEveryRoute` does.
-- [x] T010 People routes, `getMe`, `acceptInvite`, `actor`, own tokens and passkeys; `api/openapi.yaml` 0.59.0; the
+- [x] T010 People routes, `getMe`, `acceptInvite`, `actor`, own tokens and passkeys; `api/openapi.yaml` 0.60.0; the
       contract and parity tests; MCP `get_me`.
 
 ## Phase D: console
@@ -42,5 +42,5 @@
 ## Phase E: lab and docs
 
 - [x] T013 Gate step `people-roles` (API and MCP) and console step `console-people`; run in the lab.
-- [x] T014 `docs/people.md`, `changelog.d/053-people-and-roles.md`, CLAUDE.md entry, `docs/plan.md` (Phase 4's
+- [x] T014 `docs/people.md`, `changelog.d/054-people-and-roles.md`, CLAUDE.md entry, `docs/plan.md` (Phase 4's
       `MembersScreen` row).

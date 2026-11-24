@@ -12,7 +12,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
-// Feature 053, Phase C: the people routes end to end through the real handlers, who a caller is
+// Feature 054, Phase C: the people routes end to end through the real handlers, who a caller is
 // (getMe), the actor on records, what a deploy-level member may deploy, schedules judged by their app
 // and followed streams ending when a role does. The walk (access_test.go) covers every route with
 // stubbed handlers; these cover what the handlers answer.

@@ -27,7 +27,7 @@ func (s *Service) SetSecretIf(ctx context.Context, appID, service, name, value s
 		if i < 0 {
 			return append(list, app.Secret{Name: name, Value: &value}), nil
 		}
-		list[i].Value, list[i].From = &value, nil // a typed value replaces a reference
+		list[i].Value, list[i].From, list[i].Template, list[i].Refs = &value, nil, "", nil // a typed value replaces a reference or template
 		return list, nil
 	})
 }
@@ -45,7 +45,7 @@ func (s *Service) SetSecretRefIf(ctx context.Context, appID, service, name strin
 		if i < 0 {
 			return append(list, app.Secret{Name: name, From: &r}), nil
 		}
-		list[i].Value, list[i].From = nil, &r
+		list[i].Value, list[i].From, list[i].Template, list[i].Refs = nil, &r, "", nil
 		return list, nil
 	})
 }

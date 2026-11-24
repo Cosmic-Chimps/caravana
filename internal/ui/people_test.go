@@ -14,7 +14,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
-// Feature 053, T012: the People pages, the invite link, what each role sees and the who-words.
+// Feature 054, T012: the People pages, the invite link, what each role sees and the who-words.
 
 // personCookie makes an active person and signs them in: the cookie of their session.
 func (e *uiEnv) personCookie(t *testing.T, email, org string, ends *time.Time, roles []store.ProjectRoleRecord) *http.Cookie {

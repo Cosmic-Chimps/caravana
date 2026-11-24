@@ -2122,9 +2122,40 @@ second copy of every backup. `plan.md` D1–D15 are the decisions and its Deviat
 - Not in 052: other kinds of destination, encryption, moving backups between destinations, renaming a destination, a third copy,
   provider-side replication, per-copy pinning.
 
-Feature 053 (`specs/053-people-and-roles`, worktree branch `alta/dewy-quince-q5ss`, phases A to E): an installation has several people, each
+Feature 053 (`specs/053-secret-templates`, from the Aspire publisher's need, branch `053-secret-templates`): a secret's value may be
+built from text and references to a secret provider, so a password kept in Bella Baxter can sit inside a connection string
+(`ConnectionStrings__postgres = Host=postgres;Username=banana;Password=<db password>`). `plan.md` D1-D10 are the decisions. No
+migration, no new module, no policy change, `Translate` untouched. Operator doc: the Templates section of `docs/secret-providers.md`.
+- Model: `app.Secret.Template string` (`template`) and `Refs map[string]SecretRef` (`refs`), both `omitempty` (no `revision` moved). A
+  secret has a Value, a From or a Template, only one; none keeps the current value. `Refs` needs at least one entry with a template and
+  is refused without one. `${name}` inserts `Refs[name]`, `$$` is a literal `$`, any other `$` (lone, `${`
+  without `}`, bad name) is a field error on `services[i].secrets[j].template` with the byte offset. Names `^[A-Za-z_][A-Za-z0-9_]{0,63}$`;
+  every `${name}` needs a ref and every ref must be used (`…refs.<name>`); template 1-4096 bytes of UTF-8 without NUL, at most 16 refs;
+  each ref is checked like a `from` (`validateSecretRefValue`: `…refs.<name>.provider`, `.path`). The pure parser and renderer are
+  `internal/app/secrettemplate.go` (`ParseTemplate`, `RenderTemplate` in one pass, so a value with `$` or `${x}` arrives as typed,
+  `TemplateRefNames`, `TemplateError`). `Secret.IsReference()` is From or Template; `WithoutValue` keeps both fields (cloning `Refs`).
+- Resolution: `referencesOf` lists a template's refs as references (field `services[i].secrets[j].refs.<name>`, in the text's order of
+  first use), so `checkReferences` and the one read per provider cover them; after the reads `resolveReferences` renders each template
+  (same UTF-8/NUL check on the result) into the resolved sets, and `secrets.Build` takes a template secret's value from them as it does
+  a `from`'s. Errors keep 037's codes with the ref's field: 400 `…refs.<name>.provider`, 422 `secret_not_found` `…refs.<name>.path`,
+  422 `secret_provider_refused` / 502 `secret_provider_unavailable` `…refs.<name>`. Refresh secrets needed no change (it compares the
+  resolved sets); `SetSecretIf` and `SetSecretRefIf` clear a template; `CopyApp` doesn't count one as missing; a provider's `usedBy`
+  counts a template's providers.
+- API 0.59.0: `Secret.template` and `Secret.refs`, no new route or code. Console: the Variables row and the Compose form's kept secrets
+  read "template with N references: provider/path, …" read-only (`variableRow.Refs`, `draftSecret.Template/Refs`, no input), kept
+  through a Compose deploy and a Configure save; the provider's row counts each ref; no template editor.
+- Tests: table tests in `app` (every parse and validation error), `compose` (overlay), `secrets.Build`, `service` (`secrettemplate_test.go`:
+  two providers, every failure with its field, Refresh re-render and no-op, replacing, copy, sentinel `s3cret-sentinel-053` in store, SQLite
+  file, record, job, log), `api` (answers, contract schema) and `ui`. The gate step `secret-references` has `GATE_CONN`
+  (`Host=db;Password=${pw};Note=$$5`): `printenv` in the copy shows it rendered, Refresh re-renders it, a ref to a missing path is 422 on
+  `…refs.pw.path`. It passed in the lab on 2026-11-24 (59 s, `-run 'TestLab/^(api-needs-token|secret-references)$'`). The Aspire side
+  (the publisher sending `template` and `refs`) is its own repo.
+- Not in 053: a template editor in the console, other functions than `${name}` (defaults, encodings), templates for plain env,
+  references across services, Bella's change webhook, an MCP tool.
+
+Feature 054 (`specs/054-people-and-roles`, worktree branch `alta/dewy-quince-q5ss`, phases A to E): an installation has several people, each
 with their own sign-in, tokens and role. `plan.md` D1–D12 are the decisions and its Deviations sections (phases B to D) the changes; operator
-doc: `docs/people.md`. Migration 0043, API 0.59.0, no new module, no policy change, constitution unchanged.
+doc: `docs/people.md`. Migration 0043, API 0.60.0 (0.59.0 is 053, secret templates), no new module, no policy change, constitution unchanged.
 - Store (`store/people.go`): `people` (email, `org_role` owner/admin/member, `state` invited/active, password hash, `invite_hash`, `ends_at`),
   `project_roles` (view/deploy/maintain, `ends_at`) and `environment_roles` (none/view/deploy/maintain); the one `admin` row became the first
   owner (same email, hash, passkeys, sessions, tokens), `sessions`, `api_tokens` and `passkeys` belong to a person, and `deployments`,

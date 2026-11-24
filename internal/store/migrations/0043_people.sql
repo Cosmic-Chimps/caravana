@@ -1,4 +1,4 @@
--- Feature 053: people and roles. The one admin becomes the first person, the
+-- Feature 054: people and roles. The one admin becomes the first person, the
 -- owner, and sessions, API tokens and passkeys belong to a person.
 
 CREATE TABLE people (

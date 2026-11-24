@@ -1,4 +1,4 @@
-# Spec 053: People and roles
+# Spec 054: People and roles
 
 Task `nvxx` (2026-11-11, "Users, teams and permissions: more than one person, with roles per project and environment").
 Plan: `docs/plan.md`, Phase 4, `MembersScreen`. The maintainer asked for it on 2026-11-24 ("Do this follow-up task"),
@@ -76,7 +76,7 @@ Caravana per customer, several people each) all need more than one person, with 
 - FR-012 The host CLI acts on the owner (`admin init` creates the first owner, `reset-password` and `create-token` take
   `--email`, default the first owner; `status` lists people).
 
-## Not in 053
+## Not in 054
 
 Single sign-on, the audit log with diffs (`AuditSettings`), Nomad namespaces per project, personal notifications,
 sending invite mail, several organizations, API scopes finer than roles.

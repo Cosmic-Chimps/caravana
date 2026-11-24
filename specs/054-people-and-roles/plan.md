@@ -1,7 +1,7 @@
-# Plan 053: People and roles
+# Plan 054: People and roles
 
 Spec: `spec.md`. Task `nvxx`. Branch: the worktree branch `alta/dewy-quince-q5ss` (from `main` at 93cba8e, where 051 is
-merged). Numbers: API **0.59.0**, migration **0043**. API: `contracts/api.md`.
+merged). Numbers: API **0.60.0**, migration **0043** (merged as 054 and API 0.60.0: 053 and 0.59.0 went to secret templates). API: `contracts/api.md`.
 
 ## Constitution check
 
@@ -230,7 +230,7 @@ by `ci` (ana@example.com)". The API's `Deployment`, `AppAction`, `Backup` and `R
 - `/invite?token=` (no session): the email, a password and its confirmation; `POST /invite` accepts, starts a session and
   answers 303 to `/apps`. Listed in `consoleOnly` (it starts a session), beside `acceptInvite` in the API.
 
-### D11 API (0.59.0)
+### D11 API (0.60.0)
 
 `contracts/api.md`. `getMe`, `listPeople`, `invitePerson`, `getPerson`, `updatePerson`, `removePerson`,
 `reinvitePerson`, `acceptInvite` (public), `actor` on records, codes `not_allowed`, `person_not_found`, `email_taken`,
@@ -240,7 +240,7 @@ operations now act on the caller's own. MCP: a read tool `get_me`; nothing else 
 ### D12 Open questions of the task, decided
 
 - **Managed tier:** this comes first; nothing of the managed tier is built here.
-- **SSO:** after this (a follow-up task); 053 keeps passwords and passkeys.
+- **SSO:** after this (a follow-up task); 054 keeps passwords and passkeys.
 - **Nomad namespaces per project:** later. Caravana is the only Nomad client and enforces roles itself; 019's reason
   (Traefik's provider watches one namespace) still holds.
 - **What each role sees:** view reads logs, requests, metrics and a schedule run's output (app output, like logs, masked
@@ -254,7 +254,7 @@ operations now act on the caller's own. MCP: a read tool `get_me`; nothing else 
 - A Store, Auth per person, principal and rules (D1, D2, D3, the pure part of D4); every existing test passes with one
   owner.
 - B Service: `Allow`, people management, filtering, images-only, actor (D4, D5, D6, D7, D8, D9).
-- C API: access rules for every route, people routes, `/v1/me`, openapi 0.59.0, the route walk, MCP `get_me`.
+- C API: access rules for every route, people routes, `/v1/me`, openapi 0.60.0, the route walk, MCP `get_me`.
 - D Console: the guard and its table, the route walk, People pages, the invite page, hiding, who-words.
 - E Lab gate step `people-roles` (API and MCP), console step `console-people`, docs (`docs/people.md`), CLAUDE.md,
   changelog note, `docs/plan.md`.

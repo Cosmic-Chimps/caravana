@@ -110,11 +110,12 @@
         {{if .HasSecrets}}<p class="cv-data-muted cv-hint">Leave a value empty to keep it.</p>{{end}}
         <div class="cv-secret-rows">
           {{range .Secrets}}
-          {{if .From}}
+          {{if .IsReference}}
           <div class="cv-secret-row">
             <span class="cv-secret-name cv-data text-fg-1">{{.Name}}</span>
-            <span class="cv-data-muted">from <span class="cv-inline-mono">{{.From.Provider}}</span> · <span class="cv-inline-mono">{{.From.Path}}</span></span>
-            <span class="cv-data-muted cv-hint cv-secret-aside">Kept as it is. Change it on the Variables page.</span>
+            {{if .From}}<span class="cv-data-muted">from <span class="cv-inline-mono">{{.From.Provider}}</span> · <span class="cv-inline-mono">{{.From.Path}}</span></span>
+            {{else}}<span class="cv-data-muted">template with {{len .RefLines}} {{if eq (len .RefLines) 1}}reference{{else}}references{{end}}: {{range $i, $r := .RefLines}}{{if $i}}, {{end}}<span class="cv-inline-mono">{{$r.Provider}}/{{$r.Path}}</span>{{end}}</span>{{end}}
+            <span class="cv-data-muted cv-hint cv-secret-aside">Kept as it is.{{if .From}} Change it on the Variables page.{{else}} Set through the API or the Compose overlay.{{end}}</span>
           </div>
           {{else}}
           <div class="cv-secret-row">

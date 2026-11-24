@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"regexp"
 	"slices"
@@ -86,6 +87,25 @@ type variableRow struct {
 	// From is where a secret reads its value at each deploy; nil for a typed
 	// secret and for a variable. It is a name and a path, never a value.
 	From *app.SecretRef
+	// Template says the secret is built from text and references (feature 053);
+	// Refs are those references by name. The template's text is not drawn: it
+	// holds no secret, but the row says where the pieces come from.
+	Template bool
+	Refs     []refLine
+}
+
+// refLine is one reference of a template secret, for a read-only row.
+type refLine struct {
+	Name, Provider, Path string
+}
+
+// refLinesOf lists refs by name.
+func refLinesOf(refs map[string]app.SecretRef) []refLine {
+	out := make([]refLine, 0, len(refs))
+	for _, name := range slices.Sorted(maps.Keys(refs)) {
+		out = append(out, refLine{Name: name, Provider: refs[name].Provider, Path: refs[name].Path})
+	}
+	return out
 }
 
 // addVariableForm is the "Add or change" form with what was typed, never a secret's value.
@@ -129,7 +149,8 @@ func variableRowsOf(a app.App) []variableRow {
 	var secretRows, varRows []variableRow
 	for _, svc := range a.Services {
 		for _, sec := range svc.Secrets {
-			secretRows = append(secretRows, variableRow{Service: svc.Name, Name: sec.Name, Secret: true, From: sec.From})
+			secretRows = append(secretRows, variableRow{Service: svc.Name, Name: sec.Name, Secret: true, From: sec.From,
+				Template: sec.Template != "", Refs: refLinesOf(sec.Refs)})
 		}
 		for _, v := range svc.Env {
 			varRows = append(varRows, variableRow{Service: svc.Name, Name: v.Name, Value: v.Value})
@@ -195,9 +216,14 @@ func secretSourcesOf(a app.App, providers []service.SecretProviderInfo, selected
 	refs := map[string]int{}
 	for _, svc := range a.Services {
 		for _, sec := range svc.Secrets {
-			if sec.From != nil {
+			switch {
+			case sec.From != nil:
 				refs[sec.From.Provider]++
-			} else {
+			case sec.Template != "":
+				for _, ref := range sec.Refs { // one per reference, as a `from` is
+					refs[ref.Provider]++
+				}
+			default:
 				builtin++
 			}
 		}

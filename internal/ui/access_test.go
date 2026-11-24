@@ -11,7 +11,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/service"
 )
 
-// Feature 053, T011: the console's access table.
+// Feature 054, T011: the console's access table.
 
 // TestConsoleAccessCoversEveryRoute fails for a console route that is neither open on purpose nor
 // in the table, and for a table entry that names no route.

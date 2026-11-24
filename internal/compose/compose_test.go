@@ -147,6 +147,12 @@ func TestRefused(t *testing.T) {
 			map[string]Overlay{"web": {Secrets: []app.Secret{{Name: "A", Value: new("x"), From: &app.SecretRef{Provider: "bella", Path: "A"}}}}}, "services.web.secrets[0].from", "not both"},
 		{"overlay secret with a bad provider", "services:\n  web:\n    image: x\n",
 			map[string]Overlay{"web": {Secrets: []app.Secret{{Name: "A", From: &app.SecretRef{Provider: "Bella", Path: "A"}}}}}, "services.web.secrets[0].from.provider", ""},
+		{"overlay template with an unknown ref", "services:\n  web:\n    image: x\n",
+			map[string]Overlay{"web": {Secrets: []app.Secret{{Name: "A", Template: "x${a}"}}}}, "services.web.secrets[0].template", "no entry in refs"},
+		{"overlay template with a lone dollar", "services:\n  web:\n    image: x\n",
+			map[string]Overlay{"web": {Secrets: []app.Secret{{Name: "A", Template: "p$w", Refs: map[string]app.SecretRef{"a": {Provider: "bella", Path: "A"}}}}}}, "services.web.secrets[0].template", "byte 1"},
+		{"overlay template with a bad ref path", "services:\n  web:\n    image: x\n",
+			map[string]Overlay{"web": {Secrets: []app.Secret{{Name: "A", Template: "${a}", Refs: map[string]app.SecretRef{"a": {Provider: "bella"}}}}}}, "services.web.secrets[0].refs.a.path", ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -401,6 +407,29 @@ func TestOverlaySecretReference(t *testing.T) {
 	got := a.Services[0].Secrets
 	if len(got) != 1 || got[0].From == nil || *got[0].From != *ref || got[0].Value != nil {
 		t.Errorf("secrets = %+v, want the reference", got)
+	}
+}
+
+// A secret template in the overlay (feature 053) reaches the app as written,
+// and WithoutSecretValues keeps it (it holds no secret).
+func TestOverlaySecretTemplate(t *testing.T) {
+	refs := map[string]app.SecretRef{"pw": {Provider: "bella-prod", Path: "DB_PASSWORD"}}
+	const tpl = "Host=postgres;Username=banana;Password=${pw}"
+	req := Request{
+		Compose:  "services:\n  web:\n    image: nginx:1.27\n",
+		Services: map[string]Overlay{"web": {Secrets: []app.Secret{{Name: "ConnectionStrings__postgres", Template: tpl, Refs: refs}}}},
+	}
+	a, _, err := Translate("blog", req)
+	if err != nil {
+		t.Fatalf("Translate = %v", err)
+	}
+	got := a.Services[0].Secrets
+	if len(got) != 1 || got[0].Template != tpl || !reflect.DeepEqual(got[0].Refs, refs) || got[0].Value != nil || got[0].From != nil {
+		t.Errorf("secrets = %+v, want the template", got)
+	}
+	kept := req.WithoutSecretValues().Services["web"].Secrets
+	if len(kept) != 1 || kept[0].Template != tpl || !reflect.DeepEqual(kept[0].Refs, refs) {
+		t.Errorf("WithoutSecretValues = %+v, want the template kept", kept)
 	}
 }
 
