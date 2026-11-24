@@ -238,5 +238,12 @@
   {{template "mon-plot" .Plot}}
   <div class="cv-mnaxis"><span>{{.AxisStart}}</span><span>{{.AxisMid}}</span><span>now</span></div>
   {{end}}
+  {{with .IOLine}}<p class="cv-mnhostline"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{template "mon-sentence" .Text}}</span></p>{{end}}
+  {{range .IOCharts}}
+  <h3 class="cv-label" id="{{.ID}}-title">{{.Title}}</h3>
+  <div class="cv-mnkey"><span>{{.Solid}}</span><span class="cv-mnkey-res">{{.Dashed}}</span></div>
+  {{template "mon-plot" .Plot}}
+  <div class="cv-mnaxis"><span>{{.AxisStart}}</span><span>{{.AxisMid}}</span><span>now</span></div>
+  {{end}}
 </div>
 {{end}}

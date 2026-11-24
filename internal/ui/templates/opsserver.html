@@ -151,6 +151,27 @@
 </section>
 {{end}}
 
+{{/* srv-io: the Network and disk section (feature 055): the rates between the agent's last two reports, or "—"
+     rows and the one sentence that says why they are not known. It is drawn inside the body, so it is refreshed
+     with it. Takes a srvIO. */}}
+{{define "srv-io"}}
+<section class="cv-srvspace" id="io" aria-labelledby="srv-io-title">
+  <div class="cv-mnsec"><h2 class="cv-label" id="srv-io-title">Network and disk</h2></div>
+  <div class="cv-panel cv-spacepanel">
+    <div class="cv-spacerows" role="table" aria-label="Network and disk throughput">
+      {{range .Rows}}
+      <div class="cv-spacerow" role="row">
+        <span role="rowheader" class="cv-spacelabel">{{.Label}}</span>
+        <span role="cell" class="cv-spaceval{{if .None}} cv-srvval-none{{end}}">{{.Value}}</span>
+        <span role="cell" class="cv-spacenote">{{template "sentence" .Note}}</span>
+      </div>
+      {{end}}
+    </div>
+    {{with .Why}}<p class="cv-spacewhy"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{template "sentence" .}}</span></p>{{end}}
+  </div>
+</section>
+{{end}}
+
 {{/* srv-body: everything under the head, the one live region. Takes a srvBody. */}}
 {{define "srv-body"}}
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
@@ -186,6 +207,7 @@
 {{end}}
 {{end}}
 {{with .Room}}<p class="cv-mnroom{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</p>{{end}}
+{{with .IO}}{{template "srv-io" .}}{{end}}
 {{with .Space}}{{template "srv-space" .}}{{end}}
 
 <div class="cv-srvgrid">

@@ -126,6 +126,9 @@ type NodeReport struct {
 	// ConsoleAddress is the outcome of the last console address request this agent handled; nil when
 	// it handled none.
 	ConsoleAddress *NodeConsoleOutcome `json:"consoleAddress,omitempty"`
+	// IO is the server's network and disk counters since boot (feature 055); nil for an agent that
+	// doesn't say, or whose /proc couldn't be read. A block that doesn't pass checkIO is dropped.
+	IO *NodeIO `json:"io,omitempty"`
 }
 
 // JoinRequest is the body of POST /v1/join.
@@ -698,6 +701,11 @@ func (s *Service) NodeSync(ctx context.Context, nodeToken string, report NodeRep
 			certEndAt = t.UTC()
 		}
 	}
+	// The I/O counters are kept in memory for the rates, not in the stored report.
+	if dropped := s.hostIO.noteIO(row.Index, report.IO, now); dropped != "" {
+		s.log.Warn("the io block of a sync was dropped", "server", row.Name, "why", dropped)
+	}
+	report.IO = nil
 	body, err := json.Marshal(report)
 	if err != nil {
 		return NodeAnswer{}, fmt.Errorf("sync: %w", err)
@@ -1056,6 +1064,7 @@ func (s *Service) RemoveServer(ctx context.Context, nameOrID string) error {
 	if err := s.store.DeleteServer(ctx, row.Index); err != nil {
 		return fmt.Errorf("remove server: %w", err)
 	}
+	s.hostIO.forget(row.Index)
 	if err := s.reconcileRoles(ctx); err != nil {
 		return err
 	}

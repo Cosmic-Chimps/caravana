@@ -95,6 +95,9 @@ type HostView struct {
 	// Reboot is what the host's files say about a pending reboot, from the
 	// sampler's newest tick; nil before its first reading (feature 027).
 	Reboot *hostos.Reboot
+	// IO is the server's network and disk I/O now, from its agent's last syncs (feature 055); Reason says why
+	// it isn't known.
+	IO HostIO
 }
 
 // hostHistoryHours is the history's span: seven days of hourly points.
@@ -118,6 +121,7 @@ func (s *Service) Host(ctx context.Context, server string) (HostView, error) {
 		return HostView{}, err
 	}
 	view := HostView{Baseline: baseline, Sources: s.SamplerSources(), Server: node.Name}
+	view.IO = s.ioOfServer(node.Index)
 	// The OS block is the server Caravana runs on. With no nodes known the view is that server's, as
 	// it was before there were several.
 	view.OSRead = target == targetNewest || node.Local
@@ -223,8 +227,8 @@ func (s *Service) hostTarget(ctx context.Context, dir serverDirectory, server st
 		return n, targetNode, nil
 	}
 	// A server that joined and has no node yet is a server with nothing to show.
-	if _, err := s.store.ServerByName(ctx, server); err == nil {
-		return serverNode{Name: server}, targetNoNode, nil
+	if row, err := s.store.ServerByName(ctx, server); err == nil {
+		return serverNode{Name: server, Index: row.Index}, targetNoNode, nil
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return serverNode{}, targetNode, fmt.Errorf("read the host: %w", err)
 	}

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.60.0
+  version: 0.61.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -445,6 +445,9 @@ paths:
         versions, cores, memory, addresses, boot time), from the sampler's last reading. It is
         `null` before the first reading, and after a restart of Caravana until the next one.
         A field Nomad doesn't report is left out, never invented.
+
+        `io` is the server's network and disk throughput now (`HostIO`): rates from its node agent, or the
+        reason there are none (a Nomad node without an agent, an older agent, no recent report).
 
         `server` asks for one server's numbers (`listServers` has the names); without it the answer
         is about the server Caravana runs on. The numbers, the disks and the seven days of memory
@@ -11887,7 +11890,7 @@ components:
         MHz. A resource the sampler couldn't read is `null`.
       type: object
       additionalProperties: false
-      required: [memory, cpu, disks, room, history, sampledAt, stale, baseline, sources, node, server, osRead]
+      required: [memory, cpu, disks, room, history, sampledAt, stale, baseline, sources, node, server, osRead, io]
       properties:
         server:
           type: string
@@ -11990,6 +11993,87 @@ components:
           $ref: "#/components/schemas/MetricsBaseline"
         sources:
           $ref: "#/components/schemas/MetricsSources"
+        io:
+          $ref: "#/components/schemas/HostIO"
+
+    HostIO:
+      description: |
+        A server's network and disk I/O now, as rates between the last two syncs of its node agent
+        (30 s apart). The agent reads the kernel's counters from `/proc`; Caravana does the arithmetic,
+        so a number is an average over the last half minute or so. `reason` is `null` when the rates are
+        known and otherwise says why they are not, with every rate `null` (never 0):
+        `no_agent` (a Nomad node Caravana doesn't manage, such as the lab's, has no agent),
+        `agent_too_old` (the agent syncs but reports no I/O: an older agent), `stale` (no report for
+        3 minutes; `since` is the last one) and `waiting` (the agent syncs and the first rates aren't
+        ready: Caravana just started, the last two reports were too far apart, or a counter reset).
+
+        `network` is the interface of the default route: its bytes in and out per second. The mesh
+        interface (`kind: mesh`, WireGuard between servers) is listed beside it and is not added to the
+        totals, since its bytes leave on the default interface again. `disk` sums bytes read and written
+        over the devices that hold Nomad's data and Docker's root (one device when it is the same disk)
+        and gives the busiest device's share of the time it was busy, 0 to 100.
+      type: object
+      additionalProperties: false
+      required: [reason, since, at, network, disk]
+      properties:
+        reason:
+          type: [string, "null"]
+          enum: [no_agent, agent_too_old, stale, waiting, null]
+        since:
+          type: [string, "null"]
+          format: date-time
+          description: When a stale agent last reported; `null` for any other reason.
+        at:
+          type: [string, "null"]
+          format: date-time
+          description: When the rates were made; `null` when they are not known.
+        network:
+          type: object
+          additionalProperties: false
+          required: [rxBytesPerSec, txBytesPerSec, interfaces]
+          properties:
+            rxBytesPerSec: {type: [integer, "null"]}
+            txBytesPerSec: {type: [integer, "null"]}
+            interfaces:
+              type: array
+              description: Each reported interface that has rates.
+              items:
+                type: object
+                additionalProperties: false
+                required: [name, kind, rxBytesPerSec, txBytesPerSec]
+                properties:
+                  name: {type: string, example: eth0}
+                  kind:
+                    type: string
+                    enum: [default, mesh]
+                  rxBytesPerSec: {type: integer}
+                  txBytesPerSec: {type: integer}
+        disk:
+          type: object
+          additionalProperties: false
+          required: [readBytesPerSec, writeBytesPerSec, busyPercent, devices]
+          properties:
+            readBytesPerSec: {type: [integer, "null"]}
+            writeBytesPerSec: {type: [integer, "null"]}
+            busyPercent: {type: [integer, "null"], minimum: 0, maximum: 100}
+            devices:
+              type: array
+              description: Each watched device that has rates.
+              items:
+                type: object
+                additionalProperties: false
+                required: [name, holds, readBytesPerSec, writeBytesPerSec, busyPercent]
+                properties:
+                  name: {type: string, example: sda1}
+                  holds:
+                    type: array
+                    description: What is on the device.
+                    items:
+                      type: string
+                      enum: [nomad, docker]
+                  readBytesPerSec: {type: integer}
+                  writeBytesPerSec: {type: integer}
+                  busyPercent: {type: integer, minimum: 0, maximum: 100}
 
     HostNode:
       description: |

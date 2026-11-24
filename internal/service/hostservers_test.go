@@ -22,6 +22,8 @@ import (
 type serversLab struct {
 	*clusterEnv
 	now time.Time
+	// twoToken is the node token of the second server's agent.
+	twoToken string
 }
 
 // statsAt is a node's stats: memory used in MB and the root filesystem usedPercent full.
@@ -43,6 +45,7 @@ func newServersLab(t *testing.T) *serversLab {
 	t.Helper()
 	l := &serversLab{clusterEnv: newClusterEnv(t), now: time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)}
 	_, two := l.join(t, "two", "")
+	l.twoToken = two.NodeToken
 	l.nomad.AddNode("node-2", "two", "ready", "10.99.0.2")
 	if _, err := l.svc.NodeSync(context.Background(), two.NodeToken, healthyReport(1)); err != nil {
 		t.Fatal(err)

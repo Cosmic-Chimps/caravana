@@ -323,11 +323,11 @@ func (s *Service) sampleTick(ctx context.Context, now time.Time) error {
 		}
 	}
 	if r.hostErr == nil {
-		addHostRows(&minute, ts, r.host, &r)
+		s.addHostRows(&minute, ts, now, r.host, &r)
 	}
 	for _, o := range r.others {
 		if o.err == nil {
-			addHostRows(&minute, ts, o.host, &r)
+			s.addHostRows(&minute, ts, now, o.host, &r)
 		}
 	}
 
@@ -402,9 +402,14 @@ func (s *Service) readHosts(ctx context.Context, r *samplerReads) {
 	wg.Wait()
 }
 
-// addHostRows adds a node's host row and its filesystems' rows to a tick.
-func addHostRows(m *store.MetricsRows, ts time.Time, h deploy.Host, r *samplerReads) {
-	m.Hosts = append(m.Hosts, hostSample(ts, h, r))
+// addHostRows adds a node's host row and its filesystems' rows to a tick. The row also carries the
+// network and disk rates the node's agent last reported (feature 055), when they are fresh at now.
+func (s *Service) addHostRows(m *store.MetricsRows, ts, now time.Time, h deploy.Host, r *samplerReads) {
+	row := hostSample(ts, h, r)
+	if n, ok := s.sampler.directoryNode(h.NodeID); ok {
+		s.hostIO.ioColumns(n.Index, now, &row)
+	}
+	m.Hosts = append(m.Hosts, row)
 	for _, d := range h.Disks {
 		m.Disks = append(m.Disks, store.DiskSample{
 			Node: h.NodeID, TS: ts, Mount: d.Mount, Holds: d.Holds(),
@@ -762,7 +767,7 @@ func samplerSample(series int64, r metrics.Row, layoutID func(metrics.Layout) (i
 }
 
 // foldHosts folds each node's minute rows of a slot into one row: the median
-// of each column (they are gauges).
+// of each column (they are gauges, and so are the I/O rates of feature 055).
 func foldHosts(slot time.Time, rows []store.HostSample) []store.HostSample {
 	byNode := map[string][]store.HostSample{}
 	var nodes []string
@@ -794,6 +799,11 @@ func foldHosts(slot time.Time, rows []store.HostSample) []store.HostSample {
 			CPUReservedMHz:   pick(func(h store.HostSample) *int64 { return h.CPUReservedMHz }),
 			CPUTotalMHz:      pick(func(h store.HostSample) *int64 { return h.CPUTotalMHz }),
 			CPUCores:         pick(func(h store.HostSample) *int64 { return h.CPUCores }),
+			NetRxBps:         pick(func(h store.HostSample) *int64 { return h.NetRxBps }),
+			NetTxBps:         pick(func(h store.HostSample) *int64 { return h.NetTxBps }),
+			DiskReadBps:      pick(func(h store.HostSample) *int64 { return h.DiskReadBps }),
+			DiskWriteBps:     pick(func(h store.HostSample) *int64 { return h.DiskWriteBps }),
+			DiskBusyPct:      pick(func(h store.HostSample) *int64 { return h.DiskBusyPct }),
 		})
 	}
 	return out

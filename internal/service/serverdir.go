@@ -21,6 +21,8 @@ type serverNode struct {
 	Name string
 	// NodeName is the node's own name in Nomad, which a copy carries (deploy.Copy.Node).
 	NodeName string
+	// Index is the server's index when a row belongs to the node, 0 for a node Caravana doesn't manage.
+	Index int
 	// Local is true for the server Caravana runs on.
 	Local bool
 	// Ready is Nomad's word "ready": a node that is down, disconnected or still initializing is not.
@@ -94,6 +96,7 @@ func buildServerDirectory(rows []store.Server, nodes []deploy.Node) serverDirect
 		for i := range out {
 			if out[i].ID == node.ID {
 				out[i].Name = r.Name
+				out[i].Index = r.Index
 				if r.First {
 					local = i
 				}
@@ -135,4 +138,11 @@ func (s *Service) directory(ctx context.Context) (serverDirectory, error) {
 	st.dir = dir
 	st.mu.Unlock()
 	return dir, nil
+}
+
+// directoryNode finds a node in the directory the sampler remembers (the tick has just refreshed it).
+func (st *samplerState) directoryNode(id string) (serverNode, bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.dir.byID(id)
 }

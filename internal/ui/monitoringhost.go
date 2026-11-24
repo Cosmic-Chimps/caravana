@@ -71,6 +71,10 @@ type monHostView struct {
 	Meters []monMeter
 	Room   *monRoom
 	Chart  *monHostChart
+	// IOCharts are the network and disk charts over the page's range (feature 055); IOLine says why there are
+	// none, and is nil when there are.
+	IOCharts []*monIOChart
+	IOLine   *monHostLine
 }
 
 // partMonitoringHost answers GET /parts/monitoring/host: the section alone.
@@ -131,7 +135,13 @@ func (s *server) hostSectionOf(ctx context.Context, q monReq, local service.Host
 // hostSectionWith builds the section of host, and with several servers the select that chooses which
 // one it shows, and the server's name in place of "1 server".
 func (s *server) hostSectionWith(ctx context.Context, q monReq, host service.HostView) (*monHostView, error) {
-	v := hostViewOf(s.now().UTC(), host)
+	now := s.now().UTC()
+	v := hostViewOf(now, host)
+	if series, err := s.svc.HostIOSeries(ctx, host.Server, q.Range); err != nil {
+		s.log.Warn("read the host's network and disk series", "error", err)
+	} else {
+		v.IOCharts, v.IOLine = hostIOChartsOf(now, host, series)
+	}
 	view, err := s.svc.ListServers(ctx)
 	if err != nil || joinedServers(view) < 2 {
 		return v, nil // the section is as it was with one server

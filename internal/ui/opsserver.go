@@ -117,6 +117,8 @@ type srvBody struct {
 	Banners []srvBanner
 	Numbers srvNumbers
 	Room    *monRoom
+	// IO is the Network and disk section (feature 055); nil for a server that isn't read (down, disconnected).
+	IO *srvIO
 	// Space is the Space section (feature 045); nil for a server that isn't read (down, disconnected, unknown).
 	Space   *srvSpace
 	Running srvRunning
@@ -439,6 +441,9 @@ func (s *server) loadOpsServer(r *http.Request, name string, extra srvExtras) (s
 	if !isLocal && (view.State == "down" || view.State == "disconnected") {
 		// A server that is down, or disconnected, has old numbers: one line says when they were last read, in place of the panel.
 		d.body.Numbers = srvNumbers{Line: downNumbersLine(now, view.Name, host)}
+	}
+	if isLocal || (found && view.State != "down" && view.State != "disconnected") {
+		d.body.IO = ioSectionOf(now, host.IO)
 	}
 	// The room sentence is the cluster's: with one server it is under the numbers, with several it stays on the
 	// Overview and on Monitoring, where it isn't taken for this server's own room.

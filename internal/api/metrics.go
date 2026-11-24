@@ -387,6 +387,73 @@ type hostJSON struct {
 	// the only one whose operating system Caravana reads (feature 031).
 	Server string `json:"server"`
 	OSRead bool   `json:"osRead"`
+	// IO is the server's network and disk I/O now, from its node agent (feature 055).
+	IO hostIOJSON `json:"io"`
+}
+
+// hostIOJSON is schema HostIO. Reason is null when the rates are known; every rate is null when it isn't.
+type hostIOJSON struct {
+	Reason  *string        `json:"reason"`
+	Since   *time.Time     `json:"since"`
+	At      *time.Time     `json:"at"`
+	Network hostIONetJSON  `json:"network"`
+	Disk    hostIODiskJSON `json:"disk"`
+}
+
+type hostIONetJSON struct {
+	RxBytesPerSec *int64            `json:"rxBytesPerSec"`
+	TxBytesPerSec *int64            `json:"txBytesPerSec"`
+	Interfaces    []hostIOIfaceJSON `json:"interfaces"`
+}
+
+type hostIOIfaceJSON struct {
+	Name          string `json:"name"`
+	Kind          string `json:"kind"`
+	RxBytesPerSec int64  `json:"rxBytesPerSec"`
+	TxBytesPerSec int64  `json:"txBytesPerSec"`
+}
+
+type hostIODiskJSON struct {
+	ReadBytesPerSec  *int64          `json:"readBytesPerSec"`
+	WriteBytesPerSec *int64          `json:"writeBytesPerSec"`
+	BusyPercent      *int64          `json:"busyPercent"`
+	Devices          []hostIODevJSON `json:"devices"`
+}
+
+type hostIODevJSON struct {
+	Name             string   `json:"name"`
+	Holds            []string `json:"holds"`
+	ReadBytesPerSec  int64    `json:"readBytesPerSec"`
+	WriteBytesPerSec int64    `json:"writeBytesPerSec"`
+	BusyPercent      int64    `json:"busyPercent"`
+}
+
+func toHostIOJSON(io service.HostIO) hostIOJSON {
+	out := hostIOJSON{
+		Network: hostIONetJSON{RxBytesPerSec: io.NetRxBps, TxBytesPerSec: io.NetTxBps, Interfaces: []hostIOIfaceJSON{}},
+		Disk: hostIODiskJSON{ReadBytesPerSec: io.DiskReadBps, WriteBytesPerSec: io.DiskWriteBps, BusyPercent: io.DiskBusyPercent,
+			Devices: []hostIODevJSON{}},
+	}
+	if io.Reason != "" {
+		out.Reason = new(io.Reason)
+	}
+	if io.Since != nil {
+		out.Since = new(io.Since.UTC())
+	}
+	if io.At != nil {
+		out.At = new(io.At.UTC())
+	}
+	for _, n := range io.Net {
+		out.Network.Interfaces = append(out.Network.Interfaces, hostIOIfaceJSON{Name: n.Name, Kind: n.Kind, RxBytesPerSec: n.RxBps, TxBytesPerSec: n.TxBps})
+	}
+	for _, d := range io.Disks {
+		holds := d.Holds
+		if holds == nil {
+			holds = []string{}
+		}
+		out.Disk.Devices = append(out.Disk.Devices, hostIODevJSON{Name: d.Name, Holds: holds, ReadBytesPerSec: d.ReadBps, WriteBytesPerSec: d.WriteBps, BusyPercent: d.BusyPercent})
+	}
+	return out
 }
 
 func toHostJSON(h service.HostView) hostJSON {
@@ -398,7 +465,7 @@ func toHostJSON(h service.HostView) hostJSON {
 			Points: make([]time.Time, 0, len(h.History.Points)), MemoryUsed: h.History.MemoryUsed, MemoryReserved: h.History.MemoryReserved,
 		},
 		Stale: h.Stale, Baseline: toBaselineJSON(h.Baseline), Sources: toSourcesJSON(h.Sources),
-		Server: h.Server, OSRead: h.OSRead,
+		Server: h.Server, OSRead: h.OSRead, IO: toHostIOJSON(h.IO),
 	}
 	if out.History.MemoryUsed == nil {
 		out.History.MemoryUsed = []*float64{}

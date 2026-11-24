@@ -134,6 +134,8 @@ type Service struct {
 	metricsGap time.Duration // between two ticks of the sampler
 	hostRoot   fs.FS         // the host's OS files the sampler reads (feature 027), see hostosstate.go
 	sampler    samplerState
+	// hostIO is each server's newest I/O counters and rates, from the agents' syncs (feature 055, hostio.go).
+	hostIO hostIOState
 
 	// aliasFailing is true while reading the versions that scale steps made
 	// fails, so the failure is logged once (feature 043, see autoscale.go).

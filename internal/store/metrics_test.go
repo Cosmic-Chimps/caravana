@@ -97,6 +97,7 @@ func TestMetricsTickRoundTrip(t *testing.T) {
 	host := HostSample{
 		Node: "n1", TS: metricsT0, MemoryUsedMB: i64(900), MemoryReservedMB: i64(700), MemoryTotalMB: i64(2048),
 		CPUUsedMHz: i64(300), CPUReservedMHz: i64(400), CPUTotalMHz: i64(4000), CPUCores: i64(2),
+		NetRxBps: i64(1_200_000), NetTxBps: i64(340_000), DiskReadBps: i64(0), DiskWriteBps: i64(5_000_000), DiskBusyPct: i64(12),
 	}
 	disks := []DiskSample{
 		{Node: "n1", TS: metricsT0, Mount: "/var/lib/docker", Holds: "docker", UsedMB: 10, TotalMB: 100, FreeMB: 85},
@@ -370,7 +371,7 @@ func TestMigration0019OnAStoreWith0018Data(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, f := range files {
-		if strings.HasPrefix(f, "0019_") {
+		if strings.HasPrefix(f, "0019_") || strings.HasPrefix(f, "0044_") { // 0044 adds columns to 0019's tables
 			continue
 		}
 		b, err := fs.ReadFile(all, f)
@@ -399,8 +400,8 @@ func TestMigration0019OnAStoreWith0018Data(t *testing.T) {
 		t.Fatalf("Open on a 0018 store: %v", err)
 	}
 	defer s.Close()
-	if s.MigrationsApplied() != 1 {
-		t.Errorf("MigrationsApplied = %d, want only 0019", s.MigrationsApplied())
+	if s.MigrationsApplied() != 2 {
+		t.Errorf("MigrationsApplied = %d, want 0019 and 0044", s.MigrationsApplied())
 	}
 	if checks, err := s.ListDomainChecks(ctx); err != nil || len(checks) != 1 {
 		t.Errorf("0018's data after the migration: %v, %v", checks, err)
@@ -515,5 +516,66 @@ func TestMetricsSize(t *testing.T) {
 	t.Logf("%d sample rows, plus host and disk rows: %.1f MB on disk after VACUUM", count, float64(total)/1e6)
 	if total >= 10_000_000 {
 		t.Errorf("the store is %d bytes, want under 10 MB", total)
+	}
+}
+
+// A store from before the I/O columns (feature 055): its host rows read as gaps, never zeros, and the
+// columns take values from then on.
+func TestMigration0044OnAStoreWith0043Data(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	old := fstest.MapFS{}
+	all := testMigrations(t)
+	files, err := fs.Glob(all, "*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if strings.HasPrefix(f, "0044_") {
+			continue
+		}
+		b, err := fs.ReadFile(all, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		old[f] = &fstest.MapFile{Data: b}
+	}
+	db, err := openDB(filepath.Join(dir, dbFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := migrate(ctx, db, old); err != nil || n != len(old) {
+		t.Fatalf("migrate to 0043 = %d, %v; want %d", n, err, len(old))
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO metrics_host (node, res, ts, memory_used_mb, cpu_cores) VALUES ('n1', 60, ?, 900, 2)`, metricsT0.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(ctx, dir)
+	if err != nil {
+		t.Fatalf("Open on a 0043 store: %v", err)
+	}
+	defer s.Close()
+	if s.MigrationsApplied() != 1 {
+		t.Errorf("MigrationsApplied = %d, want only 0044", s.MigrationsApplied())
+	}
+	rows, err := s.HostRows(ctx, MinuteRes, metricsT0, metricsT0.Add(time.Minute))
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows = %+v, %v", rows, err)
+	}
+	h := rows[0]
+	if *h.MemoryUsedMB != 900 || h.NetRxBps != nil || h.NetTxBps != nil || h.DiskReadBps != nil || h.DiskWriteBps != nil || h.DiskBusyPct != nil {
+		t.Errorf("the old row = %+v, want its I/O columns NULL", h)
+	}
+	later := HostSample{Node: "n1", TS: metricsT0.Add(time.Minute), NetRxBps: i64(7), DiskBusyPct: i64(100)}
+	if err := s.WriteMetricsTick(ctx, MetricsTick{At: later.TS, Minute: MetricsRows{Hosts: []HostSample{later}}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.NewestHostOf(ctx, "n1")
+	if err != nil || !reflect.DeepEqual(got, later) {
+		t.Errorf("newest = %+v, %v; want %+v", got, err, later)
 	}
 }

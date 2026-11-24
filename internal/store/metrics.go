@@ -61,6 +61,13 @@ type HostSample struct {
 	CPUReservedMHz   *int64
 	CPUTotalMHz      *int64
 	CPUCores         *int64
+	// Feature 055: what the server's node agent reported, as rates. NULL is no agent, an older agent or a
+	// counter that reset: a gap, never 0.
+	NetRxBps     *int64
+	NetTxBps     *int64
+	DiskReadBps  *int64
+	DiskWriteBps *int64
+	DiskBusyPct  *int64
 }
 
 // DiskSample is one watched filesystem of a node for a slot. Holds is "nomad",
@@ -233,16 +240,21 @@ func writeMetricsRows(ctx context.Context, tx *sql.Tx, res int, rows MetricsRows
 	for _, h := range rows.Hosts {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO metrics_host (node, res, ts, memory_used_mb, memory_reserved_mb,
-				memory_total_mb, cpu_used_mhz, cpu_reserved_mhz, cpu_total_mhz, cpu_cores)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				memory_total_mb, cpu_used_mhz, cpu_reserved_mhz, cpu_total_mhz, cpu_cores,
+				net_rx_bps, net_tx_bps, disk_read_bps, disk_write_bps, disk_busy_pct)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (node, res, ts) DO UPDATE SET
 				memory_used_mb = excluded.memory_used_mb,
 				memory_reserved_mb = excluded.memory_reserved_mb,
 				memory_total_mb = excluded.memory_total_mb, cpu_used_mhz = excluded.cpu_used_mhz,
 				cpu_reserved_mhz = excluded.cpu_reserved_mhz, cpu_total_mhz = excluded.cpu_total_mhz,
-				cpu_cores = excluded.cpu_cores`,
+				cpu_cores = excluded.cpu_cores,
+				net_rx_bps = excluded.net_rx_bps, net_tx_bps = excluded.net_tx_bps,
+				disk_read_bps = excluded.disk_read_bps, disk_write_bps = excluded.disk_write_bps,
+				disk_busy_pct = excluded.disk_busy_pct`,
 			h.Node, res, h.TS.Unix(), h.MemoryUsedMB, h.MemoryReservedMB, h.MemoryTotalMB,
-			h.CPUUsedMHz, h.CPUReservedMHz, h.CPUTotalMHz, h.CPUCores); err != nil {
+			h.CPUUsedMHz, h.CPUReservedMHz, h.CPUTotalMHz, h.CPUCores,
+			h.NetRxBps, h.NetTxBps, h.DiskReadBps, h.DiskWriteBps, h.DiskBusyPct); err != nil {
 			return fmt.Errorf("host %s: %w", h.Node, err)
 		}
 	}
@@ -331,7 +343,8 @@ func nullable(n sql.Null[int64]) *int64 {
 }
 
 const hostColumns = `node, ts, memory_used_mb, memory_reserved_mb, memory_total_mb,
-	cpu_used_mhz, cpu_reserved_mhz, cpu_total_mhz, cpu_cores`
+	cpu_used_mhz, cpu_reserved_mhz, cpu_total_mhz, cpu_cores,
+	net_rx_bps, net_tx_bps, disk_read_bps, disk_write_bps, disk_busy_pct`
 
 // HostRows returns the host rows of one resolution (MinuteRes or SlotRes) with
 // from <= ts < to, oldest first, then by node.
@@ -400,12 +413,16 @@ func scanHost(r interface{ Scan(...any) error }) (HostSample, error) {
 	var h HostSample
 	var ts int64
 	var memUsed, memRes, memTotal, cpuUsed, cpuRes, cpuTotal, cores sql.Null[int64]
-	if err := r.Scan(&h.Node, &ts, &memUsed, &memRes, &memTotal, &cpuUsed, &cpuRes, &cpuTotal, &cores); err != nil {
+	var netRx, netTx, diskRead, diskWrite, diskBusy sql.Null[int64]
+	if err := r.Scan(&h.Node, &ts, &memUsed, &memRes, &memTotal, &cpuUsed, &cpuRes, &cpuTotal, &cores,
+		&netRx, &netTx, &diskRead, &diskWrite, &diskBusy); err != nil {
 		return HostSample{}, err
 	}
 	h.TS = time.Unix(ts, 0).UTC()
 	h.MemoryUsedMB, h.MemoryReservedMB, h.MemoryTotalMB = nullable(memUsed), nullable(memRes), nullable(memTotal)
 	h.CPUUsedMHz, h.CPUReservedMHz, h.CPUTotalMHz, h.CPUCores = nullable(cpuUsed), nullable(cpuRes), nullable(cpuTotal), nullable(cores)
+	h.NetRxBps, h.NetTxBps = nullable(netRx), nullable(netTx)
+	h.DiskReadBps, h.DiskWriteBps, h.DiskBusyPct = nullable(diskRead), nullable(diskWrite), nullable(diskBusy)
 	return h, nil
 }
 
