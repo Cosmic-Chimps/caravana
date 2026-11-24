@@ -1185,6 +1185,60 @@ nothing is fetched). The contracts are `contracts/api.md` and `contracts/console
   `http://localhost:7091`. A credential ID is not secret: it is in the options answers (`allowCredentials`,
   `excludeCredentials`), never in a page or a log line.
 
+Feature 034 (`specs/034-byo-certificates`, CodeAlta task `k83w`, worktree branch `alta/quick-baker-rvch`): bring your own
+certificates, another ACME issuer or an uploaded certificate. `research.md` R1–R10 are the lab's facts (2026-11-12 and 11-24, a
+second Traefik and a Pebble ACME server requiring EAB); operator doc `docs/certificates.md`. Migration 0044, API 0.61.0, no new
+module, constitution unchanged (certificates reach Traefik through its file provider, like 023's Team only).
+- Traefik's static configuration is a file both jobs render into `secrets/traefik.yml` (`--configFile` is the only argument:
+  Traefik reads a file or flags, never both, and an EAB key can't be a flag). It reads the Nomad Variable `caravana/acme`
+  (items `server`, `email`, `eab_kid`, `eab_hmac`, `ca`, `storage`, always all six) with `change_mode = "restart"`, so a new
+  issuer restarts Traefik's task in place, and `caravana/certificates/<id>` (`certificate`, `key`, `names`) into
+  `secrets/dynamic/certificates.yml` (`noop`, the file provider's watch). The provider's directory moved from `local/dynamic` to
+  `secrets/dynamic` (with 023's `team.yml` and 051's `caravana.yml`): Nomad's fs API can't read `secrets/`. The job-scoped
+  policy `traefik-read` gains those two paths and must be applied before the job (without it the task waits at
+  "Missing: nomad.var.get"). The job's meta `caravana_certificates = "1"` is how Caravana knows (`deploy.IngressFeatures`), and
+  `ProxyAccessLog` takes it too (the access log of 047 is in the file now). The resolver keeps the name `letsencrypt`; each
+  issuer has its own store file `acme-<12 hex of SHA-256(server + "\n" + key ID)>.json`, the installer's stays `acme.json`.
+- `internal/certs` (standard library only): `Parse` (the key matches, the chain is complete, dates, DNS names, RSA 2048+ or
+  ECDSA, not encrypted; every refusal a `*certs.Error` on `certificate` or `key` with no key bytes), `Covers`/`SameNames`,
+  `CheckDirectory` (one GET, no redirect, never registers: an EAB key can be single-use), `ValidServer`, `NormalizeHMAC`,
+  `NormalizeCAPEM`; `certstest` makes CAs and leaves.
+- Service: `SetCertificateIssuer`/`ResetCertificateIssuer` (`certissuer.go`; the variable before SQLite, a stored HMAC key kept
+  only for its key ID, the issuer's CA added to the domain checks' roots), `UploadCertificate` and friends
+  (`uploadedcerts.go`; same names replace, 30 at most, variable before row with rollback, covered hosts checked again after 15 s),
+  a host presenting an upload is judged by the upload's dates (`judgeUploaded`, matched by the leaf's SHA-256, stored as
+  `domain_checks.cert_fingerprint`) and names it (`Uploaded`); `keptEarlier` lists covered hosts on another certificate with
+  `alsoAsks`. Needs-you `certificate_expiring` (one per upload, key `certificate_expiring|||<id>`) replaces
+  `domain_cert_expiring` for those hosts. `IssuerUnavailable`/`UploadUnavailable`: `installed_without_issuer` (`--acme none`),
+  `traefik_outdated`, `nomad_unreachable`.
+- API 0.61.0: `putCertificateIssuer`, `deleteCertificateIssuer`, `listUploadedCertificates`, `uploadCertificate` (201),
+  `getUploadedCertificate`, `deleteUploadedCertificate`, the settings' `issuerName`, `acme`, `issuerUnavailable` and
+  `uploadUnavailable`, `fingerprint` and `uploaded` on a certificate, the attention kind and the webhook's `certificate` and
+  `names`, codes `issuer_unavailable`, `certificates_unavailable`, `too_many_certificates`, `certificate_not_found`; the two
+  forms answer field errors with 422 like `putCertificateSettings`. Admin only; deploy tokens are denied by the default deny.
+- Console (`internal/ui/certificates.go`, `templates/settings.html`): Settings › Certificates has the Uploaded certificates
+  section (`POST /settings/certificates/upload`, `/uploaded/{id}/remove`; a refusal draws the certificate box back without any
+  key block, the key box never) and Change issuer (`POST /settings/certificates/issuer`, `?preset=google|zerossl|digicert#issuer`
+  fills the URL, the HMAC field is never filled and empty keeps it, the CA is sent only when typed or "remove" is ticked).
+  Domains name the issuer through `Service.IssuerName` (SQLite and `CARAVANA_ACME` only, no Nomad read per render). No
+  designer pass.
+- Lab facts: Traefik asks ACME for every name of a router when one isn't covered, so a router mixing covered and uncovered
+  hosts gets one ACME certificate for all, and an exact name beats a wildcard in Traefik's store (R4, R5). The same happens
+  to a router added in the seconds before Traefik picks an upload up. The installer drops ACME certificates whose every name
+  an upload covers (`drop_covered_acme_certificates`, python3) and says Traefik restarts once for 034.
+- Tests: `cmd/caravana/traefik_conf_test.go` renders both jobs' templates; the gate step `certificates`
+  (`gate_certificates_test.go`, lab only: a Pebble job requiring EAB with 20-day certificates, Caravana restarted with
+  `CARAVANA_CERT_RESOLVER=letsencrypt` through the lab's `SetEnv`, the issuer's refusals, a Pebble certificate and its renewal
+  after a Traefik restart, a private-CA wildcard serving two hosts with no ACME order, `certificate_expiring`, the fallback,
+  no HMAC or key in any answer, log or data file) passed on 2026-11-24 (74 s, `-run 'TestLab/^(api-needs-token|certificates)$'`).
+  `TestConsoleLab` has a step `console-certificates` (`console_certificates_test.go`: a refused upload drawn at `key` with no key
+  back, a private-CA wildcard for `*.cert034.localhost` uploaded through the form, Traefik serving it before the app's domain is
+  added, the Domains row saying "uploaded:", Settings' "Serves", Remove), which passed the same day (28 s, `-run
+  'TestConsoleLab/^console-(sign-in|certificates)$'`); its host is under `.localhost` so the row is live without DNS.
+  The lab's Traefik must be the 034 job: `deploy/dev/lab.sh up` from this branch. Not run: `install-test.sh` (T016's new checks
+  aren't written). Lima forwards the VM's port 14000 to the
+  Mac's localhost, which the in-process Caravana's directory check uses.
+
 Feature 035 (`specs/035-app-templates`, from a CodeAlta task) is implemented on the worktree branch
 `alta/fresh-kestrel-ng5c`: New app › From a template installs a known app from a few answers. A template is
 a manifest plus a Compose file with `{{placeholders}}`; installing it is a normal Compose deploy of a new app.

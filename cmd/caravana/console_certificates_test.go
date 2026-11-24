@@ -16,18 +16,20 @@ import (
 )
 
 const (
-	consoleCertApp  = "con034"
-	consoleCertHost = "x.cert034.test"
-	consoleCertWild = "*.cert034.test"
+	consoleCertApp = "con034"
+	// Under .localhost: the lab's checks answer it with loopback without DNS, so the row is live and its detail
+	// names the certificate (a row with no DNS record draws the record to add instead).
+	consoleCertHost = "x.cert034.localhost"
+	consoleCertWild = "*.cert034.localhost"
 )
 
 // consoleCertificates:
 //
 //  1. skips, naming deploy/dev/lab.sh up, when the page says Traefik's job is older than this feature;
-//  2. uploads a wildcard for *.cert034.test from a private CA through the form: the redirect, the notice
+//  2. uploads a wildcard for *.cert034.localhost from a private CA through the form: the redirect, the notice
 //     naming the names, the row with "not trusted by browsers", and Traefik serving it for the host;
 //  3. a key that doesn't match is refused at the key field with the certificate kept and no key in the page;
-//  4. deploys a whoami app on x.cert034.test (after the upload: a router that came first would make
+//  4. deploys a whoami app on x.cert034.localhost (after the upload: a router that came first would make
 //     Traefik order a certificate, and an exact name beats the wildcard) and waits until /domains says
 //     "uploaded:" for it, the Domain certificates table names the upload, and Check now keeps it;
 //  5. Remove through the form: the redirect, and the row is gone;
