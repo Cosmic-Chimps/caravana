@@ -53,6 +53,7 @@ caravana mcp [--allow-actions]
 | Tool | Input | API |
 | --- | --- | --- |
 | `get_version` | — | `GET /v1/health` (answer plus `"mcp": "<binary version>"`) |
+| `get_me` | — | `getMe` (who the token acts as, with its roles; feature 053) |
 | `list_projects` | — | `listProjects` |
 | `get_project` | `project` | `getProject` (its environments) |
 | `list_apps` | — | `listApps` |

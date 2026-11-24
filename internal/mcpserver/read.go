@@ -66,6 +66,15 @@ func (h *handler) addReadTools(srv *mcp.Server) {
 			return withField(r.body, "mcp", version)
 		})
 
+	addTool(h, srv, read("get_me",
+		"Returns who this connection acts as: the person behind the API token, their organization role "+
+			"(owner, admin or member) and, for a member, their role per project and environment, and the token's "+
+			"own name and scope. Every tool is limited to what that person may do, so this says what to expect. "+
+			"API operation getMe."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ noInput) (string, error) {
+			return h.answer(ctx, call{op: opGetMe})
+		})
+
 	addTool(h, srv, read("list_projects",
 		"Lists the projects of the installation. API operation listProjects."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ noInput) (string, error) {

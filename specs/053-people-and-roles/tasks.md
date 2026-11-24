@@ -26,10 +26,10 @@
 
 ## Phase C: API
 
-- [ ] T009 `accessRules` for every route, the order in `authenticate`, 403 `not_allowed`; `TestRolesWalkEveryRoute`
+- [x] T009 `accessRules` for every route, the order in `authenticate`, 403 `not_allowed`; `TestRolesWalkEveryRoute`
       (every route × owner, admin, member with deploy on staging and view on production, a deploy token of that member,
       an ended guest) against a written-out expectation, as `TestScopedTokenWalksEveryRoute` does.
-- [ ] T010 People routes, `getMe`, `acceptInvite`, `actor`, own tokens and passkeys; `api/openapi.yaml` 0.59.0; the
+- [x] T010 People routes, `getMe`, `acceptInvite`, `actor`, own tokens and passkeys; `api/openapi.yaml` 0.59.0; the
       contract and parity tests; MCP `get_me`.
 
 ## Phase D: console

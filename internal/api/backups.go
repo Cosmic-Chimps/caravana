@@ -19,7 +19,9 @@ type backupJSON struct {
 	Status  string `json:"status"`
 	// Trigger is who started the run: timer (its schedule) or owner (Back up
 	// now).
-	Trigger    string     `json:"trigger"`
+	Trigger string `json:"trigger"`
+	// Actor is the email of the person who took it by hand (feature 053); absent for a timed run.
+	Actor      string     `json:"actor,omitempty"`
 	Bytes      int64      `json:"bytes"`
 	Message    string     `json:"message,omitempty"`
 	StartedAt  time.Time  `json:"startedAt"`
@@ -67,7 +69,7 @@ type backupVolumeJSON struct {
 func toBackupJSON(b store.BackupRecord) backupJSON {
 	out := backupJSON{ID: b.ID, Service: b.Service, Engine: engineOrPostgres(b.Engine), Status: b.Status, Trigger: triggerOrTimer(b.Trigger),
 		Bytes: b.Bytes, Message: b.Message, StartedAt: b.StartedAt, FinishedAt: b.FinishedAt, StoppedSeconds: seconds(b.Stopped),
-		Pin: b.Pin, PinnedAt: b.PinnedAt, Destination: b.Destination, Expired: b.Expired}
+		Pin: b.Pin, PinnedAt: b.PinnedAt, Destination: b.Destination, Expired: b.Expired, Actor: b.Actor}
 	for _, v := range b.Volumes {
 		out.Volumes = append(out.Volumes, backupVolumeJSON{Name: v.Name, Bytes: v.Bytes, SizeBytes: v.SizeKB * 1024})
 	}
@@ -122,12 +124,14 @@ type restoreJSON struct {
 	Pin     string `json:"pin,omitempty"`
 	// Destination is where the restore read the backup from (feature 052).
 	Destination string `json:"destination,omitempty"`
+	// Actor is the email of the person who started it (feature 053); absent for a scheduled restore.
+	Actor string `json:"actor,omitempty"`
 }
 
 func toRestoreJSON(r store.RestoreRecord) restoreJSON {
 	return restoreJSON{ID: r.ID, Service: r.Service, BackupID: r.BackupID, Engine: engineOrPostgres(r.Engine), Status: r.Status,
 		Message: r.Message, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt, StoppedSeconds: seconds(r.Stopped),
-		Trigger: restoreTriggerOrOwner(r.Trigger), Pin: r.Pin, Destination: r.Destination}
+		Trigger: restoreTriggerOrOwner(r.Trigger), Pin: r.Pin, Destination: r.Destination, Actor: r.Actor}
 }
 
 // restoreTriggerOrOwner is the trigger of a restore record: the store defaults

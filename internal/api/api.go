@@ -216,6 +216,13 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/apps/{id}/webhook", s.createWebhookToken, false, false},
 		{http.MethodGet, "/v1/apps/{id}/webhook", s.getWebhook, false, false},
 		{http.MethodDelete, "/v1/apps/{id}/webhook", s.deleteWebhookToken, false, false},
+		{http.MethodGet, "/v1/me", s.getMe, false, false},
+		{http.MethodGet, "/v1/people", s.listPeople, false, false},
+		{http.MethodPost, "/v1/people", s.invitePerson, false, false},
+		{http.MethodGet, "/v1/people/{personId}", s.getPerson, false, false},
+		{http.MethodPut, "/v1/people/{personId}", s.updatePerson, false, false},
+		{http.MethodDelete, "/v1/people/{personId}", s.removePerson, false, false},
+		{http.MethodPost, "/v1/people/{personId}/invite", s.reinvitePerson, false, false},
 		{http.MethodPut, "/v1/account/password", s.changePassword, false, false},
 		{http.MethodGet, "/v1/account/passkeys", s.listPasskeys, false, false},
 		{http.MethodPatch, "/v1/account/passkeys/{passkeyId}", s.updatePasskey, false, false},
@@ -225,6 +232,9 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/tokens", s.createToken, false, false},
 		{http.MethodGet, "/v1/tokens", s.listTokens, false, false},
 		{http.MethodDelete, "/v1/tokens/{tokenId}", s.revokeToken, false, false},
+		// Accepting an invite (feature 053) is public: its token is the credential, and a wrong one is counted
+		// against the address.
+		{http.MethodPost, "/v1/invites/accept", s.acceptInvite, true, false},
 		// The node calls (feature 031) carry their own credentials, so they skip authenticate: the join
 		// token is in the body, the node token is the Bearer value (see nodecalls.go).
 		{http.MethodPost, "/v1/join", s.joinServer, true, false},
@@ -393,6 +403,12 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 	var apiErr *Error
 	var fieldErr *app.FieldError
 	var imageErr *deploy.ImageError
+	if e := accessError(err); e != nil {
+		return e
+	}
+	if e := peopleError(err); e != nil {
+		return e
+	}
 	if e := backupError(err); e != nil {
 		return e
 	}

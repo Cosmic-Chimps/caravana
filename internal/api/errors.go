@@ -48,6 +48,7 @@ const (
 	codeDestinationIsDefault  = "destination_is_default"
 	codeDestinationInUse      = "destination_in_use"
 	codeBackupMissing         = "backup_missing"
+	codeNotAllowed            = "not_allowed"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with

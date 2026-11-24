@@ -283,6 +283,32 @@ operations now act on the caller's own. MCP: a read tool `get_me`; nothing else 
 - **Left for later phases:** a session for the person who accepted (the console's `POST /invite` starts it:
   an exported `Auth` method comes with Phase D), the route tables, and the live notices' filtering.
 
+## Deviations (Phase C)
+
+- **`accessRules` is the table of D4, one rule per protected route** (`internal/api/access.go`, keyed
+  "METHOD pattern" like `scopeRules`). `authenticate` runs: credentials (401), a deploy token's scope (403
+  `token_scope`), `accessRules` (a route with no rule, or a rule that can't read its request, is 403
+  `not_allowed` "this isn't open to your role" for everyone, owners too), then `Service.Allow` (403
+  `not_allowed` with the role's words and the `field`), then the handler. `TestAccessRulesCoverEveryRoute` fails
+  for a protected route without a rule; `TestRolesWalkEveryRoute` checks every route against five callers
+  with an expectation table of its own.
+- **A rule that can't read its body asks for admin.** Create-an-app and domain-check rules peek the body; when
+  it is unreadable they need admin, so a member is refused and the handler still answers the owner's 400.
+- **Schedule routes by ID are judged in the service, not in the table.** The route can't know the app, so
+  their rule is "signed in" and `Service.allowSchedule` judges by the app of the stored (or built-in)
+  schedule: an app the person can't see is `schedule_not_found`, one they see but may not change at this
+  level is `not_allowed`. This is the one change to `internal/service` the API forced (ten methods in
+  `schedules.go` and `schedulerun.go`), besides exporting `ConfigureLevel` and adding `AllowPrincipal`.
+- **Streams end when the role does.** `credentialCheck` (the re-check every 30 s of a followed log stream and a
+  terminal) now loads the principal again and re-runs the route's rule, so removing or demoting a person
+  ends what their role no longer allows, not only a revoked credential.
+- **`getMe` is closed to deploy tokens.** They are outside 020's allowlist and the default deny stays, so
+  `Me.token.scope` is never filled today; it is in the schema because the contract has it.
+- **`Me` is a full object in OpenAPI** (not `allOf` over `Person`, whose `additionalProperties: false` rejects
+  `token`).
+- **`acceptInvite` starts no session** (the API has no cookies): the console's page does that in Phase D.
+  The invite link's base is the public URL, else the request's scheme and host.
+
 ## Complexity tracking
 
 | Choice | Why | Simpler option rejected |

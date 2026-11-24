@@ -8,6 +8,7 @@ import "net/http"
 // makes calls the contract has.
 var (
 	opGetHealth             = operation{"getHealth", http.MethodGet, "/v1/health"}
+	opGetMe                 = operation{"getMe", http.MethodGet, "/v1/me"}
 	opListProjects          = operation{"listProjects", http.MethodGet, "/v1/projects"}
 	opGetProject            = operation{"getProject", http.MethodGet, "/v1/projects/{project}"}
 	opListApps              = operation{"listApps", http.MethodGet, "/v1/apps"}
@@ -42,7 +43,7 @@ var (
 
 // allOperations lists every operation above, for the contract test.
 var allOperations = []operation{
-	opGetHealth, opListProjects, opGetProject, opListApps, opGetApp,
+	opGetHealth, opGetMe, opListProjects, opGetProject, opListApps, opGetApp,
 	opListRecentDeployments, opListDeployments, opGetDeployment, opListCopies,
 	opGetLogs, opListVolumes, opListBackups, opListAppActions, opListAttention,
 	opPreviewPromotion, opExportApp, opExportDeployment, opGetCompose,

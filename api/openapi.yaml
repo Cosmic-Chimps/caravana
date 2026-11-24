@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.58.0
+  version: 0.59.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -20,14 +20,28 @@ info:
     secret store, never in an app read back, a deployment or the Nomad job. A store that can't
     be written fails the deploy with 502 `secret_store_unavailable` before Nomad gets the job.
 
-    Every endpoint needs authentication except `GET /v1/health` and `POST /v1/webhooks/{id}`.
-    Clients send an API token as `Authorization: Bearer cvat_…`; the admin creates tokens on the
-    host (`caravana admin create-token`), on the web account page, or with `createToken`. A
+    Every endpoint needs authentication except `GET /v1/health`, `POST /v1/webhooks/{id}` and
+    `POST /v1/invites/accept`. Clients send an API token as `Authorization: Bearer cvat_…`; a
+    person creates tokens for themselves on the host (`caravana admin create-token`), on the web
+    account page, or with `createToken`. A
     browser signed in to the web UI may use its session cookie instead; then every
     state-changing request must come from caravana's own pages, or it gets 403
     `cross_origin`. A request without valid credentials gets 401 `unauthorized`, the same for
     every reason (missing, malformed, wrong, expired or revoked token, no admin yet), and is
     never redirected.
+
+    More than one person can use Caravana (`listPeople`, `invitePerson`): owners, admins and
+    members, a member with a role per project (`view`, `deploy`, `maintain`) and optionally one
+    per environment (`none` too). A session or token acts with its person's rights, never more,
+    and an API token is its person's: `getMe` says who. Every protected operation needs a level
+    in a place (an app, an environment, a project) or an organization role; a request that needs
+    more than the person has is `403 not_allowed`, whose message names the role they hold and the
+    one needed, and whose `field` (when a deploy changes more than a service's `image`, which
+    `deploy` allows) names the field that needs `maintain`. A route nobody has opened to a role is
+    `403 not_allowed` for everyone. Lists that span projects (`listApps`, `listProjects`,
+    `listRecentDeployments`, `listAttention`, `listSchedules`, `listDomains`) show a person only
+    the places they may see, and a project or app they can't see is 404 or 403 as one that doesn't
+    exist. Removing a person ends their sessions and tokens at once: their next call is 401.
 
     A token made with a `scope` (`createToken`) is a deploy token: it can only deploy one app
     name of one project, in any environment. With it, only `getApp`, `getCompose`,
@@ -6833,6 +6847,285 @@ paths:
         "502":
           $ref: "#/components/responses/BadGateway"
 
+  /v1/me:
+    get:
+      operationId: getMe
+      summary: Who the credential is.
+      description: |
+        The person behind the session or token, with their organization role and project roles.
+        For a call made with a token, `token` gives its name and, for a deploy token, its scope. Needs
+        only that the caller is signed in. Sent with `Cache-Control: no-store`.
+      tags: [people]
+      responses:
+        "200":
+          description: The person.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/people:
+    get:
+      operationId: listPeople
+      summary: List the people.
+      description: Everyone, the oldest first, including the invited. Owners and admins only.
+      tags: [people]
+      responses:
+        "200":
+          description: The people.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAllowed"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: invitePerson
+      summary: Invite a person.
+      description: |
+        Makes an `invited` person with their roles and a one-time invite token, valid for 7 days. The
+        answer holds the token and the link to give them (`<console address>/invite?token=…`); they
+        are in this answer only, and Caravana keeps only the token's hash and sends no mail. The
+        person opens the link, sets a password (`acceptInvite` is the API's version) and is active.
+        Owners invite anyone; admins invite members only (`403 not_allowed`, "this needs an owner"
+        otherwise). Owners and admins have every role in every project, so roles for them are
+        refused (`400 invalid_field`, `projects`). An unknown project or environment is 404
+        `project_not_found` (`field` `projects[i].project`) or `environment_not_found` (`field`
+        `projects[i].environments.<name>`); an email someone has is 409 `email_taken`. Sent with
+        `Cache-Control: no-store`.
+      tags: [people]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PersonInput"
+      responses:
+        "201":
+          description: The invited person and their link.
+          headers:
+            Location:
+              description: The person's URL, `/v1/people/{personId}`.
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invited"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAllowed"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
+        "409":
+          description: "`email_taken` (`field` `email`): someone with this email is here already."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/people/{personId}:
+    parameters:
+      - $ref: "#/components/parameters/PersonID"
+    get:
+      operationId: getPerson
+      summary: Read a person.
+      description: Owners and admins only.
+      tags: [people]
+      responses:
+        "200":
+          description: The person.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Person"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAllowed"
+        "404":
+          $ref: "#/components/responses/PersonNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    put:
+      operationId: updatePerson
+      summary: Change a person's role, end date and roles.
+      description: |
+        The body replaces the person's organization role, end date and project roles (`email` is
+        ignored: a person's email never changes). Their next request sees the change. An admin changes
+        members only and can't make anyone an owner or an admin (`403 not_allowed`); owners change
+        anyone. The last owner can't be demoted (409 `last_owner`). Errors for the roles are
+        `invitePerson`'s.
+      tags: [people]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PersonInput"
+      responses:
+        "200":
+          description: The person as they are now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Person"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAllowed"
+        "404":
+          $ref: "#/components/responses/PersonNotFound"
+        "409":
+          $ref: "#/components/responses/LastOwner"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: removePerson
+      summary: Remove a person.
+      description: |
+        Deletes the person and, in the same transaction, their sessions, API tokens, passkeys and
+        roles: their next call is 401. What they did stays recorded under their email. Rights are
+        `updatePerson`'s. The last owner can't be removed (409 `last_owner`). An invited person who
+        never accepted can be removed too.
+      tags: [people]
+      responses:
+        "204":
+          description: The person is gone.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAllowed"
+        "404":
+          $ref: "#/components/responses/PersonNotFound"
+        "409":
+          $ref: "#/components/responses/LastOwner"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/people/{personId}/invite:
+    parameters:
+      - $ref: "#/components/parameters/PersonID"
+    post:
+      operationId: reinvitePerson
+      summary: Make a new invite link for a person who hasn't accepted.
+      description: |
+        The old link stops working. A person who accepted already is 409 `not_invited`. Rights are
+        `updatePerson`'s. Sent with `Cache-Control: no-store`; the token and link are in this answer
+        only.
+      tags: [people]
+      responses:
+        "200":
+          description: The person and their new link.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invited"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAllowed"
+        "404":
+          $ref: "#/components/responses/PersonNotFound"
+        "409":
+          description: "`not_invited`: this person accepted their invite already."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/invites/accept:
+    post:
+      operationId: acceptInvite
+      summary: "Accept an invite: set a password and become active."
+      description: |
+        Public: the invite token in the body is the credential. It sets the person's password (12
+        characters or more, `400 invalid_field` `password` otherwise, which costs nothing and leaves
+        the invite usable), makes them `active` and voids the token. It starts no session; sign in
+        at the console, or use an API token. A token that is unknown, expired, already used or
+        belongs to someone whose access has ended is 404 `invite_invalid`, the same for every reason,
+        and counts against the address like a failed sign-in: after 5 in 15 minutes the address is
+        429 `too_many_attempts`, a locked address is refused before the token is looked at. Sent with
+        `Cache-Control: no-store`.
+      tags: [people]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptInviteRequest"
+      responses:
+        "200":
+          description: The invite is accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [email]
+                properties:
+                  email: {type: string}
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: "`invite_invalid`: the token is unknown, expired, used, or its person's access has ended."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          description: "`too_many_attempts`: too many failed tries from this address."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/account/password:
     put:
       operationId: changePassword
@@ -7358,6 +7651,13 @@ components:
       schema:
         type: string
         pattern: "^nch_[0-9a-f]{12}$"
+    PersonID:
+      name: personId
+      in: path
+      required: true
+      description: The person's ID, as `listPeople` returns it.
+      schema:
+        type: string
     TokenID:
       name: tokenId
       in: path
@@ -9010,6 +9310,11 @@ components:
       properties:
         id: {type: string, examples: ["db-1791386036"]}
         service: {type: string}
+        actor:
+          type: string
+          description: |
+            The email of the person who took the backup by hand (feature 053). Absent for a timed
+            run and for a backup recorded before people.
         engine:
           type: string
           enum: [postgres, mysql, mongodb, volume, sqlite]
@@ -9186,6 +9491,11 @@ components:
       properties:
         id: {type: string}
         service: {type: string}
+        actor:
+          type: string
+          description: |
+            The email of the person who started the restore (feature 053). Absent for a scheduled
+            restore and for one recorded before people.
         backupId:
           type: string
           description: |
@@ -11016,6 +11326,11 @@ components:
         One action on an app. Never holds command output or arguments.
       properties:
         id: {type: string}
+        actor:
+          type: string
+          description: |
+            The email of the person who asked (feature 053). Absent for a schedule's run, a step of
+            the autoscaler and an action recorded before people.
         action:
           type: string
           enum: [stop, start, restart, run, terminal, scale]
@@ -13415,6 +13730,11 @@ components:
           $ref: "#/components/schemas/Origin"
         build:
           $ref: "#/components/schemas/BuildSummary"
+        actor:
+          type: string
+          description: |
+            The email of the person who made the deploy, or whose token did (feature 053). Absent
+            for the webhook, a schedule and deployments recorded before people.
         tokenName:
           type: string
           description: |
@@ -13720,7 +14040,7 @@ components:
                 `project_not_found`, `environment_not_found`, `project_exists`,
                 `environment_exists`, `not_empty`, `protected`, `app_not_in_environment`,
                 `promotion_removes_service`, `app_stopped`, `app_not_stopped`, `app_busy`,
-                `copy_not_running`, `token_scope`, `app_not_found`, `schedule_not_found`, `run_not_found`,
+                `copy_not_running`, `token_scope`, `not_allowed`, `person_not_found`, `email_taken`, `invite_invalid`, `not_invited`, `last_owner`, `app_not_found`, `schedule_not_found`, `run_not_found`,
                 `output_not_kept`, `builtin_schedule`, `schedule_exists`, `run_going`, `run_not_running`, `log_rotated`, `download_busy`,
                 `passkey_not_found`, `last_passkey`, `no_passkey`, `port_taken`, `no_public_network`,
                 `placement_impossible`, `server_moving`, `server_not_ready`, `no_other_server`,
@@ -13854,6 +14174,153 @@ components:
         scope:
           $ref: "#/components/schemas/TokenScope"
 
+    Role:
+      type: string
+      enum: [view, deploy, maintain]
+      description: |
+        A person's role in a project. `view` reads (apps, deployments, logs, requests, metrics,
+        backups, schedules and their output, secret names, exports). `deploy` adds a new image,
+        a redeploy, a rollback, restart, start, promotion into the environment, a schedule's run
+        now, Back up now, Refresh secrets, and opening and closing previews. `maintain` adds
+        configuring (anything but an image, a Compose file, secrets, domains, scaling, placement,
+        backup policy and restores, pins, schedules, webhook and deploy tokens, Git access), stop,
+        delete, Run a command, the terminal, creating apps and environments and the project's
+        settings. In a preview environment (`pr-<n>`) `deploy` is enough to create and configure.
+    EnvironmentRole:
+      type: string
+      enum: [none, view, deploy, maintain]
+      description: "A role in one environment. It replaces the project's role there; `none` hides the environment."
+    ProjectRole:
+      type: object
+      additionalProperties: false
+      required: [project, role]
+      properties:
+        project:
+          $ref: "#/components/schemas/Name"
+        role:
+          $ref: "#/components/schemas/Role"
+        endsAt:
+          type: string
+          format: date-time
+          description: "When the whole role (its environment roles too) stops counting. Absent: no end."
+        environments:
+          type: object
+          description: The environments where the role is another one, by name. A preview takes the project's role.
+          additionalProperties:
+            $ref: "#/components/schemas/EnvironmentRole"
+    Person:
+      type: object
+      additionalProperties: false
+      required: [id, email, orgRole, state, createdAt, projects]
+      properties:
+        id: {type: string}
+        email: {type: string, description: Lower case; never changes.}
+        orgRole:
+          type: string
+          enum: [owner, admin, member]
+          description: |
+            `owner`: everything, and the only role that makes, changes or removes owners and admins.
+            `admin`: everything else, including members. `member`: only the projects they are given.
+        state:
+          type: string
+          enum: [invited, active]
+        endsAt:
+          type: string
+          format: date-time
+          description: "When the person's access ends, without anyone acting. Absent: no end."
+        invitedBy: {type: string, description: "The inviter's email; absent for the first owner and for people the host's command made."}
+        createdAt: {type: string, format: date-time}
+        inviteExpiresAt:
+          type: string
+          format: date-time
+          description: When the invite link stops working, while `state` is `invited`.
+        projects:
+          type: array
+          description: A member's roles. Owners and admins have none (they have every role everywhere).
+          items:
+            $ref: "#/components/schemas/ProjectRole"
+    PersonList:
+      type: object
+      additionalProperties: false
+      required: [people]
+      properties:
+        people:
+          type: array
+          items:
+            $ref: "#/components/schemas/Person"
+    Me:
+      type: object
+      additionalProperties: false
+      description: A `Person` without `inviteExpiresAt`, plus the token the call came with.
+      required: [id, email, orgRole, state, createdAt, projects]
+      properties:
+        id: {type: string}
+        email: {type: string}
+        orgRole:
+          type: string
+          enum: [owner, admin, member]
+        state:
+          type: string
+          enum: [invited, active]
+        endsAt:
+          type: string
+          format: date-time
+        invitedBy: {type: string}
+        createdAt: {type: string, format: date-time}
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectRole"
+        token:
+          type: object
+          additionalProperties: false
+          required: [name]
+          description: Present when the call came with an API token.
+          properties:
+            name: {type: string}
+            scope:
+              $ref: "#/components/schemas/TokenScope"
+    PersonInput:
+      type: object
+      additionalProperties: false
+      required: [orgRole]
+      properties:
+        email:
+          type: string
+          description: Required to invite; ignored when changing a person.
+        orgRole:
+          type: string
+          enum: [owner, admin, member]
+        endsAt:
+          type: string
+          format: date-time
+          description: Must be in the future.
+        projects:
+          type: array
+          description: A member's roles. Refused for an owner or an admin.
+          items:
+            $ref: "#/components/schemas/ProjectRole"
+    Invited:
+      type: object
+      additionalProperties: false
+      required: [person, inviteToken, inviteUrl]
+      properties:
+        person:
+          $ref: "#/components/schemas/Person"
+        inviteToken:
+          type: string
+          pattern: "^cvin_[a-z2-7]{52}$"
+          description: The invite token, shown only in this answer.
+        inviteUrl:
+          type: string
+          description: "`<console address>/invite?token=<inviteToken>`: the link to give the person."
+    AcceptInviteRequest:
+      type: object
+      additionalProperties: false
+      required: [token, password]
+      properties:
+        token: {type: string}
+        password: {type: string, minLength: 12}
     TokenScope:
       type: object
       additionalProperties: false
@@ -13935,6 +14402,29 @@ components:
             type: string
     Unavailable:
       description: The server can't reach its store.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotAllowed:
+      description: |
+        `not_allowed`: the person behind the request doesn't have what the operation needs: a level
+        in the place (`your role in shop › production is view; this needs deploy`) or an
+        organization role (`this needs an owner or an admin`). `field` names the field of a body
+        deploy that needs more than `deploy`. Every protected operation can answer it. Nothing was
+        changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PersonNotFound:
+      description: "`person_not_found`: no person has this ID."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    LastOwner:
+      description: "`last_owner`: this is the only owner; make another person an owner first."
       content:
         application/json:
           schema:
@@ -14337,6 +14827,7 @@ components:
             $ref: "#/components/schemas/Error"
     CrossOrigin:
       description: |
+        `not_allowed` (the person's role doesn't allow this, see `components/responses/NotAllowed`) or
         `cross_origin`: a state-changing request authenticated by the session cookie came from
         another site. Nothing was changed. Requests with an API token never get this. A deploy
         token (an API token with a `scope`) gets `token_scope` here instead for anything outside
@@ -14536,7 +15027,9 @@ tags:
     description: The console's own domain, checking a new one and switching to it.
   - name: servers
     description: The servers of the cluster, how one joins, and the calls their agents make.
+  - name: people
+    description: The people who use Caravana, their organization role and their roles per project and environment, and who the caller is.
   - name: tokens
     description: API tokens for clients (CI, scripts, the Aspire integration).
   - name: account
-    description: The one admin account.
+    description: The caller's own account.

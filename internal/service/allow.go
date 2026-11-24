@@ -23,6 +23,12 @@ func (s *Service) Allow(ctx context.Context, need Need, target Target) error {
 	return p.Allow(need, target, s.clock.Now())
 }
 
+// AllowPrincipal is Allow for a principal the caller already holds, not the one in a context: the
+// API's streams ask again, now and then, whether the person still may do what opened them.
+func (s *Service) AllowPrincipal(p Principal, need Need, target Target) error {
+	return p.Allow(need, target, s.clock.Now())
+}
+
 // visibility says which places the person behind a request may see: every place for Caravana
 // itself, an owner and an admin, and for a member the environments where their level is at least
 // view. Lists that span places filter with it (feature 053, D6).
@@ -87,11 +93,11 @@ func (v visibility) attentionItem(it AttentionItem) bool {
 	}
 }
 
-// configureLevel is the level that changes an app's definition in an environment: maintain, and
+// ConfigureLevel is the level that changes an app's definition in an environment: maintain, and
 // deploy in a preview environment (pr-<n>), which CI opens and closes with a deploy token: the
 // project's deploy role is what opens a preview, so it is what may define the apps in it
 // (feature 053, plan D7).
-func configureLevel(environment string) Level {
+func ConfigureLevel(environment string) Level {
 	if app.IsPreviewEnvironment(environment) {
 		return LevelDeploy
 	}
@@ -106,7 +112,7 @@ func (s *Service) allowCreate(ctx context.Context, id string) error {
 		return nil
 	}
 	project, environment := placeOfAppID(id)
-	need := configureLevel(environment)
+	need := ConfigureLevel(environment)
 	if have := p.LevelAt(project, environment, s.clock.Now()); have < need {
 		return &NotAllowedError{Have: have, Need: need, Project: project, Environment: environment}
 	}
@@ -125,7 +131,7 @@ func (s *Service) allowSave(ctx context.Context, a app.App, m made) error {
 	}
 	project, environment := placeOfAppID(a.ID)
 	have := p.LevelAt(project, environment, s.clock.Now())
-	configure := configureLevel(environment)
+	configure := ConfigureLevel(environment)
 	if have >= configure {
 		return nil // nothing a deploy does needs more
 	}

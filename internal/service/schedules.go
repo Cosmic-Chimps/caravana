@@ -392,6 +392,9 @@ func (s *Service) CreateSchedule(ctx context.Context, in NewSchedule) (Schedule,
 // Errors are CreateSchedule's, plus ErrScheduleNotFound and
 // ErrScheduleBuiltin.
 func (s *Service) UpdateSchedule(ctx context.Context, id string, in NewSchedule) (Schedule, error) {
+	if err := s.allowSchedule(ctx, id, LevelMaintain); err != nil {
+		return Schedule{}, err
+	}
 	old, err := s.storedSchedule(ctx, id)
 	if err != nil {
 		return Schedule{}, err
@@ -436,6 +439,9 @@ func (s *Service) UpdateSchedule(ctx context.Context, id string, in NewSchedule)
 // cancelled). When Nomad can't do that the schedule stays, and the error says
 // why.
 func (s *Service) DeleteSchedule(ctx context.Context, id string) error {
+	if err := s.allowSchedule(ctx, id, LevelMaintain); err != nil {
+		return err
+	}
 	rec, err := s.storedSchedule(ctx, id)
 	if err != nil {
 		return err
@@ -471,6 +477,9 @@ func (s *Service) DeleteSchedule(ctx context.Context, id string) error {
 // PauseSchedule stops the schedule's clock; runs going go on, and Run now
 // still works. Pausing a paused schedule changes nothing.
 func (s *Service) PauseSchedule(ctx context.Context, id string) (Schedule, error) {
+	if err := s.allowSchedule(ctx, id, LevelMaintain); err != nil {
+		return Schedule{}, err
+	}
 	rec, err := s.storedSchedule(ctx, id)
 	if err != nil {
 		return Schedule{}, err
@@ -488,6 +497,9 @@ func (s *Service) PauseSchedule(ctx context.Context, id string) (Schedule, error
 // it was paused are not run, the next one is. Resuming a schedule that isn't
 // paused changes nothing.
 func (s *Service) ResumeSchedule(ctx context.Context, id string) (Schedule, error) {
+	if err := s.allowSchedule(ctx, id, LevelMaintain); err != nil {
+		return Schedule{}, err
+	}
 	rec, err := s.storedSchedule(ctx, id)
 	if err != nil {
 		return Schedule{}, err
@@ -502,6 +514,36 @@ func (s *Service) ResumeSchedule(ctx context.Context, id string) (Schedule, erro
 		s.schedulesChanged(rec.AppID)
 	}
 	return s.GetSchedule(ctx, id)
+}
+
+// allowSchedule judges the person behind ctx for the schedule with that ID by the app it belongs to
+// (feature 053: a schedule's ID doesn't say which app, so no route table can). A schedule of an app
+// the person may not even see is not found, as one that doesn't exist; one they may see but not
+// change at this level is a *NotAllowedError. Caravana itself (no principal) is allowed.
+func (s *Service) allowSchedule(ctx context.Context, id string, level Level) error {
+	if _, ok := PrincipalFrom(ctx); !ok {
+		return nil
+	}
+	var appID string
+	if strings.HasPrefix(id, builtinPrefix) {
+		rec, _, err := s.builtinOf(ctx, id)
+		if err != nil {
+			return err
+		}
+		appID = rec.App.ID
+	} else {
+		rec, err := s.store.GetSchedule(ctx, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("schedule %q: %w", id, ErrScheduleNotFound)
+		} else if err != nil {
+			return err
+		}
+		appID = rec.AppID
+	}
+	if err := s.Allow(ctx, NeedApp(LevelView), Target{AppID: appID}); err != nil {
+		return fmt.Errorf("schedule %q: %w", id, ErrScheduleNotFound)
+	}
+	return s.Allow(ctx, NeedApp(level), Target{AppID: appID})
 }
 
 // storedSchedule is the stored schedule id for a change: a built-in one is
@@ -524,6 +566,9 @@ func (s *Service) storedSchedule(ctx context.Context, id string) (store.Schedule
 
 // GetSchedule returns one schedule, stored or built-in, or ErrScheduleNotFound.
 func (s *Service) GetSchedule(ctx context.Context, id string) (Schedule, error) {
+	if err := s.allowSchedule(ctx, id, LevelView); err != nil {
+		return Schedule{}, err
+	}
 	if strings.HasPrefix(id, builtinPrefix) {
 		rec, svc, err := s.builtinOf(ctx, id)
 		if err != nil {
@@ -633,6 +678,9 @@ func runFailed(status string) bool {
 // limit is 0, at most 100. A built-in schedule's runs are its service's
 // backups.
 func (s *Service) ListScheduleRuns(ctx context.Context, id string, limit int) ([]ScheduleRun, error) {
+	if err := s.allowSchedule(ctx, id, LevelView); err != nil {
+		return nil, err
+	}
 	if limit <= 0 {
 		limit = defaultRunsLimit
 	}
@@ -665,6 +713,9 @@ func (s *Service) ListScheduleRuns(ctx context.Context, id string, limit int) ([
 // GetScheduleRun returns one run of a schedule, without its output.
 // ErrScheduleNotFound or ErrRunNotFound when there is no such thing.
 func (s *Service) GetScheduleRun(ctx context.Context, scheduleID, runID string) (ScheduleRun, error) {
+	if err := s.allowSchedule(ctx, scheduleID, LevelView); err != nil {
+		return ScheduleRun{}, err
+	}
 	if strings.HasPrefix(scheduleID, builtinPrefix) {
 		rec, svc, err := s.builtinOf(ctx, scheduleID)
 		if err != nil {
@@ -704,6 +755,9 @@ func (s *Service) storedRun(ctx context.Context, scheduleID, runID string) (stor
 // is none to give: the run never ran, its output couldn't be read, or it is a
 // backup's run.
 func (s *Service) GetScheduleRunOutput(ctx context.Context, scheduleID, runID, stream string) ([]byte, bool, error) {
+	if err := s.allowSchedule(ctx, scheduleID, LevelView); err != nil {
+		return nil, false, err
+	}
 	if stream != "stdout" && stream != "stderr" {
 		return nil, false, app.NewFieldError("stream", "must be stdout or stderr")
 	}

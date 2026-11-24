@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -18,7 +19,8 @@ import (
 //
 // A deploy token (an API token with a scope, feature 020) is held to scopeRules
 // right here, after it is known to be valid and before any handler runs: out of
-// scope is 403 token_scope. A full token and a session pass as before.
+// scope is 403 token_scope. Then the person behind the request, whatever the
+// credential, is held to the route's access rule (feature 053): 403 not_allowed.
 func (s *server) authenticate(rt route) handlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		who, err := s.checkCredentials(r, rt.quiet)
@@ -36,6 +38,9 @@ func (s *server) authenticate(rt route) handlerFunc {
 			if err := scopeAllows(r, rt, *who.Scope); err != nil {
 				return err
 			}
+		}
+		if err := s.accessAllows(r, rt); err != nil {
+			return err
 		}
 		return rt.handle(w, r)
 	}
@@ -108,17 +113,35 @@ func bearerToken(r *http.Request) string {
 // credentialCheck returns a function that asks again, later, whether the credentials
 // r came with are still good, without renewing a session. An open event
 // stream calls it now and then, to end when they stop being.
+//
+// The person's rights are asked again too (feature 053): a stream ends when the person no
+// longer may do what opened it (their role was taken away, or lowered below the route's
+// need), which counts as their credentials ending (service.ErrNotAuthenticated).
 func (s *server) credentialCheck(r *http.Request) func(context.Context) error {
+	var check func(context.Context) (service.Principal, error)
 	if len(r.Header.Values("Authorization")) == 1 {
 		token := bearerToken(r)
-		return func(ctx context.Context) error {
-			_, err := s.auth.CheckAPIToken(ctx, token)
+		check = func(ctx context.Context) (service.Principal, error) { return s.auth.CheckAPIToken(ctx, token) }
+	} else {
+		value, _ := httpx.SessionCookie(r, s.proxies.HTTPS(r))
+		check = func(ctx context.Context) (service.Principal, error) { return s.auth.CheckSessionQuiet(ctx, value) }
+	}
+	rule, listed := accessRules[r.Pattern]
+	return func(ctx context.Context) error {
+		who, err := check(ctx)
+		if err != nil {
 			return err
 		}
-	}
-	value, _ := httpx.SessionCookie(r, s.proxies.HTTPS(r))
-	return func(ctx context.Context) error {
-		_, err := s.auth.CheckSessionQuiet(ctx, value)
-		return err
+		if !listed {
+			return nil
+		}
+		need, target, ok := rule(r)
+		if !ok {
+			return nil
+		}
+		if err := s.svc.AllowPrincipal(who, need, target); err != nil {
+			return fmt.Errorf("the person's role no longer allows this (%v): %w", err, service.ErrNotAuthenticated)
+		}
+		return nil
 	}
 }

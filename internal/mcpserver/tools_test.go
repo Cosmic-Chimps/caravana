@@ -34,11 +34,14 @@ const (
 	healthJSON     = `{"status":"ok","version":"0.9.1"}`
 	appRecordJSON  = `{"app":{"id":"web","source":{"kind":"image"},"services":[{"name":"web","image":"nginx:1"}]},` +
 		`"revision":"0123456789abcdef","defined":true}`
+	meJSON      = `{"id":"p1","email":"ana@example.com","orgRole":"member","state":"active","createdAt":"2026-11-24T09:00:00Z","projects":[],"token":{"name":"ci"}}`
 	previewJSON = `{"from":"shop--staging--web","to":"shop--production--web","targetRevision":"fedcba9876543210"}`
 )
 
 // readCases is every read tool, and actionCases every action tool.
 var readCases = []toolCase{
+	{tool: "get_me", routes: map[string]string{"GET /v1/me": meJSON},
+		want: []wantRequest{{method: "GET", path: "/v1/me"}}, answer: meJSON},
 	{tool: "list_projects", routes: map[string]string{"GET /v1/projects": `{"projects":[]}`},
 		want: []wantRequest{{method: "GET", path: "/v1/projects"}}, answer: `{"projects":[]}`},
 	{tool: "get_project", args: map[string]any{"project": "shop"},
@@ -297,7 +300,7 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) []string {
 }
 
 var readToolNames = []string{
-	"export_jobspec", "get_app", "get_app_scan", "get_compose_file", "get_deployment", "get_logs", "get_needs_you",
+	"export_jobspec", "get_app", "get_app_scan", "get_compose_file", "get_deployment", "get_logs", "get_me", "get_needs_you",
 	"get_project", "get_server_space", "get_template", "get_version", "list_app_actions", "list_apps", "list_backups", "list_copies",
 	"list_deployments", "list_projects", "list_recent_deployments", "list_templates", "list_volumes",
 	"preview_promotion", "wait_for_deployment",

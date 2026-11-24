@@ -249,6 +249,9 @@ func (s *Service) settleRun(ctx context.Context, run store.ScheduleRunRecord, st
 // overlapping runs, or 3 going (ErrRunGoing). A run Nomad refuses comes back
 // could_not_start, without an error.
 func (s *Service) RunScheduleNow(ctx context.Context, id string) (ScheduleRun, error) {
+	if err := s.allowSchedule(ctx, id, LevelDeploy); err != nil {
+		return ScheduleRun{}, err
+	}
 	sched, err := s.storedSchedule(ctx, id)
 	if err != nil {
 		return ScheduleRun{}, err
@@ -268,6 +271,9 @@ func (s *Service) RunScheduleNow(ctx context.Context, id string) (ScheduleRun, e
 // watcher then records it stopped. A run that has ended is
 // ErrRunNotRunning; a built-in schedule's is ErrScheduleBuiltin.
 func (s *Service) StopScheduleRun(ctx context.Context, scheduleID, runID string) (ScheduleRun, error) {
+	if err := s.allowSchedule(ctx, scheduleID, LevelDeploy); err != nil {
+		return ScheduleRun{}, err
+	}
 	run, err := s.storedRun(ctx, scheduleID, runID)
 	if err != nil {
 		return ScheduleRun{}, err

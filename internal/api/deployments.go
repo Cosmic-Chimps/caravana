@@ -55,6 +55,9 @@ type deploymentJSON struct {
 	// TokenName is the name of the API token that made the deploy; absent for
 	// the console, the webhook and deployments recorded before 0.23.0.
 	TokenName string `json:"tokenName,omitempty"`
+	// Actor is the email of the person who made the deploy, or whose token did (feature 053);
+	// absent for the webhook, a schedule and deployments from before people.
+	Actor string `json:"actor,omitempty"`
 	// SecretsRefreshed is true only for a deployment made by Refresh secrets
 	// (feature 037): the live version rolled out again with new secret values.
 	SecretsRefreshed bool `json:"secretsRefreshed,omitempty"`
@@ -138,6 +141,7 @@ func toDeploymentJSON(rec store.DeploymentRecord) deploymentJSON {
 	d.ComposeKept = rec.Compose != nil
 	d.Origin = toOriginJSON(rec.Deployment.Origin)
 	d.TokenName = rec.Deployment.TokenName
+	d.Actor = rec.Deployment.Actor
 	d.SecretsRefreshed = rec.Deployment.Refresh
 	d.RegisteredAt = rec.RegisteredAt
 	d.Build = toBuildSummaryJSON(rec.Build)

@@ -133,6 +133,7 @@ func newTestEnvWith(t *testing.T, nomadToken string, setup func(*service.Service
 
 	e.Clock = &fakeClock{t: time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)}
 	e.Auth = service.NewAuth(st, log, service.AuthOptions{Now: e.Clock.Now, PasswordIterations: 1000})
+	svc.SetAuth(e.Auth) // accepting an invite uses its sign-in limit and hashing
 	if err := e.Auth.InitAdmin(context.Background(), testAdminEmail, testAdminPassword); err != nil {
 		t.Fatalf("create admin: %v", err)
 	}

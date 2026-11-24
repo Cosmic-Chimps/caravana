@@ -54,6 +54,9 @@ type appActionJSON struct {
 	Error      string     `json:"error,omitempty"`
 	StartedAt  time.Time  `json:"startedAt"`
 	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+	// Actor is the email of the person who asked (feature 053); absent for a schedule, the
+	// autoscaler and an action from before people.
+	Actor string `json:"actor,omitempty"`
 	// A scale step (feature 043): the counts it went between and why. The job
 	// versions that map it to a deployment are not part of the API.
 	FromCount *int   `json:"fromCount,omitempty"`
@@ -65,7 +68,7 @@ func toAppActionJSON(a store.ActionRecord) appActionJSON {
 	return appActionJSON{ID: a.ID, Action: a.Action, Trigger: a.Trigger, Status: a.Status, CopyID: a.CopyID,
 		Service: a.Service, Program: a.Program, ExitCode: a.ExitCode, Error: a.Error,
 		StartedAt: a.StartedAt, FinishedAt: a.FinishedAt,
-		FromCount: a.FromCount, ToCount: a.ToCount, Reason: a.Reason}
+		Actor: a.Actor, FromCount: a.FromCount, ToCount: a.ToCount, Reason: a.Reason}
 }
 
 // commandResultJSON is what runCommand answers (schema CommandResult).
