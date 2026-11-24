@@ -551,8 +551,10 @@ func (s *Service) ListSchedules(ctx context.Context, f ScheduleFilter) ([]Schedu
 	for i := range apps {
 		byID[apps[i].App.ID] = &apps[i]
 	}
+	v := s.visible(ctx) // a member sees the schedules of the apps in places where their role is view or more
 	keep := func(rec *store.AppRecord) bool {
-		return rec != nil && (f.App == "" || rec.App.ID == f.App) && (f.Project == "" || placeOf(*rec).Project == f.Project)
+		return rec != nil && (f.App == "" || rec.App.ID == f.App) && (f.Project == "" || placeOf(*rec).Project == f.Project) &&
+			v.place(rec.Place.Project, rec.Place.Environment)
 	}
 
 	stored, err := s.store.ListSchedules(ctx, f.App)

@@ -103,9 +103,12 @@ func (s *Store) createDeployment(ctx context.Context, appID string, d app.Deploy
 	if err != nil {
 		return DeploymentRecord{}, fmt.Errorf("create deployment %q: %w", d.ID, err)
 	}
-	var def, src, origin, tokenName sql.NullString
+	var def, src, origin, tokenName, actor sql.NullString
 	if d.TokenName != "" {
 		tokenName = sql.NullString{String: d.TokenName, Valid: true}
+	}
+	if d.Actor != "" {
+		actor = sql.NullString{String: d.Actor, Valid: true}
 	}
 	refresh := boolInt(d.Refresh)
 	if d.Origin != nil && !d.Origin.IsZero() {
@@ -149,9 +152,9 @@ func (s *Store) createDeployment(ctx context.Context, appID string, d app.Deploy
 
 	now := formatTime(s.now())
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO deployments (id, app_id, trigger, digests, status, definition, compose, source_deployment, origin, token_name, refresh, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, appID, string(d.Trigger), string(digests), string(StatusPending), def, kept, src, origin, tokenName, refresh, now, now); err != nil {
+		INSERT INTO deployments (id, app_id, trigger, digests, status, definition, compose, source_deployment, origin, token_name, actor, refresh, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, appID, string(d.Trigger), string(digests), string(StatusPending), def, kept, src, origin, tokenName, actor, refresh, now, now); err != nil {
 		return DeploymentRecord{}, fmt.Errorf("create deployment %q: %w", d.ID, err)
 	}
 	if build != nil {
@@ -463,7 +466,7 @@ func (s *Store) queryDeployments(ctx context.Context, query string, args ...any)
 	return out, rows.Err()
 }
 
-const deploymentColumns = "id, app_id, trigger, digests, status, job_version, warnings, error, definition, compose, source_deployment, created_at, updated_at, source_app, source_environment, project, environment, app_name, origin, token_name, registered_at, refresh, build"
+const deploymentColumns = "id, app_id, trigger, digests, status, job_version, warnings, error, definition, compose, source_deployment, created_at, updated_at, source_app, source_environment, project, environment, app_name, origin, token_name, actor, registered_at, refresh, build"
 
 // deploymentSource is what every read of deployments selects from: the table
 // plus
@@ -518,11 +521,12 @@ func scanDeployment(row interface{ Scan(...any) error }) (DeploymentRecord, erro
 		jobVersion                         sql.NullInt64
 		definition, kept, source, origin   sql.NullString
 		tokenName, registered, build       sql.NullString
+		actor                              sql.NullString
 		refresh                            int
 	)
 	if err := row.Scan(&rec.Deployment.ID, &rec.AppID, &trigger, &digests, &status, &jobVersion,
 		&warnings, &rec.Error, &definition, &kept, &source, &created, &updated, &rec.SourceApp, &rec.SourceEnvironment,
-		&rec.Place.Project, &rec.Place.Environment, &rec.Place.Name, &origin, &tokenName, &registered, &refresh, &build); err != nil {
+		&rec.Place.Project, &rec.Place.Environment, &rec.Place.Name, &origin, &tokenName, &actor, &registered, &refresh, &build); err != nil {
 		return DeploymentRecord{}, err
 	}
 	rec.Deployment.Trigger = app.Trigger(trigger)
@@ -555,6 +559,7 @@ func scanDeployment(row interface{ Scan(...any) error }) (DeploymentRecord, erro
 		}
 	}
 	rec.Deployment.TokenName = tokenName.String
+	rec.Deployment.Actor = actor.String
 	rec.Deployment.Refresh = refresh == 1
 	if registered.Valid {
 		t, err := parseTime(registered.String)

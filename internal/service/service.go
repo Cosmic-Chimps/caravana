@@ -33,6 +33,12 @@ type Service struct {
 	secrets  secrets.Provider
 	log      *slog.Logger
 
+	// auth holds the sign-in limit and the password hashing that accepting an invite uses (SetAuth);
+	// peopleMu serializes the changes to people, so the last owner can't be lost to two at once
+	// (people.go).
+	auth     *Auth
+	peopleMu sync.Mutex
+
 	mu   sync.Mutex
 	apps map[string]*appState // per app ID, see deploy.go
 	bg   context.Context      // lives as long as the process; set by Start

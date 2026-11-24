@@ -24,6 +24,9 @@ import (
 // checked first). Secrets keep their current values; ones the current app
 // has and that version doesn't are deleted, with a warning.
 func (s *Service) RedeployVersion(ctx context.Context, appID, deploymentID string, trigger app.Trigger) (store.DeploymentRecord, error) {
+	if err := s.Allow(ctx, NeedApp(LevelDeploy), Target{AppID: appID}); err != nil {
+		return store.DeploymentRecord{}, err
+	}
 	stored, err := s.store.GetApp(ctx, appID)
 	if err != nil {
 		return store.DeploymentRecord{}, err

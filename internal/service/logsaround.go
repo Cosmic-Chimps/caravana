@@ -11,6 +11,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/logline"
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 // "Lines around this" (feature 024, research R4): the lines near one line of
@@ -178,6 +179,9 @@ func (s *Service) resolveLogCopy(ctx context.Context, ref string) (logCopy, erro
 	if err != nil {
 		return logCopy{}, fmt.Errorf("read logs: %w", err)
 	}
+	// A copy of an app the person may not see is not found, as one that doesn't exist (feature 053).
+	v := s.visible(ctx)
+	recs = slices.DeleteFunc(recs, func(r store.AppRecord) bool { return !v.place(r.Place.Project, r.Place.Environment) })
 	ids := make([]string, len(recs))
 	for i, r := range recs {
 		ids[i] = r.App.ID

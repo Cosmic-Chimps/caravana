@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -204,6 +205,9 @@ func (s *Service) ListAppsIn(ctx context.Context, project, environment string) (
 	if err != nil {
 		return nil, fmt.Errorf("list apps: %w", err)
 	}
+	// A member sees the apps of the places where their role is view or more (feature 053).
+	v := s.visible(ctx)
+	recs = slices.DeleteFunc(recs, func(r store.AppRecord) bool { return !v.place(r.Place.Project, r.Place.Environment) })
 	latest, err := s.store.LatestDeployments(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list apps: %w", err)
@@ -257,16 +261,49 @@ func (s *Service) AppSummary(ctx context.Context, id string) (AppSummary, error)
 }
 
 // RecentDeployments returns the newest deployments across all apps, newest
-// first, at most limit of them (the caller validates limit).
+// first, at most limit of them (the caller validates limit). A member sees the
+// deployments of the places where their role is view or more.
 func (s *Service) RecentDeployments(ctx context.Context, limit int) ([]store.DeploymentRecord, error) {
-	return s.store.ListRecentDeployments(ctx, limit)
+	return s.recentVisible(ctx, limit, func(n int) ([]store.DeploymentRecord, error) {
+		return s.store.ListRecentDeployments(ctx, n)
+	})
+}
+
+// recentVisible fills a page of limit deployments with the ones the person may see. The store
+// can't filter by role, so it reads more than limit rows, doubling, until the page is full or the
+// store has no more (and gives up at maxRecentRead rows: the newest of the places the person sees
+// are then all that was asked for).
+func (s *Service) recentVisible(ctx context.Context, limit int, read func(n int) ([]store.DeploymentRecord, error)) ([]store.DeploymentRecord, error) {
+	const maxRecentRead = 5000
+	v := s.visible(ctx)
+	if v.all {
+		return read(limit)
+	}
+	for n := max(limit, 1); ; n *= 2 {
+		n = min(n, maxRecentRead)
+		rows, err := read(n)
+		if err != nil {
+			return nil, err
+		}
+		kept := make([]store.DeploymentRecord, 0, min(limit, len(rows)))
+		for _, r := range rows {
+			if v.place(r.Place.Project, r.Place.Environment) {
+				kept = append(kept, r)
+			}
+		}
+		if len(kept) >= limit || len(rows) < n || n >= maxRecentRead {
+			return kept[:min(limit, len(kept))], nil
+		}
+	}
 }
 
 // RecentDeploymentsIn is RecentDeployments for one environment of a project
 // (feature 027.5): newest first, at most limit of them. The caller validates
 // limit.
 func (s *Service) RecentDeploymentsIn(ctx context.Context, project, environment string, limit int) ([]store.DeploymentRecord, error) {
-	return s.store.ListRecentDeploymentsIn(ctx, project, environment, limit)
+	return s.recentVisible(ctx, limit, func(n int) ([]store.DeploymentRecord, error) {
+		return s.store.ListRecentDeploymentsIn(ctx, project, environment, n)
+	})
 }
 
 // ListDeploymentsBefore returns the page of an app's deployments that comes
@@ -309,6 +346,9 @@ var ErrAppExists = errors.New("an app with this ID already exists")
 // once exactly one wins. Once the app is saved, errors are *DeployError, as
 // for Deploy: the app stays, and its failed deployment is recorded.
 func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
+	if err := s.allowCreate(ctx, a.ID); err != nil {
+		return store.DeploymentRecord{}, err
+	}
 	a = a.WithLowercaseHosts()
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
@@ -355,6 +395,9 @@ var ErrAppNotDefined = errors.New("the app has no definition yet: deploy it with
 // only ever sent with a deploy, so one here is refused naming its field, never
 // dropped; secret names are kept. The ID's project and environment must exist.
 func (s *Service) CreateAppOnly(ctx context.Context, a app.App) (store.AppRecord, error) {
+	if err := s.allowCreate(ctx, a.ID); err != nil {
+		return store.AppRecord{}, err
+	}
 	a = a.WithLowercaseHosts()
 	if a.Defined() {
 		if err := s.deployer.Validate(a); err != nil {
@@ -422,9 +465,12 @@ func (s *Service) AllCopies(ctx context.Context) (map[string][]Copy, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list copies: %w", err)
 	}
+	v := s.visible(ctx)
 	out := make(map[string][]Copy, len(recs))
 	for _, rec := range recs {
-		out[rec.App.ID] = byJob[rec.App.ID]
+		if v.place(rec.Place.Project, rec.Place.Environment) {
+			out[rec.App.ID] = byJob[rec.App.ID]
+		}
 	}
 	return out, nil
 }

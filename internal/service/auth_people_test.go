@@ -232,6 +232,10 @@ func TestTokensBelongToAPerson(t *testing.T) {
 	ana := e.addPerson(t, "ana@example.com", "member", personActive)
 	invited := e.addPerson(t, "new@example.com", "member", "invited")
 
+	// A member may have a deploy token for a project they have deploy rights in.
+	if err := e.store.SetPersonRoles(ctx, ana.ID, []store.ProjectRoleRecord{{Project: "shop", Role: "deploy"}}); err != nil {
+		t.Fatal(err)
+	}
 	// The same name for two people is fine; it must be unique among one person's active tokens.
 	mine, err := e.auth.CreateAPIToken(ctx, e.owner, "ci", nil)
 	if err != nil {

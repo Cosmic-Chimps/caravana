@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"slices"
 
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -11,7 +12,12 @@ import (
 
 // StoredApps returns every app as stored, with no status and no Nomad call.
 func (s *Service) StoredApps(ctx context.Context) ([]store.AppRecord, error) {
-	return s.store.ListApps(ctx)
+	recs, err := s.store.ListApps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v := s.visible(ctx)
+	return slices.DeleteFunc(recs, func(r store.AppRecord) bool { return !v.place(r.Place.Project, r.Place.Environment) }), nil
 }
 
 // LastBackupRun returns the newest backup run that ended, of any service of

@@ -229,6 +229,7 @@ func (s *Service) backUpNow(ctx context.Context, appID, service, trigger string)
 	rec := runRecord(appID, service, svc.Backup.Engine, deploy.BackupRun{JobID: jobID, Status: deploy.RunRunning, Started: runTime(jobID)})
 	rec.Trigger = trigger
 	rec.Destination = primary // the run's own word replaces it once the job says where it went
+	rec.Actor = callerEmail(ctx)
 	if err := s.store.SaveBackup(ctx, rec); err != nil {
 		return store.BackupRecord{}, err
 	}
@@ -342,7 +343,7 @@ func (s *Service) restoreBackup(ctx context.Context, appID string, b store.Backu
 	}
 	r := store.RestoreRecord{ID: strings.ToLower(rand.Text()), AppID: appID, Service: b.Service, BackupID: b.ID,
 		Engine: svc.Backup.Engine, Status: store.BackupRunning, CreatedAt: time.Now().UTC(), Trigger: trigger, Pin: label,
-		Destination: place.Destination}
+		Destination: place.Destination, Actor: callerEmail(ctx)}
 	if err := s.store.SaveRestore(ctx, r); err != nil {
 		return store.RestoreRecord{}, err
 	}

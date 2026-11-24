@@ -291,7 +291,7 @@ func (s *Service) OpenTerminal(ctx context.Context, appID, copyID, shell string,
 	s.termMu.Unlock()
 
 	action := store.ActionRecord{ID: id, AppID: appID, Action: store.ActionTerminal, Trigger: string(trigger),
-		Status: store.ActionRunning, CopyID: copyID, Service: c.Service, Program: shell, StartedAt: time.Now().UTC()}
+		Status: store.ActionRunning, CopyID: copyID, Service: c.Service, Program: shell, StartedAt: time.Now().UTC(), Actor: callerEmail(ctx)}
 	if err := s.store.InsertAction(ctx, action); err != nil {
 		s.releaseTerminal()
 		return nil, err

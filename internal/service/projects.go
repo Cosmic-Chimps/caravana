@@ -97,24 +97,29 @@ func (s *Service) projectOf(ctx context.Context, rec store.ProjectRecord) (Proje
 }
 
 // Projects lists every project with its environments: Default first, then in
-// the order they were made.
+// the order they were made. A member sees the projects with at least one
+// environment where their role is view or more, and only those environments.
 func (s *Service) Projects(ctx context.Context) ([]Project, error) {
 	recs, err := s.store.ListProjects(ctx)
 	if err != nil {
 		return nil, err
 	}
+	v := s.visible(ctx)
 	out := make([]Project, 0, len(recs))
 	for _, rec := range recs {
 		p, err := s.projectOf(ctx, rec)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, p)
+		if p, ok := v.project(p); ok {
+			out = append(out, p)
+		}
 	}
 	return out, nil
 }
 
-// Project returns one project, or ErrProjectNotFound.
+// Project returns one project, or ErrProjectNotFound. For a member a project none of whose
+// environments they may see is ErrProjectNotFound too, so it doesn't say the project exists.
 func (s *Service) Project(ctx context.Context, id string) (Project, error) {
 	rec, err := s.store.GetProject(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
@@ -123,7 +128,15 @@ func (s *Service) Project(ctx context.Context, id string) (Project, error) {
 	if err != nil {
 		return Project{}, err
 	}
-	return s.projectOf(ctx, rec)
+	p, err := s.projectOf(ctx, rec)
+	if err != nil {
+		return Project{}, err
+	}
+	p, ok := s.visible(ctx).project(p)
+	if !ok {
+		return Project{}, fmt.Errorf("%w: %q", ErrProjectNotFound, id)
+	}
+	return p, nil
 }
 
 // validDisplayName checks a project's display name: 1 to 100 printable

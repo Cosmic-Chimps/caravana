@@ -379,10 +379,13 @@ func (s *Service) domainTargets(ctx context.Context, f DomainFilter) ([]domainTa
 			}
 		}
 	}
+	// A member sees the domains of the places where their role is view or more, and the other apps
+	// that claim a host only when they may see them too.
+	v := s.visible(ctx)
 	others := func(host, appID string) []string {
 		var out []string
 		for _, id := range claims[host] {
-			if id != appID {
+			if id != appID && v.app(id) {
 				out = append(out, id)
 			}
 		}
@@ -392,7 +395,8 @@ func (s *Service) domainTargets(ctx context.Context, f DomainFilter) ([]domainTa
 	var out []domainTarget
 	for i := range recs {
 		rec := &recs[i]
-		if (f.App != "" && rec.App.ID != f.App) || (f.Project != "" && rec.Place.Project != f.Project) {
+		if (f.App != "" && rec.App.ID != f.App) || (f.Project != "" && rec.Place.Project != f.Project) ||
+			!v.place(rec.Place.Project, rec.Place.Environment) {
 			continue
 		}
 		if !slices.ContainsFunc(rec.App.Services, func(svc app.Service) bool { return len(svc.Domains) > 0 }) {

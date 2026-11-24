@@ -16,13 +16,13 @@
 
 ## Phase B: service
 
-- [ ] T004 `Need`, `Target`, `Service.Allow`, `NotAllowedError` (D4); tests.
-- [ ] T005 People (D8): invite, reinvite, accept (with the sign-in limit), update, remove, list, `Me`; tests for every
+- [x] T004 `Need`, `Target`, `Service.Allow`, `NotAllowedError` (D4); tests.
+- [x] T005 People (D8): invite, reinvite, accept (with the sign-in limit), update, remove, list, `Me`; tests for every
       refusal and the last owner.
-- [ ] T006 Filtering (D6) in every listed method; tests that a member sees exactly their places, and admins and no
+- [x] T006 Filtering (D6) in every listed method; tests that a member sees exactly their places, and admins and no
       principal see everything.
-- [ ] T007 Images-only deploys and the state-dependent checks (D5, D7); `app.ImagesOnlyChange` table tests.
-- [ ] T008 Actor (D9) on deployments, actions, manual backups and restores.
+- [x] T007 Images-only deploys and the state-dependent checks (D5, D7); `app.ImagesOnlyChange` table tests.
+- [x] T008 Actor (D9) on deployments, actions, manual backups and restores.
 
 ## Phase C: API
 

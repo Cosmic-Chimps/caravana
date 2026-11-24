@@ -68,6 +68,9 @@ func (s *Service) LogDeploys(ctx context.Context, project, environment string, f
 	if environment == "" {
 		environment = app.DefaultEnvironment
 	}
+	if err := s.Allow(ctx, NeedPlace(LevelView), Target{Project: project, Environment: environment}); err != nil {
+		return nil, err
+	}
 	recs, err := s.store.ListDeploymentsIn(ctx, project, environment, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("read deploys of %s/%s: %w", project, environment, err)

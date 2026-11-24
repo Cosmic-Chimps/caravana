@@ -130,6 +130,13 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	if cond.IfNew && cond.IfRevision != "" {
 		return DeployResult{}, errors.New("deploy: a condition can't be both IfNew and IfRevision")
 	}
+	// What the person may deploy depends on what the deploy changes (feature 053): a redeploy of
+	// a past version or a promotion (pin) is judged by its own method.
+	if pin == nil {
+		if err := s.allowSave(ctx, a, m); err != nil {
+			return DeployResult{}, err
+		}
+	}
 	// A stopped app takes no deploy of any kind (feature 020.5): a plain deploy,
 	// an edit, a redeploy of a version, a promotion into it. Nothing is saved
 	// or recorded.
@@ -352,6 +359,9 @@ func RemovedSecrets(old, next app.App) []app.Warning {
 // app is store.ErrNotFound, and one with no services yet is ErrAppNotDefined,
 // before anything is validated or recorded. Feature 004's webhook calls it.
 func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigger) (store.DeploymentRecord, error) {
+	if err := s.Allow(ctx, NeedApp(LevelDeploy), Target{AppID: appID}); err != nil {
+		return store.DeploymentRecord{}, err
+	}
 	rec, err := s.store.GetApp(ctx, appID)
 	if err != nil {
 		return store.DeploymentRecord{}, err
@@ -407,7 +417,7 @@ func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger, m 
 // answers at once, and the build and the rest of the deploy run in the
 // background (startBuild).
 func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigger, m made, pin *pinned) (DeployResult, error) {
-	dep := app.Deployment{ID: newDeploymentID(), Trigger: trigger, Digests: map[string]string{}, Origin: originFrom(ctx), TokenName: tokenNameFrom(ctx)}
+	dep := app.Deployment{ID: newDeploymentID(), Trigger: trigger, Digests: map[string]string{}, Origin: originFrom(ctx), TokenName: tokenNameFrom(ctx), Actor: callerEmail(ctx)}
 	source := ""
 	if pin != nil {
 		source = pin.source

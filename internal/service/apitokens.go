@@ -148,6 +148,9 @@ func (a *Auth) CreateScopedAPIToken(ctx context.Context, personID, name string, 
 		if err := a.checkScope(ctx, *scope); err != nil {
 			return CreatedAPIToken{}, err
 		}
+		if err := a.checkMayDeploy(ctx, personID, *scope); err != nil {
+			return CreatedAPIToken{}, err
+		}
 	}
 
 	token, err := newAPIToken()
@@ -188,6 +191,37 @@ func (a *Auth) checkScope(ctx context.Context, sc TokenScope) error {
 		return app.NewFieldError("scope.project", "project %q doesn't exist", sc.Project)
 	} else if err != nil {
 		return fmt.Errorf("check token scope: %w", err)
+	}
+	return nil
+}
+
+// checkMayDeploy refuses a deploy token for a person who couldn't deploy with it: a member needs
+// deploy or more on some environment of the scoped project (an owner and an admin always may), so
+// a token never gives more than its person has (feature 053). The refusal is a *NotAllowedError
+// naming the best level the person has there.
+func (a *Auth) checkMayDeploy(ctx context.Context, personID string, sc TokenScope) error {
+	person, err := a.person(ctx, personID)
+	if err != nil {
+		return err
+	}
+	who, err := a.principalOf(ctx, person, nil, "")
+	if err != nil {
+		return err
+	}
+	if who.Admin() {
+		return nil
+	}
+	envs, err := a.store.ListEnvironments(ctx, sc.Project)
+	if err != nil {
+		return fmt.Errorf("check token scope: %w", err)
+	}
+	now := a.now().UTC()
+	best := LevelNone
+	for _, e := range envs {
+		best = max(best, who.LevelAt(sc.Project, e.Name, now))
+	}
+	if best < LevelDeploy {
+		return &NotAllowedError{Have: best, Need: LevelDeploy, Project: sc.Project}
 	}
 	return nil
 }

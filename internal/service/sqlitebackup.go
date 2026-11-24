@@ -131,7 +131,7 @@ func (s *Service) startSQLiteBackup(ctx context.Context, appID, service, trigger
 		return store.BackupRecord{}, err
 	}
 	rec := store.BackupRecord{AppID: appID, ID: run.req.ID, Service: service, JobID: sqliteJobID(appID, service, run.req.TS),
-		Engine: app.BackupSQLite, Status: store.BackupRunning, StartedAt: run.started, Trigger: trigger, Destination: run.dest.Name}
+		Engine: app.BackupSQLite, Status: store.BackupRunning, StartedAt: run.started, Trigger: trigger, Destination: run.dest.Name, Actor: callerEmail(ctx)}
 	if err := s.store.SaveBackup(ctx, rec); err != nil {
 		run.release()
 		return store.BackupRecord{}, err
@@ -231,7 +231,7 @@ func (s *Service) startSQLiteRestore(ctx context.Context, appID string, b store.
 		return store.RestoreRecord{}, err
 	}
 	rec := store.RestoreRecord{ID: restoreRecordID(appID, run.req.ID), AppID: appID, Service: b.Service, BackupID: b.ID,
-		Engine: app.BackupSQLite, Status: store.BackupRunning, CreatedAt: run.started, Trigger: trigger, Pin: label, Destination: run.dest.Name}
+		Engine: app.BackupSQLite, Status: store.BackupRunning, CreatedAt: run.started, Trigger: trigger, Pin: label, Destination: run.dest.Name, Actor: callerEmail(ctx)}
 	if err := s.store.SaveRestore(ctx, rec); err != nil {
 		run.release()
 		return store.RestoreRecord{}, err

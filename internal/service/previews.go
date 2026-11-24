@@ -186,7 +186,8 @@ func previewSettingsOf(rec store.ProjectRecord, open int) PreviewSettings {
 }
 
 // Previews lists a project's settings and its open previews. An unknown project
-// is ErrProjectNotFound.
+// is ErrProjectNotFound. A member sees the previews of the environments where their role is view
+// or more (a preview takes the project role), and a project they can't see is not found.
 func (s *Service) Previews(ctx context.Context, project string) (PreviewList, error) {
 	rec, err := s.store.GetProject(ctx, project)
 	if errors.Is(err, store.ErrNotFound) {
@@ -195,10 +196,17 @@ func (s *Service) Previews(ctx context.Context, project string) (PreviewList, er
 	if err != nil {
 		return PreviewList{}, err
 	}
+	v := s.visible(ctx)
+	if !v.all {
+		if _, err := s.Project(ctx, project); err != nil {
+			return PreviewList{}, err
+		}
+	}
 	acts, err := s.store.PreviewActivity(ctx, project)
 	if err != nil {
 		return PreviewList{}, err
 	}
+	acts = slices.DeleteFunc(acts, func(a store.PreviewActivity) bool { return !v.place(project, a.Environment) })
 	out := PreviewList{Project: project, Settings: previewSettingsOf(rec, len(acts)), Previews: []Preview{}}
 	if len(acts) == 0 {
 		return out, nil

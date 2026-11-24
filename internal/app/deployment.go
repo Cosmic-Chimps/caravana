@@ -41,6 +41,10 @@ type Deployment struct {
 	// "" for a session, the webhook and a deploy that wasn't asked for. Like
 	// Origin it is recorded with the deployment only.
 	TokenName string `json:"tokenName,omitempty"`
+	// Actor is the email of the person who made the deploy, or whose token did (feature 053);
+	// "" for the webhook, a schedule, a rollout Caravana started itself and a deployment from
+	// before people. Recorded with the deployment only.
+	Actor string `json:"actor,omitempty"`
 	// Refresh is true for a deployment made by Refresh secrets (feature 037):
 	// the live version rolled out again because a value changed in a secret
 	// provider. Recorded with the deployment only.

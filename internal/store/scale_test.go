@@ -36,6 +36,11 @@ func TestUpgradeTo0033(t *testing.T) {
 	if n, err := migrate(ctx, db, migrationsUpTo(t, 33)); err != nil || n != 1 {
 		t.Fatalf("migrate on = %d, %v; want 1", n, err)
 	}
+	// The store reads the columns of every later migration too (0043's actor): bring the schema up to
+	// date before reading through it. The rows must have survived 0033 and what came after.
+	if _, err := migrate(ctx, db, testMigrations(t)); err != nil {
+		t.Fatal(err)
+	}
 	s := &Store{db: db, nowFn: time.Now}
 
 	got, err := s.ListActions(ctx, "whoami", 10)

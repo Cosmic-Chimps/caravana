@@ -160,6 +160,7 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 		serviceHook(svc)
 	}
 	auth := service.NewAuth(st, log, service.AuthOptions{})
+	svc.SetAuth(auth) // accepting an invite uses its sign-in limit and password hashing
 	if _, err := auth.FirstOwnerEmail(ctx); errors.Is(err, service.ErrNoAdmin) {
 		log.Warn("no admin yet: every API route refuses requests until one exists. On this host, run: caravana admin init --email <email>")
 	} else if err != nil {

@@ -58,6 +58,11 @@ func TokenName(ctx context.Context) string { return tokenNameFrom(ctx) }
 // tokenNameFrom is the name WithTokenName put in ctx, or "".
 func tokenNameFrom(ctx context.Context) string {
 	name, _ := ctx.Value(tokenNameKey{}).(string)
+	if name == "" {
+		// The principal of a request made with a token knows the token's name too (feature 053).
+		p, _ := PrincipalFrom(ctx)
+		return p.TokenName
+	}
 	return name
 }
 

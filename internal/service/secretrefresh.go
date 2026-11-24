@@ -40,6 +40,9 @@ type RefreshResult struct {
 // The running version's definition becomes the stored app, as for a rollback:
 // a definition saved after it that never got healthy is replaced by what runs.
 func (s *Service) RefreshSecrets(ctx context.Context, appID string, trigger app.Trigger) (RefreshResult, error) {
+	if err := s.Allow(ctx, NeedApp(LevelDeploy), Target{AppID: appID}); err != nil {
+		return RefreshResult{}, err
+	}
 	rec, err := s.store.GetApp(ctx, appID)
 	if err != nil {
 		return RefreshResult{}, err

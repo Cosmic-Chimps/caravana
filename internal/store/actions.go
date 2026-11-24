@@ -62,9 +62,13 @@ type ActionRecord struct {
 	FromCount, ToCount      *int
 	Reason                  string
 	JobVersion, BaseVersion *uint64
+
+	// Actor is the email of the person who asked (feature 053); "" for a schedule, the autoscaler and
+	// a row from before people.
+	Actor string
 }
 
-const actionColumns = "id, app_id, action, trigger, status, copy_id, service, program, exit_code, error, started_at, finished_at, from_count, to_count, reason, job_version, base_version"
+const actionColumns = "id, app_id, action, trigger, status, copy_id, service, program, exit_code, error, started_at, finished_at, from_count, to_count, reason, job_version, base_version, actor"
 
 // SetAppStopped marks the app stopped at the given time, or not stopped (nil).
 // It does not touch the app's document, so the revision stays. An unknown ID
@@ -82,10 +86,10 @@ func (s *Store) SetAppStopped(ctx context.Context, appID string, at *time.Time) 
 // actions of apps it has.
 func (s *Store) InsertAction(ctx context.Context, a ActionRecord) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO app_actions (`+actionColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.ID, a.AppID, a.Action, a.Trigger, a.Status, a.CopyID, a.Service, a.Program,
 		optionalInt(a.ExitCode), a.Error, formatTime(a.StartedAt), optionalTime(a.FinishedAt),
-		optionalInt(a.FromCount), optionalInt(a.ToCount), a.Reason, optionalVersion(a.JobVersion), optionalVersion(a.BaseVersion))
+		optionalInt(a.FromCount), optionalInt(a.ToCount), a.Reason, optionalVersion(a.JobVersion), optionalVersion(a.BaseVersion), nullString(a.Actor))
 	if err != nil {
 		return fmt.Errorf("insert action %q: %w", a.ID, err)
 	}
@@ -152,11 +156,13 @@ func scanAction(row scanner) (ActionRecord, error) {
 		jobVersion, baseVersion sql.NullInt64
 		started                 string
 		finished                sql.NullString
+		actor                   sql.NullString
 	)
 	if err := row.Scan(&a.ID, &a.AppID, &a.Action, &a.Trigger, &a.Status, &a.CopyID, &a.Service,
-		&a.Program, &exit, &a.Error, &started, &finished, &from, &to, &a.Reason, &jobVersion, &baseVersion); err != nil {
+		&a.Program, &exit, &a.Error, &started, &finished, &from, &to, &a.Reason, &jobVersion, &baseVersion, &actor); err != nil {
 		return ActionRecord{}, err
 	}
+	a.Actor = actor.String
 	if exit.Valid {
 		a.ExitCode = new(int(exit.Int64))
 	}

@@ -323,6 +323,11 @@ func (s *Service) logApps(ctx context.Context, q EnvLogQuery) ([]store.AppRecord
 	if environment == "" {
 		environment = app.DefaultEnvironment
 	}
+	// Reading a place's output needs view there (feature 053); logs, requests and their downloads
+	// all come through here.
+	if err := s.Allow(ctx, NeedPlace(LevelView), Target{Project: project, Environment: environment}); err != nil {
+		return nil, err
+	}
 	if err := s.requireEnvironment(ctx, project, environment); err != nil {
 		field := "environment"
 		if errors.Is(err, ErrProjectNotFound) {

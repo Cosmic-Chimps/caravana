@@ -179,7 +179,11 @@ func (a *Auth) InitAdmin(ctx context.Context, email, password string) error {
 func newPersonID() string { return strings.ToLower(rand.Text()) }
 
 // Person states.
-const personActive = "active"
+// Person states.
+const (
+	personInvited = "invited"
+	personActive  = "active"
+)
 
 // PersonRef names a person for the host CLI.
 type PersonRef struct {

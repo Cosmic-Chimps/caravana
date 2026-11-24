@@ -249,6 +249,9 @@ func (s *Service) Metrics(ctx context.Context, q MetricsQuery) (MetricsView, err
 	if environment == "" {
 		environment = app.DefaultEnvironment
 	}
+	if err := s.Allow(ctx, NeedPlace(LevelView), Target{Project: project, Environment: environment}); err != nil {
+		return MetricsView{}, err
+	}
 	if err := s.requireEnvironment(ctx, project, environment); err != nil {
 		field := "environment"
 		if errors.Is(err, ErrProjectNotFound) {

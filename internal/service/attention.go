@@ -277,6 +277,12 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 	}
 	out.ScansOff = scansOff
 	out.Items = append(out.Items, scanItems...)
+	// A member sees the items of the places where their role is view or more; the items that
+	// belong to no place (servers, disks, the host's updates, Caravana's own update, a missing
+	// backup destination) are for owners and admins (feature 053).
+	if v := s.visible(ctx); !v.all {
+		out.Items = slices.DeleteFunc(out.Items, func(it AttentionItem) bool { return !v.attentionItem(it) })
+	}
 	sortAttention(out.Items)
 	return out, nil
 }

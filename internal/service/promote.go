@@ -130,6 +130,10 @@ func (s *Service) Promote(ctx context.Context, appID, to string, cond Condition,
 	if err != nil {
 		return store.DeploymentRecord{}, err
 	}
+	// The promotion deploys into the target: that needs deploy there.
+	if err := s.Allow(ctx, NeedApp(LevelDeploy), Target{AppID: p.target.App.ID}); err != nil {
+		return store.DeploymentRecord{}, err
+	}
 	switch cond.IfRevision {
 	case "":
 		cond.IfRevision = p.target.Revision
@@ -165,6 +169,10 @@ func (s *Service) targetPlace(ctx context.Context, src store.AppRecord, to strin
 // planPromotion makes every decision of a promotion and every check that can
 // refuse it, in an order that names the cause the owner can fix first.
 func (s *Service) planPromotion(ctx context.Context, appID, to string) (promotion, error) {
+	// Reading the source takes view on it (feature 053); Promote asks for deploy on the target.
+	if err := s.Allow(ctx, NeedApp(LevelView), Target{AppID: appID}); err != nil {
+		return promotion{}, err
+	}
 	src, err := s.store.GetApp(ctx, appID)
 	if err != nil {
 		return promotion{}, err
@@ -506,12 +514,19 @@ func cloneHealth(h *app.HealthCheck) *app.HealthCheck {
 // ErrAppExists (promotion is how it is updated); an unknown or same
 // environment is as for Promote.
 func (s *Service) CopyApp(ctx context.Context, appID, to string) (store.AppRecord, []MissingSecret, error) {
+	// A copy reads the source (view on it) and creates an app in the target environment.
+	if err := s.Allow(ctx, NeedApp(LevelView), Target{AppID: appID}); err != nil {
+		return store.AppRecord{}, nil, err
+	}
 	src, err := s.store.GetApp(ctx, appID)
 	if err != nil {
 		return store.AppRecord{}, nil, err
 	}
 	place, err := s.targetPlace(ctx, src, to)
 	if err != nil {
+		return store.AppRecord{}, nil, err
+	}
+	if err := s.allowCreate(ctx, place.ID()); err != nil {
 		return store.AppRecord{}, nil, err
 	}
 

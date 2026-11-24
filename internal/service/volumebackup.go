@@ -253,7 +253,7 @@ func (s *Service) startVolumeBackup(ctx context.Context, appID, service, trigger
 		return store.BackupRecord{}, err
 	}
 	rec := store.BackupRecord{AppID: appID, ID: run.req.ID, Service: service, JobID: volumeJobID(appID, service, run.req.TS),
-		Engine: app.BackupVolume, Status: store.BackupRunning, StartedAt: run.started, Trigger: trigger, Destination: run.destination}
+		Engine: app.BackupVolume, Status: store.BackupRunning, StartedAt: run.started, Trigger: trigger, Destination: run.destination, Actor: callerEmail(ctx)}
 
 	if err := s.store.SaveBackup(ctx, rec); err != nil {
 		s.clearVolumeRequest(appID, service)
@@ -283,7 +283,7 @@ func (s *Service) startVolumeRestore(ctx context.Context, appID string, b store.
 		return store.RestoreRecord{}, err
 	}
 	rec := store.RestoreRecord{ID: restoreRecordID(appID, run.req.ID), AppID: appID, Service: b.Service, BackupID: b.ID,
-		Engine: app.BackupVolume, Status: store.BackupRunning, CreatedAt: run.started, Trigger: trigger, Pin: label, Destination: run.destination}
+		Engine: app.BackupVolume, Status: store.BackupRunning, CreatedAt: run.started, Trigger: trigger, Pin: label, Destination: run.destination, Actor: callerEmail(ctx)}
 
 	if err := s.store.SaveRestore(ctx, rec); err != nil {
 		s.clearVolumeRequest(appID, b.Service)

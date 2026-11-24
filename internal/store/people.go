@@ -204,6 +204,35 @@ func (s *Store) UpdatePerson(ctx context.Context, id, orgRole string, endsAt *ti
 	return personChanged(res, "update person", id)
 }
 
+// ReplacePerson sets a person's organization role and end date and replaces their roles, all in
+// one transaction: an owner made a member gets no half-way state. An unknown person is ErrNotFound,
+// and so is a project or environment that doesn't exist; then nothing changes.
+func (s *Store) ReplacePerson(ctx context.Context, id, orgRole string, endsAt *time.Time, roles []ProjectRoleRecord) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("replace person: %w", err)
+	}
+	defer tx.Rollback() // does nothing once Commit succeeds
+
+	res, err := tx.ExecContext(ctx, "UPDATE people SET org_role = ?, ends_at = ? WHERE id = ?", orgRole, nullTime(endsAt), id)
+	if err != nil {
+		return fmt.Errorf("replace person: %w", err)
+	}
+	if err := personChanged(res, "replace person", id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM project_roles WHERE person_id = ?", id); err != nil {
+		return fmt.Errorf("replace person: %w", err)
+	}
+	if err := insertRoles(ctx, tx, id, roles); err != nil {
+		return fmt.Errorf("replace person: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("replace person: %w", err)
+	}
+	return nil
+}
+
 // SetPersonRoles replaces every project and environment row of a person in one transaction.
 // An unknown person is ErrNotFound, and so is a project or environment that doesn't exist; then
 // nothing changes.

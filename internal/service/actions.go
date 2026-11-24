@@ -148,7 +148,7 @@ func (s *Service) RunCommand(ctx context.Context, appID, copyID string, command 
 	}
 	rec := store.ActionRecord{ID: id, AppID: appID, Action: store.ActionRun, Trigger: string(trigger),
 		Status: store.ActionRunning, CopyID: copyID, Service: c.Service, Program: programOf(command),
-		StartedAt: time.Now().UTC()}
+		StartedAt: time.Now().UTC(), Actor: callerEmail(ctx)}
 	if err := s.store.InsertAction(ctx, rec); err != nil {
 		return CommandResult{}, err
 	}
@@ -384,7 +384,7 @@ func (s *Service) beginAction(ctx context.Context, appID, kind string, trigger a
 		return store.ActionRecord{}, err
 	}
 	rec := store.ActionRecord{ID: id, AppID: appID, Action: kind, Trigger: string(trigger),
-		Status: store.ActionRunning, StartedAt: time.Now().UTC()}
+		Status: store.ActionRunning, StartedAt: time.Now().UTC(), Actor: callerEmail(ctx)}
 	if err := s.store.InsertAction(ctx, rec); err != nil {
 		return store.ActionRecord{}, err
 	}

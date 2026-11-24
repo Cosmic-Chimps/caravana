@@ -79,6 +79,9 @@ type BackupRecord struct {
 	// Destination is the name of the backup destination the backup went to
 	// ("" for a record made before there was a destination to name).
 	Destination string
+	// Actor is the email of the person who started the backup by hand (feature 053); "" for a timed
+	// run and for a record from before people.
+	Actor string
 	// Copies are the copies of the backup to other destinations, oldest first.
 	// ListBackups and GetBackup fill them; the other reads leave them nil.
 	Copies []BackupCopy
@@ -102,7 +105,7 @@ func (b BackupRecord) Gone() bool { return b.Expired && !b.HasLiveCopy() }
 
 // backupColumns is the column order scanBackups reads.
 const backupColumns = `app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at,
-	engine, stopped_ms, volumes, trigger, pin, pinned_at, destination`
+	engine, stopped_ms, volumes, trigger, pin, pinned_at, destination, actor`
 
 // SaveBackup creates or updates a backup record. A final record never goes
 // back to running: a later write of running is ignored.
@@ -123,15 +126,16 @@ func (s *Store) SaveBackup(ctx context.Context, b BackupRecord) error {
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO backups (app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at,
-			engine, stopped_ms, volumes, trigger, destination)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			engine, stopped_ms, volumes, trigger, destination, actor)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (app_id, id) DO UPDATE SET status = excluded.status, object = excluded.object,
 			bytes = excluded.bytes, message = excluded.message, expired = excluded.expired,
 			finished_at = excluded.finished_at, stopped_ms = excluded.stopped_ms, volumes = excluded.volumes,
-			destination = CASE WHEN excluded.destination != '' THEN excluded.destination ELSE backups.destination END
+			destination = CASE WHEN excluded.destination != '' THEN excluded.destination ELSE backups.destination END,
+			actor = COALESCE(excluded.actor, backups.actor)
 		WHERE backups.status = 'running' OR excluded.status != 'running'`,
 		b.AppID, b.ID, b.Service, b.JobID, b.Status, b.Object, b.Bytes, b.Message, boolInt(b.Expired),
-		formatTime(b.StartedAt), optionalTime(b.FinishedAt), b.Engine, optionalMillis(b.Stopped), volumes, b.Trigger, b.Destination)
+		formatTime(b.StartedAt), optionalTime(b.FinishedAt), b.Engine, optionalMillis(b.Stopped), volumes, b.Trigger, b.Destination, nullString(b.Actor))
 	if err != nil {
 		return fmt.Errorf("save backup %s of %q: %w", b.ID, b.AppID, err)
 	}
@@ -140,6 +144,12 @@ func (s *Store) SaveBackup(ctx context.Context, b BackupRecord) error {
 	// now wrote its own record.
 	if b.Trigger == BackupTriggerOwner {
 		if _, err := s.db.ExecContext(ctx, "UPDATE backups SET trigger = 'owner' WHERE app_id = ? AND id = ?", b.AppID, b.ID); err != nil {
+			return fmt.Errorf("save backup %s of %q: %w", b.ID, b.AppID, err)
+		}
+	}
+	// So is the person's, for the same reason.
+	if b.Actor != "" {
+		if _, err := s.db.ExecContext(ctx, "UPDATE backups SET actor = ? WHERE app_id = ? AND id = ?", b.Actor, b.AppID, b.ID); err != nil {
 			return fmt.Errorf("save backup %s of %q: %w", b.ID, b.AppID, err)
 		}
 	}
@@ -201,13 +211,14 @@ func scanBackups(rows *sql.Rows) ([]BackupRecord, error) {
 		var b BackupRecord
 		var expired int
 		var started string
-		var finished, volumes, pin, pinnedAt sql.NullString
+		var finished, volumes, pin, pinnedAt, actor sql.NullString
 		var stopped sql.NullInt64
 		if err := rows.Scan(&b.AppID, &b.ID, &b.Service, &b.JobID, &b.Status, &b.Object, &b.Bytes, &b.Message,
-			&expired, &started, &finished, &b.Engine, &stopped, &volumes, &b.Trigger, &pin, &pinnedAt, &b.Destination); err != nil {
+			&expired, &started, &finished, &b.Engine, &stopped, &volumes, &b.Trigger, &pin, &pinnedAt, &b.Destination, &actor); err != nil {
 			return nil, err
 		}
 		var err error
+		b.Actor = actor.String
 		b.Expired = expired == 1
 		b.Pin = pin.String
 		if b.PinnedAt, err = parseOptionalTime(pinnedAt); err != nil {
@@ -266,10 +277,13 @@ type RestoreRecord struct {
 	// Destination is the name of the backup destination the restore read the
 	// backup from ("" for a record made before there was a destination to name).
 	Destination string
+	// Actor is the email of the person who started the restore (feature 053); "" for a scheduled
+	// restore and for a record from before people.
+	Actor string
 }
 
 // restoreColumns is the column order scanRestores reads.
-const restoreColumns = "id, app_id, service, backup_id, status, message, created_at, finished_at, engine, stopped_ms, trigger, pin, destination"
+const restoreColumns = "id, app_id, service, backup_id, status, message, created_at, finished_at, engine, stopped_ms, trigger, pin, destination, actor"
 
 // SaveRestore creates or updates a restore record.
 func (s *Store) SaveRestore(ctx context.Context, r RestoreRecord) error {
@@ -285,13 +299,13 @@ func (s *Store) SaveRestore(ctx context.Context, r RestoreRecord) error {
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO restores (id, app_id, service, backup_id, status, message, created_at, finished_at, engine, stopped_ms,
-			trigger, pin, destination)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			trigger, pin, destination, actor)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET status = excluded.status, message = excluded.message,
 			finished_at = excluded.finished_at, stopped_ms = excluded.stopped_ms
 		WHERE restores.status = 'running'`,
 		r.ID, r.AppID, r.Service, r.BackupID, r.Status, r.Message, formatTime(r.CreatedAt), optionalTime(r.FinishedAt),
-		r.Engine, optionalMillis(r.Stopped), r.Trigger, pin, r.Destination)
+		r.Engine, optionalMillis(r.Stopped), r.Trigger, pin, r.Destination, nullString(r.Actor))
 	if err != nil {
 		return fmt.Errorf("save restore %s of %q: %w", r.ID, r.AppID, err)
 	}
@@ -326,13 +340,14 @@ func scanRestores(rows *sql.Rows) ([]RestoreRecord, error) {
 	for rows.Next() {
 		var r RestoreRecord
 		var created string
-		var finished, pin sql.NullString
+		var finished, pin, actor sql.NullString
 		var stopped sql.NullInt64
 		if err := rows.Scan(&r.ID, &r.AppID, &r.Service, &r.BackupID, &r.Status, &r.Message, &created, &finished,
-			&r.Engine, &stopped, &r.Trigger, &pin, &r.Destination); err != nil {
+			&r.Engine, &stopped, &r.Trigger, &pin, &r.Destination, &actor); err != nil {
 			return nil, err
 		}
 		r.Pin = pin.String
+		r.Actor = actor.String
 		var err error
 		if r.CreatedAt, err = parseTime(created); err != nil {
 			return nil, err

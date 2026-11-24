@@ -259,6 +259,30 @@ operations now act on the caller's own. MCP: a read tool `get_me`; nothing else 
 - E Lab gate step `people-roles` (API and MCP), console step `console-people`, docs (`docs/people.md`), CLAUDE.md,
   changelog note, `docs/plan.md`.
 
+## Deviations (Phase B)
+
+- **Previews take deploy to define, not maintain (changes D5/D7).** CI opens a preview with a deploy token
+  (`pr-<n>`, 049) and sends its whole definition, secrets included, so in a preview environment the level that
+  creates an app, deploys a body with any change or a Compose file is deploy (`configureLevel`). Everywhere else
+  it is maintain, as D7 says. Configure-type actions that go through a deploy are therefore deploy-level inside a
+  preview too.
+- **One funnel for the state-dependent checks.** `saveAndDeploy` calls `allowSave` for every deploy that is not a
+  redeploy of a version or a promotion (`pin == nil`): the body deploys, the Compose deploys, and the callers that
+  save a changed definition (secrets, domains, backup places and policy). A deploy-level person can only get an
+  images-only body through it, so those callers need no check of their own. `Redeploy` asks deploy, `Promote`
+  asks view on the source (in `planPromotion`, so `PreviewPromotion` too) and deploy on the target, `CopyApp`
+  view on the source and the creating level on the target, `CreateApp` and `CreateAppOnly` the creating level.
+- **Reads of one place refuse, lists filter.** `Metrics`, `ReadLogs`, `ReadRequests`, `DownloadLogs` and
+  `LogDeploys` name one place and answer a `*NotAllowedError` below view (through `logApps` for the logs and
+  requests). The lists that span places filter (D6). A project a member can't see is `ErrProjectNotFound` from
+  `Project` and `Previews`, as one that doesn't exist.
+- **Small additions:** `NeedOwner()` (D5's owner-only changes); `Service.SetAuth` (accepting an invite needs
+  Auth's sign-in limit and hashing, and `cmd/caravana` sets it); `ProjectRole` is also the input of an invite
+  (no `ProjectRoleInput`); `store.ReplacePerson` makes an update one transaction; the principal's token name
+  is what a deployment records when `WithTokenName` was not set.
+- **Left for later phases:** a session for the person who accepted (the console's `POST /invite` starts it:
+  an exported `Auth` method comes with Phase D), the route tables, and the live notices' filtering.
+
 ## Complexity tracking
 
 | Choice | Why | Simpler option rejected |
