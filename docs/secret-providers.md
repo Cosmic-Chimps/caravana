@@ -58,6 +58,49 @@ Running copies are never touched by a failed read: they keep the values they sta
 that restarts while Bella is down starts with the values already in Nomad. Only deploys and refreshes
 talk to Bella.
 
+## Templates: a value built from text and references
+
+A reference replaces a whole value. Often the value you need is a *line of text with one secret in it*: a
+connection string with a database password, a URL with a token. A secret can then be a **template**:
+
+```json
+{"name": "ConnectionStrings__postgres",
+ "template": "Host=postgres;Username=banana;Password=${pw}",
+ "refs": {"pw": {"provider": "bella-prod", "path": "DB_PASSWORD"}}}
+```
+
+At each deploy Caravana reads the references, puts each value where its `${name}` is and writes the result
+into the service's Nomad Variable like any other secret. The same `template` and `refs` work in a Compose
+overlay's `secrets` (the Aspire publisher sends them), and in the API's `deployApp` body.
+
+The rules:
+
+- `${name}` inserts the value of `refs.name`. `$$` is a literal `$` (write `$$5` for "$5"). Any other
+  `$` (a lone one, `${` with no `}`, a name that isn't letters, digits and `_` starting with a letter or
+  `_`) is refused with the byte where it is.
+- A value from the provider is inserted exactly as it is. A `$` or `${x}` inside it is never expanded
+  again, so a password such as `pa$${word}` arrives as typed.
+- Every `${name}` needs an entry in `refs`, and every entry must be used. The template is 1 to 4096
+  bytes of UTF-8 text without a NUL byte, with at most 16 references. A secret has a `value`, a `from`
+  or a `template`, only one.
+- Each reference is checked like a `from`, and its failures name the reference:
+
+| What happened | Answer |
+|---|---|
+| The template doesn't parse, or uses a name `refs` lacks | 400 `invalid_field` on `services[i].secrets[j].template` |
+| A reference is never used | 400 `invalid_field` on `…refs.<name>` |
+| The provider doesn't exist or isn't allowed here | 400 `invalid_field` on `…refs.<name>.provider` |
+| The provider has no secret with that path | 422 `secret_not_found` on `…refs.<name>.path` |
+| The provider refuses, or is down | 422 `secret_provider_refused` or 502 `secret_provider_unavailable` on `…refs.<name>` |
+
+The template and its references are not secret: Caravana stores and shows them as written ("template with 2
+references: `bella-prod/DB_USER`, `bella-prod/DB_PASSWORD`"). The built value is never stored, shown or
+logged. The console lists a template secret read-only on the Variables page and the Compose form and keeps
+it through a save; it has no editor for templates yet, so set one through the API or the Compose overlay.
+
+**Refresh secrets** renders every template again and rolls the app out when a built value changed, and a
+provider with a template that uses it can't be removed, as for a plain reference.
+
 ## Rotate a value
 
 Change the value in Bella, then press **Refresh secrets** on the app's Variables page, or:
