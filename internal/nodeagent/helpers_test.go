@@ -58,7 +58,10 @@ type fakeRunner struct {
 	// docker, when set, answers every docker call but `docker info`'s (feature 045's inventory and clean-up);
 	// du answers `du -sk`. Both are called with the runner's lock held and must not call the runner.
 	docker func(args []string) ([]byte, error)
-	du     func(args []string) ([]byte, error)
+	// dockerRootDir is what `docker info --format {{.DockerRootDir}}` prints (feature 055); "" is what a
+	// Docker that doesn't say prints, so the agent uses /var/lib/docker.
+	dockerRootDir string
+	du            func(args []string) ([]byte, error)
 }
 
 func newRunner() *fakeRunner {
@@ -129,6 +132,8 @@ func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]by
 		return []byte(f.hostname + "\n"), nil
 	case name == "uname" && args[0] == "-r":
 		return []byte("6.8.0-134-generic\n"), nil
+	case name == "docker" && firstWord(args) == "info" && len(args) == 3 && args[2] == "{{.DockerRootDir}}":
+		return []byte(f.dockerRootDir), nil
 	case name == "docker" && f.docker != nil && firstWord(args) != "info":
 		return f.docker(args)
 	case name == "du" && f.du != nil:

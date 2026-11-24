@@ -1,0 +1,5 @@
+22 29 0:21 / /sys rw,nosuid,nodev,noexec,relatime shared:7 - sysfs sysfs rw
+29 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw,discard,errors=remount-ro
+35 29 8:1 /var/lib/docker /mnt/with\040space rw,relatime shared:1 - ext4 /dev/sda1 rw
+41 29 253:0 / /var/lib/docker rw,relatime shared:20 - xfs /dev/mapper/data rw
+44 29 7:0 / /snap/core/1234 ro,nodev,relatime shared:25 - squashfs /dev/loop0 ro

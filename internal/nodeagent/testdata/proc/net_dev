@@ -1,0 +1,9 @@
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:  905322    6281    0    0    0     0          0         0   905322    6281    0    0    0     0       0          0
+  eth0: 8123456789 6432100    0    0    0     0          0         0 2345678901 4321000    0    0    0     0       0          0
+docker0:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+vethab12cd:  1000      10    0    0    0     0          0         0     2000      20    0    0    0     0       0          0
+caravana-mesh: 5000000000 4000000    0    0    0     0          0         0 6000000000 5000000    0    0    0     0       0          0
+caravana0:  77777     100    0    0    0     0          0         0    88888     200    0    0    0     0       0          0
+a line without a colon

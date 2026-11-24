@@ -46,6 +46,9 @@ type Report struct {
 	// Space is what Docker and Nomad's volume directories hold (spec 045); absent when Docker doesn't
 	// answer, and for a console that predates it, which ignores it.
 	Space *SpaceReport `json:"space,omitempty"`
+	// IO is the network and disk counters since boot (feature 055); absent when /proc can't give them, and for
+	// a console that predates it, which ignores it. The console divides two samples; the agent keeps none.
+	IO *IOReport `json:"io,omitempty"`
 	// RunsConsole says this agent runs beside Caravana's console (feature 051): its node.env URL is the
 	// loopback listener and Caravana's env file is here. Left out when false. ConsoleAddress is how the
 	// last request to change the console's address went; left out when there was none.
@@ -124,6 +127,7 @@ func (a *Agent) Report(ctx context.Context, st State) Report {
 	if dockerRunning {
 		r.Space = a.space(ctx, st)
 	}
+	r.IO = a.ioReport(ctx, st)
 	return r
 }
 
