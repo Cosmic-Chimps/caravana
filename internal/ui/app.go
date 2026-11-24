@@ -227,11 +227,14 @@ func (s *server) placeParts(ctx context.Context, h *appHeader, sum service.AppSu
 			if _, err := app.PlaceOf(there.ID()); err != nil {
 				continue // an app from before projects whose name holds "--" has no counterpart
 			}
-			link := envLink{Name: env.Name, CopyAction: "/apps/" + url.PathEscape(sum.App.ID) + "/copy"}
+			link := envLink{Name: env.Name}
+			if s.can(ctx, "maintain", there.ID()) {
+				link.CopyAction = "/apps/" + url.PathEscape(sum.App.ID) + "/copy"
+			}
 			if rec, err := s.svc.GetApp(ctx, there.ID()); err == nil && rec.Place == there {
 				link.Exists = true
 				link.Href = "/apps/" + url.PathEscape(there.ID())
-				if promotable(sum) {
+				if promotable(sum) && s.can(ctx, "deploy", there.ID()) {
 					link.PromoteHref = "/apps/" + url.PathEscape(sum.App.ID) + "/promote?to=" + url.QueryEscape(env.Name)
 				}
 			}
@@ -269,13 +272,20 @@ func (s *server) header(ctx context.Context, sum service.AppSummary, current str
 		Status:     appStatusView(sum),
 		Buttons:    headerActionsOf(sum),
 		Domains:    domainLinks(sum.App),
-		Summary:    summaryOfAgain(sum, s.now(), s.repeatedFor(ctx, sum.LastDeployment)),
+		Summary:    summaryOfAgain(s.mineSummary(ctx, sum), s.now(), s.repeatedFor(ctx, sum.LastDeployment)),
 		NomadError: sum.Status.NomadError,
 	}
 	// An app with no definition can't be deployed, so it gets no Deploy: the
 	// Running tab's "define it in Configure" is its next step.
 	if sum.StoppedAt == nil && sum.App.Defined() && s.hasTab("deployments") {
 		h.DeployHref = "/apps/" + sum.App.ID + "/deployments#deploy"
+	}
+	// What the person may do about the app (feature 053): the buttons are drawn only for what they may
+	// do, and the server refuses the rest anyway.
+	if c := s.capsFor(ctx, sum.App.ID); !c.Deploy {
+		h.Buttons, h.DeployHref = nil, ""
+	} else if h.Buttons != nil {
+		h.Buttons.CanStop = c.Maintain
 	}
 	for _, t := range s.tabs {
 		tab := tabLink{
@@ -346,6 +356,9 @@ func (s *server) runningPage(w http.ResponseWriter, r *http.Request, status int,
 	}
 	page := appPage{pageData: head, appHeader: s.header(r.Context(), sum, "running"), Running: &copies, Actions: &actions,
 		Run: runSectionOf(id, copies, extra), Refusal: extra.Refusal}
+	if !s.can(r.Context(), "maintain", id) {
+		page.Run = nil // a command and a terminal are maintain (feature 053)
+	}
 	if page.Next, err = s.nextStepsOf(r, sum, extra.Git); err != nil {
 		s.serverError(w, r, "read the Git access", err)
 		return
@@ -426,7 +439,7 @@ func (s *server) tabKey(key string) string {
 // checked every minute while it is open.
 func (s *server) liveApp(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	route := liveRoute{AppID: id,
+	route := liveRoute{AppID: id, Allow: s.allowViewApp(id),
 		Kinds: []service.ChangeKind{service.ChangeApp, service.ChangeDeployments, service.ChangeCopies, service.ChangeActions, service.ChangeDeleted,
 			service.ChangeScans}}
 	switch {
@@ -546,6 +559,9 @@ type firstDeploy struct {
 	// guidance only says what the first deploy will do. Branch is the branch it builds.
 	Built  bool
 	Branch string
+	// Caps is what the person may do about the app: Deploy now needs deploy, the webhook token maintain,
+	// and a definition the configure level (feature 053).
+	Caps caps
 }
 
 // firstDeployOf builds the guidance for appID, which has no deployment.
@@ -557,6 +573,7 @@ func (s *server) firstDeployOf(r *http.Request, rec store.AppRecord) *firstDeplo
 		ConfigureHref: "/apps/" + id + "/configure",
 		WebhookHref:   "/apps/" + id + "/configure#webhook",
 		ComposeHref:   "/apps/" + id + "/compose",
+		Caps:          s.capsFor(r.Context(), id),
 	}
 	if i, built := rec.App.BuiltService(); built {
 		f.Built, f.Branch = true, rec.App.Services[i].Build.Defaults().Branch
@@ -712,6 +729,8 @@ type deployForm struct {
 	Notice                     sentence
 	// Builds says one of the services builds from Git: the button says so.
 	Builds bool
+	// ReadOnly says the person may only look at this app: no form is drawn (feature 053).
+	ReadOnly bool
 }
 
 // digestView is one service's pinned image in an entry: the short digest, and
@@ -800,6 +819,7 @@ var errBadCursor = errors.New("bad cursor")
 // entry its neighbour.
 func (s *server) loadHistory(r *http.Request, appID string) (historyRegion, error) {
 	ctx := r.Context()
+	canDeploy := s.can(ctx, "deploy", appID)
 	limit := s.deployPage
 	first := true
 	var before time.Time
@@ -863,6 +883,9 @@ func (s *server) loadHistory(r *http.Request, appID string) (historyRegion, erro
 			// "Refreshed secrets (v2's version)": the version that was live is the source's.
 			e.Source.Version = s.sourceVersion(ctx, recs, appID, rec.Source)
 		}
+		if !canDeploy {
+			e.Redeploy = nil // a redeploy is deploy-level (feature 053)
+		}
 		region.Entries = append(region.Entries, e)
 	}
 	if more {
@@ -888,7 +911,7 @@ func (s *server) historyEntry(ctx context.Context, now time.Time, rec store.Depl
 		ID:        rec.Deployment.ID,
 		Version:   versionLabel(rec.JobVersion),
 		Status:    deploymentStatusView(rec.Status),
-		Who:       deployWho(rec, true),
+		Who:       deployWho(s.mine(ctx, rec), true),
 		Started:   whenOf(now, &rec.CreatedAt, ""),
 		Sentence:  deploymentSentence(rec, f),
 		Error:     rec.Error,
@@ -988,6 +1011,7 @@ func (s *server) deploymentsPageNotice(w http.ResponseWriter, r *http.Request, s
 
 func (s *server) deploymentsPageWith(w http.ResponseWriter, r *http.Request, status int, sum service.AppSummary, form deployForm, refused *refusedRedeploy, scanRefusal sentence) {
 	id := sum.App.ID
+	form.ReadOnly = !s.can(r.Context(), "deploy", id)
 	if sum.StoppedAt != nil && len(form.Notice) == 0 {
 		// Said before anyone tries: a stopped app refuses every deploy, and the
 		// header has the Start button.
@@ -1326,13 +1350,26 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		v := notKeptComposeView(sum.AppRecord)
 		tab.ComposeForm = &v
 	}
+	// What the person may do about the app (feature 053): a person who may not configure it sees the
+	// definition read-only, as the app that keeps its Compose file does, and no form to define it.
+	tab.CanMaintain = s.can(ctx, "maintain", id)
+	if !s.can(ctx, "configure", id) {
+		tab.NoConfigure, tab.ComposeForm, tab.Edit.ReadOnly = true, nil, true
+		tab.Domains.CanAdd = false
+		if tab.Edit.Panels == nil {
+			tab.Edit.Panels = servicePanels(sum.App, s.publishHost(ctx, sum.App))
+		}
+	}
+	if !tab.CanMaintain {
+		tab.Schedules.NewHref = ""
+	}
 	s.addPlacement(r, tab, sum, extra.Placement) // after the read-only panels exist
 	addScale(tab, sum, extra.Scale)
 	if err := s.addBuild(r, tab, sum, extra.Build, extra.Git); err != nil {
 		s.serverError(w, r, "read the Git access", err)
 		return
 	}
-	if !sum.App.Defined() {
+	if !sum.App.Defined() && !tab.NoConfigure {
 		// Nothing to edit yet: the form that gives it a definition replaces the per-service one.
 		form := newForm()
 		if extra.Define != nil {

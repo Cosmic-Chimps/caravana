@@ -149,7 +149,9 @@ func (s *server) showApps(w http.ResponseWriter, r *http.Request, session string
 	}
 	head.LiveURL = "/live"
 	page := appsPage{pageData: head, appsRegion: region, activityRegion: activity}
-	if page.Platform, err = s.loadPlatform(r); err != nil {
+	if who, ok := service.PrincipalFrom(r.Context()); ok && !who.Admin() {
+		// "This host" is the installation's: an owner and an admin see it (feature 053).
+	} else if page.Platform, err = s.loadPlatform(r); err != nil {
 		// The panel is a glance; the Apps page is the page. Say why it is missing and draw the rest.
 		s.log.Error("read the host", "error", err)
 	}
@@ -198,14 +200,15 @@ func (s *server) liveApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("watch") == "monitoring" {
-		s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeMetrics}})
+		s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeMetrics}, MetricsForAll: true})
 		return
 	}
 	if r.URL.Query().Get("watch") == "ops" {
 		// The Operator Overview (feature 027): everything its regions draw, and the host's own events.
 		s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeMetrics, service.ChangeApps, service.ChangeActivity,
 			service.ChangeActions, service.ChangeSchedules, service.ChangeAttention, service.ChangeHost, service.ChangeDeployments,
-			service.ChangeCopies, service.ChangeUpdates, service.ChangeScans}})
+			service.ChangeCopies, service.ChangeUpdates, service.ChangeScans},
+			Allow: func(p service.Principal) error { return p.Allow(service.NeedAdmin(), service.Target{}, s.now()) }})
 		return
 	}
 	route := liveRoute{Kinds: []service.ChangeKind{service.ChangeApps, service.ChangeActivity, service.ChangeAttention,
@@ -292,7 +295,7 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 			}
 			sortProblemsFirst(rows, func(row appRow) string { return row.Sort })
 			eg := envGroup{Name: env.Name, Rows: rows}
-			if s.newApp {
+			if s.newApp && s.canMakeAppsIn(ctx, pr.ID, env.Name) {
 				eg.NewHref = "/apps/new?project=" + url.QueryEscape(pr.ID) + "&environment=" + url.QueryEscape(env.Name)
 			}
 			group.Envs = append(group.Envs, eg)
@@ -373,7 +376,7 @@ func (s *server) loadActivity(r *http.Request) (activityRegion, error) {
 	now := s.now()
 	rows := make([]activityRow, 0, len(recs))
 	for _, rec := range recs {
-		rows = append(rows, s.activityRow(now, rec, pl))
+		rows = append(rows, s.activityRow(now, s.mine(r.Context(), rec), pl))
 	}
 	return activityRegion{Activity: rows}, nil
 }

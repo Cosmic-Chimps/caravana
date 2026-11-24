@@ -655,7 +655,7 @@ func (s *server) loadSecurityPanel(ctx context.Context, id string) (secPanel, er
 		}
 		panel.Services = append(panel.Services, svc)
 	}
-	if len(panel.Services) > 0 {
+	if len(panel.Services) > 0 && s.capsFor(ctx, id).Admin { // the scanner is the installation's (feature 053)
 		panel.Action = "/apps/" + id + "/security/scan"
 	}
 	return panel, nil

@@ -935,7 +935,7 @@ func (s *server) liveRequests(w http.ResponseWriter, r *http.Request) {
 	if environment == "" {
 		environment = app.DefaultEnvironment
 	}
-	route := liveRoute{Kinds: []service.ChangeKind{service.ChangeRequests}}
+	route := liveRoute{Kinds: []service.ChangeKind{service.ChangeRequests}, Allow: s.allowViewPlace(project, environment)}
 	if v.Get("live") == "1" {
 		watch := s.live.watchRequests
 		if watch == nil {

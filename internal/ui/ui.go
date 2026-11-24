@@ -81,6 +81,9 @@ type server struct {
 	// deployPage is how many deployments the Deployments tab shows before
 	// "Show older"; tests make it small.
 	deployPage int
+	// afterGuard is a seam for tests of the access table (feature 053): when set, a request that the
+	// guards let through is answered by it and the page's own handler never runs.
+	afterGuard http.HandlerFunc
 }
 
 // New serves /login, /logout, the console pages (/apps…, /settings), the
@@ -353,6 +356,16 @@ func (s *server) routeTable() []route {
 		{"POST", "/settings/notifications/{id}/test", s.protected(s.requireSession(s.testNotification))},
 		{"POST", "/settings/notifications/{id}/secret", s.protected(s.requireSession(s.rotateNotification))},
 		{"POST", "/settings/notifications/{id}/remove", s.protected(s.requireSession(s.removeNotification))},
+		{"GET", "/invite", s.showInvite},
+		{"POST", "/invite", s.protected(s.acceptInvite)},
+		{"GET", "/settings/people", s.requireSession(s.showPeople)},
+		{"GET", "/settings/people/new", s.requireSession(s.showNewPerson)},
+		{"POST", "/settings/people", s.protected(s.requireSession(s.invitePerson))},
+		{"GET", "/settings/people/{id}", s.requireSession(s.showPerson)},
+		{"POST", "/settings/people/{id}", s.protected(s.requireSession(s.updatePerson))},
+		{"POST", "/settings/people/{id}/invite", s.protected(s.requireSession(s.reinvitePerson))},
+		{"GET", "/settings/people/{id}/remove", s.requireSession(s.showRemovePerson)},
+		{"POST", "/settings/people/{id}/remove", s.protected(s.requireSession(s.removePerson))},
 		{"GET", "/account", s.showAccount},
 		{"GET", "/favicon.ico", s.serveFavicon},
 		{"GET", "/static/", http.StripPrefix("/static/", s.serveStatic()).ServeHTTP},
@@ -419,7 +432,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "previews", "promote", "stop", "terminal", "schedules", "domains", "logs", "requests", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "opsconsoleaddress", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "previews", "promote", "stop", "terminal", "schedules", "domains", "logs", "requests", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "opsconsoleaddress", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete", "invite"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which
@@ -436,6 +449,10 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 		// one the set keeps.
 		if name == "app" || name == "settings" {
 			files = append(files, "templates/domains.html")
+		}
+		// Settings › People (feature 053).
+		if name == "settings" {
+			files = append(files, "templates/people.html")
 		}
 		// The image scanner's shared pieces (feature 044): an app's Security panel and the Operator page.
 		if name == "app" || name == "opssecurity" {
@@ -485,6 +502,46 @@ type pageData struct {
 	// RefreshURL is the address the refresh loads; empty reloads the page's own address. A page that
 	// answered a post (Add a server's command) names the address of its read.
 	RefreshURL string
+	// Who is the person the page is drawn for (set by shellPage), and now the time their roles are
+	// judged at. {{if $.Can "deploy" "web"}} asks what they may do (feature 053).
+	Who service.Principal
+	now time.Time
+}
+
+// Can says whether the person the page is drawn for may do what the word says: "admin" and "owner"
+// ask their organization role; "view", "deploy", "maintain" and "configure" (maintain, or deploy in a
+// preview) ask their level in the place of the app whose ID is given. A page with no person (the
+// sign-in page, a message) can do nothing; the server judges every request again anyway, so this
+// only decides what is drawn.
+func (d pageData) Can(what string, appID ...string) bool {
+	switch what {
+	case "admin":
+		return d.Who.Admin()
+	case "owner":
+		return d.Who.Owner()
+	}
+	if len(appID) == 0 || d.Who.PersonID == "" {
+		return false
+	}
+	return canAt(d.Who, d.now, what, appID[0])
+}
+
+// canAt is what the person may do about the app: the level in its place, by the word.
+func canAt(who service.Principal, now time.Time, what, appID string) bool {
+	need := service.LevelNone
+	switch what {
+	case "view":
+		need = service.LevelView
+	case "deploy":
+		need = service.LevelDeploy
+	case "maintain":
+		need = service.LevelMaintain
+	case "configure":
+		need = configureLevelOf(appID)
+	default:
+		return false
+	}
+	return who.Allow(service.NeedApp(need), service.Target{AppID: appID}, now) == nil
 }
 
 // RefreshContent is the value of the refresh meta: the seconds, and where to load next when the page
@@ -557,6 +614,11 @@ func (s *server) notFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) serverError(w http.ResponseWriter, r *http.Request, what string, err error) {
+	// A person's role may stop what a handler did through the service: that is a refusal, not a fault.
+	if errors.Is(err, service.ErrNotAllowed) {
+		s.refuse(w, r, err)
+		return
+	}
 	s.log.Error(what, "error", err)
 	s.message(w, r, http.StatusInternalServerError, "Something went wrong",
 		"Something went wrong.", "caravana couldn't finish that. The details are in the server log.")
@@ -668,12 +730,12 @@ func callerID(ctx context.Context) string {
 	return who.PersonID
 }
 
-// sessionHandler is a handler of a page that needs a signed-in admin; it gets
+// sessionHandler is a handler of a page that needs a signed-in person; it gets
 // the session's cookie value.
 type sessionHandler func(w http.ResponseWriter, r *http.Request, session string)
 
-// requireSession runs next for a signed-in admin, and otherwise sends the
-// browser to /login, remembering where it was going (FR-011).
+// requireSession runs next for a signed-in person whose role allows the route (access.go), and
+// otherwise sends the browser to /login, remembering where it was going (FR-011), or answers 403.
 func (s *server) requireSession(next sessionHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		value, who, state, err := s.current(r)
@@ -698,7 +760,16 @@ func (s *server) requireSession(next sessionHandler) http.HandlerFunc {
 			http.Redirect(w, r, to, http.StatusSeeOther)
 			return
 		}
-		next(w, r.WithContext(service.WithPrincipal(r.Context(), who)), value)
+		r = r.WithContext(service.WithPrincipal(r.Context(), who))
+		if err := s.allowed(r, who); err != nil {
+			s.refusePage(w, r, err)
+			return
+		}
+		if s.afterGuard != nil {
+			s.afterGuard(w, r)
+			return
+		}
+		next(w, r, value)
 	}
 }
 
@@ -732,7 +803,16 @@ func (s *server) requirePart(next sessionHandler) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		next(w, r.WithContext(service.WithPrincipal(r.Context(), who)), value)
+		r = r.WithContext(service.WithPrincipal(r.Context(), who))
+		if err := s.allowed(r, who); err != nil {
+			s.refusePart(w, err)
+			return
+		}
+		if s.afterGuard != nil {
+			s.afterGuard(w, r)
+			return
+		}
+		next(w, r, value)
 	}
 }
 

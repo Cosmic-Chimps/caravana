@@ -2,6 +2,7 @@ package ui
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"net/http"
 	"regexp"
@@ -59,6 +60,9 @@ type variablesTab struct {
 	BuiltinText string
 	// HasRefs says the app has a secret reference: Refresh secrets is offered.
 	HasRefs bool
+	// ReadOnly says the person may not configure the app, so no form is drawn; NoDeploy says they may
+	// not deploy it, so Refresh secrets isn't offered either (feature 053).
+	ReadOnly, NoDeploy bool
 }
 
 // providerChoice is a provider in the Add form's select.
@@ -110,14 +114,14 @@ type envEditor struct {
 }
 
 // CanEdit says the page offers the forms that change variables.
-func (v variablesTab) CanEdit() bool { return v.Defined && !v.Kept && !v.Stopped }
+func (v variablesTab) CanEdit() bool { return v.Defined && !v.Kept && !v.Stopped && !v.ReadOnly }
 
 // CanSet says the Add form has a submit: a kept-file app only sets secrets, but
 // it can.
-func (v variablesTab) CanSet() bool { return v.Defined && !v.Stopped }
+func (v variablesTab) CanSet() bool { return v.Defined && !v.Stopped && !v.ReadOnly }
 
 // CanRemove says a secret's row has Remove.
-func (v variablesTab) CanRemove() bool { return v.Defined && !v.Stopped }
+func (v variablesTab) CanRemove() bool { return v.Defined && !v.Stopped && !v.ReadOnly }
 
 // variableRowsOf lists the app's secrets first and its variables after, each by
 // name, then service.
@@ -255,7 +259,7 @@ func (s *server) variablesPage(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	// The Configure tab stays current: this is one of its pages.
-	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "configure"), VariablesTab: variablesTabOf(sum, extra)})
+	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "configure"), VariablesTab: s.gatedVariables(ctx, variablesTabOf(sum, extra))})
 }
 
 // showVariables answers GET /apps/{id}/variables.
@@ -634,4 +638,12 @@ func (s *server) refreshSecrets(w http.ResponseWriter, r *http.Request, session 
 		}
 	}
 	s.variablesPage(w, r, status, id, variablesExtras{Notice: notice})
+}
+
+// gatedVariables says what the person may not do on the page: change a variable or a secret (the configure
+// level) and refresh secrets (deploy).
+func (s *server) gatedVariables(ctx context.Context, t *variablesTab) *variablesTab {
+	t.ReadOnly = !s.can(ctx, "configure", t.ID)
+	t.NoDeploy = !s.can(ctx, "deploy", t.ID)
+	return t
 }

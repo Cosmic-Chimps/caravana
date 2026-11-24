@@ -36,6 +36,12 @@ type backupsTab struct {
 	Revision string
 	Defined  bool
 	Stopped  bool
+	// NoDeploy, NoMaintain and NoConfigure say what the person may not do about the app (feature 053): Back
+	// up now is deploy, Restore and Pin are maintain, a backup policy and where backups go are the configure
+	// level. Their controls are not drawn.
+	NoDeploy, NoMaintain, NoConfigure bool
+	// Viewer is the email of the person looking, so a run says "by you" or by whom (feature 053).
+	Viewer string
 	// Destination says a destination is set; Bucket is what the count line says it is stored in: the
 	// bucket's name with one destination, their names with several (feature 052).
 	Destination bool
@@ -195,8 +201,10 @@ type backupRun struct {
 	SQLite     bool
 	// File is the database a sqlite restore replaces, as the service sees it.
 	File string
-	// ByYou says the owner started the run (Back up now), not its schedule.
+	// ByYou says the owner started the run (Back up now), not its schedule; By says who, when it was
+	// another person (feature 053).
 	ByYou bool
+	By    string
 	// Pin is the label the run is pinned under (feature 036), "" when it isn't. CanPin says Pin… is
 	// offered: a succeeded run that isn't pinned.
 	Pin    string
@@ -240,6 +248,9 @@ type restoreRow struct {
 	// (feature 036); else the owner did.
 	Scheduled bool
 	Pin       string
+	// By is who restored it when it was another person than the viewer (feature 053); "" for the viewer
+	// or for one from before people had names.
+	By string
 }
 
 // restoreAskView is what the restore confirmation draws: the run it restores,
@@ -432,6 +443,7 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 			CreatedClock: clockOf(now, x.CreatedAt)}
 		row.Mark = runMark(x.Status)
 		row.Scheduled, row.Pin = x.Trigger == store.RestoreTriggerSchedule, x.Pin
+		row.By = otherActor(x.Actor, tab.Viewer)
 		if x.FinishedAt != nil {
 			row.Took = durationText(x.FinishedAt.Sub(x.CreatedAt))
 		}
@@ -579,9 +591,10 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 		run := backupRun{ID: r.ID, Service: r.Service, Status: r.Status, Mark: runMark(r.Status), Message: r.Message,
 			When: whenOf(now, &r.StartedAt, ""), Clock: clockOf(now, r.StartedAt), Volume: r.Engine == app.BackupVolume,
 			SQLite: r.Engine == app.BackupSQLite, File: b.File,
-			CanRestore: r.Status == store.BackupSucceeded && tab.Destination && !tab.Stopped,
-			ByYou:      r.Trigger == store.BackupTriggerOwner,
-			Pin:        r.Pin, CanPin: r.Status == store.BackupSucceeded && r.Pin == ""}
+			CanRestore: r.Status == store.BackupSucceeded && tab.Destination && !tab.Stopped && !tab.NoMaintain,
+			ByYou:      r.Trigger == store.BackupTriggerOwner && (r.Actor == "" || r.Actor == tab.Viewer),
+			By:         otherActor(r.Actor, tab.Viewer),
+			Pin:        r.Pin, CanPin: r.Status == store.BackupSucceeded && r.Pin == "" && !tab.NoMaintain}
 		run.Where, run.Places = backupWhere(r, tab.Places[svc.Name].Primary, len(tab.Dests) > 1)
 		if r.Pin != "" {
 			row.Pinned++
@@ -707,7 +720,7 @@ func placesOf(row *backupSvcRow, svc app.Service, tab backupsTab) {
 	case many && pl.Primary != "":
 		row.PlacesLine = "to " + pl.Primary
 	}
-	row.CanPlaces = tab.Defined && !tab.Stopped && (many || b.Destination != "" || len(b.CopyTo) > 0)
+	row.CanPlaces = tab.Defined && !tab.Stopped && !tab.NoConfigure && (many || b.Destination != "" || len(b.CopyTo) > 0)
 	if !row.CanPlaces {
 		return
 	}
@@ -735,7 +748,7 @@ func placesOf(row *backupSvcRow, svc app.Service, tab backupsTab) {
 // "Restore on a schedule…" form starts with. runs are the service's listed backups, restores the
 // app's recent ones, newest first.
 func restoreScheduleOf(row *backupSvcRow, now time.Time, svc app.Service, runs []store.BackupRecord, restores []store.RestoreRecord, tab backupsTab) {
-	row.CanSchedule = tab.Defined && !tab.Stopped
+	row.CanSchedule = tab.Defined && !tab.Stopped && !tab.NoConfigure
 	row.ScheduleInput, row.LabelInput, row.DefaultSchedule = "0 4 * * *", "golden", "0 4 * * *"
 	r := svc.Backup.Restore
 	if r == nil {
@@ -917,6 +930,8 @@ func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int,
 		extra.ShowAll = r.URL.Query().Get("all")
 	}
 	extra.MultiServer = s.multiServer(ctx)
+	extra.Viewer = viewerEmail(ctx)
+	extra.NoDeploy, extra.NoMaintain, extra.NoConfigure = !s.can(ctx, "deploy", id), !s.can(ctx, "maintain", id), !s.can(ctx, "configure", id)
 	tab := backupsTabOf(s.now(), sum, backups, restores, volumes, dests, extra)
 	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "backups"), Backups: &tab})
 }
@@ -1323,4 +1338,13 @@ func (s *server) refuseBackup(w http.ResponseWriter, r *http.Request, id string,
 		status, tab.Notice = http.StatusBadGateway, sentence{plain("Nomad couldn't be reached or refused it: " + err.Error())}
 	}
 	s.backupsPage(w, r, status, id, tab)
+}
+
+// otherActor is the actor of a record when it is not the person looking: "" for them, or for a record
+// with none.
+func otherActor(actor, viewer string) string {
+	if actor == viewer {
+		return ""
+	}
+	return actor
 }

@@ -129,6 +129,7 @@ func TestRequirePart(t *testing.T) {
 	})
 	call := func(cookie *http.Cookie, currentURL string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, "/parts/apps", nil)
+		req.Pattern = "GET /parts/apps" // what the mux sets: the guard reads the route's rule by it
 		if cookie != nil {
 			req.AddCookie(cookie)
 		}

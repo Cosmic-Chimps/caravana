@@ -309,6 +309,34 @@ operations now act on the caller's own. MCP: a read tool `get_me`; nothing else 
 - **`acceptInvite` starts no session** (the API has no cookies): the console's page does that in Phase D.
   The invite link's base is the public URL, else the request's scheme and host.
 
+## Deviations (Phase D)
+
+- **One table, found by the route's own pattern.** The console's guards keep their names and their sign-in
+  redirect, 401 and JSON 401, and read `consoleAccess[r.Pattern]` (the mux sets `r.Pattern`): no handler line of
+  the route table changed. A form-driven rule (the place of a new app, `to` of a promotion) reads the posted form
+  without consuming it (`peekForm`), so the handlers read it again with their own limits. `server.afterGuard` is the
+  one test seam: the walk replaces the page handlers by a 204 so it tries every route with four people.
+- **A person's refusal anywhere is a 403 page.** `serverError` maps `service.ErrNotAllowed` to the refusal page, so a
+  handler whose service call is refused (a schedule's app, a domain's deploy) never answers 500.
+- **Live notices.** A notice naming an app goes to a person who may see it; one that names none goes to everyone
+  when it is about a list the service filters, and to admins only when it is the installation's (servers, host,
+  updates, scans, the console's address, the sampler's metrics). The metrics notice also goes to a member on the
+  Monitoring page's own stream, which refreshes their filtered rows and no host number. The Operator stream, a place's
+  logs and requests and an app's stream ask `Allow` at start and at every re-check (a removed role ends them).
+- **The host is the installation's.** Monitoring's "This host" section and the Apps home's Platform panel are drawn for
+  owners and admins only (their parts are admin routes).
+- **Page defaults.** `/logs`, `/requests` and `/monitoring` with no place that default to one the member can't see
+  send them to their first visible place; with none, 403.
+- **Service additions the console forced:** `Service.InviteFor` (the invite page names who the link is for, counted
+  against the address like a wrong password) and `Auth.StartSessionFor` (a session for the person `AcceptInvite`
+  returned; nothing else calls it).
+- **Who-words.** `deployWho` reads the deployment's actor: `mine` turns the viewer's own email into "you" before it is
+  asked, so the one set of words needs no viewer. An action or a backup says "by you" or "by <email>"; a token adds
+  "(person)". Rows with no actor keep the old words. The Previews page doesn't say "you".
+- **Gating is by flags in the views, not by `can` in every template.** `pageData.Can(what, appID…)` exists for the
+  templates that have the page's data; the app's regions are separate views, so each carries what it needs (`Caps`,
+  `NoDeploy`, `NoMaintain`, `NoConfigure`, `ReadOnly`) and the same flags leave the parts.
+
 ## Complexity tracking
 
 | Choice | Why | Simpler option rejected |

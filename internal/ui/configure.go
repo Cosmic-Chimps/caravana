@@ -134,9 +134,13 @@ type configureTab struct {
 	// Stopped says the owner stopped the app: the forms have no submit, and the
 	// Notice says to start it first.
 	Stopped bool
-	Edit    editView
-	Domains domainsPanel
-	Secrets secretsPanel
+	// NoConfigure says the person may only look at the definition (feature 053): no form, no Define,
+	// no Delete. CanMaintain says they may make tokens for the app (the webhook and a deploy token).
+	NoConfigure bool
+	CanMaintain bool
+	Edit        editView
+	Domains     domainsPanel
+	Secrets     secretsPanel
 	// Schedules is the app's schedules (feature 022), built-in ones included.
 	Schedules schedulesPanel
 	Webhook   webhookView

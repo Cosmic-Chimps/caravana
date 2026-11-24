@@ -57,6 +57,7 @@ func originWords(o *app.Origin, withCommit bool) sentence {
 // 1); the card capitalizes them ("Pushed to ...") or puts "Deployed" first. The
 // commit is left out when withCommit is false (the lede has no room for it).
 func deployWho(rec store.DeploymentRecord, withCommit bool) sentence {
+	actor := rec.Deployment.Actor // "you" or an email: mine() has said which (feature 053)
 	if rec.SourceApp != "" {
 		return sentence{plain("promoted from "), mono(rec.SourceEnvironment)}
 	}
@@ -70,8 +71,17 @@ func deployWho(rec store.DeploymentRecord, withCommit bool) sentence {
 		out := plainS("through the API")
 		if name := rec.Deployment.TokenName; name != "" {
 			out = append(out, plain(" by "), mono(name))
+			if actor != "" {
+				out = append(out, plain(" ("+actor+")")) // the token's person
+			}
+		} else if actor != "" {
+			out = append(out, plain(" by "+actor))
 		}
 		return out
+	case app.TriggerConsole:
+		if actor != "" {
+			return plainS("by " + actor)
+		}
 	}
 	return plainS(triggerWords(rec.Deployment.Trigger))
 }
@@ -206,7 +216,7 @@ func (s *server) deployingCardOf(ctx context.Context, sum service.AppSummary, pl
 				"app", sum.App.ID, "deployment", rec.Source, "error", err)
 		}
 	}
-	card.Change = changeLine(rec, again)
+	card.Change = changeLine(s.mine(ctx, rec), again)
 
 	copies, err := s.svc.Copies(ctx, sum.App.ID)
 	if err != nil {

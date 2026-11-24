@@ -134,6 +134,18 @@ func (a *Auth) startSession(ctx context.Context, personID string) (Session, erro
 	return s, nil
 }
 
+// StartSessionFor makes a signed-in session for a person who has just proved who they are in another
+// way: the console calls it, once, for the person Service.AcceptInvite returned (the invite link
+// is the proof, and accepting it set their password). Nothing else may call it.
+func (a *Auth) StartSessionFor(ctx context.Context, personID string) (Session, error) {
+	s, err := a.startSession(ctx, personID)
+	if err != nil {
+		return Session{}, err
+	}
+	a.event("signin", "person", personID, "how", "invite")
+	return s, nil
+}
+
 // SignOut ends the session with that cookie value. A value that is empty or
 // already gone is fine.
 func (a *Auth) SignOut(ctx context.Context, sessionValue string) error {

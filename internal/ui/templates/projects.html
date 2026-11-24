@@ -80,7 +80,7 @@
       <h1 class="cv-headline">Projects</h1>
       <p class="cv-lede">Each project groups the environments of one product, and the apps in them.</p>
     </div>
-    <a href="/projects/new" class="cv-btn cv-btn-secondary cv-btn-sm">New project</a>
+    {{if .Can "admin"}}<a href="/projects/new" class="cv-btn cv-btn-secondary cv-btn-sm">New project</a>{{end}}
   </header>
   <div class="cv-panel" role="list" aria-label="Projects">
     {{range .Index.Rows}}
@@ -170,6 +170,8 @@
   {{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
   {{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 
+  {{if .ReadOnly}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>Your role here is to look: changing a project is for people who maintain it.</span></div>{{end}}
+  {{if not .ReadOnly}}
   <section aria-labelledby="display-title" class="cv-narrow flex flex-col gap-2">
     <h2 id="display-title" class="cv-label">Display name</h2>
     <form method="post" action="/projects/{{.ID}}" class="cv-panel p-4 flex flex-col gap-3">
@@ -182,6 +184,7 @@
       <div><button type="submit" class="cv-btn cv-btn-secondary">Save display name</button></div>
     </form>
   </section>
+  {{end}}
 
   <section aria-labelledby="envs-title" class="cv-narrow flex flex-col gap-2">
     <h2 id="envs-title" class="cv-label">Environments</h2>
@@ -202,7 +205,7 @@
         {{with .Reason}}<p id="env-{{$env}}-reason" class="cv-data-muted cv-hint">{{.}}</p>{{end}}
         {{with .Note}}<p class="cv-data-muted cv-hint">{{.}}</p>{{end}}
         {{if .Apps}}<ul class="cv-env-apps">{{range .Apps}}<li><a href="{{.Href}}" class="cv-app-name">{{.Name}}</a></li>{{end}}</ul>
-        {{else}}<p class="cv-data-muted cv-hint">No apps in {{.Name}} yet. <a href="/apps/new?project={{$.Project.ID}}&amp;environment={{.Name}}">New app here</a></p>{{end}}
+        {{else}}<p class="cv-data-muted cv-hint">No apps in {{.Name}} yet.{{if $.Project.ReadOnly}}{{else}} <a href="/apps/new?project={{$.Project.ID}}&amp;environment={{.Name}}">New app here</a>{{end}}</p>{{end}}
       </div>
       {{end}}
     </div>
@@ -235,6 +238,7 @@
   </section>
   {{end}}
 
+  {{if not .ReadOnly}}
   <section id="add-environment" aria-labelledby="add-env-title" class="cv-narrow flex flex-col gap-2">
     <h2 id="add-env-title" class="cv-label">Add environment</h2>
     <form method="post" action="/projects/{{.ID}}/environments" class="cv-panel p-4 flex flex-col gap-3">
@@ -247,6 +251,7 @@
       <div><button type="submit" class="cv-btn cv-btn-secondary">Add environment</button></div>
     </form>
   </section>
+  {{end}}
 
   {{if .Delete.Offered}}
   <section aria-labelledby="delete-title" class="cv-danger cv-narrow flex flex-col gap-2">

@@ -172,6 +172,11 @@ func (p newAppPage) TemplatesHref() string {
 
 // showNewApp answers GET /apps/new.
 func (s *server) showNewApp(w http.ResponseWriter, r *http.Request, session string) {
+	// A person who can't make an app anywhere has nothing to do here (feature 053).
+	if who, ok := service.PrincipalFrom(r.Context()); ok && !s.mayCreateApps(r.Context(), who) {
+		s.message(w, r, http.StatusForbidden, "Not allowed", "You can't do this here", "Making an app needs the maintain role in a project. Ask an owner or an admin.")
+		return
+	}
 	asked := placeAsked(r.URL.Query())
 	if r.URL.Query().Get("from") == "compose" {
 		v := newComposeView("")

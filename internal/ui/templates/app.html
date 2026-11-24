@@ -29,7 +29,7 @@
     <div class="cv-apphead-actions" role="group" aria-label="App actions">
       {{with .Buttons}}{{if .Stopped}}<form method="post" action="{{.Start}}"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm" id="app-start">Start</button></form>
       {{else}}<form method="post" action="{{.Restart}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm" id="app-restart">{{icon "rotate-ccw" 14}}Restart</button></form>
-      <a href="{{.StopHref}}" class="cv-btn cv-btn-secondary cv-btn-sm" id="app-stop">Stop…</a>{{end}}{{end}}
+      {{if .CanStop}}<a href="{{.StopHref}}" class="cv-btn cv-btn-secondary cv-btn-sm" id="app-stop">Stop…</a>{{end}}{{end}}{{end}}
       {{with .DeployHref}}<a href="{{.}}" class="cv-btn cv-btn-primary cv-btn-sm" id="app-deploy">{{icon "rocket" 14}}Deploy</a>{{end}}
     </div>
     {{end}}
@@ -44,7 +44,7 @@
       <li>
         {{$name := .Name}}
         {{if .Exists}}<a href="{{.Href}}" class="cv-data">{{$name}}</a>{{with .PromoteHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm" id="promote-{{$name}}">Promote to {{$name}}</a>{{end}}
-        {{else}}<span class="cv-data text-fg-1">{{$name}}</span><form method="post" action="{{.CopyAction}}"><input type="hidden" name="to" value="{{$name}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm" id="copy-{{$name}}">Copy to {{$name}}</button></form>{{end}}
+        {{else}}<span class="cv-data text-fg-1">{{$name}}</span>{{if .CopyAction}}<form method="post" action="{{.CopyAction}}"><input type="hidden" name="to" value="{{$name}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm" id="copy-{{$name}}">Copy to {{$name}}</button></form>{{end}}{{end}}
       </li>
       {{end}}
     </ul>
@@ -440,6 +440,7 @@
       <p class="cv-gap-meta">{{.Meta}}</p>
     </div>
     {{if $.Stopped}}<p class="cv-note">The app is stopped: start it first.</p>
+    {{else if $.NoConfigure}}<p class="cv-note">Your role here is to look: setting up backups is for people who maintain this app.</p>
     {{else}}
     <details class="cv-confirm">
       <summary class="cv-btn {{if $.Destination}}cv-btn-primary{{else}}cv-btn-secondary{{end}} cv-btn-sm">Back up daily</summary>
@@ -545,7 +546,7 @@
           <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Status "succeeded"}}succeeded{{else if eq .Status "failed"}}failed{{else}}running{{end}}</span></span>
           <span role="cell" class="cv-brun-when">{{template "clock" .Clock}}</span>
           <span role="cell" class="cv-brun-fact">{{.Size}}</span>
-          <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}{{if .ByYou}}{{if or .Took .Stopped}} · {{end}}by you{{end}}{{with .Pin}} · pinned <span class="cv-inline-mono text-fg-1">{{.}}</span>{{end}}</span>
+          <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}{{if or .ByYou .By}}{{if or .Took .Stopped}} · {{end}}{{if .ByYou}}by you{{else}}by {{.By}}{{end}}{{end}}{{with .Pin}} · pinned <span class="cv-inline-mono text-fg-1">{{.}}</span>{{end}}</span>
           <span role="cell" class="cv-brun-act">
             <span class="cv-btnrow">
             {{if .CanPin}}
@@ -561,7 +562,7 @@
               </form>
             </details>
             {{end}}
-            {{if .Pin}}
+            {{if and .Pin (not $.NoMaintain)}}
             <form method="post" action="/apps/{{$.ID}}/backups/{{.ID}}/unpin"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Unpin</button></form>
             {{end}}
             {{if .CanRestore}}
@@ -584,13 +585,13 @@
       <div class="cv-btnrow">
         {{if $.Stopped}}<p class="cv-note">The app is stopped: start it first.</p>
         {{else if $.Destination}}
-        {{with .RestoreLast}}
+        {{with .RestoreLast}}{{if not $.NoMaintain}}
         <details class="cv-confirm">
           <summary class="cv-btn {{if eq $row.Mark "failed"}}cv-btn-secondary{{else}}cv-btn-primary{{end}} cv-btn-sm">{{icon "history" 14}}Restore from {{.Clock.Text}}</summary>
           {{template "restore-confirm" (restoreAsk $ . "last-")}}
         </details>
-        {{end}}
-        {{if .Volume}}
+        {{end}}{{end}}
+        {{if $.NoDeploy}}{{else if .Volume}}
         <details class="cv-confirm">
           <summary class="cv-btn {{if eq $row.Mark "failed"}}cv-btn-primary{{else}}cv-btn-secondary{{end}} cv-btn-sm">{{icon "play" 14}}Back up now</summary>
           <form method="post" action="/apps/{{$.ID}}/backups" class="cv-confirm-body">
@@ -695,7 +696,7 @@
     <div class="cv-brun cv-brun-restore" role="row">
       <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Status "succeeded"}}restored{{else if eq .Status "failed"}}failed{{else if eq .Status "skipped"}}skipped{{else}}restoring{{end}}</span></span>
       <span role="cell" class="cv-brun-when">{{template "clock" .CreatedClock}}</span>
-      <span role="cell" class="cv-brun-fact"><span class="text-fg-1">{{.Service}}</span>{{with .BackupID}} from {{.}}{{end}} · {{if .Scheduled}}on schedule from <span class="cv-inline-mono text-fg-1">{{.Pin}}</span>{{else}}by you{{end}}</span>
+      <span role="cell" class="cv-brun-fact"><span class="text-fg-1">{{.Service}}</span>{{with .BackupID}} from {{.}}{{end}} · {{if .Scheduled}}on schedule from <span class="cv-inline-mono text-fg-1">{{.Pin}}</span>{{else if .By}}by {{.By}}{{else}}by you{{end}}</span>
       <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}</span>
       <span role="cell" class="cv-brun-act cv-brun-status">{{if eq .Status "succeeded"}}restored{{else if eq .Status "failed"}}failed{{else if eq .Status "skipped"}}skipped{{else}}restoring{{end}}</span>
       {{with .Message}}<p class="cv-brun-msg">{{.}}</p>{{end}}
@@ -884,19 +885,19 @@
   {{else if .First.Defined}}
   <p class="cv-empty-title">Waiting for its first deploy.</p>
   <p class="cv-empty-text">Nothing is running yet. Start it now, or let your CI do it with a webhook or the API.</p>
-  <div class="cv-actions">
-    <form method="post" action="{{.First.DeployAction}}"><button type="submit" class="cv-btn cv-btn-primary">Deploy now</button></form>
-    <a href="{{.First.WebhookHref}}" class="cv-btn cv-btn-secondary">Create a webhook token</a>
-  </div>
+  {{if or .First.Caps.Deploy .First.Caps.Maintain}}<div class="cv-actions">
+    {{if .First.Caps.Deploy}}<form method="post" action="{{.First.DeployAction}}"><button type="submit" class="cv-btn cv-btn-primary">Deploy now</button></form>{{end}}
+    {{if .First.Caps.Maintain}}<a href="{{.First.WebhookHref}}" class="cv-btn cv-btn-secondary">Create a webhook token</a>{{end}}
+  </div>{{end}}
   <p class="cv-empty-text">Or call the API with a token:</p>
   <code class="cv-cmd">{{.First.Call}}</code>
   {{else}}
   <p class="cv-empty-title">No definition yet.</p>
   <p class="cv-empty-text">The app is named, and that is all. Give it a definition and it deploys: in Configure, from a Compose file, or through the API.</p>
-  <div class="cv-actions">
+  {{if .First.Caps.Configure}}<div class="cv-actions">
     <a href="{{.First.ConfigureHref}}" class="cv-btn cv-btn-primary">Define it in Configure</a>
     <a href="{{.First.ComposeHref}}" class="cv-btn cv-btn-secondary">Deploy from Compose</a>
-  </div>
+  </div>{{end}}
   <p class="cv-empty-text">Or send the app to the API with a token:</p>
   <code class="cv-cmd">{{.First.Call}}</code>
   <p class="cv-empty-text">{{.First.CallNote}}</p>
@@ -918,7 +919,9 @@
 {{define "deployments"}}
 <section id="deploy" aria-labelledby="deploy-title" class="flex flex-col gap-2">
   <h2 id="deploy-title" class="cv-label">Deploy</h2>
-  {{if not .Form.Fields}}
+  {{if .Form.ReadOnly}}
+  <div class="cv-panel p-4"><p class="text-base text-fg-1">Your role here is to look: deploying is for people who may deploy this app.</p></div>
+  {{else if not .Form.Fields}}
   <div class="cv-panel p-4 flex flex-col gap-3">
     <p class="text-base text-fg-1">This app has no definition yet, so there is nothing to deploy.</p>
     <p class="text-sm text-fg-3">Define it in <a href="{{.Form.ConfigureHref}}">Configure</a>, or <a href="{{.Form.ComposeHref}}">deploy a Compose file</a>.</p>
@@ -1062,7 +1065,7 @@
 {{if .Edit.ReadOnly}}
 <section aria-labelledby="definition-title" class="flex flex-col gap-2">
   <h2 id="definition-title" class="cv-label">Definition</h2>
-  <p class="text-sm text-fg-3">This app is edited through its Compose file.</p>
+  <p class="text-sm text-fg-3">{{if .NoConfigure}}Your role here is to look: changing how this app is set up is for people who maintain it.{{else}}This app is edited through its Compose file.{{end}}</p>
   {{range .Edit.Panels}}
   <div class="cv-panel cv-def">
     <h3 class="cv-data text-fg-1">{{.Title}}</h3>
@@ -1213,7 +1216,7 @@
     {{with .Schedules.Note}}<p class="cv-note cv-schednote"><a href="{{$.Schedules.ManageHref}}">{{.}}</a></p>{{end}}
     <div class="cv-btnrow">
       <a href="{{.Schedules.ManageHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage schedules</a>
-      <a href="{{.Schedules.NewHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}New schedule</a>
+      {{with .Schedules.NewHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}New schedule</a>{{end}}
     </div>
   </section>
 </div></div>
@@ -1228,6 +1231,7 @@
 </section>
 {{end}}
 
+{{if .CanMaintain}}
 <section id="webhook" aria-labelledby="webhook-title" class="cv-panel cv-gpanel">
   <h2 id="webhook-title" class="cv-label">Webhook</h2>
   {{with .Webhook.URL}}
@@ -1278,6 +1282,7 @@
   <p class="text-sm text-fg-3">A token for CI. It can deploy <span class="cv-inline-mono">{{.Deploy.Scope.Name}}</span> in any environment of project <span class="cv-inline-mono">{{.Deploy.Scope.Project}}</span>, read its deployments and promote it, and nothing else: not other apps, not settings, not tokens.</p>
   <form method="post" action="/apps/{{.ID}}/deploy-token"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Create a deploy token for this app</button></form>
 </section>
+{{end}}
 
 <section aria-labelledby="export-title" class="cv-panel cv-gpanel">
   <h2 id="export-title" class="cv-label">Export</h2>
@@ -1286,6 +1291,7 @@
   {{with .Export.Note}}<p class="text-base text-fg-1">{{.}}</p>{{end}}
 </section>
 
+{{if not .NoConfigure}}
 <section aria-labelledby="delete-title" class="cv-panel cv-gpanel cv-danger-panel">
   <h2 id="delete-title" class="cv-label">Delete app</h2>
   <details class="cv-confirm"{{if .Delete.Open}} open{{end}}>
@@ -1304,6 +1310,7 @@
     {{end}}
   </details>
 </section>
+{{end}}
 {{end}}
 
 {{/* The Variables & secrets page (feature 021): the table of names, the form that sets one, and the
@@ -1372,6 +1379,7 @@
 
 {{template "secret-sources" .}}
 
+{{if not .ReadOnly}}
 <section id="add" class="cv-panel cv-gpanel" aria-labelledby="add-title">
   <h2 id="add-title" class="cv-label">Add or change</h2>
   <form method="post" action="/apps/{{.ID}}/variables" class="cv-formcol cv-formcol-narrow" autocomplete="off">
@@ -1429,6 +1437,7 @@
     {{if not .Stopped}}<div class="cv-btnrow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Set and deploy</button></div>{{end}}
   </form>
 </section>
+{{end}}
 
 {{if .CanEdit}}
 <div id="env-editor" class="cv-stack">
@@ -1487,7 +1496,7 @@
     {{end}}
   </div>
   <p class="cv-note"><a href="/settings/secret-providers">Connect a source</a> · To use a value from a source, pick it when you add a secret. Caravana shows the path, never the value.</p>
-  {{if and .HasRefs (not .Stopped)}}
+  {{if and .HasRefs (not .Stopped) (not .NoDeploy)}}
   <form method="post" action="/apps/{{.ID}}/secrets/refresh" class="cv-formcol">
     <div class="cv-btnrow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "rotate-ccw" 14}}Refresh secrets</button></div>
     <p class="cv-hint">Reads every reference again and rolls the app out if a value changed.</p>

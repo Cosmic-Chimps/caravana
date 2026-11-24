@@ -86,6 +86,7 @@ func newConsoleEnvWith(t *testing.T, setup func(*service.Service, *deploytest.No
 		VersionRetries: []time.Duration{time.Millisecond, time.Millisecond},
 	}
 	svc := service.New(st, deployer, deploy.NewVariables(client), log)
+	svc.SetAuth(uie.Auth) // accepting an invite needs the sign-in limit
 	// No domain watcher pass, and domain checks that never leave the process.
 	svc.SetDomainWatchGaps(time.Hour, time.Hour)
 	svc.SetEdge(edgetest.FakeResolver{}, &edgetest.FakeDialer{})

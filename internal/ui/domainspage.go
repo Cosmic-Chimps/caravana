@@ -94,6 +94,8 @@ type domainBanner struct {
 	Line    sentence // "`a.example.com` points at `185.199.108.153`, which isn't this host."
 	Explain sentence // the fixed explanation
 	Check   domainCheckForm
+	// NoCheck says the person may not check the domain again (maintain on its app).
+	NoCheck bool
 }
 
 // domainMore is "and N more", linking to the first row without a banner.
@@ -937,6 +939,7 @@ func (s *server) loadDomains(ctx context.Context, q domainsQuery, empty emptyVie
 	region.Known = hostsKey(list)
 	region.Count = domainsCount(list)
 	region.Rows, region.Banners, region.More = domainViewsOf(s.now(), list, apps, box, q.Open, appPage, q.Draft)
+	s.gateDomainRows(ctx, &region)
 	if len(list) == 0 {
 		if q.filterQuery() != "" && !appPage {
 			region.NoMatch, region.ClearHref = true, "/domains"
@@ -991,6 +994,9 @@ func (s *server) renderDomains(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	head.LiveURL = "/live?watch=domains"
+	if !s.mayCreateApps(r.Context(), head.Who) { // adding a domain changes an app: the configure level somewhere (feature 053)
+		add = nil
+	}
 	s.render(w, status, "domains", domainsPage{pageData: head, List: &domainsListView{Filter: filter, Alert: alert, Once: q.Once, Region: region, Add: add}})
 }
 
@@ -1048,4 +1054,26 @@ func (s *server) checkDomainAgain(w http.ResponseWriter, r *http.Request, sessio
 		}
 	}
 	http.Redirect(w, r, back, http.StatusSeeOther)
+}
+
+// gateDomainRows takes from the rows what the person may not do (feature 053): a row of an app they
+// may not maintain keeps its state and loses Options, Remove, New password and Check again, and says
+// why where the Options were.
+func (s *server) gateDomainRows(ctx context.Context, region *domainsRegion) {
+	maintains := map[string]bool{}
+	for i := range region.Rows {
+		row := &region.Rows[i]
+		ok := s.can(ctx, "maintain", row.AppID)
+		maintains[row.Host] = ok
+		if ok {
+			continue
+		}
+		row.Detail.Options = domainOptions{Note: plainS("Your role here is to look: changing a domain is for people who maintain this app.")}
+		row.Detail.Check = nil
+	}
+	for i := range region.Banners {
+		if ok, known := maintains[region.Banners[i].Host]; known && !ok {
+			region.Banners[i].NoCheck = true
+		}
+	}
 }

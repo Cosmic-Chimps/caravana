@@ -18,7 +18,7 @@
     <h1 class="cv-headline">Schedules</h1>
     <p class="cv-lede" data-local-lede>Commands that run on a timer, in a fresh copy of an app that then stops or in the copy that is running. Times are UTC.</p>
   </div>
-  <a href="{{.NewHref}}" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}New schedule</a>
+  {{with .NewHref}}<a href="{{.}}" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}New schedule</a>{{end}}
 </header>
 {{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
@@ -110,7 +110,7 @@
       {{end}}
     </dl>
     <div class="cv-sbtns">
-      {{if .StopRun}}
+      {{if and .StopRun (not .NoRun)}}
       <details class="cv-confirm" id="schedule-{{.ID}}-stop">
         <summary class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "square" 14}}Stop this run</summary>
         <form method="post" action="/schedules/{{.ID}}/runs/{{.StopRun}}/stop" class="cv-confirm-body">
@@ -119,11 +119,11 @@
         </form>
       </details>
       {{end}}
-      {{if .RunNow}}<form method="post" action="/schedules/{{.ID}}/run"><button type="submit" class="cv-btn {{if .RunPrimary}}cv-btn-primary{{else}}cv-btn-secondary{{end}} cv-btn-sm">{{icon "play" 14}}Run now</button></form>{{end}}
+      {{if and .RunNow (not .NoRun)}}<form method="post" action="/schedules/{{.ID}}/run"><button type="submit" class="cv-btn {{if .RunPrimary}}cv-btn-primary{{else}}cv-btn-secondary{{end}} cv-btn-sm">{{icon "play" 14}}Run now</button></form>{{end}}
       {{with .LogsHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "scroll-text" 14}}Logs of last run</a>{{end}}
       {{if .Builtin}}
       <a href="{{.BackupsHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Change in Backups</a>
-      {{else}}
+      {{else if not .NoEdit}}
       {{if .Paused}}<form method="post" action="/schedules/{{.ID}}/resume"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "play" 14}}Resume</button></form>
       {{else}}<form method="post" action="/schedules/{{.ID}}/pause"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "pause" 14}}Pause</button></form>{{end}}
       <a href="{{.EditHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "pencil" 14}}Edit</a>

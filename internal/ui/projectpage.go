@@ -229,7 +229,7 @@ func (s *server) screenRowOf(now time.Time, sum service.AppSummary) screenRow {
 }
 
 // projectAppsOf builds the apps region: the environment's rows, problems first.
-func (s *server) projectAppsOf(d projectData) projectApps {
+func (s *server) projectAppsOf(ctx context.Context, d projectData) projectApps {
 	now := s.now()
 	region := projectApps{Env: d.Env, AddEnvHref: "/projects/" + url.PathEscape(d.Project.ID) + "/settings#add-environment"}
 	for _, sum := range d.InEnv {
@@ -237,7 +237,7 @@ func (s *server) projectAppsOf(d projectData) projectApps {
 	}
 	sortProblemsFirst(region.Rows, func(row screenRow) string { return row.Sort })
 	region.Count = len(region.Rows)
-	if s.newApp && d.Env != "" {
+	if s.newApp && d.Env != "" && s.canMakeAppsIn(ctx, d.Project.ID, d.Env) {
 		region.NewHref = newAppHere(d.Project.ID, d.Env)
 	}
 	return region
@@ -324,7 +324,7 @@ func (s *server) projectRailOf(r *http.Request, d projectData) (projectRail, err
 	now := s.now()
 	if len(recs) > 0 {
 		rail.HasDeploy = true
-		rail.DeployWho = capitalized(deployWho(recs[0], false))
+		rail.DeployWho = capitalized(deployWho(s.mine(ctx, recs[0]), false))
 		rail.DeployWhen = whenOf(now, &recs[0].CreatedAt, "")
 	}
 	for _, rec := range recs {
@@ -358,13 +358,13 @@ func (s *server) projectScreenOf(r *http.Request, d projectData) (*projectScreen
 	base := "/projects/" + url.PathEscape(id)
 	v := &projectScreen{ID: id, Display: d.Project.DisplayName, Env: d.Env,
 		SettingsHref: base + "/settings", AddEnvHref: base + "/settings#add-environment",
-		Apps: s.projectAppsOf(d), Rail: rail}
+		Apps: s.projectAppsOf(r.Context(), d), Rail: rail}
 	// The slot holds the project's name when the display name says something else (Default
 	// is "default" in other letters: nothing to add).
 	if !strings.EqualFold(d.Project.DisplayName, id) {
 		v.Slot = id
 	}
-	if s.newApp && d.Env != "" {
+	if s.newApp && d.Env != "" && s.canMakeAppsIn(r.Context(), id, d.Env) {
 		v.NewHref = newAppHere(id, d.Env)
 	}
 	for _, e := range d.Project.Environments {
@@ -412,7 +412,7 @@ func (s *server) partProjectApps(w http.ResponseWriter, r *http.Request, session
 	if !ok {
 		return
 	}
-	s.renderPart(w, "projects", "project-apps-region", s.projectAppsOf(d))
+	s.renderPart(w, "projects", "project-apps-region", s.projectAppsOf(r.Context(), d))
 }
 
 // partProjectRail answers GET /parts/projects/{project}/rail?env=: the rail region.

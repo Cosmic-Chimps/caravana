@@ -441,7 +441,7 @@ func TestDeployFromTheConsole(t *testing.T) {
 		}
 		// The next page load shows the new entry.
 		_, page := e.get(t, "/apps/duo/deployments")
-		if !strings.Contains(page, `id="deployment-`+recs[0].Deployment.ID+`"`) || !strings.Contains(text(page), "from the console") {
+		if !strings.Contains(page, `id="deployment-`+recs[0].Deployment.ID+`"`) || !strings.Contains(text(page), "by you") {
 			t.Errorf("the new deployment isn't on the tab:\n%s", text(page))
 		}
 	})

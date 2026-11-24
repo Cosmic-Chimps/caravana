@@ -70,6 +70,9 @@ type projectView struct {
 	// between (one destination or none, and the project has no default of its own).
 	Backups *projectBackups
 	Delete  projectDelete
+	// ReadOnly says the person's role in the project is below maintain: they see its settings and change
+	// none of them (feature 053).
+	ReadOnly bool
 }
 
 // projectBackups is the "Backups go to" section of a project's settings: the default destination of the
@@ -262,6 +265,14 @@ func (s *server) settingsPage(w http.ResponseWriter, r *http.Request, status int
 		return
 	}
 	v.Backups = projectBackupsOf(dests, p.BackupDestination, extra.Backups)
+	level := service.LevelMaintain
+	if who, ok := service.PrincipalFrom(ctx); ok {
+		level = who.ProjectLevel(id, s.now())
+		v.Delete.Offered = v.Delete.Offered && who.Admin()
+	}
+	if v.ReadOnly = level < service.LevelMaintain; v.ReadOnly {
+		v.Backups = nil
+	}
 	if extra.Delete != nil {
 		v.Delete.Open, v.Delete.Error, v.Delete.Notice, v.Delete.Apps = extra.Delete.Open, extra.Delete.Error, extra.Delete.Notice, extra.Delete.Apps
 	}
@@ -277,6 +288,9 @@ func (s *server) settingsPage(w http.ResponseWriter, r *http.Request, status int
 			ev.Offer, ev.Reason = true, "Move or delete its "+appCount(len(ev.Apps))+" first."
 		default:
 			ev.Offer = true
+		}
+		if ev.Offer && level < projectLevelFor(e.Name) { // a preview is closed at deploy, an environment at maintain
+			ev.Offer = false
 		}
 		v.Envs = append(v.Envs, ev)
 	}

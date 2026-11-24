@@ -210,7 +210,7 @@
 {{/* mon-host-section: "This host", a live region of its own (#host, drawn again from /parts/monitoring/host
      on the metrics notice). Takes a monView. */}}
 {{define "mon-host-section"}}
-<section class="cv-mnblock" id="host" aria-label="This host" hx-get="{{.HostHref}}" hx-trigger="sse:metrics" hx-swap="innerHTML">{{template "mon-host" .Host}}</section>
+{{if .Host}}<section class="cv-mnblock" id="host" aria-label="This host" hx-get="{{.HostHref}}" hx-trigger="sse:metrics" hx-swap="innerHTML">{{template "mon-host" .Host}}</section>{{end}}
 {{end}}
 
 {{/* mon-host: the section's head and panel: what is wrong with reading the host, the meters, the room

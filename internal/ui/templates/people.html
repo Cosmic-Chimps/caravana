@@ -1,0 +1,171 @@
+{{/* Settings › People (feature 053): who can sign in, and what each person may do. Four views of
+     one entry: the list, the invite form, one person, and the confirmation of Remove. Every form is
+     a plain post. A link is drawn once, in the answer that made it. Nothing here holds a password,
+     a hash or a stored token. Takes settingsData; the page's own data is .People. */}}
+
+{{/* person-fields: the form of an invite and of a change. Takes peopleData; .Form says what was typed. */}}
+{{define "person-fields"}}
+{{with .Form}}
+{{template "srow-open" (srow "Email" "Where the invite goes: you send the link yourself." "person-email")}}
+{{if .EmailLocked}}<span class="cv-data cv-field-mono">{{.Email}}</span>{{else}}
+<input class="cv-field cv-field-mono" type="email" id="person-email" name="email" value="{{.Email}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{with $.Err "email"}} autofocus aria-invalid="true" aria-describedby="person-email-error"{{end}}>
+{{with $.Err "email"}}<span id="person-email-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+{{end}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Role in the installation" "An owner does everything and is the only role that makes owners and admins. An admin does everything else. A member has only the projects below." "person-org")}}
+{{if eq (len $.OrgChoices) 1}}
+<input type="hidden" name="orgRole" value="member"><span class="cv-data">Member</span>
+{{else}}
+<select class="cv-field cv-select" id="person-org" name="orgRole"{{with $.Err "orgRole"}} aria-invalid="true"{{end}}>
+  {{$org := .OrgRole}}{{range $.OrgChoices}}<option value="{{.Value}}"{{if eq .Value $org}} selected{{end}}>{{.Label}}</option>{{end}}
+</select>
+{{with $.Err "orgRole"}}<span role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+{{end}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Access ends (optional)" "End of that day, UTC. After it the person can't sign in and their tokens stop working." "person-ends")}}
+<input class="cv-field cv-field-mono" type="date" id="person-ends" name="endsAt" value="{{.EndsAt}}"{{with $.Err "endsAt"}} autofocus aria-invalid="true" aria-describedby="person-ends-error"{{end}}>
+{{with $.Err "endsAt"}}<span id="person-ends-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+{{template "srow-close"}}
+{{if .Projects}}
+<h2 class="cv-label cv-addhead">Projects (for a member)</h2>
+{{with $.Err "projects"}}<span role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+{{range .Projects}}
+{{$p := .}}
+<fieldset class="cv-fieldset cv-setrow">
+  <legend class="cv-setrow-label">{{.Display}}</legend>
+  <div class="cv-setrow-ctl flex flex-col gap-3">
+    <label class="cv-fld">
+      <span class="cv-label">Role in {{.Display}}</span>
+      <select class="cv-field cv-select" name="role.{{.Project}}">
+        {{$role := .Role}}{{range $.RoleChoices}}<option value="{{.Value}}"{{if eq .Value $role}} selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+    </label>
+    <label class="cv-fld">
+      <span class="cv-label">Role ends (optional)</span>
+      <input class="cv-field cv-field-mono" type="date" name="ends.{{.Project}}" value="{{.EndsAt}}"{{with $.Err (print "ends." .Project)}} aria-invalid="true"{{end}}>
+      {{with $.Err (print "ends." .Project)}}<span role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+    </label>
+    {{range .Envs}}
+    <label class="cv-fld">
+      <span class="cv-label">In <span class="cv-inline-mono">{{.Name}}</span></span>
+      <select class="cv-field cv-select" name="env.{{$p.Project}}/{{.Name}}">
+        {{$ov := .Override}}{{range $.OverrideChoices}}<option value="{{.Value}}"{{if eq .Value $ov}} selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+    </label>
+    {{end}}
+  </div>
+</fieldset>
+{{end}}
+<p class="cv-data-muted">A role in a project covers its previews. Deploy lets a person deploy new images and redeploy; Maintain lets them change how an app is set up.</p>
+{{end}}
+{{end}}
+{{end}}
+
+{{/* person-invited: the invite link, once. Takes an invitedView. */}}
+{{define "person-invited"}}
+<div class="cv-panel cv-once" role="status">
+  <p class="cv-once-text">Send this link to <span class="cv-inline-mono">{{.Email}}</span> now. Caravana keeps only a hash and can't show it again. It works once{{with .Until.Text}}, and stops {{.}}{{end}}.</p>
+  <div class="cv-once-row">
+    <code class="cv-once-value" id="invite-link-value">{{.URL}}</code>
+    <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="invite-link-value" hidden>Copy link</button>
+  </div>
+</div>
+{{end}}
+
+{{define "settings-people"}}
+{{with .People}}
+{{if eq .View "list"}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">People</h1>
+    <p class="cv-lede">Who can sign in to this caravana, and what each person may do.</p>
+  </div>
+  <a href="/settings/people/new" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Invite someone</a>
+</header>
+{{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+{{with .Invited}}{{template "person-invited" .}}{{end}}
+<div class="cv-panel cv-conns">
+  <div class="cv-thead" aria-hidden="true">
+    <span></span><span class="cv-label">Person</span><span class="cv-label">Role</span><span class="cv-label">Projects</span><span class="cv-label">Access</span><span></span>
+  </div>
+  {{range .Rows}}
+  <div class="cv-conn">
+    <div class="cv-conn-row cv-conn-row-tok">
+      <span class="cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-{{if eq .State "active"}}healthy{{else}}idle{{end}}" aria-hidden="true"></span></span>
+      <div class="cv-conn-name">
+        <span class="cv-conn-title" title="{{.Email}}">{{.Email}}{{if .Self}} <span class="cv-data-muted">(you)</span>{{end}}</span>
+        <span class="cv-conn-meta">{{.StateText}}</span>
+      </div>
+      <span class="cv-tok-cando" data-label="Role"><span class="sr-only">Role </span>{{.RoleWord}}</span>
+      <span class="cv-conn-meta" data-label="Projects"><span class="sr-only">Projects </span>{{if eq .Role "member"}}{{range .Projects}}<span class="block">{{.}}</span>{{else}}none{{end}}{{else}}all{{end}}</span>
+      <span class="cv-conn-meta" data-label="Access"{{if .Ends.Exact}} title="{{.Ends.Exact}}"{{end}}><span class="sr-only">Access </span>{{or .EndsText "no end date"}}</span>
+      <div class="cv-conn-acts"><a href="{{.Href}}" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Open {{.Email}}">Open</a></div>
+    </div>
+  </div>
+  {{end}}
+</div>
+
+{{else if eq .View "new"}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Invite someone</h1>
+    <p class="cv-lede">Caravana makes a link, once. Send it to them yourself: they choose their password with it.</p>
+  </div>
+</header>
+{{with .Notice}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+<form method="post" action="{{.Form.Action}}" class="cv-panel" autocomplete="off">
+  {{template "person-fields" .}}
+  <div class="flex gap-2">
+    <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">{{.Form.Submit}}</button>
+    <a href="/settings/people" class="cv-btn cv-btn-secondary cv-btn-sm">Cancel</a>
+  </div>
+</form>
+
+{{else if eq .View "person"}}
+{{with .Row}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">{{.Email}}</h1>
+    <p class="cv-lede">{{.RoleWord}} · {{.StateText}}{{if .EndsText}} · {{.EndsText}}{{end}}</p>
+  </div>
+  <a href="/settings/people" class="cv-btn cv-btn-secondary cv-btn-sm">All people</a>
+</header>
+{{end}}
+{{with .Notice}}<div role="{{if eq .Kind "healthy"}}status{{else}}alert{{end}}" class="cv-notice"><span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+{{with .Invited}}{{template "person-invited" .}}{{end}}
+{{if .ReadOnly}}
+<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>Only an owner changes an owner or an admin.</span></div>
+{{else}}
+<form method="post" action="{{.Form.Action}}" class="cv-panel" autocomplete="off">
+  {{template "person-fields" .}}
+  <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">{{.Form.Submit}}</button></div>
+</form>
+{{end}}
+{{with .Row}}
+<div class="cv-panel flex flex-wrap gap-2 p-4">
+  {{if and (eq .State "invited") (not $.People.ReadOnly)}}
+  <form method="post" action="/settings/people/{{.ID}}/invite"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">New invite link</button></form>
+  {{end}}
+  {{if not $.People.ReadOnly}}<a href="/settings/people/{{.ID}}/remove" class="cv-btn cv-btn-secondary cv-btn-sm" id="person-remove">Remove…</a>{{end}}
+</div>
+{{end}}
+
+{{else if eq .View "remove"}}
+{{with .Row}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Remove {{.Email}}?</h1>
+    <p class="cv-lede">They can't sign in again. Their sessions, their API tokens and their passkeys end with this. Apps they deployed keep running.</p>
+  </div>
+</header>
+{{end}}
+{{with .Notice}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+{{with .Row}}
+<form method="post" action="/settings/people/{{.ID}}/remove" class="cv-panel flex gap-2 p-4">
+  <button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Remove {{.Email}}</button>
+  <a href="/settings/people/{{.ID}}" class="cv-btn cv-btn-secondary cv-btn-sm">Keep them</a>
+</form>
+{{end}}
+{{end}}
+{{end}}
+{{end}}

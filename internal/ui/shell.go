@@ -20,6 +20,8 @@ type shellView struct {
 	Active   string  // navHome, navProjects, navPreviews, navSchedules, navDomains, navLogs, navRequests, navMonitoring or navSettings: the sidebar item marked as current
 	Crumbs   []crumb // the top bar's breadcrumbs, the last one being this page
 	NewApp   bool    // the top bar offers "New app"
+	// Admin says the person is an owner or an admin: the Developer/Operator toggle is theirs (feature 053).
+	Admin bool
 	// Mode is the view the page is drawn in: "dev" (Developer) or "ops"
 	// (Operator). It picks the sidebar's links and which side of the toggle is
 	// current; see mode.go.
@@ -107,8 +109,12 @@ func (s *server) shellPage(r *http.Request, title, active string, crumbs ...crum
 		crumbs[n-1].Href = ""
 	}
 	mode := s.modeOf(r)
+	if !who.Admin() {
+		mode = "dev" // the Operator view is the installation's: a member's cookie can't draw it
+	}
 	d.Shell = &shellView{Host: host, Version: s.versionLabel(), Email: email, Initials: initialsOf(email),
-		Active: activeIn(mode, active), Crumbs: crumbs, NewApp: s.newApp, Mode: mode}
+		Active: activeIn(mode, active), Crumbs: crumbs, NewApp: s.newApp && s.mayCreateApps(r.Context(), who), Mode: mode, Admin: who.Admin()}
+	d.Who, d.now = who, s.now()
 	if mode == "ops" {
 		d.Shell.UpdatesMark = s.updatesMark(r)
 	}

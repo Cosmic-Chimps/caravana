@@ -153,7 +153,16 @@ func (s *server) requireSessionJSON(next sessionHandler) http.HandlerFunc {
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized", "Your session ended. Sign in again.")
 			return
 		}
-		next(w, r.WithContext(service.WithPrincipal(r.Context(), who)), value)
+		r = r.WithContext(service.WithPrincipal(r.Context(), who))
+		if err := s.allowed(r, who); err != nil {
+			writeJSONError(w, http.StatusForbidden, "not_allowed", refusal(err))
+			return
+		}
+		if s.afterGuard != nil {
+			s.afterGuard(w, r)
+			return
+		}
+		next(w, r, value)
 	}
 }
 

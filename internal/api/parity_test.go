@@ -14,7 +14,7 @@ import (
 // no operation and no reason is a mistake, not a decision).
 // settingsReads are what every Settings page reads for its nav.
 var settingsReads = []string{"listTokens", "listRegistries", "listNotificationChannels", "listNotificationDeliveries",
-	"getBackupDestination", "listBackupDestinations", "listApps", "listBackups", "listCertificates", "listSecretProviders", "listDNSZones"}
+	"getBackupDestination", "listBackupDestinations", "listApps", "listBackups", "listCertificates", "listSecretProviders", "listDNSZones", "listPeople"}
 
 type parity struct {
 	ops []string
@@ -37,6 +37,7 @@ var consoleOnly = map[string]string{
 	"POST /settings/sign-in/verify":         "confirms a browser session with the password or a passkey; an API token needs no confirming",
 	"POST /settings/passkeys/options":       "starts the WebAuthn ceremony that adds a passkey: the credential is bound to the console's origin and the owner's device",
 	"POST /settings/passkeys":               "finishes the WebAuthn ceremony that adds a passkey, for the same reason",
+	"POST /invite":                          "accepts an invite and starts a browser session for the person; the API's acceptInvite sets the password and starts none (a client uses a token)",
 }
 
 // consoleParity is SC-006: everything the console reads or changes can also be
@@ -46,6 +47,7 @@ var consoleParity = map[string]parity{
 	// Pages with nothing of their own to read or change.
 	"GET /{$}":         {why: "a redirect to /apps"},
 	"GET /login":       {why: "the sign-in form; clients use API tokens"},
+	"GET /invite":      {why: "the page of an invite link: it names who the link is for and asks for a password; the link's token is its credential, and the API reads nothing of it"},
 	"GET /favicon.ico": {why: "the browser tab's icon, asked for at the root"},
 	"GET /apps/new":    {ops: []string{"listProjects", "listTemplates"}}, // a blank form, with the places the app can go in; the template tab lists the catalog (feature 035)
 	"GET /account":     {why: "a redirect to /settings"},
@@ -72,6 +74,16 @@ var consoleParity = map[string]parity{
 	"GET /settings/appearance": {ops: settingsReads},
 	// Sign-in (feature 033): the page lists the passkeys (listPasskeys) and the setting (getSignIn); Rename, Remove and
 	// the password setting are the same service calls as the API's. The ceremonies are in consoleOnly.
+	// People (feature 053): the list, the invite form (it lists the projects and their environments), a person's
+	// page and its confirmation of Remove.
+	"GET /settings/people":                {ops: append([]string{"listPeople"}, settingsReads...)},
+	"GET /settings/people/new":            {ops: append([]string{"listProjects"}, settingsReads...)},
+	"POST /settings/people":               {ops: []string{"invitePerson"}},
+	"GET /settings/people/{id}":           {ops: append([]string{"getPerson", "listProjects"}, settingsReads...)},
+	"POST /settings/people/{id}":          {ops: []string{"updatePerson"}},
+	"POST /settings/people/{id}/invite":   {ops: []string{"reinvitePerson"}},
+	"GET /settings/people/{id}/remove":    {ops: append([]string{"getPerson"}, settingsReads...)},
+	"POST /settings/people/{id}/remove":   {ops: []string{"removePerson"}},
 	"GET /settings/sign-in":               {ops: append([]string{"listPasskeys", "getSignIn"}, settingsReads...)},
 	"POST /settings/sign-in":              {ops: []string{"putSignIn"}},
 	"POST /settings/passkeys/{id}":        {ops: []string{"updatePasskey"}},

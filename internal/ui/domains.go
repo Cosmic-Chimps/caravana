@@ -27,11 +27,13 @@ type domainsTab struct {
 	Add      *domainAddView
 	// Once is a Team-only password just made, drawn above everything else.
 	Once *teamPasswordPanel
+	// ReadOnly says the person may not configure the app: no Add, no Options (feature 053).
+	ReadOnly bool
 }
 
 // CanEdit says the page offers Add and the Options (a kept Compose file is edited
 // through its overlay, as every other page edits it).
-func (t domainsTab) CanEdit() bool { return t.Defined && !t.Stopped }
+func (t domainsTab) CanEdit() bool { return t.Defined && !t.Stopped && !t.ReadOnly }
 
 // domainTarget is a service a domain can be sent to.
 type domainTarget struct {
@@ -122,7 +124,8 @@ func (s *server) domainsPageWith(w http.ResponseWriter, r *http.Request, status 
 	}
 	head.LiveURL = "/live/apps/" + id + "?tab=domains"
 	a := sum.App
-	tab := &domainsTab{ID: a.ID, Revision: sum.Revision, Defined: a.Defined(), Stopped: sum.StoppedAt != nil, Once: extra.Once}
+	tab := &domainsTab{ID: a.ID, Revision: sum.Revision, Defined: a.Defined(), Stopped: sum.StoppedAt != nil, Once: extra.Once,
+		ReadOnly: !s.can(ctx, "configure", id)}
 	if tab.Defined {
 		q := domainsQuery{App: id, Open: strings.TrimSpace(r.URL.Query().Get("open")), Once: extra.Once, Draft: extra.Draft}
 		if extra.Open != "" {
@@ -139,6 +142,9 @@ func (s *server) domainsPageWith(w http.ResponseWriter, r *http.Request, status 
 			}
 		}
 		tab.Add = add
+		if tab.ReadOnly {
+			tab.Add = nil
+		}
 	}
 	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "configure"), DomainsTab: tab})
 }

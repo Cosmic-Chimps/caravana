@@ -436,6 +436,8 @@ func (s *server) editableSchedule(w http.ResponseWriter, r *http.Request) (servi
 		s.message(w, r, http.StatusConflict, "Made by Backups", scheduleName(sc)+" is made by Backups.",
 			"Change its time or how many backups are kept in the app's Backups tab.")
 		return sc, false
+	case !s.mustAllow(w, r, service.NeedApp(service.LevelMaintain), service.Target{AppID: sc.App}):
+		return sc, false // changing a schedule is maintain on its app (feature 053)
 	}
 	return sc, true
 }

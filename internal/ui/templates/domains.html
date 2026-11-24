@@ -17,7 +17,7 @@
     <h1 class="cv-headline">Domains</h1>
     <p class="cv-lede">Every address people use to reach your apps. Certificates are issued and renewed for you.</p>
   </div>
-  <a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add domain</a>
+  {{if .Add}}<a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add domain</a>{{end}}
 </header>
 {{with .Once}}{{template "domain-once" .}}{{end}}
 {{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
@@ -81,7 +81,7 @@
     <p class="cv-dmbanner-line">{{template "sentence" .Line}}</p>
     <p class="cv-dmbanner-explain">{{template "sentence" .Explain}}</p>
   </div>
-  {{template "domain-check" .Check}}
+  {{if not .NoCheck}}{{template "domain-check" .Check}}{{end}}
 </div>
 {{end}}
 {{with .More}}<p class="cv-dmmore"><a href="{{.Href}}">and {{.N}} more</a></p>{{end}}

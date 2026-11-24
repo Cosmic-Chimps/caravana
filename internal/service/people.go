@@ -302,28 +302,15 @@ func (s *Service) AcceptInvite(ctx context.Context, token, password, address str
 	}
 	defer at.release() // a no-op once the failure is recorded
 
-	invalid := func() (Person, error) {
-		a.event("invite_failed", "address", address)
-		if _, err := a.recordFailure(ctx, at); err != nil {
-			return Person{}, err // the fifth failure locks the address: a *SigninLimitError
-		}
-		return Person{}, ErrInviteInvalid
+	invalid := func() (Person, error) { return Person{}, s.inviteFailed(ctx, at, address) }
+	rec, hash, ok, err := s.liveInvite(ctx, token)
+	if err != nil {
+		return Person{}, err
 	}
-	if !strings.HasPrefix(token, inviteTokenPrefix) {
+	if !ok {
 		return invalid()
-	}
-	hash := hashToken(token)
-	rec, err := s.store.GetPersonByInvite(ctx, hash)
-	if errors.Is(err, store.ErrNotFound) {
-		return invalid()
-	} else if err != nil {
-		return Person{}, fmt.Errorf("accept invite: %w", err)
 	}
 	now := s.clock.Now().UTC()
-	if rec.State != personInvited || rec.InviteExpiresAt == nil || !now.Before(*rec.InviteExpiresAt) ||
-		(rec.EndsAt != nil && !now.Before(*rec.EndsAt)) {
-		return invalid()
-	}
 	if err := checkPasswordRule("password", password); err != nil {
 		return Person{}, err
 	}
@@ -343,6 +330,63 @@ func (s *Service) AcceptInvite(ctx context.Context, token, password, address str
 		return Person{}, fmt.Errorf("accept invite: %w", err)
 	}
 	return s.personOf(ctx, done)
+}
+
+// inviteFailed counts a wrong invite token against the address and says what the caller answers:
+// ErrInviteInvalid, or the *SigninLimitError the fifth failure makes.
+func (s *Service) inviteFailed(ctx context.Context, at *attempt, address string) error {
+	s.auth.event("invite_failed", "address", address)
+	if _, err := s.auth.recordFailure(ctx, at); err != nil {
+		return err
+	}
+	return ErrInviteInvalid
+}
+
+// liveInvite finds the person an invite token is for. ok is false for a token that is unknown,
+// expired or already used, or whose person's end date has passed.
+func (s *Service) liveInvite(ctx context.Context, token string) (rec store.PersonRecord, hash string, ok bool, err error) {
+	if !strings.HasPrefix(token, inviteTokenPrefix) {
+		return rec, "", false, nil
+	}
+	hash = hashToken(token)
+	rec, err = s.store.GetPersonByInvite(ctx, hash)
+	if errors.Is(err, store.ErrNotFound) {
+		return rec, hash, false, nil
+	} else if err != nil {
+		return rec, hash, false, fmt.Errorf("find invite: %w", err)
+	}
+	now := s.clock.Now().UTC()
+	if rec.State != personInvited || rec.InviteExpiresAt == nil || !now.Before(*rec.InviteExpiresAt) ||
+		(rec.EndsAt != nil && !now.Before(*rec.EndsAt)) {
+		return rec, hash, false, nil
+	}
+	return rec, hash, true, nil
+}
+
+// InviteFor is who an invite link is for, so the page that takes the password can name them. It is
+// as careful as AcceptInvite: a token that is not valid counts against the address's sign-in limit
+// (a guess is a guess), and a locked address is refused before the token is looked at.
+func (s *Service) InviteFor(ctx context.Context, token, address string) (Person, error) {
+	if s.auth == nil {
+		return Person{}, errors.New("read invite: the service has no Auth (SetAuth)")
+	}
+	at, err := s.auth.beginAttempt(ctx, address)
+	if err != nil {
+		var limited *SigninLimitError
+		if errors.As(err, &limited) {
+			s.auth.event("signin_limited", "address", address)
+		}
+		return Person{}, err
+	}
+	defer at.release()
+	rec, _, ok, err := s.liveInvite(ctx, token)
+	if err != nil {
+		return Person{}, err
+	}
+	if !ok {
+		return Person{}, s.inviteFailed(ctx, at, address)
+	}
+	return s.personOf(ctx, rec)
 }
 
 // UpdatePerson replaces a person's organization role, end date and roles. An admin changes members

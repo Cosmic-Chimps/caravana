@@ -100,6 +100,7 @@ type settingsData struct {
 	Builds          buildsData
 	Appearance      appearanceForm
 	SignIn          signInView
+	People          peopleData
 	// Status, when not 0, is the HTTP status of the response (a refused form draws its page at 4xx).
 	Status int
 }
@@ -166,8 +167,12 @@ func (s *server) settingsFacts(ctx context.Context) (settingsFacts, error) {
 	if f.Tokens, err = s.auth.ListAPITokens(ctx, callerID(ctx)); err != nil {
 		return f, fmt.Errorf("list API tokens: %w", err)
 	}
-	if s.svc == nil {
+	// What is the installation's is read for an owner or an admin only: a member's Settings is their own.
+	if who, _ := service.PrincipalFrom(ctx); s.svc == nil || (!who.Admin() && who.PersonID != "") {
 		return f, nil
+	}
+	if people, err := s.svc.People(ctx); err == nil {
+		f.People = len(people)
 	}
 	if f.Registries, err = s.svc.Registries(ctx); err != nil {
 		return f, fmt.Errorf("list registries: %w", err)
@@ -227,7 +232,8 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 	states := facts.states(now)
 	data.pageData = head
 	data.Entry = entry
-	data.Nav = settingsNav(entry, states)
+	who, _ := service.PrincipalFrom(r.Context())
+	data.Nav = settingsNav(entry, states, who.Admin() || who.PersonID == "")
 	data.Email = head.Shell.Email
 	data.Origin = s.origin(r)
 
@@ -260,6 +266,14 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 			return
 		}
 		data.Certificates = cert
+	case entryPeople:
+		data.People.Errors = cmpMap(data.People.Errors)
+		people, err := s.peopleSection(r, data.People)
+		if err != nil {
+			s.serverError(w, r, "read people", err)
+			return
+		}
+		data.People = people
 	case entryAppearance:
 		// The cookie is what holds, whatever was just posted.
 		data.Appearance.Choice = "system"
@@ -477,4 +491,12 @@ func (s *server) showAccount(w http.ResponseWriter, r *http.Request) {
 // for a moment in 021: it is /settings, the first entry. Permanent, no session.
 func (s *server) showSettingsAccount(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/settings", http.StatusMovedPermanently)
+}
+
+// cmpMap is m, or an empty map when it is nil, so a page can read a field's sentence without a check.
+func cmpMap(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
 }

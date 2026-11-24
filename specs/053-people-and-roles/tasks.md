@@ -34,9 +34,9 @@
 
 ## Phase D: console
 
-- [ ] T011 The guard and `internal/ui/access.go` for every route; `TestConsoleRolesWalkEveryRoute`; refusal page and
+- [x] T011 The guard and `internal/ui/access.go` for every route; `TestConsoleRolesWalkEveryRoute`; refusal page and
       fragment; live notices filtered.
-- [ ] T012 Settings › People (list, invite, person page, remove), `/invite`; the sidebar and Settings nav by role; the
+- [x] T012 Settings › People (list, invite, person page, remove), `/invite`; the sidebar and Settings nav by role; the
       main actions hidden by role; who-words with the actor; `tools/ui-css.sh build`.
 
 ## Phase E: lab and docs

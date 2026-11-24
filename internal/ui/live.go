@@ -72,6 +72,39 @@ type liveRoute struct {
 	// WatchRequests is WatchLogs for a Requests page (feature 047): while it is open the service
 	// follows Traefik's log and sends the requests notice when one of the place's apps was asked.
 	WatchRequests func() (done func())
+	// Allow, when set, says whether the person may follow this stream at all (feature 053): the
+	// Operator view's needs an admin, a place's logs need view on it, an app's need view on the app.
+	// It is asked when the stream opens and at each re-check, so a role taken away ends the stream.
+	Allow func(service.Principal) error
+	// MetricsForAll lets the metrics notice reach a person who isn't an admin: the Monitoring page's
+	// own stream, whose regions the service filters for them. Everywhere else it is the host's.
+	MetricsForAll bool
+}
+
+// visibleTo says a notice may reach the person (feature 053, D6). A notice that names an app is sent
+// only to a person who may see it. One that names none is about a list the service filters for the
+// person (apps, activity, attention, schedules, domains, deployments, copies, logs, requests) and goes
+// to everyone, or about the installation (servers, the host, updates, scans, the console's address,
+// the sampler's metrics) and goes to admins only.
+func (s *server) visibleTo(who service.Principal, c service.Change, metricsForAll bool) bool {
+	if who.Admin() {
+		return true
+	}
+	if c.AppID != "" {
+		return s.allowedView(who, c.AppID)
+	}
+	switch c.What {
+	case service.ChangeServers, service.ChangeHost, service.ChangeUpdates, service.ChangeScans, service.ChangeConsoleAddress:
+		return false
+	case service.ChangeMetrics:
+		return metricsForAll
+	}
+	return true
+}
+
+// allowedView says the person may see the app.
+func (s *server) allowedView(who service.Principal, appID string) bool {
+	return who.Allow(service.NeedApp(service.LevelView), service.Target{AppID: appID}, s.now()) == nil
 }
 
 // stream answers a /live… request. It is the loop every such route shares:
@@ -90,12 +123,22 @@ type liveRoute struct {
 // retries any error status forever; the page closes its stream on "ended".
 func (s *server) stream(w http.ResponseWriter, r *http.Request, route liveRoute) {
 	value, hasCookie := httpx.SessionCookie(r, s.proxies.HTTPS(r))
+	// who is the person the session is, loaded again at each check: a changed role applies to the
+	// next notice, and a role that no longer allows the stream ends it.
+	var who service.Principal
 	check := func(ctx context.Context) error {
 		if !hasCookie {
 			return service.ErrNotAuthenticated
 		}
-		_, err := s.auth.CheckSessionQuiet(ctx, value)
-		return err
+		p, err := s.auth.CheckSessionQuiet(ctx, value)
+		if err != nil {
+			return err
+		}
+		who = p
+		if route.Allow != nil && route.Allow(p) != nil {
+			return service.ErrNotAuthenticated
+		}
+		return nil
 	}
 
 	err := check(r.Context())
@@ -154,13 +197,13 @@ func (s *server) stream(w http.ResponseWriter, r *http.Request, route liveRoute)
 		extra.Go(func() { route.Start(ctx, ev) })
 	}
 
-	s.liveLoop(ctx, ev, changes, check, route.Kinds)
+	s.liveLoop(ctx, ev, changes, check, route.Kinds, func(c service.Change) bool { return s.visibleTo(who, c, route.MetricsForAll) })
 }
 
 // liveLoop is the select loop of step 3 and 4. It returns when the stream is
 // over; the caller unsubscribes.
 func (s *server) liveLoop(ctx context.Context, ev *httpx.EventWriter, changes <-chan service.Change,
-	check func(context.Context) error, kinds []service.ChangeKind) {
+	check func(context.Context) error, kinds []service.ChangeKind, visible func(service.Change) bool) {
 	co := newCoalescer(s.live.coalesceEvery())
 	pending := time.NewTimer(time.Hour)
 	pending.Stop()
@@ -189,7 +232,7 @@ func (s *server) liveLoop(ctx context.Context, ev *httpx.EventWriter, changes <-
 			if !ok {
 				return
 			}
-			if !slices.Contains(kinds, c.What) {
+			if !slices.Contains(kinds, c.What) || !visible(c) {
 				continue
 			}
 			now := time.Now()
@@ -282,4 +325,18 @@ func (c *coalescer) nextWait(now time.Time) (time.Duration, bool) {
 		}
 	}
 	return wait, found
+}
+
+// allowViewApp is the Allow of an app's stream: view on the app.
+func (s *server) allowViewApp(id string) func(service.Principal) error {
+	return func(p service.Principal) error {
+		return p.Allow(service.NeedApp(service.LevelView), service.Target{AppID: id}, s.now())
+	}
+}
+
+// allowViewPlace is the Allow of a place's stream: view on the project's environment.
+func (s *server) allowViewPlace(project, environment string) func(service.Principal) error {
+	return func(p service.Principal) error {
+		return p.Allow(service.NeedPlace(service.LevelView), service.Target{Project: project, Environment: environment}, s.now())
+	}
 }

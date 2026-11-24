@@ -1,0 +1,38 @@
+{{/* The page of an invite link (feature 053): the email it is for, and the password to choose. It needs
+     no session: the link is the credential, and it travels in a hidden field of the form. A link that
+     isn't valid any more, or an address locked for too many wrong tries, says so and offers no form. */}}
+{{define "content"}}
+<main class="min-h-screen grid place-items-center px-6 py-12">
+  <div class="w-full max-w-[380px] flex flex-col gap-7">
+    <div class="flex flex-col gap-3.5">
+      {{brandMark 32}}
+      <span class="cv-wordmark">caravana</span>
+      <span class="cv-data-muted">{{.Host}}</span>
+    </div>
+    <h1 class="text-2xl font-medium text-fg-1">Join caravana</h1>
+    {{with .Notice}}
+    <div role="alert" class="cv-notice">
+      <span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span>
+      <span>{{.Text}}</span>
+    </div>
+    {{end}}
+    {{if .Valid}}
+    <form method="post" action="/invite" class="flex flex-col gap-4" autocomplete="off">
+      <input type="hidden" name="token" value="{{.Token}}">
+      <p class="text-base leading-normal text-fg-2">Choose a password for <span class="cv-inline-mono">{{.Email}}</span>. You will be signed in with it.</p>
+      <label class="cv-fld">
+        <span class="cv-label">Password</span>
+        <input class="cv-field cv-field-lg cv-field-mono" type="password" name="password" autocomplete="new-password" minlength="12" required autofocus{{if .PwdErr}} aria-invalid="true" aria-describedby="invite-password-error"{{else}} aria-describedby="invite-password-hint"{{end}}>
+        {{if .PwdErr}}<span id="invite-password-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.PwdErr}}</span></span>{{else}}<span id="invite-password-hint" class="cv-data-muted">At least 12 characters.</span>{{end}}
+      </label>
+      <label class="cv-fld">
+        <span class="cv-label">Password again</span>
+        <input class="cv-field cv-field-lg cv-field-mono" type="password" name="confirm" autocomplete="new-password" minlength="12" required{{if .ConfErr}} aria-invalid="true" aria-describedby="invite-confirm-error"{{end}}>
+        {{with .ConfErr}}<span id="invite-confirm-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+      </label>
+      <button type="submit" class="cv-btn cv-btn-lg cv-btn-primary">Join</button>
+    </form>
+    {{end}}
+  </div>
+</main>
+{{end}}

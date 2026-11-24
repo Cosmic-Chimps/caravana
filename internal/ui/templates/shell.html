@@ -16,10 +16,10 @@
   </a>
   {{/* The view toggle (feature 027): two plain links, no script. The current view is
        marked, not selected: these navigate. */}}
-  <nav aria-label="View" class="cv-view">
+  {{if .Admin}}<nav aria-label="View" class="cv-view">
     <a href="/apps" class="cv-view-link"{{if not .Ops}} aria-current="page"{{end}}>Developer</a>
     <a href="/ops" class="cv-view-link"{{if .Ops}} aria-current="page"{{end}}>Operator</a>
-  </nav>
+  </nav>{{end}}
 </div>
 {{end}}
 

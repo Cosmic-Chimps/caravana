@@ -434,9 +434,12 @@ func (s *server) monViewOf(ctx context.Context, q monReq, pl places) (*monView, 
 	if err != nil {
 		return nil, err
 	}
-	hostSection, err := s.hostSectionOf(ctx, q, host)
-	if err != nil {
-		return nil, err
+	// The host's capacity is the installation's: an owner and an admin see it (feature 053).
+	var hostSection *monHostView
+	if who, ok := service.PrincipalFrom(ctx); !ok || who.Admin() {
+		if hostSection, err = s.hostSectionOf(ctx, q, host); err != nil {
+			return nil, err
+		}
 	}
 	v := &monView{Region: reg, RegionHref: "/parts/monitoring", Host: hostSection, HostHref: "/parts/monitoring/host"}
 	if enc := q.values().Encode(); enc != "" {

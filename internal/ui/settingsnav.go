@@ -29,6 +29,7 @@ const (
 	entryDNS             = "dns"
 	entryTokens          = "tokens"
 	entrySignIn          = "sign-in"
+	entryPeople          = "people"
 	entryAppearance      = "appearance"
 )
 
@@ -52,6 +53,7 @@ var settingsGroups = []struct {
 		{entryNotifications, "Notifications", "/settings/notifications", "bell"},
 	}},
 	{"Security", []settingsEntry{
+		{entryPeople, "People", "/settings/people", "user"},
 		{entrySignIn, "Sign-in", "/settings/sign-in", "fingerprint"},
 		{entryTokens, "API tokens", "/settings/tokens", "key"},
 	}},
@@ -373,6 +375,8 @@ type settingsFacts struct {
 	// FailingBackup is the newest of the services' newest runs that failed; see backupFacts.Failing.
 	FailingBackup *store.BackupRecord
 	Apps          []store.AppRecord
+	// People is how many people the installation has, for the nav (admins only).
+	People int
 }
 
 // lastOf is a channel's newest delivery that ended, as "Last delivery" says it.
@@ -404,6 +408,7 @@ func (f settingsFacts) states(now time.Time) map[string]entryState {
 		entryCertificates:    certificatesState(f.Certs),
 		entryDNS:             dnsZonesState(f.DNSZones),
 		entryTokens:          tokensState(now, f.Tokens),
+		entryPeople:          {Count: f.People},
 	}
 }
 
@@ -462,13 +467,20 @@ type settingsNavGroup struct {
 	Items []settingsNavItem
 }
 
+// memberEntries are the Settings entries a member sees (feature 053): their own account, how they
+// sign in, their tokens and their browser. The rest is the installation's, for owners and admins.
+var memberEntries = map[string]bool{entryAccount: true, entrySignIn: true, entryTokens: true, entryAppearance: true}
+
 // settingsNav builds the nav for the page on entry current. A mark wins over a
-// count.
-func settingsNav(current string, states map[string]entryState) []settingsNavGroup {
+// count. A person who isn't an admin gets only the entries that are their own.
+func settingsNav(current string, states map[string]entryState, admin bool) []settingsNavGroup {
 	var out []settingsNavGroup
 	for _, g := range settingsGroups {
 		group := settingsNavGroup{Title: g.Title}
 		for _, e := range g.Entries {
+			if !admin && !memberEntries[e.ID] {
+				continue
+			}
 			st := states[e.ID]
 			item := settingsNavItem{Label: e.Label, Href: e.Href, Icon: e.Icon, Current: e.ID == current}
 			if st.Mark != "" {
@@ -478,7 +490,9 @@ func settingsNav(current string, states map[string]entryState) []settingsNavGrou
 			}
 			group.Items = append(group.Items, item)
 		}
-		out = append(out, group)
+		if len(group.Items) > 0 {
+			out = append(out, group)
+		}
 	}
 	return out
 }

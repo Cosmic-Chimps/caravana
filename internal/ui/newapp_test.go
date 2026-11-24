@@ -104,7 +104,7 @@ func TestCreateAppFromTheConsole(t *testing.T) {
 			t.Errorf("registrations = %d, want 1", e.Nomad.Registrations())
 		}
 		_, page := e.get(t, location(t, resp))
-		if !strings.Contains(page, `id="deployment-`+recs[0].Deployment.ID+`"`) || !strings.Contains(text(page), "from the console") {
+		if !strings.Contains(page, `id="deployment-`+recs[0].Deployment.ID+`"`) || !strings.Contains(text(page), "by you") {
 			t.Errorf("the first deployment isn't on the tab:\n%s", text(page))
 		}
 	})

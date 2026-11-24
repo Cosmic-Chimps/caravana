@@ -125,6 +125,9 @@ type headerActions struct {
 	Restart  string // where Restart posts
 	StopHref string // the confirmation page
 	Start    string // where Start posts
+	// CanStop says the person may stop the app (maintain); Restart and Start need deploy, which is
+	// why the header has no buttons at all for a person below it (feature 053).
+	CanStop bool
 }
 
 // actionsOf says what the header offers an app, nil when nothing is deployed.
@@ -228,15 +231,15 @@ func (s *server) loadActions(r *http.Request, id string) (actionsRegion, error) 
 	}
 	now := s.now()
 	for _, a := range recs {
-		region.Rows = append(region.Rows, actionRowOf(now, a))
+		region.Rows = append(region.Rows, actionRowOf(now, a, viewerEmail(r.Context())))
 	}
 	return region, nil
 }
 
 // actionRowOf turns a record into a row.
-func actionRowOf(now time.Time, a store.ActionRecord) actionRow {
+func actionRowOf(now time.Time, a store.ActionRecord, viewer ...string) actionRow {
 	row := actionRow{Program: a.Program, CopyID: a.CopyID, Copy: shortID(a.CopyID), Error: a.Error,
-		Trigger: triggerWords(app.Trigger(a.Trigger)), When: whenOf(now, &a.StartedAt, "")}
+		Trigger: actionTrigger(a, viewer), When: whenOf(now, &a.StartedAt, "")}
 	switch a.Action {
 	case store.ActionStop:
 		row.Label = "Stop"
@@ -548,4 +551,25 @@ func resultOf(line, copyID string, res service.CommandResult, svcName string) *r
 		out.Outcome = sentence{plain("It ended without an exit code.")}
 	}
 	return out
+}
+
+// actionTrigger is who did an action, in the words the list shows: "by you" or "by ana@example.com"
+// for a person at the console, "through the API by you" for one with a token; the words of the trigger
+// for an action nobody asked for (a schedule, the autoscaler) or one from before people had names.
+func actionTrigger(a store.ActionRecord, viewer []string) string {
+	words := triggerWords(app.Trigger(a.Trigger))
+	if a.Actor == "" {
+		return words
+	}
+	who := a.Actor
+	if len(viewer) > 0 {
+		who = actorWords(a.Actor, viewer[0])
+	}
+	switch app.Trigger(a.Trigger) {
+	case app.TriggerConsole:
+		return "by " + who
+	case app.TriggerManual:
+		return words + " by " + who
+	}
+	return words
 }

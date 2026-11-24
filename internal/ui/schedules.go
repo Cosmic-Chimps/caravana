@@ -160,13 +160,17 @@ type schedDetail struct {
 	// The buttons. StopRun is the run "Stop this run" stops ("" when none goes);
 	// RunNow is offered when no run goes, primary when the last run failed and
 	// the page opened the row by itself (a row the owner opens has it secondary).
-	StopRun     string
-	RunNow      bool
-	RunPrimary  bool
-	LogsHref    string
-	Paused      bool
-	EditHref    string
-	BackupsHref string // a built-in's "Change in Backups"
+	StopRun string
+	RunNow  bool
+	// AppID is the app the schedule belongs to. NoRun and NoEdit say the person may not run it (deploy on
+	// the app) or change it (maintain): those buttons are not drawn (feature 053).
+	AppID         string
+	NoRun, NoEdit bool
+	RunPrimary    bool
+	LogsHref      string
+	Paused        bool
+	EditHref      string
+	BackupsHref   string // a built-in's "Change in Backups"
 }
 
 // ---- Building the rows (pure) --------------------------------------------------------
@@ -652,7 +656,7 @@ func scheduleRowOf(now time.Time, sc service.Schedule, runs []service.ScheduleRu
 // detailOf builds what opens under a schedule's row. project and byItself are
 // scheduleRowOf's.
 func detailOf(now time.Time, sc service.Schedule, runs []service.ScheduleRun, bucket, project string, byItself bool) schedDetail {
-	d := schedDetail{ID: sc.ID, Builtin: sc.Builtin, Paused: sc.Paused}
+	d := schedDetail{ID: sc.ID, Builtin: sc.Builtin, Paused: sc.Paused, AppID: sc.App}
 	d.State, d.StateQuiet = detailState(now, sc, runs)
 	d.Bars = runBars(now, runs[:min(len(runs), stripRuns)], time.Duration(sc.StopAfterSeconds)*time.Second)
 
@@ -811,7 +815,9 @@ func (s *server) loadSchedules(ctx context.Context, q schedulesQuery) (schedules
 		if !atHome(app.Place{Project: sc.Project, Environment: sc.Environment}) {
 			project = pl.display(sc.Project)
 		}
-		region.Rows = append(region.Rows, scheduleRowOf(now, sc, runs, services[sc.App] > 1, bucket, project, sc.ID == q.Open || byItself, byItself))
+		row := scheduleRowOf(now, sc, runs, services[sc.App] > 1, bucket, project, sc.ID == q.Open || byItself, byItself)
+		row.Detail.NoRun, row.Detail.NoEdit = !s.can(ctx, "deploy", sc.App), !s.can(ctx, "maintain", sc.App)
+		region.Rows = append(region.Rows, row)
 	}
 	if len(list) == 0 {
 		if q.filterQuery() != "" {
@@ -820,6 +826,9 @@ func (s *server) loadSchedules(ctx context.Context, q schedulesQuery) (schedules
 			region.Empty = &emptyView{Title: "No schedules yet.",
 				Text:        "A schedule runs a command in a fresh copy of an app on a timer, then stops.",
 				ActionLabel: "New schedule", ActionHref: "/schedules/new"}
+			if who, ok := service.PrincipalFrom(ctx); ok && !s.mayCreateApps(ctx, who) {
+				region.Empty.ActionLabel, region.Empty.ActionHref = "", ""
+			}
 		}
 	}
 	return region, nil
@@ -912,6 +921,10 @@ func (s *server) renderSchedules(w http.ResponseWriter, r *http.Request, status 
 	list := &schedListView{Filter: filter, Notice: notice, Alert: alert, NewHref: "/schedules/new", schedulesRegion: region}
 	if q.App != "" {
 		list.NewHref += "?app=" + url.QueryEscape(q.App)
+	}
+	// New schedule is for a person who may maintain the app (the one the list is filtered to, or any).
+	if (q.App != "" && !s.can(r.Context(), "maintain", q.App)) || (q.App == "" && !s.mayCreateApps(r.Context(), head.Who)) {
+		list.NewHref = ""
 	}
 	s.render(w, status, "schedules", schedulesPage{pageData: head, List: list})
 }

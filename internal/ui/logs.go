@@ -1366,7 +1366,7 @@ func (s *server) liveLogs(w http.ResponseWriter, r *http.Request) {
 	if environment == "" {
 		environment = app.DefaultEnvironment
 	}
-	route := liveRoute{Kinds: []service.ChangeKind{service.ChangeLogs}}
+	route := liveRoute{Kinds: []service.ChangeKind{service.ChangeLogs}, Allow: s.allowViewPlace(project, environment)}
 	if v.Get("live") == "1" {
 		watch := s.live.watchLogs
 		if watch == nil {

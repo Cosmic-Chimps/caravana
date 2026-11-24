@@ -72,7 +72,7 @@ func TestSettingsNavOnEveryPage(t *testing.T) {
 		want := map[string][]string{
 			"":             {"Account=/settings"},
 			"Connections":  {"Registries=/settings/registries", "Builds=/settings/builds", "Secret providers=/settings/secret-providers", "Backup storage=/settings/backup-storage", "Certificates=/settings/certificates", "DNS providers=/settings/dns", "Notifications=/settings/notifications"},
-			"Security":     {"Sign-in=/settings/sign-in", "API tokens=/settings/tokens"},
+			"Security":     {"People=/settings/people", "Sign-in=/settings/sign-in", "API tokens=/settings/tokens"},
 			"This browser": {"Appearance=/settings/appearance"},
 		}
 		for title, items := range want {
@@ -249,7 +249,7 @@ func TestSettingsEntryRules(t *testing.T) {
 		nav := settingsNav(entryRegistries, map[string]entryState{
 			entryRegistries: {Count: 3, Mark: "failed", Why: "a registry refused its credentials"},
 			entryTokens:     {Count: 2},
-		})
+		}, true)
 		var reg, tok settingsNavItem
 		for _, g := range nav {
 			for _, it := range g.Items {
@@ -929,7 +929,7 @@ func TestSettingsAfterTheCritique(t *testing.T) {
 		}
 		// One HTML list for both orders: the wide nav keeps the contract's order, in its groups.
 		got := settingsNavOf(t, e.mustGet(t, "/settings/tokens"))
-		if strings.Join(got["Connections"], " ") != "Registries=/settings/registries Builds=/settings/builds Secret providers=/settings/secret-providers Backup storage=/settings/backup-storage Certificates=/settings/certificates DNS providers=/settings/dns Notifications=/settings/notifications" || strings.Join(got["Security"], " ") != "Sign-in=/settings/sign-in API tokens=/settings/tokens*" {
+		if strings.Join(got["Connections"], " ") != "Registries=/settings/registries Builds=/settings/builds Secret providers=/settings/secret-providers Backup storage=/settings/backup-storage Certificates=/settings/certificates DNS providers=/settings/dns Notifications=/settings/notifications" || strings.Join(got["Security"], " ") != "People=/settings/people Sign-in=/settings/sign-in API tokens=/settings/tokens*" {
 			t.Errorf("the nav's order changed: %v", got)
 		}
 	})

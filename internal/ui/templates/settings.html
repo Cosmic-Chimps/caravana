@@ -32,6 +32,7 @@
     {{else if eq .Entry "dns"}}{{template "settings-dns" .}}
     {{else if eq .Entry "builds"}}{{template "settings-builds" .}}
     {{else if eq .Entry "sign-in"}}{{template "settings-sign-in" .}}
+    {{else if eq .Entry "people"}}{{template "settings-people" .}}
     {{else if eq .Entry "tokens"}}{{template "settings-tokens" .}}
     {{else if eq .Entry "appearance"}}{{template "settings-appearance" .}}
     {{end}}

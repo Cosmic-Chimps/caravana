@@ -217,7 +217,7 @@ func TestRunCommandInTheConsole(t *testing.T) {
 	t.Run("the recent actions list the program and the exit code, never the arguments", func(t *testing.T) {
 		_, body := e.get(t, "/apps/whoami")
 		got := text(body)
-		for _, want := range []string{"Recent actions", "Run echo", "exit 0", "in copy c1111111", "from the console"} {
+		for _, want := range []string{"Recent actions", "Run echo", "exit 0", "in copy c1111111", "by you"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("the list lacks %q: %s", want, got)
 			}
@@ -402,7 +402,7 @@ func TestStopAndStartInTheConsole(t *testing.T) {
 		_, page := e.get(t, location(t, resp))
 		got := text(page)
 		for _, want := range []string{"Stopped. Nothing was deleted: Start runs it again exactly as it was.", "stopped", "Start it to run what ran before.",
-			"The app is stopped. Start it to run its copies again.", "Stop", "from the console"} {
+			"The app is stopped. Start it to run its copies again.", "Stop", "by you"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("the page lacks %q: %s", want, got)
 			}
@@ -555,7 +555,7 @@ func TestRestartInTheConsole(t *testing.T) {
 		t.Errorf("restarts = %+v, want both copies", rs)
 	}
 	_, list := e.get(t, "/parts/apps/whoami/actions")
-	if got := text(list); !strings.Contains(got, "Restart") || !strings.Contains(got, "done") || !strings.Contains(got, "from the console") {
+	if got := text(list); !strings.Contains(got, "Restart") || !strings.Contains(got, "done") || !strings.Contains(got, "by you") {
 		t.Errorf("the list: %s", got)
 	}
 
