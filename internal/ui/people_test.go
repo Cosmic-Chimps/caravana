@@ -44,6 +44,10 @@ func TestPeoplePagesLifecycle(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || !strings.Contains(body, testEmail) || !strings.Contains(text(body), "(you)") {
 		t.Fatalf("GET /settings/people = %d; want the owner, marked as you:\n%s", resp.StatusCode, text(body))
 	}
+	// One row per person: the section passes through two draws, and rows once came out twice.
+	if n := strings.Count(body, `class="cv-conn-row cv-conn-row-tok"`); n != 1 {
+		t.Errorf("the list has %d rows for one person; want 1", n)
+	}
 	resp, body = e.get(t, "/settings/people/new")
 	for _, want := range []string{"Role in the installation", `name="role.shop"`, `name="env.shop/staging"`, `name="endsAt"`} {
 		if resp.StatusCode != http.StatusOK || !strings.Contains(body, want) {
@@ -71,6 +75,9 @@ func TestPeoplePagesLifecycle(t *testing.T) {
 	}
 	if !strings.Contains(text(body), "shop: view (staging deploy)") {
 		t.Errorf("the list doesn't say ana's roles:\n%s", text(body))
+	}
+	if n := strings.Count(body, `class="cv-conn-row cv-conn-row-tok"`); n != 2 {
+		t.Errorf("the list has %d rows for two people; want 2", n)
 	}
 	// A second invite for the same email is refused at the field.
 	resp, body = e.post(t, e.Cookie, "/settings/people", url.Values{"email": {"ana@example.com"}, "orgRole": {"member"}})
