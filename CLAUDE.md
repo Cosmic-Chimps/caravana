@@ -2401,6 +2401,40 @@ change, readable by owners and admins. `plan.md` D1–D14 are the decisions and 
   console forms and searches the page, the CSV and the log). Not in 057: entries for reads, a per-app audit tab, an MCP tool, streaming to syslog or a
   SIEM, signing or chaining entries, entries for the agents' routine calls or for clock-driven runs.
 
+Feature 058 (`specs/058-template-inputs`, maintainer request 2026-11-25, branch `058-template-inputs`, cut from 057 and 034/056's merges): template catalog format 2. A
+template may ask a choice, have optional inputs, up to 20 inputs and conditional content, so Codemagic Patch (GitHub, Bitbucket Cloud, GitLab) is one template again.
+`plan.md` D1–D13 are the decisions; the contract is `contracts/template-format-2.md` (current; 035's `template-format.md` is format 1). API 0.65.0, no migration, no new
+module, no policy change, constitution unchanged.
+- **Old hosts are the hard constraint.** Caravana 0.22 and older read `catalog.json` with unknown fields refused and format 1's limits, and one template that breaks a
+  rule makes them refuse the whole catalog. So a release publishes `catalog.json` (format 1 for good: templates valid under format-1 rules, or a frozen
+  `template.v1.json` + `compose.v1.yaml` variant; a folder with only the frozen files is in it alone) and `catalog.v2.json` (format 2, all), with one `SHA256SUMS` of
+  two lines (v0.22.0's `SumFromSums` skips other names). `ReadSource` returns `Bundles{V1, V2, OnlyV1, OnlyV2}`; `caravana template bundle` writes the three files.
+  Proof against v0.22.0: a throwaway worktree of the tag parsed the bundle's `catalog.json` (and refused `catalog.v2.json`); `legacyParse` in `bundles_test.go` keeps that
+  in CI. New Caravana fetches the `catalog.v2.json` line's file, else `catalog.json` (a release made before 058); stored format-1 bundles still parse; the embedded
+  catalog is `catalog/catalog.v2.json`. `SumFromSums`/`VerifySums` take the file name.
+- **Tolerance.** `ParseCatalogFor(data, needsNewer)`: in a format-2 catalog a template with an unknown field, or failing the rules with a `requires` newer than the running
+  release, is kept as a stub (`Template.Unsupported`, listed unavailable: "made for a newer caravana…" / "needs caravana X or newer") and the rest is used; an unknown
+  top-level field, bad JSON shape, a duplicate or an unexcused failure still fails the catalog.
+- **Format 2.** `Input` gains `required` (`*bool`), `choices` and `when`; type `choice` (2–8 `{value, label}`, default one of them, no pattern or example). `Condition`
+  (`name → true | value | [values]`) is on an input's `when` (earlier choice inputs only), on an item of a service's `domains`/`secrets`/`identities`/`publish`
+  (`Template.ItemWhens`, parallel to the lists; `Template` has its own strict `UnmarshalJSON`/`MarshalJSON`) and in a Compose marker comment
+  (`# when signin=github`, `# when a=x,y`, `# when region`) at the end of a single-line mapping entry or list item (`condition.go`: a line scanner, a bad marker is a format
+  error naming the line). `Render` drops what doesn't hold and the kept file and the app have no marker. Combos of choices ≤ 64. `checkInputs`: an input not asked is `""`
+  and what was sent for it is ignored (never checked, rendered, stored or drawn back); `Asked`; `PreviewValues` gives a typed secret a stand-in so "is it given?" conditions
+  read right; `DomainInputsFor`. `Check` renders every combination × optional empty/filled and names `(with signin=gitlab, …)`.
+- Service/API: `InstallTemplate` also lists `choices.<name>` in its one `installed` audit entry. `templateJSON.services` is raw JSON with the items' `when`
+  (`Template.ServicesJSON`). `openapi.yaml` 0.65.0: `TemplateChoice`, `TemplateCondition`, `TemplateOverlay`, `TemplateInput.required|choices|when`, type `choice`; deploy tokens
+  stay denied; `get_template` returns it as the API does.
+- Console: choices are radios (≤ 4 answers with a default) or a select that starts on "Choose…"; inputs asked by the same choice are one `<fieldset data-when>` headed "Only
+  for GitHub" (`whenWords`); `static/js/template-form.js` (ours, in `tools/ui-vendor.versions`, no inline script) hides and disables a group while its condition fails and sets
+  `required` only while shown; without script all inputs are drawn, none under a condition is `required` and the server reads only the asked ones; the notes stay above the
+  form; Preview adds the secret names per service and the rendered Compose file. A choice's answer is always shown in the installed notice's notes.
+- Catalog repository (`../caravana-templates`, branch `codemagic-patch-choices`, ea79b73, unpushed): `codemagic-patch` 0.9.0-3 is one format-2 template (a `signin` choice, each
+  provider's inputs under `when`, markers on its env lines and `when` on its secrets, GitLab's optional self-hosted address `# when gl_base_url`; GitLab's names are from
+  patch.codemagic.io's configuration reference: `GITLAB_OAUTH_CLIENT_ID`, `GITLAB_OAUTH_CLIENT_SECRET`, `GITLAB_OAUTH_BASE_URL`); frozen `template.v1.json` variants for
+  `codemagic-patch` 0.9.0-2 and `codemagic-patch-bitbucket`; the release workflow uploads `catalog.v2.json` too; `CARAVANA_REF` there is a guess (`v0.23.0`) until 058 is released.
+- Not in 058: the embedded catalog isn't rebuilt from the repository, a lab run of the new template, conditions between inputs of other kinds, a template editor.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

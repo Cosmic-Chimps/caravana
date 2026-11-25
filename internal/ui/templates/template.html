@@ -2,12 +2,46 @@
      installs it. A plain form: Create posts it, and Preview (action=preview) draws this page again with the
      app the answers make. A secret input is never written back. Takes a templatePage. */}}
 
+{{define "head"}}<script src="{{asset "js/template-form.js"}}" defer></script>{{end}}
+
+{{/* tpl-input: one question of the form. A choice is radios (up to four answers) or a select. An input that
+     only one answer asks for sits in a fieldset that the script hides while another is chosen; without the
+     script every input is drawn and only the ones that are asked for are read. Takes a templateInputView. */}}
+{{define "tpl-input"}}
+{{if .Choice}}
+<fieldset class="cv-fld cv-fieldset"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}>
+  <legend class="cv-label">{{.Label}}{{if .Optional}} <span class="cv-data-muted">optional</span>{{end}}</legend>
+  {{if .Radios}}
+  <div class="cv-radios">
+    {{range .Choices}}<label class="cv-radio"><input type="radio" name="{{$.Field.ID}}" value="{{.Value}}"{{if .Checked}} checked{{end}}{{if $.HTMLRequired}} required{{end}}{{if $.DataRequired}} data-required{{end}}><span>{{.Label}}</span></label>{{end}}
+  </div>
+  {{else}}
+  <select class="cv-field cv-select" id="{{.Field.ID}}" name="{{.Field.ID}}"{{if .HTMLRequired}} required{{end}}{{if .DataRequired}} data-required{{end}}{{if .Autofocus}} autofocus{{end}}>
+    {{if .NoneChecked}}<option value=""{{if .Required}} disabled{{end}} selected>{{if .Required}}Choose…{{else}}—{{end}}</option>{{end}}
+    {{range .Choices}}<option value="{{.Value}}"{{if .Checked}} selected{{end}}>{{.Label}}</option>{{end}}
+  </select>
+  {{end}}
+  {{with .Help}}<span class="cv-data-muted cv-hint">{{.}}</span>{{end}}
+  {{template "field-error" .Field}}
+</fieldset>
+{{else}}
+<label class="cv-fld" for="{{.Field.ID}}">
+  <span class="cv-label">{{.Label}}{{if .Optional}} <span class="cv-data-muted">optional</span>{{end}}</span>
+  <input class="cv-field{{if not .Secret}} cv-field-mono{{end}}" id="{{.Field.ID}}" type="{{.Type}}" name="{{.Field.ID}}" value="{{if not .Secret}}{{.Field.Value}}{{end}}"{{with .Mode}} inputmode="{{.}}"{{end}}{{if .Example}} placeholder="e.g. {{.Example}}"{{end}} autocomplete="{{if .Secret}}new-password{{else}}off{{end}}" autocapitalize="off" spellcheck="false"{{if .HTMLRequired}} required{{end}}{{if .DataRequired}} data-required{{end}}{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Autofocus}} autofocus{{end}}>
+  {{with .Help}}<span class="cv-data-muted cv-hint">{{.}}</span>{{end}}
+  {{if .Retype}}<span class="cv-data-muted cv-hint">Type it again: secrets aren't kept in the form.</span>{{end}}
+  {{template "field-error" .Field}}
+</label>
+{{end}}
+{{end}}
+
 {{define "tpl-service"}}
 <li class="cv-tplsvc">
   <span class="cv-inline-mono text-fg-1">{{.Name}}</span>
   {{with .Image}}<span class="cv-inline-mono text-fg-3">{{.}}</span>{{end}}
   {{range .Domains}}<span class="text-fg-2">reached at {{.}}{{if $.TeamOnly}}, with a password{{end}}</span>{{end}}
   {{with .Backup}}<span class="cv-chip">backed up ({{.}})</span>{{end}}
+  {{with .Secrets}}<span class="text-fg-2">secrets {{range $i, $n := .}}{{if $i}}, {{end}}<span class="cv-inline-mono text-fg-1">{{$n}}</span>{{end}}</span>{{end}}
 </li>
 {{end}}
 
@@ -46,12 +80,13 @@
         <p class="text-base text-fg-1">With these answers it makes:</p>
         <ul class="cv-tplsvcs">{{range .Services}}{{template "tpl-service" .}}{{end}}</ul>
         {{range .Warnings}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{.}}</span></div>{{end}}
+        {{with .Compose}}<details class="cv-note"><summary>The Compose file these answers make</summary><pre class="cv-tplcompose">{{.}}</pre></details>{{end}}
         <p class="text-sm text-fg-3">Nothing was made: no app, no password, no deploy.</p>
       </div>
     </section>
     {{end}}
 
-    <form method="post" action="{{.Form.Action}}" class="cv-panel cv-newapp p-5 flex flex-col gap-5">
+    <form method="post" action="{{.Form.Action}}" class="cv-panel cv-newapp p-5 flex flex-col gap-5" data-template-form>
       {{with .Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
       {{with .Form.SavedID}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span><span class="cv-inline-mono text-fg-1">{{.}}</span> was saved, but its first deploy didn't start. Change what is wrong on its <a href="/apps/{{.}}/deployments">Deployments tab</a> and deploy again.</span></div>{{end}}
 
@@ -72,14 +107,15 @@
 
       {{template "place-select" .Form.Place}}
 
-      {{range .Form.Inputs}}
-      <label class="cv-fld" for="{{.Field.ID}}">
-        <span class="cv-label">{{.Label}}</span>
-        <input class="cv-field{{if not .Secret}} cv-field-mono{{end}}" id="{{.Field.ID}}" type="{{.Type}}" name="{{.Field.ID}}" value="{{if not .Secret}}{{.Field.Value}}{{end}}"{{with .Mode}} inputmode="{{.}}"{{end}}{{if .Example}} placeholder="e.g. {{.Example}}"{{end}} autocomplete="{{if .Secret}}new-password{{else}}off{{end}}" autocapitalize="off" spellcheck="false"{{if .Required}} required{{end}}{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if eq $.Form.Focus .Field.ID}} autofocus{{end}}>
-        {{with .Help}}<span class="cv-data-muted cv-hint">{{.}}</span>{{end}}
-        {{if and .Secret $.Form.Posted}}<span class="cv-data-muted cv-hint">Type it again: secrets aren't kept in the form.</span>{{end}}
-        {{template "field-error" .Field}}
-      </label>
+      {{range .Form.Groups}}
+      {{if .WhenData}}
+      <fieldset class="cv-tplwhen cv-fieldset" data-when="{{.WhenData}}">
+        <legend class="cv-label cv-tplwhen-title">{{.Heading}}</legend>
+        {{range .Inputs}}{{template "tpl-input" .}}{{end}}
+      </fieldset>
+      {{else}}
+      {{range .Inputs}}{{template "tpl-input" .}}{{end}}
+      {{end}}
       {{end}}
 
       <div class="cv-actions">

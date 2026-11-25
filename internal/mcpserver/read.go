@@ -254,8 +254,9 @@ func (h *handler) addReadTools(srv *mcp.Server) {
 		})
 
 	addTool(h, srv, read("get_template",
-		"Returns one app template: what it asks for (inputs, and the secrets Caravana generates, by name and "+
-			"size only), its services with the Compose file and placeholders, and its notes. API operation getTemplate."),
+		"Returns one app template: what it asks for (inputs, including choices, which are optional and which "+
+			"are asked only for one choice, and the secrets Caravana generates, by name and size only), its "+
+			"services with the Compose file and placeholders, and its notes. API operation getTemplate."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in templateInput) (string, error) {
 			return h.answer(ctx, call{op: opGetTemplate, params: []string{"name", in.Name}})
 		})

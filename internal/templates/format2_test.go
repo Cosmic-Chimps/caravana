@@ -189,7 +189,9 @@ func TestFormat1StaysFormat1(t *testing.T) {
 		{"required", func(x *Template) { x.Inputs[0].Required = boolPtr(false) }, "inputs[0]: uses required, choices or when"},
 		{"a choice input", func(x *Template) { x.Inputs[0] = signinTemplate().Inputs[1] }, "inputs[0]"},
 		{"a when on an input", func(x *Template) { x.Inputs[0].When = Condition{"x": {Any: true}} }, "inputs[0]: uses required, choices or when"},
-		{"a marker", func(x *Template) { x.Compose = strings.Replace(x.Compose, "BUCKET: \"{{bucket}}\"", "BUCKET: \"{{bucket}}\" # when domain", 1) },
+		{"a marker", func(x *Template) {
+			x.Compose = strings.Replace(x.Compose, "BUCKET: \"{{bucket}}\"", "BUCKET: \"{{bucket}}\" # when domain", 1)
+		},
 			"a marker comment is catalog format 2"},
 		{"an overlay item's when", func(x *Template) {
 			x.ItemWhens = map[string]map[string][]Condition{"web": {"secrets": {Condition{"domain": {Any: true}}, nil}}}

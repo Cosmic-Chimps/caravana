@@ -1,5 +1,8 @@
 # Contract: the template format (format 1)
 
+> Format 1 is what `catalog.json` keeps being and what Caravana 0.22 and older read. The current format is 2:
+> `specs/058-template-inputs/contracts/template-format-2.md`.
+
 Read by `internal/templates` (pure: no network, no disk but an `fs.FS` given to it, no clock, no
 randomness but an `io.Reader` given to it).
 
