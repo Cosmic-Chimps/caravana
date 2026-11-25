@@ -90,6 +90,10 @@ func newConsoleEnvWith(t *testing.T, setup func(*service.Service, *deploytest.No
 	// No domain watcher pass, and domain checks that never leave the process.
 	svc.SetDomainWatchGaps(time.Hour, time.Hour)
 	svc.SetEdge(edgetest.FakeResolver{}, &edgetest.FakeDialer{})
+	// The metrics sampler ticks at every whole minute and asks Nomad for each running copy's stats,
+	// so a slow test that counts stats requests could catch a tick. An hour keeps it out; a test that
+	// wants the sampler sets its own gap in setup.
+	svc.SetMetricsSampleGap(time.Hour)
 	if setup != nil {
 		setup(svc, nomad)
 	}

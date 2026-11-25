@@ -154,6 +154,10 @@ func newTestEnvWith(t *testing.T, nomadToken string, setup func(*service.Service
 	svc.SetEdge(edgetest.FakeResolver{}, &edgetest.FakeDialer{})
 	// The host's OS files: none, so a test never reads the machine it runs on.
 	svc.SetHostRoot(fstest.MapFS{})
+	// The metrics sampler ticks at every whole minute and asks Nomad for each running copy's stats,
+	// so a slow test that counts stats requests could catch a tick (the release's -race run did on
+	// 2026-11-25). An hour keeps it out; a test that wants the sampler sets its own gap in setup.
+	svc.SetMetricsSampleGap(time.Hour)
 	if setup != nil {
 		setup(svc)
 	}
