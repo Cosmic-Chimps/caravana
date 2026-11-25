@@ -119,7 +119,8 @@ merges second renumbers, as 049 did.
   `auditEventJSON` in `internal/api/audit.go` (the API speaks `encoding/json/v2`), reusing the small audit types.
 - **Diff details D5/D6 left open.** The root object is always compared field by field (a creation lists its top-level
   fields, not one `{…}`); an object or list that appears or goes whole is one change summarised `{…}` / `[…]` (so the
-  first secret of a service shows `services[web].secrets added […]`, a second one `secrets[B] added {…}`); a value
+  first secret of a service showed `services[web].secrets added […]`; since the review a list of named items that appears or
+  goes whole lists each item by name, so it shows `secrets[API_KEY] added {…}` and a first domain its host); a value
   under a denylisted key that is itself an object or list is one redacted change; an empty object or list counts as
   absent; an empty string is shown `""` so a missing `from`/`to` always means "not shown"; the 200 bytes include the
   ellipsis; scalar lists compare by index. Added: `MaxChanges` = 100 per entry, a last change `…` counts the rest, so one

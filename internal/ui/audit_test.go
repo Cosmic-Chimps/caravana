@@ -324,8 +324,8 @@ func TestAuditNeverDrawsASecret(t *testing.T) {
 	sec := e.auditOf(t, audit.ActionUpdated, audit.KindApp)
 	secretNamed := false
 	for _, c := range sec.Changes {
-		// The first secret of a service is told whole, as "[…]": the diff keeps no leaves of it.
-		if strings.HasSuffix(c.Path, ".secrets") || strings.Contains(c.Path, "DB_PASSWORD") {
+		// The first secret of a service is listed by its name, as "{…}": the diff keeps no leaves of it.
+		if strings.HasSuffix(c.Path, ".secrets[DB_PASSWORD]") || strings.Contains(c.Path, "DB_PASSWORD") {
 			secretNamed = true
 			if strings.Contains(c.From+c.To, tokenSentinel) {
 				t.Errorf("the secret's change shows its value: %+v", c)

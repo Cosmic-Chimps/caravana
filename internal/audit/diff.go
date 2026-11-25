@@ -65,8 +65,9 @@ var listKeys = []string{"name", "host", "id", "label", "path"}
 // objects is compared by key, the first of name, host, id, label and path that every item has
 // (and has once); otherwise by index. Paths read services[web].domains[new.example.com].path.
 //
-// An object or a list that appears or disappears whole is one change with a short summary
-// ({…} or […]), not every leaf; so is any value under a Redacted key, which shows no value at
+// An object or an unnamed list that appears or disappears whole is one change with a short summary
+// ({…} or […]), not every leaf (a list of named items lists each item by name, {…} each); so is
+// any value under a Redacted key, which shows no value at
 // all. Empty objects and lists count as absent. At most MaxChanges are returned; a last change
 // counts the rest.
 func Diff(before, after any) []Change {
@@ -153,6 +154,16 @@ func (d *differ) walk(path, key string, a, b any) {
 		case !reflect.DeepEqual(a, b):
 			d.add(Change{Path: path, Op: OpChanged})
 		}
+		return
+	}
+	// A list of named items that appears or goes whole lists its items by name, so a service's
+	// first domain or secret still names its host or its name (never its leaves).
+	if l, ok := b.([]any); ok && !ap && listKey(l) != "" {
+		d.walkList(path, nil, l)
+		return
+	}
+	if l, ok := a.([]any); ok && !bp && listKey(l) != "" {
+		d.walkList(path, l, nil)
 		return
 	}
 	switch {

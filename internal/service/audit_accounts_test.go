@@ -301,7 +301,7 @@ func TestAuditNotesPeople(t *testing.T) {
 	if got.Actor.Kind != audit.ActorPerson || got.Actor.Email != "you@example.com" || got.Resource.Name != "ana@example.com" {
 		t.Errorf("invite = actor %+v resource %+v", got.Actor, got.Resource)
 	}
-	if c := change(got.Changes, "projects[shop].role"); c == nil && change(got.Changes, "projects") == nil {
+	if change(got.Changes, "projects[shop].role") == nil && change(got.Changes, "projects[shop]") == nil {
 		t.Errorf("the invite lists no role: %v", changePaths(got.Changes))
 	}
 	if strings.Contains(everyEntry(t, e.store), invited.Token) {

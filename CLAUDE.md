@@ -2231,7 +2231,8 @@ renumbers, as 049 did). No new module, no policy change, constitution unchanged.
   logged as an error), `Diff(before, after)` (JSON walk, lists of objects keyed by `name|host|id|label|path`, paths like
   `services[web].domains[new.example.com].path`, values cut at 200 bytes, at most 100 changes) and its redaction (a leaf whose key is or ends with
   `password`, `token`, `secret`, `secretAccessKey`, `privateKey`, `apiKey`, `signingSecret`, `hash` or `value` shows `set`/`changed`/`removed`, no
-  `from`/`to`; a value or item added whole shows only `{…}`/`[…]`), and the CSV writer (`SafeCell` quotes a leading `= + - @`, tab or CR).
+  `from`/`to`; a value or item added whole shows only `{…}`/`[…]`, but a list of named items added or removed whole lists each item
+  by its name, so a service's first domain still names its host), and the CSV writer (`SafeCell` quotes a leading `= + - @`, tab or CR).
 - Store: `audit_events` has no foreign key (entries outlive apps and people), `audit_settings` (`retention_days` 90, CHECK 30–3650);
   `InsertAuditEvent`, `ListAuditEvents` (newest first, `before` cursor on the ID, at most 500), `ExportAuditEvents` (callback, oldest first, at most
   100 000), `PruneAuditEvents`; no update or delete of one entry exists. The prune runs from `Service.Start` (`SetAuditPruneGap`).
