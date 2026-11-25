@@ -68,6 +68,8 @@ type AuditScope struct {
 	at        time.Time
 	entry     *audit.Entry
 	finished  bool
+	// unchanged is set by NoChange: the request succeeded and changed nothing, so it needs no fallback.
+	unchanged bool
 }
 
 // WithAuditScope returns a context with a scope for one request, and the scope. The door is how the
@@ -114,6 +116,14 @@ func (sc *AuditScope) SetFallback(r audit.Resource) {
 	sc.fallback = r
 }
 
+// NoChange tells the scope the request succeeded and changed nothing (a webhook whose images are the
+// ones already live, an unpin of a backup that holds no label), so Finish writes no fallback entry for it.
+func (sc *AuditScope) NoChange() {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	sc.unchanged = true
+}
+
 // Finish ends the scope once the handler returned with the status it wrote, and writes the entry. A
 // request that changed something and then failed keeps its entry; one that noted nothing and ended below
 // 400 gets a fallback entry (action changed, the resource given here or by SetFallback, installation
@@ -128,7 +138,7 @@ func (sc *AuditScope) Finish(status int, fallback audit.Resource) {
 	}
 	sc.finished = true
 	w, entry, at := sc.w, sc.entry, sc.at
-	if entry == nil && status < 400 {
+	if entry == nil && status < 400 && !sc.unchanged {
 		res := fallback
 		if res.Kind == "" {
 			res = sc.fallback
@@ -216,6 +226,13 @@ func (s *Service) audit(ctx context.Context, e audit.Entry) {
 // audit is Service.audit for the accounts side, which has its own store.
 func (a *Auth) audit(ctx context.Context, e audit.Entry) {
 	auditWriter{store: a.store, log: a.log, now: a.now}.note(ctx, e)
+}
+
+// noChange tells the request's audit scope, if there is one, that the call changed nothing.
+func (s *Service) noChange(ctx context.Context) {
+	if sc := AuditScopeFrom(ctx); sc != nil {
+		sc.NoChange()
+	}
 }
 
 func (s *Service) writer() auditWriter {

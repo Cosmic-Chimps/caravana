@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -378,7 +379,7 @@ func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger)
 		return store.DeploymentRecord{}, err
 	}
 	s.appChanged(a.ID)
-	return s.deploy(ctx, a, trigger, made{warnings: previewWarnings})
+	return s.deploy(ctx, a, trigger, made{warnings: previewWarnings, action: audit.ActionCreated, diff: true})
 }
 
 // ErrAppNotDefined is the refusal of a deploy "as stored" of an app that has
@@ -442,6 +443,7 @@ func (s *Service) CreateAppOnly(ctx context.Context, a app.App) (store.AppRecord
 		return store.AppRecord{}, err
 	}
 	s.appChanged(a.ID)
+	s.noteApp(ctx, audit.ActionCreated, a.ID, nil, appChanges(nil, a)...)
 	return rec, nil
 }
 
@@ -512,6 +514,15 @@ func (s *Service) appCopies(ctx context.Context, appID string) (app.App, []Copy,
 // as long as the process runs. Then the open pages hear of it: deleted for
 // the app's own page, apps, activity and attention for the lists.
 func (s *Service) DeleteApp(ctx context.Context, id string) error {
+	if err := s.deleteApp(ctx, id); err != nil {
+		return err
+	}
+	s.noteApp(ctx, audit.ActionDeleted, id, nil)
+	return nil
+}
+
+// deleteApp is DeleteApp without its note, for ClosePreview, which notes the close as one entry.
+func (s *Service) deleteApp(ctx context.Context, id string) error {
 	// Checked before the lock, so asking about an ID that doesn't exist
 	// creates no state.
 	if _, err := s.store.GetApp(ctx, id); err != nil {

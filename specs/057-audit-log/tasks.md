@@ -24,15 +24,15 @@
 
 ## Phase B — notes: apps and what hangs off them (US1, US2, US5)
 
-- [ ] T005 Notes in the app paths: create (with and without deploy), deploy/define/compose (diff of the app
+- [x] T005 Notes in the app paths: create (with and without deploy), deploy/define/compose (diff of the app
   view, link to the deployment), redeploy, rollback, promote, copy, delete, stop, start, restart, run a command
   (program only), open a terminal, refresh secrets, secret and domain edits through Configure, placement,
   scaling, build settings of a service, webhook tokens, deploy tokens; the webhook as actor.
-- [ ] T006 Notes for backups and restores (back up now, restore, pin, unpin, backup places, restore schedule),
+- [x] T006 Notes for backups and restores (back up now, restore, pin, unpin, backup places, restore schedule),
   schedules (create, update, delete, run now, stop a run), projects and environments (create, update, delete),
   previews (settings, close, the reaper as Caravana), domains (Team only password rotation, certificate settings),
   Git access.
-- [ ] T007 Service tests: one entry per method above with action, kind, ID, place and record; domain change
+- [x] T007 Service tests: one entry per method above with action, kind, ID, place and record; domain change
   diff; secret `changed`/`set`; sentinel over every entry and the SQLite file.
 
 ## Phase C — notes: the installation and accounts (US1, US2)

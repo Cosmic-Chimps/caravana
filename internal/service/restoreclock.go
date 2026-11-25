@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -128,6 +129,9 @@ func (s *Service) scheduledRestore(ctx context.Context, rec store.AppRecord, svc
 	case err == nil:
 		s.log.Info("scheduled restore started", "app", appID, "service", svc.Name, "label", label, "backup", b.ID,
 			"restore", started.ID, "slot", slot)
+		// Caravana restores for the owner, on the schedule the owner set (plan D14): its own entry.
+		s.audit(ctx, audit.Entry{Action: audit.ActionRestored, Resource: backupResource(appID, b.ID, svc.Name),
+			Record: &audit.Record{Kind: audit.RecordRestore, ID: started.ID}})
 	case errors.Is(err, ErrAppStopped):
 		// Stopped between the pass's look and now: the slot waits for Start.
 	case errors.Is(err, ErrBackupRunning):

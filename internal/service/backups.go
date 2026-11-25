@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -186,7 +187,14 @@ func (s *Service) backedUpService(ctx context.Context, appID, service string) (a
 // own copy and stops the service while it runs (see startVolumeBackup), which
 // can also be ErrNoRunningCopy.
 func (s *Service) BackUpNow(ctx context.Context, appID, service string) (store.BackupRecord, error) {
-	return s.backUpNow(ctx, appID, service, store.BackupTriggerOwner)
+	rec, err := s.backUpNow(ctx, appID, service, store.BackupTriggerOwner)
+	if err != nil {
+		return rec, err
+	}
+	// Only the owner's: a backup on its schedule is the clock's, which the log leaves out (plan D14).
+	s.audit(ctx, audit.Entry{Action: audit.ActionBackedUp, Resource: backupResource(appID, rec.ID, service),
+		Record: &audit.Record{Kind: audit.RecordBackup, ID: rec.ID}})
+	return rec, nil
 }
 
 // backUpNow is BackUpNow for a trigger, recorded on the run:
@@ -292,7 +300,13 @@ func (s *Service) Restore(ctx context.Context, appID, backupID, from string) (st
 	if b.Status != store.BackupSucceeded || b.Gone() {
 		return store.RestoreRecord{}, fmt.Errorf("backup %s can't be restored: it %s: %w", backupID, map[bool]string{true: "was deleted by retention", false: "didn't succeed"}[b.Expired], store.ErrNotFound)
 	}
-	return s.restoreBackup(ctx, appID, b, store.RestoreTriggerOwner, "", from)
+	rec, err := s.restoreBackup(ctx, appID, b, store.RestoreTriggerOwner, "", from)
+	if err != nil {
+		return rec, err
+	}
+	s.audit(ctx, audit.Entry{Action: audit.ActionRestored, Resource: backupResource(appID, backupID, b.Service),
+		Record: &audit.Record{Kind: audit.RecordRestore, ID: rec.ID}})
+	return rec, nil
 }
 
 // restoreBackup starts the restore of b, a succeeded backup that is still in one

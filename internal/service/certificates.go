@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/edge"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -93,9 +94,12 @@ func (s *Service) SetWarnBeforeDays(ctx context.Context, days int) error {
 	if !slices.Contains(store.WarnBeforeDays, days) {
 		return app.NewFieldError("warnBeforeDays", "must be 7, 14 or 30 days, not %d", days)
 	}
+	was, _, _ := s.store.CertificateSettings(ctx)
 	if err := s.store.SetWarnBeforeDays(ctx, days); err != nil {
 		return err
 	}
+	s.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: audit.Resource{Kind: audit.KindSettings, ID: "certificates", Name: "certificates"},
+		Changes: audit.Diff(map[string]any{"warnBeforeDays": was}, map[string]any{"warnBeforeDays": days})})
 	if err := s.rejudgeCertificates(ctx, time.Duration(days)*24*time.Hour); err != nil {
 		// The setting is saved; the next check judges every row with it.
 		s.log.Warn("judge the certificates again with the new warning window", "error", err)

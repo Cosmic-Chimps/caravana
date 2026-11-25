@@ -143,3 +143,41 @@ merges second renumbers, as 049 did.
 - **Retention note.** `SetAuditSettings` notes `updated` on resource `settings`/`audit` with the diff of
   `{retentionDays}`; a refused value (field error on `retentionDays`) notes nothing.
 - No change to numbering: migration 0044, API 0.61.0.
+
+### Phase B (apps and what hangs off them)
+
+- **Every deploy is noted in one place.** `deployWarned` notes right after the deployment record exists (`noteDeploy`),
+  so `Deploy`, `Redeploy`, the webhook, a Compose deploy, `RedeployVersion`, `Promote`, `RefreshSecrets`, `CreateApp`
+  and a template install share it. `made` gained `action`, `diff` and `before`: `saveAndDeploy` sets `diff` and the
+  stored app it replaced; a new app's action is `created`, a plain deploy's `deployed`, and the callers that mean
+  something else say so (`redeployed` with no diff, `rolled back`, `promoted`, `refreshed secrets`). If the app was
+  stored but the deployment record could not be made, the entry is written anyway, with no record to link.
+- **Configure's own methods say `updated`.** The secret edits, `SetDomainsIf` and the backup policy, restore schedule and
+  places methods are deploys of one change: action `updated`, with the deployment as the record. Placement, scaling
+  and a service's build settings reach the service as a plain `DeployIf`, so they read `deployed`, and the diff says
+  what moved.
+- **The diff's views** (`internal/service/audit_views.go`): the stored app and the deployed app both give every typed
+  secret the value `\x00stored` (the typed one `\x00stored+`), so a replaced secret is `changed` with no value and a kept
+  one is no change at all; references (`from`, `template`) compare as they are. The helper serves every app path.
+- **Resources.** A backup action's resource is the backup (`backup`, ID the backup's, name the service, the app's place);
+  a restore is noted on the backup it restored, linking the restore record. A pin lists the backup that lost the
+  label as `related`. Run now and Stop run are on the `schedule` (`ran a command`, `stopped`), linking the run.
+  A Team-only password rotation and a domain check (`checked`: a POST that updates what the Domains page shows, so
+  it would otherwise be a fallback entry) are on the `domain` (ID the host). Git access is `git_access` with the ID
+  `<app>/<service>`; its diff shows the kind and user name and the key or token only as `set`. A webhook token is
+  `webhook_token` (`created`, or `rotated` when it replaced one). Preview settings are on the project
+  (`updated`, limit, days and `password` as set or changed), not on `settings`/`previews`, so the project filter
+  finds them. Projects are `<project>`, environments `<project>/<environment>`.
+- **What the log keeps of a command.** A run in a copy and a schedule note the program and the number of arguments, never
+  an argument (it may be a secret someone typed): `program` is the first word, `arguments` a count.
+- **Closing a preview is one entry** on the environment (`deleted`), listing the apps it deleted as `related`
+  (`DeleteApp` and `DeleteEnvironment` split into noting and quiet halves so `ClosePreview` doesn't write one entry
+  per app). The reaper's close has no principal, so its actor is Caravana; so is a scheduled restore (noted in the
+  restore clock). A backup, a schedule run, an autoscale step and the watchers note nothing.
+- **`AuditScope.NoChange()`.** A request that succeeds and changes nothing (a webhook whose images are the live ones, a
+  push to another branch, a refresh with nothing new, an unpin of an unpinned backup, a pause of a paused schedule, a
+  delete of a token there isn't) calls it through `s.noChange(ctx)`, so `Finish` writes no fallback entry for it.
+- **Deploy tokens are noted where they are made**, in `Auth.CreateScopedAPIToken`, only when it has a scope (`token`,
+  placed in its project, with `scope` as `<project>/<app>`; the token itself never). A full token's entry is phase C's.
+- **Phase C's, still unnoted.** A template install is a Compose deploy, so for now it reads `created`/`deployed` on the app.
+

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -112,7 +113,24 @@ func (s *Service) PinBackup(ctx context.Context, appID, backupID, label string) 
 		return store.BackupRecord{}, err
 	}
 	s.backupsChanged(appID)
+	e := audit.Entry{Action: audit.ActionPinned, Resource: backupResource(appID, backupID, b.Service),
+		Changes: []audit.Change{pinChange(b.Pin, label)}}
+	if holder.ID != "" && holder.ID != backupID {
+		e.Related = []audit.Related{{Kind: audit.KindBackup, ID: holder.ID, Action: audit.ActionUnpinned}}
+	}
+	s.audit(ctx, e)
 	return s.store.GetBackup(ctx, appID, backupID)
+}
+
+// pinChange is the change of a backup's label, from what it had (nothing when empty) to label.
+func pinChange(from, to string) audit.Change {
+	switch {
+	case from == "":
+		return audit.Change{Path: "pin", Op: audit.OpAdded, To: to}
+	case to == "":
+		return audit.Change{Path: "pin", Op: audit.OpRemoved, From: from}
+	}
+	return audit.Change{Path: "pin", Op: audit.OpChanged, From: from, To: to}
 }
 
 // UnpinBackup takes the label off a backup. A backup with no label is returned
@@ -123,6 +141,7 @@ func (s *Service) UnpinBackup(ctx context.Context, appID, backupID string) (stor
 		return store.BackupRecord{}, err
 	}
 	if b.Pin == "" {
+		s.noChange(ctx)
 		return b, nil
 	}
 	state, err := s.tryLockApp(appID)
@@ -141,6 +160,8 @@ func (s *Service) UnpinBackup(ctx context.Context, appID, backupID string) (stor
 		return store.BackupRecord{}, err
 	}
 	s.backupsChanged(appID)
+	s.audit(ctx, audit.Entry{Action: audit.ActionUnpinned, Resource: backupResource(appID, backupID, b.Service),
+		Changes: []audit.Change{pinChange(b.Pin, "")}})
 	return s.store.GetBackup(ctx, appID, backupID)
 }
 

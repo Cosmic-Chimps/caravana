@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -174,6 +175,8 @@ func (s *Service) CreateProject(ctx context.Context, name, displayName string) (
 		return Project{}, err
 	}
 	s.publish(Change{What: ChangeApps})
+	s.audit(ctx, audit.Entry{Action: audit.ActionCreated, Resource: projectResource(name, displayName),
+		Changes: []audit.Change{{Path: "displayName", Op: audit.OpAdded, To: displayName}}})
 	return s.projectOf(ctx, rec)
 }
 
@@ -183,6 +186,7 @@ func (s *Service) SetProjectDisplayName(ctx context.Context, id, displayName str
 	if err := validDisplayName(displayName); err != nil {
 		return Project{}, err
 	}
+	old, _ := s.store.GetProject(ctx, id) // for the log; a missing project is the next call's refusal
 	rec, err := s.store.SetProjectDisplayName(ctx, id, displayName)
 	if errors.Is(err, store.ErrNotFound) {
 		return Project{}, fmt.Errorf("%w: %q", ErrProjectNotFound, id)
@@ -191,6 +195,8 @@ func (s *Service) SetProjectDisplayName(ctx context.Context, id, displayName str
 		return Project{}, err
 	}
 	s.publish(Change{What: ChangeApps})
+	s.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: projectResource(id, rec.DisplayName),
+		Changes: audit.Diff(map[string]any{"displayName": old.DisplayName}, map[string]any{"displayName": rec.DisplayName})})
 	return s.projectOf(ctx, rec)
 }
 
@@ -218,7 +224,8 @@ type ProjectChanges struct {
 // where its backups already go is one on "backupDestination". A new backup
 // destination points the project's backup jobs at it from their next run (no deploy).
 func (s *Service) UpdateProject(ctx context.Context, id string, c ProjectChanges) (Project, error) {
-	if _, err := s.store.GetProject(ctx, id); errors.Is(err, store.ErrNotFound) {
+	old, err := s.store.GetProject(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
 		return Project{}, fmt.Errorf("%w: %q", ErrProjectNotFound, id)
 	} else if err != nil {
 		return Project{}, err
@@ -252,6 +259,10 @@ func (s *Service) UpdateProject(ctx context.Context, id string, c ProjectChanges
 		return Project{}, err
 	}
 	s.publish(Change{What: ChangeApps})
+	s.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: projectResource(id, rec.DisplayName),
+		Changes: audit.Diff(
+			map[string]any{"displayName": old.DisplayName, "backupDestination": old.BackupDestination},
+			map[string]any{"displayName": rec.DisplayName, "backupDestination": rec.BackupDestination})})
 	if c.BackupDestination != nil {
 		s.publish(Change{What: ChangeAttention})
 		if err := s.repointBackups(ctx); err != nil {
@@ -301,6 +312,7 @@ func (s *Service) DeleteProject(ctx context.Context, id string) error {
 		return err
 	}
 	s.publish(Change{What: ChangeApps})
+	s.audit(ctx, audit.Entry{Action: audit.ActionDeleted, Resource: projectResource(id, "")})
 	return nil
 }
 
@@ -328,6 +340,7 @@ func (s *Service) CreateEnvironment(ctx context.Context, project, name string) (
 		return Environment{}, err
 	}
 	s.publish(Change{What: ChangeApps})
+	s.audit(ctx, audit.Entry{Action: audit.ActionCreated, Resource: environmentResource(project, name)})
 	env := toEnvironment(rec)
 	if n, ok := app.PreviewNumber(name); ok {
 		// Made just now, so it has no deployment: its clock is its creation.
@@ -343,6 +356,15 @@ func (s *Service) CreateEnvironment(ctx context.Context, project, name string) (
 // ErrProtected; an unknown project or environment is ErrProjectNotFound or
 // ErrEnvironmentNotFound; one that still has apps is ErrNotEmpty, naming them.
 func (s *Service) DeleteEnvironment(ctx context.Context, project, name string) error {
+	if err := s.deleteEnvironment(ctx, project, name); err != nil {
+		return err
+	}
+	s.audit(ctx, audit.Entry{Action: audit.ActionDeleted, Resource: environmentResource(project, name)})
+	return nil
+}
+
+// deleteEnvironment is DeleteEnvironment without its note, for ClosePreview, which notes the close.
+func (s *Service) deleteEnvironment(ctx context.Context, project, name string) error {
 	if project == app.DefaultProject && name == app.DefaultEnvironment {
 		return fmt.Errorf("environment %q of project %q %w", name, project, ErrProtected)
 	}

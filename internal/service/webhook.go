@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -56,10 +57,16 @@ func (s *Service) CreateWebhookToken(ctx context.Context, appID string) (Webhook
 	if err != nil {
 		return WebhookToken{}, err
 	}
+	_, had := s.store.GetWebhookToken(ctx, appID)
 	rec, err := s.store.SetWebhookToken(ctx, appID, hashToken(token))
 	if err != nil {
 		return WebhookToken{}, err
 	}
+	action := audit.ActionCreated
+	if had == nil {
+		action = audit.ActionRotated // a new token replaces the old one, which stops working
+	}
+	s.audit(ctx, audit.Entry{Action: action, Resource: appScoped(audit.KindWebhookToken, appID)})
 	return WebhookToken{Token: token, Path: WebhookPath(appID) + "?token=" + token, CreatedAt: rec.CreatedAt}, nil
 }
 
@@ -89,7 +96,16 @@ func (s *Service) WebhookStatus(ctx context.Context, appID string) (WebhookStatu
 // then on. Deleting when there is no token is fine; an unknown app is
 // store.ErrNotFound.
 func (s *Service) DeleteWebhookToken(ctx context.Context, appID string) error {
-	return s.store.DeleteWebhookToken(ctx, appID)
+	_, had := s.store.GetWebhookToken(ctx, appID)
+	if err := s.store.DeleteWebhookToken(ctx, appID); err != nil {
+		return err
+	}
+	if had == nil {
+		s.audit(ctx, audit.Entry{Action: audit.ActionDeleted, Resource: appScoped(audit.KindWebhookToken, appID)})
+	} else {
+		s.noChange(ctx) // deleting when there is none changes nothing
+	}
+	return nil
 }
 
 // CheckWebhookToken returns nil when token is appID's webhook token, else
@@ -130,6 +146,7 @@ func (s *Service) WebhookRedeploy(ctx context.Context, appID string) (WebhookRes
 		return WebhookResult{}, err
 	}
 	if live, ok := s.unchanged(ctx, appID); ok {
+		s.noChange(ctx)
 		return WebhookResult{Changed: false, Deployment: live}, nil
 	}
 	rec, err := s.Redeploy(ctx, appID, app.TriggerWebhook)
@@ -167,6 +184,7 @@ func (s *Service) WebhookPush(ctx context.Context, appID string, header http.Hea
 	}
 	if push.Commit != "" {
 		if live, err := s.store.LatestHealthyDeployment(ctx, appID); err == nil && builtFrom(live, push.Commit) {
+			s.noChange(ctx)
 			return WebhookResult{Changed: false, Deployment: live}, nil
 		}
 	}
@@ -180,6 +198,7 @@ func (s *Service) WebhookPush(ctx context.Context, appID string, header http.Hea
 // skippedWebhook answers a call that builds nothing with the app's newest
 // deployment, when it has one.
 func (s *Service) skippedWebhook(ctx context.Context, appID, why string) (WebhookResult, error) {
+	s.noChange(ctx)
 	res := WebhookResult{Skipped: why}
 	recent, err := s.store.ListDeployments(ctx, appID, 1)
 	if err != nil {

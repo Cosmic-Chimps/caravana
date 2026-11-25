@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -172,6 +173,11 @@ func (a *Auth) CreateScopedAPIToken(ctx context.Context, personID, name string, 
 	}
 	if scope != nil {
 		a.event("token_created", "tokenName", name, "scopeProject", scope.Project, "scopeApp", scope.App)
+		// A deploy token is for one app: its entry is placed in the project and names the app (feature 057
+		// phase B). The token itself never appears. A full token's entry is phase C's.
+		a.audit(ctx, audit.Entry{Action: audit.ActionCreated,
+			Resource: audit.Resource{Kind: audit.KindToken, ID: rec.ID, Name: name, Project: scope.Project},
+			Changes:  []audit.Change{{Path: "scope", Op: audit.OpAdded, To: scope.Project + "/" + scope.App}}})
 	} else {
 		a.event("token_created", "tokenName", name)
 	}

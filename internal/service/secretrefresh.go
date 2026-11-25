@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -87,6 +88,7 @@ func (s *Service) RefreshSecrets(ctx context.Context, appID string, trigger app.
 		}
 	}
 	if !changed {
+		s.noChange(ctx)
 		return RefreshResult{}, nil
 	}
 
@@ -94,7 +96,7 @@ func (s *Service) RefreshSecrets(ctx context.Context, appID string, trigger app.
 	if err := s.deployer.CheckDigests(ctx, a, digests); err != nil {
 		return RefreshResult{}, err
 	}
-	res, err := s.saveAndDeploy(ctx, a, Condition{}, trigger, made{file: live.Compose},
+	res, err := s.saveAndDeploy(ctx, a, Condition{}, trigger, made{file: live.Compose, action: audit.ActionRefreshedSecrets},
 		&pinned{digests: digests, source: live.Deployment.ID, refresh: true})
 	if err != nil {
 		return RefreshResult{}, err

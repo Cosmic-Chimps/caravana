@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -153,6 +154,9 @@ func (s *Service) RunCommand(ctx context.Context, appID, copyID string, command 
 		return CommandResult{}, err
 	}
 	s.actionsChanged(appID)
+	// The program only: never the arguments (which may hold a secret) or the output.
+	s.noteApp(ctx, audit.ActionRanCommand, appID, actionRecord(rec.ID),
+		audit.Change{Path: "program", Op: audit.OpAdded, To: rec.Program})
 
 	runCtx, cancel := context.WithTimeout(ctx, s.commandTimeout)
 	defer cancel()
@@ -370,6 +374,11 @@ func (s *Service) setStopped(ctx context.Context, appID string, trigger app.Trig
 	s.appChanged(appID)
 	s.publish(Change{AppID: appID, What: ChangeCopies})
 	s.publish(Change{What: ChangeAttention})
+	if stop {
+		s.noteApp(ctx, audit.ActionStopped, appID, actionRecord(action.ID))
+	} else {
+		s.noteApp(ctx, audit.ActionStarted, appID, actionRecord(action.ID))
+	}
 	done, err := s.store.ListActions(ctx, appID, 1)
 	if err == nil && len(done) == 1 && done[0].ID == action.ID {
 		action = done[0]
@@ -442,6 +451,7 @@ func (s *Service) RestartApp(ctx context.Context, appID string, trigger app.Trig
 	}
 
 	handedOver = true
+	s.noteApp(ctx, audit.ActionRestarted, appID, actionRecord(action.ID))
 	s.watchers.Add(1)
 	go func() {
 		defer s.watchers.Done()
