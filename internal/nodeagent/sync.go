@@ -85,13 +85,37 @@ func (a *Agent) Sync(ctx context.Context, o SyncOptions) error {
 		a.out("state %s", clean(ans.State))
 	}
 
-	err = a.applySync(ctx, env, st, ans, caPEM, o.Renew)
+	dropped, err := a.applySync(ctx, env, st, ans, caPEM, o.Renew)
+	if dropped {
+		a.reportAgain(ctx, env)
+	}
 	var soft *softError
 	if errors.As(err, &soft) {
 		a.warn("caravana node sync: %s", soft.msg)
 		return nil
 	}
 	return err
+}
+
+// reportAgain posts the report once more right after a sync that dropped certificates (spec 056 D5),
+// so the console restarts Traefik within a second rather than at the next sync. The answer isn't
+// applied: the timer's next sync does that. A failure changes nothing, since the next sync reports the
+// same outcome; it is one line on standard error.
+func (a *Agent) reportAgain(ctx context.Context, env NodeEnv) {
+	st, err := a.LoadState()
+	if err != nil {
+		a.warn("caravana node sync: the report of the dropped certificates wasn't sent again: %v", err)
+		return
+	}
+	report := a.Report(ctx, st)
+	report.RunsConsole = a.RunsConsole(env)
+	status, _, err := a.postJSON(ctx, env.URL, "/v1/node/sync", env.Token, report)
+	switch {
+	case err != nil:
+		a.warn("caravana node sync: the report of the dropped certificates wasn't sent again: %v", err)
+	case status != http.StatusOK:
+		a.warn("caravana node sync: the console answered HTTP %d to the second report of the dropped certificates.", status)
+	}
 }
 
 // ensureMeshKeyPublic reads mesh.key and returns its public key. It never makes a key: a server
@@ -108,12 +132,13 @@ func (a *Agent) ensureMeshKeyPublic() (private, public string, err error) {
 	return private, public, nil
 }
 
-// applySync does §6's three steps, the console's address (feature 051) after the first, and the clean-up
-// of spec 045 as a last one, with a validated answer.
-func (a *Agent) applySync(ctx context.Context, env NodeEnv, st State, ans *Answer, caPEM []byte, renew bool) error {
+// applySync does §6's three steps, the console's address (feature 051) and the certificate drop (feature
+// 056) after the first, and the clean-up of spec 045 as a last one, with a validated answer. The bool says
+// the certificate drop removed certificates, which is when Sync reports again at once.
+func (a *Agent) applySync(ctx context.Context, env NodeEnv, st State, ans *Answer, caPEM []byte, renew bool) (dropped bool, err error) {
 	priv, _, err := a.ensureMeshKeyPublic()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// 1. Peers and servers.
@@ -127,17 +152,17 @@ func (a *Agent) applySync(ctx context.Context, env NodeEnv, st State, ans *Answe
 	otherChanged := !reflect.DeepEqual(sorted(st.Servers), sorted(next.Servers)) || st.Pool != next.Pool
 	if peersChanged {
 		if err := a.wg(ctx, "syncconf", priv, next.Peers); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if peersChanged || otherChanged {
 		if err := a.SaveState(next); err != nil {
-			return err
+			return false, err
 		}
 		// A changed list of servers re-renders nomad.hcl without restarting Nomad: a client learns
 		// its servers from the ones it knows, and the file is for its next start.
 		if _, err := a.renderNomadChanged(next); err != nil {
-			return err
+			return false, err
 		}
 	}
 	st = next
@@ -152,16 +177,16 @@ func (a *Agent) applySync(ctx context.Context, env NodeEnv, st State, ans *Answe
 		next := st
 		next.Issuer = ans.Issuer
 		if _, err := a.renderNomadChanged(next); err != nil {
-			return err
+			return false, err
 		}
 		if st.Role == RoleServer {
 			if _, err := a.run(ctx, "systemctl", "restart", "nomad"); err != nil {
-				return fmt.Errorf("restart nomad for the new issuer: %w", err)
+				return false, fmt.Errorf("restart nomad for the new issuer: %w", err)
 			}
 			a.out("Nomad restarted to take the cluster's issuer.")
 		}
 		if err := a.SaveState(next); err != nil {
-			return err
+			return false, err
 		}
 		st = next
 	}
@@ -173,9 +198,14 @@ func (a *Agent) applySync(ctx context.Context, env NodeEnv, st State, ans *Answe
 	st = a.applyConsole(ctx, env, st, ans.ConsoleAddress)
 	a.followConsoleURL(ctx, env, ans.ConsoleURL)
 
+	// 1d. The certificates an upload covers (feature 056): a request for the server that holds Traefik's
+	// store. Quick, and the console restarts Traefik once it hears the outcome, so it runs before the
+	// promotion's early return and the clean-up's minutes. It can't fail the sync either.
+	st, dropped = a.applyCertificateDrop(st, ans.CertificateDrop)
+
 	// 2. The role: a client that is to be a Nomad server.
 	if st.Role == RoleClient && ans.Role == RoleServer {
-		return a.promote(ctx, env, st, ans.GossipKey, caPEM)
+		return dropped, a.promote(ctx, env, st, ans.GossipKey, caPEM)
 	}
 
 	// 3. Renewal: asked for, wanted by the console, or due by the certificate's own date. A failed
@@ -188,9 +218,9 @@ func (a *Agent) applySync(ctx context.Context, env NodeEnv, st State, ans *Answe
 	// 4. The clean-up the console handed over (spec 045): last, since it can take minutes. A sync that
 	// promoted this server returned above and runs it at the next one, the answer repeating until it has.
 	if err := a.applyClean(ctx, st, ans.Clean); err != nil {
-		return err
+		return dropped, err
 	}
-	return renewErr
+	return dropped, renewErr
 }
 
 // renewBefore is how long before a certificate's end the agent renews it (contracts/node.md §6).

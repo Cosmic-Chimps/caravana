@@ -5,16 +5,16 @@ Plan: `plan.md` (D1–D12). Each phase ends with `go build ./...`, `go vet ./...
 
 ## Phase A: the agent, its command and the installer
 
-- [ ] T001 `internal/nodeagent/certdrop.go`: the request (`CertificateDropRequest{ID, Names}`), its validation
+- [x] T001 `internal/nodeagent/certdrop.go`: the request (`CertificateDropRequest{ID, Names}`), its validation
   (D2), the pure rule `DropCovered(store []byte, names []string) (out []byte, dropped []string, err error)` (D3) and
   the folder walk over `/var/lib/caravana-host/traefik` (`acme.json`, `acme-<12 hex>.json`, regular files, 32 MiB).
-- [ ] T002 The outcome (D6) in `State` and `Report` (`certificateDrop`, `traefikStore`), `applyCertificateDrop` as a
+- [x] T002 The outcome (D6) in `State` and `Report` (`certificateDrop`, `traefikStore`), `applyCertificateDrop` as a
   step of `applySync` after the console address and before the clean-up, and the immediate second report (D5).
-- [ ] T003 `caravana node drop-certificates --names … [--dry-run]` (`cmd/caravana/node.go`, usage text), printing
+- [x] T003 `caravana node drop-certificates --names … [--dry-run]` (`cmd/caravana/node.go`, usage text), printing
   the dropped names comma-separated on one line (empty when none).
-- [ ] T004 `deploy/install/install.sh`: `drop_covered_acme_certificates` calls `"$AGENT" node drop-certificates`
+- [x] T004 `deploy/install/install.sh`: `drop_covered_acme_certificates` calls `"$AGENT" node drop-certificates`
   (dry run first, then stop Traefik and drop); `acme_covered` and its Python go.
-- [ ] T005 Tests: `certdrop_test.go` (rule table, walk, validation, outcomes, `running` again, second post) and the
+- [x] T005 Tests: `certdrop_test.go` (rule table, walk, validation, outcomes, `running` again, second post) and the
   command's test.
 
 ## Phase B: the console's record, the hand-off, the restart and the API

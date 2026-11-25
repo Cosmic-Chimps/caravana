@@ -51,6 +51,12 @@ type Report struct {
 	// last request to change the console's address went; left out when there was none.
 	RunsConsole    bool            `json:"runsConsole,omitempty"`
 	ConsoleAddress *ConsoleOutcome `json:"consoleAddress,omitempty"`
+	// TraefikStore says Traefik's certificate store folder is on this server (feature 056): only then
+	// can the console hand it a request to drop certificates. Left out when false, which is also what
+	// an agent older than the feature says. CertificateDrop is how the last such request went; left out
+	// when there was none.
+	TraefikStore    bool                    `json:"traefikStore,omitempty"`
+	CertificateDrop *CertificateDropOutcome `json:"certificateDrop,omitempty"`
 }
 
 // Facts are what a join tells the console about a new server (api.md §4, POST /v1/join).
@@ -99,6 +105,7 @@ func (a *Agent) Report(ctx context.Context, st State) Report {
 		Agent: f.Agent, Nomad: f.Nomad, Docker: f.Docker, DockerRunning: dockerRunning,
 		DiskFreeMB: f.DiskFreeMB, DiskTotalMB: f.DiskTotalMB, MemoryMB: f.MemoryMB, Kernel: f.Kernel,
 		Role: st.Role, Issuer: st.Issuer, Reach: []Reach{}, ConsoleAddress: st.ConsoleAddress.reported(),
+		TraefikStore: a.HasTraefikStore(), CertificateDrop: st.CertificateDrop,
 	}
 	if b, ok, err := readIfExists(a.path(agentCert)); err == nil && ok {
 		if end, err := clusterca.NotAfter(b); err == nil {

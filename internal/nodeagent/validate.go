@@ -67,6 +67,10 @@ type Answer struct {
 	// an agent older than this member, since the answer is decoded without DisallowUnknownFields.
 	ConsoleURL     string          `json:"consoleURL"`
 	ConsoleAddress *ConsoleRequest `json:"consoleAddress"`
+	// CertificateDrop is a request to drop the ACME certificates an upload covers (feature 056), for the
+	// server that holds Traefik's store, present only while one is open. Like ConsoleAddress it is not
+	// checked here: a request that can't be trusted is a `refused` outcome (applyCertificateDrop).
+	CertificateDrop *CertificateDropRequest `json:"certificateDrop"`
 }
 
 // Expect is what an answer is checked against.
