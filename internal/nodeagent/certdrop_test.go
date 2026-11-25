@@ -489,6 +489,21 @@ func TestApplyCertificateDropOutcomes(t *testing.T) {
 			t.Errorf("outcome = %+v", got.CertificateDrop)
 		}
 	})
+	t.Run("a run found running with nothing left still says dropped", func(t *testing.T) {
+		// The files were rewritten before the agent stopped: Traefik must still be restarted.
+		a, st := dropAgent(t)
+		if _, err := a.DropCoveredCertificates([]string{"a.example.com"}, false); err != nil {
+			t.Fatal(err)
+		}
+		st.CertificateDrop = &CertificateDropOutcome{ID: dropID1, State: DropRunning}
+		if err := a.SaveState(st); err != nil {
+			t.Fatal(err)
+		}
+		got, dropped := a.applyCertificateDrop(st, &CertificateDropRequest{ID: dropID1, Names: []string{"a.example.com"}})
+		if !dropped || got.CertificateDrop.State != DropDropped || len(got.CertificateDrop.Dropped) != 0 {
+			t.Errorf("outcome = %+v, dropped %v", got.CertificateDrop, dropped)
+		}
+	})
 	t.Run("the state must be writable", func(t *testing.T) {
 		a, st := dropAgent(t)
 		if err := os.Remove(a.file("etc/caravana-node/state.json")); err != nil {

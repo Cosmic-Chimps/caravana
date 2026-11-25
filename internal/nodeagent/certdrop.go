@@ -287,7 +287,7 @@ func checkDropNames(names []string) bool {
 //     and one line is logged;
 //   - whose ID this agent already has a final outcome for is not run again (the outcome keeps being
 //     reported); one it finds `running` (it was stopped in the middle) is run again, since the rule is
-//     idempotent;
+//     idempotent, and says `dropped` even when nothing is left to drop, so Traefik is restarted;
 //   - with names that aren't host names, or on a server with no Traefik store, is `refused`;
 //   - otherwise is run: `running` is saved first, then `dropped`, `nothing` or `failed`.
 //
@@ -301,9 +301,13 @@ func (a *Agent) applyCertificateDrop(st State, req *CertificateDropRequest) (Sta
 		a.warn("caravana node sync: the console asked to drop certificates with an ID that isn't 32 hex digits. Ignored.")
 		return st, false
 	}
-	if o := st.CertificateDrop; o != nil && o.ID == req.ID && o.State != DropRunning {
+	o := st.CertificateDrop
+	if o != nil && o.ID == req.ID && o.State != DropRunning {
 		return st, false
 	}
+	// A request found running was stopped in the middle: its files may already be rewritten, so a run that
+	// finds nothing more to drop still says `dropped`, and the console restarts Traefik to read them.
+	again := o != nil && o.ID == req.ID
 	switch {
 	case !checkDropNames(req.Names):
 		return a.recordDrop(st, CertificateDropOutcome{ID: req.ID, State: DropRefused, Reason: "The names aren't host names this agent accepts."}), false
@@ -323,13 +327,15 @@ func (a *Agent) applyCertificateDrop(st State, req *CertificateDropRequest) (Sta
 		return a.recordDrop(st, CertificateDropOutcome{ID: req.ID, State: DropFailed, Reason: "Traefik's certificate store couldn't be changed: " + sf.Error() + "."}), false
 	case err != nil:
 		return a.recordDrop(st, CertificateDropOutcome{ID: req.ID, State: DropFailed, Reason: err.Error() + "."}), false
-	case len(dropped) == 0:
+	case len(dropped) == 0 && !again:
 		return a.recordDrop(st, CertificateDropOutcome{ID: req.ID, State: DropNothing}), false
 	}
 	if len(dropped) > maxDroppedEntries {
 		dropped = dropped[:maxDroppedEntries]
 	}
-	a.out("Dropped the earlier certificates of %s.", strings.Join(dropped, ", "))
+	if len(dropped) > 0 {
+		a.out("Dropped the earlier certificates of %s.", strings.Join(dropped, ", "))
+	}
 	next := a.recordDrop(st, CertificateDropOutcome{ID: req.ID, State: DropDropped, Dropped: dropped})
 	return next, next.CertificateDrop != st.CertificateDrop
 }

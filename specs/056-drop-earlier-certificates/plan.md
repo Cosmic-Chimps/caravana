@@ -61,8 +61,11 @@ nothing; the next sync reports the same outcome.
 `state` one of `running` (saved before any file is touched), `dropped` (one or more certificates removed; `dropped`
 lists them), `nothing` (no stored certificate is covered: nothing written), `failed` (a file couldn't be read, parsed
 or written; `reason` a fixed sentence) or `refused` (D2). The rule is idempotent, so a request the agent finds
-`running` (it was stopped in the middle) is simply run again when the console hands it again; an ID with a final
-outcome is never run twice. The report leaves the block out when there is none.
+`running` (it was stopped in the middle) is simply run again when the console hands it again, and says `dropped`
+(with no names) when nothing is left, since its files may already have been rewritten and Traefik must still be
+restarted; an ID with a final outcome is never run twice. Only a certificate whose every name is a host name (D2's
+rule, lower-cased) is dropped, so the names reported are clean; the installer passes only the uploads' names that
+are host names. The report leaves the block out when there is none.
 
 **D7. The console's record.** Table `certificate_drops` (migration 0045): `id`, `server` (the server row's index),
 `status` (`requested`, `running`, `restarting`, `done`, `failed`, `lost`), `dropped` (JSON array of strings),
