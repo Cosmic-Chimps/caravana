@@ -34,13 +34,23 @@ func (s *server) authenticate(rt route) handlerFunc {
 			ctx = service.WithTokenName(ctx, who.TokenName)
 		}
 		r = r.WithContext(ctx)
+		// A write route's audit scope (feature 057) learns who is asking before anything can refuse the
+		// request, so the entry of a change made and then failed names its actor.
+		sc := service.AuditScopeFrom(ctx)
+		if sc != nil {
+			sc.SetActor(who)
+		}
 		if who.Scope != nil {
 			if err := scopeAllows(r, rt, *who.Scope); err != nil {
 				return err
 			}
 		}
-		if err := s.accessAllows(r, rt); err != nil {
+		target, err := s.accessAllows(r, rt)
+		if err != nil {
 			return err
+		}
+		if sc != nil {
+			sc.SetFallback(fallbackResource(target))
 		}
 		return rt.handle(w, r)
 	}

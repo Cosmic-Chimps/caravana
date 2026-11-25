@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.60.0
+  version: 0.61.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -77,6 +77,16 @@ info:
     join token in its body, and `syncNode` and `renewNodeCertificate` carry the node token
     `joinServer` answered as `Authorization: Bearer cvnd_…`. An API token never stands in for
     them, nor a node token for an API token. They are served on the main listener only.
+
+    Every change made in Caravana leaves one entry in the audit log (`listAuditEvents`): when,
+    who (a person, through a token or not; a webhook; Caravana itself; the host's command line),
+    through which door (the console, this API, MCP, a webhook), what was done to what, and what
+    changed field by field. Each write request of this API leaves one entry, whatever route it is,
+    except the agent's routine calls and the previews that change nothing; a request that is refused
+    leaves none. An entry never holds a secret value, token, password, key or plain env value: they show as
+    `added`, `changed` or `removed` and nothing else. Entries are kept 90 days by default (30 to 3650,
+    `putAuditSettings`) and no operation edits or deletes one. Owners and admins read and export the
+    log (`exportAuditEvents` is CSV); deploy tokens are refused.
 
     `POST /v1/webhooks/{id}` needs the app's webhook token instead, and is also served, alone,
     on the optional webhook-only listener. Webhook tokens and API tokens never stand in for
@@ -6852,6 +6862,225 @@ paths:
         "502":
           $ref: "#/components/responses/BadGateway"
 
+  /v1/audit:
+    get:
+      operationId: listAuditEvents
+      summary: Read the audit log, newest first.
+      description: |
+        Every change made in Caravana, one entry each: who did it (`actor`: a `person`, a `token`
+        or `deploy_token` acting for a person, a `webhook` of an app, `caravana` itself, the `host`'s
+        command line, or `anonymous` for a failed sign-in), through which `door` (`console`, `api`,
+        `mcp`, `webhook`, `caravana`, `host`) and from which `address`, the `action` (a past-tense
+        verb), the `operation` (the route), the `resource` it was about, the field-level `changes`,
+        a `record` it links to (a deployment, an app action, a backup, a restore, ...) and the
+        `related` resources the same request touched.
+
+        `changes` are `{path, op, from, to}` with `op` `added`, `removed` or `changed`; lists of
+        named items (services, domains, env, secrets, ports, volumes) are compared by name, so a
+        domain moved from `old.example.com` to `new.example.com` shows the old one `removed` and
+        the new one `added`; values are cut at 200 bytes. Secret material has no `from` and no
+        `to`: a secret's value, a token, a password, a key and a plain env value show as `added`,
+        `changed` or `removed` only. `fallback` is true for an entry Caravana wrote because the
+        request changed something nothing described: its `action` is `changed`.
+
+        Filters are exact: `actor` is an email or a token name. `environment` needs `project`.
+        `before` is the cursor, an entry ID; `next` in the answer is the `before` of the next page
+        and is absent on the last. A bad value is 422 `invalid_field` naming the parameter. Owners
+        and admins only; the answer is `Cache-Control: no-store`.
+      tags: [audit]
+      parameters:
+        - name: actor
+          in: query
+          description: An email address or a token name, matched exactly.
+          schema: {type: string}
+        - name: action
+          in: query
+          description: One of the actions of the log.
+          schema: {$ref: "#/components/schemas/AuditAction"}
+        - name: kind
+          in: query
+          description: A kind of resource.
+          schema: {$ref: "#/components/schemas/AuditKind"}
+        - name: resource
+          in: query
+          description: A resource ID, matched exactly (an app ID, a project name, a host).
+          schema: {type: string}
+        - name: project
+          in: query
+          description: Only entries about this project's resources.
+          schema: {type: string}
+        - name: environment
+          in: query
+          description: Only entries about this environment of `project`. Needs `project`.
+          schema: {type: string}
+        - name: from
+          in: query
+          description: The start of the range, RFC 3339, inclusive.
+          schema: {type: string, format: date-time}
+        - name: to
+          in: query
+          description: The end of the range, RFC 3339, inclusive.
+          schema: {type: string, format: date-time}
+        - name: before
+          in: query
+          description: The cursor, an entry ID; only older entries are answered.
+          schema: {type: integer, minimum: 1}
+        - name: limit
+          in: query
+          description: How many entries.
+          schema: {type: integer, minimum: 1, maximum: 500, default: 100}
+      responses:
+        "200":
+          description: A page of entries.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/AuditForbidden"
+        "422":
+          $ref: "#/components/responses/AuditInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/audit/export:
+    get:
+      operationId: exportAuditEvents
+      summary: Export a range of the audit log as CSV.
+      description: |
+        The same filters as `listAuditEvents`, but `before` and `limit`, which an export has no use
+        for (422 when given); `from` and `to` are required. The answer is CSV, oldest first, one row
+        per entry, with the columns `id`, `at`, `actor_kind`, `actor`, `token`, `door`, `address`,
+        `action`, `operation`, `resource_kind`, `resource_id`, `resource_name`, `project`,
+        `environment`, `changes` (one cell: `path op from → to`, joined by `; `), `record_kind` and
+        `record_id`. A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a
+        leading `'`, so a spreadsheet never runs it as a formula. At most 100,000 entries: more is
+        422 `invalid_field` on `from` ("narrow the range"). Owners and admins only; the answer is
+        `Cache-Control: no-store`.
+      tags: [audit]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: The start of the range, RFC 3339, inclusive.
+          schema: {type: string, format: date-time}
+        - name: to
+          in: query
+          required: true
+          description: The end of the range, RFC 3339, inclusive.
+          schema: {type: string, format: date-time}
+        - name: actor
+          in: query
+          description: An email address or a token name, matched exactly.
+          schema: {type: string}
+        - name: action
+          in: query
+          description: One of the actions of the log.
+          schema: {$ref: "#/components/schemas/AuditAction"}
+        - name: kind
+          in: query
+          description: A kind of resource.
+          schema: {$ref: "#/components/schemas/AuditKind"}
+        - name: resource
+          in: query
+          description: A resource ID, matched exactly.
+          schema: {type: string}
+        - name: project
+          in: query
+          description: Only entries about this project's resources.
+          schema: {type: string}
+        - name: environment
+          in: query
+          description: Only entries about this environment of `project`. Needs `project`.
+          schema: {type: string}
+      responses:
+        "200":
+          description: The file.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+            Content-Disposition:
+              description: '`attachment; filename="caravana-audit-<from>-<to>.csv"`, the times as `20261101T000000Z`.'
+              schema: {type: string}
+          content:
+            text/csv:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/AuditForbidden"
+        "422":
+          $ref: "#/components/responses/AuditInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/audit/settings:
+    get:
+      operationId: getAuditSettings
+      summary: Read how long the audit log keeps entries.
+      description: "Owners and admins only. The answer is `Cache-Control: no-store`."
+      tags: [audit]
+      responses:
+        "200":
+          description: The settings.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/AuditForbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+    put:
+      operationId: putAuditSettings
+      summary: Set how long the audit log keeps entries.
+      description: |
+        `retentionDays`, 30 to 3650 (90 by default), is required: older entries are deleted daily.
+        Answers the settings as they are now, `Cache-Control: no-store`. Owners only; the change is
+        itself an entry of the log.
+      tags: [audit]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuditSettings"
+      responses:
+        "200":
+          description: The settings, changed.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/AuditForbidden"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/AuditInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/me:
     get:
       operationId: getMe
@@ -12985,6 +13214,103 @@ components:
         domain: {type: string, description: "The new host name, such as `console.example.com`."}
         redirectDays: {type: integer, enum: [0, 7, 30, 90], description: "How long the old domain keeps redirecting after the switch; 30 when left out."}
         createDNSRecord: {type: boolean, description: "Let Caravana make the DNS record in a connected zone when the domain has none."}
+    AuditAction:
+      type: string
+      enum: [created, updated, deleted, deployed, redeployed, "rolled back", promoted, copied, stopped, started,
+        restarted, "ran a command", "opened a terminal", "backed up", restored, pinned, unpinned, tested,
+        rotated, revoked, invited, removed, "accepted an invite", "signed in", "signed out", "sign-in failed",
+        requested, cancelled, checked, installed, uninstalled, "refreshed secrets", changed]
+      description: What was done, a past-tense verb. `changed` is the fallback of a write nothing described.
+    AuditKind:
+      type: string
+      enum: [app, project, environment, schedule, backup, domain, token, webhook_token, registry,
+        backup_destination, notification_channel, dns_zone, secret_provider, person, passkey, account,
+        server, volume, addon, git_access, console_address, settings, installation]
+      description: |
+        What kind of thing was acted on. For `settings` the resource's `id` says which (`certificates`,
+        `updates`, `templates`, `builds`, `cleanup`, `scans`, `previews`, `audit`, `sign-in`);
+        `installation` is the fallback of a write that names nothing narrower.
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [id, at, actor, door, action, resource, changes, fallback]
+      properties:
+        id: {type: integer, description: "Orders the log; the cursor of `before`."}
+        at: {type: string, format: date-time}
+        actor:
+          type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind: {type: string, enum: [person, token, deploy_token, webhook, caravana, host, anonymous]}
+            email: {type: string, description: "The person's email; for `anonymous`, what a failed sign-in typed when it reads as one address."}
+            token: {type: string, description: "The token's name; for a `webhook`, the app's ID."}
+            personId: {type: string, description: "The person's ID, as text: the person may have been removed."}
+        door: {type: string, enum: [console, api, mcp, webhook, caravana, host]}
+        address: {type: string, description: "The client's address, when there was a request."}
+        action: {$ref: "#/components/schemas/AuditAction"}
+        operation: {type: string, description: "The route, `METHOD /pattern`."}
+        resource:
+          type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind: {$ref: "#/components/schemas/AuditKind"}
+            id: {type: string}
+            name: {type: string}
+            project: {type: string}
+            environment: {type: string}
+        changes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, op]
+            properties:
+              path: {type: string, description: "`services[web].domains[new.example.com].path`: a field after a dot, a list's item by its name (or index) in brackets."}
+              op: {type: string, enum: [added, removed, changed]}
+              from: {type: string, description: "Left out of a change of secret material."}
+              to: {type: string, description: "Left out of a change of secret material."}
+        record:
+          type: object
+          additionalProperties: false
+          description: "The record the entry is about. Text, not a reference, since the record may be gone with its app."
+          required: [kind, id]
+          properties:
+            kind: {type: string, enum: [deployment, app_action, backup, restore, schedule_run, update_run, cleanup, volume_deletion, console_address_change]}
+            id: {type: string}
+        related:
+          type: array
+          description: Other resources the same request touched.
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, action]
+            properties:
+              kind: {$ref: "#/components/schemas/AuditKind"}
+              id: {type: string}
+              action: {$ref: "#/components/schemas/AuditAction"}
+        fallback: {type: boolean, description: "True when Caravana wrote the entry because the request changed something nothing described."}
+    AuditEventList:
+      type: object
+      additionalProperties: false
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        next: {type: string, description: "The `before` of the next page; absent on the last."}
+    AuditSettings:
+      type: object
+      additionalProperties: false
+      required: [retentionDays]
+      properties:
+        retentionDays:
+          type: integer
+          minimum: 30
+          maximum: 3650
+          description: How many days entries are kept. 90 by default.
     CleanupSettings:
       type: object
       additionalProperties: false
@@ -14982,6 +15308,24 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    AuditForbidden:
+      description: |
+        `not_allowed` (the audit log is for owners and admins; changing the retention is for owners),
+        `token_scope` (a deploy token) or, for a write made with a session cookie, `cross_origin`.
+        Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    AuditInvalid:
+      description: |
+        `invalid_field`, `field` naming the parameter: `actor`, `action`, `kind`, `resource`,
+        `project`, `environment`, `from`, `to`, `before`, `limit` or `retentionDays`. For an export,
+        `from` also says the range holds too many entries. Nothing was read or changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     RequestsInvalid:
       description: |
         `invalid_field`, `field` naming the parameter: `service`, `status`, `method`, `path`,
@@ -15062,6 +15406,8 @@ tags:
     description: The console's own domain, checking a new one and switching to it.
   - name: servers
     description: The servers of the cluster, how one joins, and the calls their agents make.
+  - name: audit
+    description: The audit log, who did what and when, and how long it is kept.
   - name: people
     description: The people who use Caravana, their organization role and their roles per project and environment, and who the caller is.
   - name: tokens

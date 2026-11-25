@@ -4,18 +4,18 @@
 
 ## Phase A — the log itself (US1 core, US3 API, US4)
 
-- [ ] T001 `internal/audit`: Entry, Actor, Resource, Change, Record, Related, the Action and Kind constants
+- [x] T001 `internal/audit`: Entry, Actor, Resource, Change, Record, Related, the Action and Kind constants
   (D7, D8), `Diff` with keyed lists and redaction (D5, D6), the CSV writer with formula-cell escaping; table
   tests (domain host change shows removed old / added new; a secret value shows `changed`; a whole new secret
   shows only its key; every denylisted key with a sentinel; cuts at 200 bytes); a test that the package imports
   no `net/http`, `store`, `service`.
-- [ ] T002 Migration `0044_audit.sql` (`audit_events` without foreign keys, indexes on `at`, actor, resource,
+- [x] T002 Migration `0044_audit.sql` (`audit_events` without foreign keys, indexes on `at`, actor, resource,
   place; `audit_settings` with `retention_days` 90, CHECK 30–3650) and `internal/store/audit.go` (D10), tests.
-- [ ] T003 `internal/service/audit.go`: `AuditScope`, `WithAuditScope`, `WithAuditDoor`, `(*AuditScope).SetActor`,
+- [x] T003 `internal/service/audit.go`: `AuditScope`, `WithAuditScope`, `WithAuditDoor`, `(*AuditScope).SetActor`,
   `Finish(status, fallbackResource)`, `s.audit` / `a.audit`, actor resolution (D4), immediate write outside a
   scope, the prune pass (D11), `AuditEvents`, `ExportAuditEvents`, `AuditSettings`, `SetAuditSettings` (owner,
   noted). A failed write of an entry is logged, never returned. Tests.
-- [ ] T004 API: the scope for every non-GET route in `handler()` (door `api`, or `mcp` by User-Agent, or
+- [x] T004 API: the scope for every non-GET route in `handler()` (door `api`, or `mcp` by User-Agent, or
   `webhook` for the webhook route), `authenticate` sets the actor on the scope, the fallback from the access
   rule's target (D3); routes `listAuditEvents`, `exportAuditEvents`, `getAuditSettings`, `putAuditSettings`,
   access rules, `api/openapi.yaml` 0.61.0. `TestEveryWriteRouteLeavesOneEntry`: walks the route table with

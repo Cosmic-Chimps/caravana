@@ -216,6 +216,10 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/apps/{id}/webhook", s.createWebhookToken, false, false},
 		{http.MethodGet, "/v1/apps/{id}/webhook", s.getWebhook, false, false},
 		{http.MethodDelete, "/v1/apps/{id}/webhook", s.deleteWebhookToken, false, false},
+		{http.MethodGet, "/v1/audit", s.listAuditEvents, false, false},
+		{http.MethodGet, "/v1/audit/export", s.exportAuditEvents, false, false},
+		{http.MethodGet, "/v1/audit/settings", s.getAuditSettings, false, false},
+		{http.MethodPut, "/v1/audit/settings", s.putAuditSettings, false, false},
 		{http.MethodGet, "/v1/me", s.getMe, false, false},
 		{http.MethodGet, "/v1/people", s.listPeople, false, false},
 		{http.MethodPost, "/v1/people", s.invitePerson, false, false},
@@ -296,11 +300,18 @@ func (s *server) handler(routes []route) http.Handler {
 		if !rt.public {
 			h = s.authenticate(rt)
 		}
+		handle := s.handle(h)
 		if sub, ok := serverSubRoutes[rt.method+" "+rt.path]; ok {
-			dispatched[sub] = s.handle(h)
+			dispatched[sub] = handle
 			continue
 		}
-		mux.Handle(rt.method+" "+rt.path, s.handle(h))
+		// Every write route opens an audit scope around the whole request, public ones included
+		// (feature 057): authenticate tells it who, the handlers' service calls note what changed,
+		// and it writes the entry once the status is known.
+		if rt.method != http.MethodGet {
+			handle = s.audited(rt, handle)
+		}
+		mux.Handle(rt.method+" "+rt.path, handle)
 	}
 	if len(dispatched) > 0 {
 		mux.Handle("GET "+serverSubPattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

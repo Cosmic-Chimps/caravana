@@ -201,6 +201,10 @@ type Service struct {
 	// Previews (feature 049), see previews.go.
 	previewGap    time.Duration // between two passes of the reaper
 	previewExpiry atomic.Int64  // when positive, how long every preview may sit idle, in nanoseconds (the lab's shortcut)
+
+	// The audit log (feature 057), see audit.go and auditlog.go: when the prune pass first runs after
+	// Start, and how often after that.
+	auditFirstGap, auditGap time.Duration
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -301,6 +305,9 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		previewGap: defaultPreviewReapGap,
 
 		consoleAddr: newConsoleAddressState(),
+
+		auditFirstGap: defaultAuditFirstGap,
+		auditGap:      defaultAuditGap,
 	}
 	// Copies show the deployment's version where Nomad's is a scale step's
 	// (feature 043, see autoscale.go).
@@ -477,6 +484,12 @@ func (s *Service) Start(ctx context.Context) error {
 			return
 		}
 		s.runScheduleClock(ctx, s.scheduleScanGap)
+	}()
+	// The audit log's prune pass (feature 057).
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runAuditPrune(ctx, s.auditFirstGap, s.auditGap)
 	}()
 	// The notifier starts no watchers, so it can live in the same group.
 	s.backupWatcher.Add(1)

@@ -111,4 +111,35 @@ merges second renumbers, as 049 did.
 
 ## Deviations
 
-(Filled in as the phases land.)
+### Phase A (the log itself)
+
+- **`audit.Event` and the store's `at`.** `audit.Entry` is what the service notes; `audit.Event` is an `Entry` with the
+  `ID` and `At` the store gives it (`Event` embeds `Entry`). `store.InsertAuditEvent` takes the time as an argument: the
+  scope writes the time of its **first note**, a note outside a scope the service clock's now. The API's JSON is
+  `auditEventJSON` in `internal/api/audit.go` (the API speaks `encoding/json/v2`), reusing the small audit types.
+- **Diff details D5/D6 left open.** The root object is always compared field by field (a creation lists its top-level
+  fields, not one `{…}`); an object or list that appears or goes whole is one change summarised `{…}` / `[…]` (so the
+  first secret of a service shows `services[web].secrets added […]`, a second one `secrets[B] added {…}`); a value
+  under a denylisted key that is itself an object or list is one redacted change; an empty object or list counts as
+  absent; an empty string is shown `""` so a missing `from`/`to` always means "not shown"; the 200 bytes include the
+  ellipsis; scalar lists compare by index. Added: `MaxChanges` = 100 per entry, a last change `…` counts the rest, so one
+  entry stays small whatever a request carried.
+- **`WithAuditScope` is unbound; `Service.BeginAudit` binds it.** `Finish` needs a writer to write a fallback entry that no
+  method noted, so the API and the console open their scopes with `s.svc.BeginAudit(...)` (which is `WithAuditScope` plus
+  the service's writer). `AuditScope.SetFallback(resource)` is how `authenticate` hands the scope the resource its
+  route's access rule read (`accessAllows` now returns the `Target`); `Finish(status, fallback)` uses its argument when
+  it has a kind, else the stored one, else `installation`. The webhook route (public, no rule) sets its own from `{id}`.
+- **Actor and door outside a scope.** A context with a principal and no scope or door (a GET stream such as the terminal)
+  counts as door `api`; with neither it is `caravana`. `service.AnonymousActor(typed)` builds the actor of a failed
+  sign-in (D4's `net/mail` rule), for Phase C.
+- **A note after `Finish`** (a goroutine that outlived the request) is written at once with the scope's door and actor.
+- **Exceptions (D12) gain `previewPromotion`** (`POST /v1/apps/{id}/promote/preview`), another read sent as POST. The
+  production table is `auditExempt` in `internal/api/audit.go`; the test keeps its own `auditExceptions`, and a test fails
+  when they differ.
+- **Export.** The count is checked before the first byte (`ErrAuditExportTooLarge`, then 422 on `from`); the headers are
+  set before the first row and taken back for a refusal. An error after rows were written can only end the file with the
+  error's JSON, since the status is gone.
+- **Prune.** `SetAuditPruneGap(first, every)`; the test helper sets the first gap to an hour so no pass runs under a test.
+- **Retention note.** `SetAuditSettings` notes `updated` on resource `settings`/`audit` with the diff of
+  `{retentionDays}`; a refused value (field error on `retentionDays`) notes nothing.
+- No change to numbering: migration 0044, API 0.61.0.
