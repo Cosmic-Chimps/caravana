@@ -418,6 +418,9 @@ var accessRules = map[string]accessRule{
 	"POST /v1/certificates/uploaded":                 admin(),
 	"GET /v1/certificates/uploaded/{id}":             admin(),
 	"DELETE /v1/certificates/uploaded/{id}":          admin(),
+	"POST /v1/certificates/drops":                    admin(),
+	"GET /v1/certificates/drops":                     admin(),
+	"GET /v1/certificates/drops/{id}":                admin(),
 	"GET /v1/builds/settings":                        admin(),
 	"PUT /v1/builds/settings":                        admin(),
 }

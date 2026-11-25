@@ -126,6 +126,11 @@ type NodeReport struct {
 	// ConsoleAddress is the outcome of the last console address request this agent handled; nil when
 	// it handled none.
 	ConsoleAddress *NodeConsoleOutcome `json:"consoleAddress,omitempty"`
+	// TraefikStore says Traefik's certificate store folder is on this server (feature 056): only then
+	// is the agent handed a drop of earlier certificates. An agent older than the feature doesn't say
+	// it. CertificateDrop is how the last drop request this agent handled went; nil when it handled none.
+	TraefikStore    bool                    `json:"traefikStore,omitempty"`
+	CertificateDrop *NodeCertificateOutcome `json:"certificateDrop,omitempty"`
 }
 
 // JoinRequest is the body of POST /v1/join.
@@ -172,6 +177,9 @@ type NodeAnswer struct {
 	// ConsoleAddress is the change of the console's address this agent is asked to apply; nil for none.
 	// It is only ever sent to an agent that reported runsConsole.
 	ConsoleAddress *NodeConsoleAddress
+	// CertificateDrop is the drop of earlier certificates this agent is asked to run (feature 056); nil
+	// for none. It is only ever sent to the ingress server's agent.
+	CertificateDrop *NodeCertificateDrop
 }
 
 // ServerJoin is a join command that was just made (addServer's answer). Token is the only place the
@@ -672,6 +680,9 @@ func validateReport(r NodeReport) error {
 	if err := validateConsoleOutcome(r.ConsoleAddress); err != nil {
 		return err
 	}
+	if err := validateCertificateOutcome(r.CertificateDrop); err != nil {
+		return err
+	}
 	return validateSpace(r.Space)
 }
 
@@ -753,6 +764,7 @@ func (s *Service) NodeSync(ctx context.Context, nodeToken string, report NodeRep
 	ans.Issuer = s.noteIssuer(cur.Name, ans.Role == "server", report.Issuer, now)
 	ans.Clean = s.cleanupHandoff(ctx, cur, report, now)
 	ans.ConsoleURL, ans.ConsoleAddress = s.consoleHandoff(ctx, report, now)
+	ans.CertificateDrop = s.certificateDropHandoff(ctx, cur, report, now)
 	return ans, nil
 }
 

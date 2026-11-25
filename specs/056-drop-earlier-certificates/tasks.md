@@ -19,14 +19,14 @@ Plan: `plan.md` (D1–D12). Each phase ends with `go build ./...`, `go vet ./...
 
 ## Phase B: the console's record, the hand-off, the restart and the API
 
-- [ ] T006 Migration `0045_certificate_drops.sql` and `internal/store/certificatedrops.go` (create with the open
+- [x] T006 Migration `0045_certificate_drops.sql` and `internal/store/certificatedrops.go` (create with the open
   index, get, list newest first, mark running, settle, set restarting).
-- [ ] T007 `internal/service/certificatedrops.go`: `RequestCertificateDrop`, `CertificateDrops`, `CertificateDrop`
+- [x] T007 `internal/service/certificatedrops.go`: `RequestCertificateDrop`, `CertificateDrops`, `CertificateDrop`
   (D7, D8), `certificateDropHandoff` in `NodeSync` (D8b), the report's block in `NodeReport` and its validation,
   `NodeAnswer.CertificateDrop`, the restart and the pass (D9), `SetCertificateDropPassGap`, started in `Start`.
-- [ ] T008 `internal/api`: the three routes, the sync answer's and report's blocks, errors, `accessRules`, the
+- [x] T008 `internal/api`: the three routes, the sync answer's and report's blocks, errors, `accessRules`, the
   walks, `api/openapi.yaml` 0.62.0.
-- [ ] T009 Tests: store, service (refusals, hand-off, every outcome, restart via `deploytest`, the pass, no PEM in
+- [x] T009 Tests: store, service (refusals, hand-off, every outcome, restart via `deploytest`, the pass, no PEM in
   rows or logs), api.
 
 ## Phase C: the console, docs and the VM check

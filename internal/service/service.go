@@ -206,6 +206,9 @@ type Service struct {
 	issuerCA    issuerCAState
 	certRecheck time.Duration
 	certMu      sync.Mutex
+	// certDrop is the timing and the in-flight restarts of the drops of earlier certificates (feature 056),
+	// see certificatedrops.go.
+	certDrop certDropState
 
 	// Previews (feature 049), see previews.go.
 	previewGap    time.Duration // between two passes of the reaper
@@ -310,6 +313,7 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		previewGap: defaultPreviewReapGap,
 
 		certRecheck: defaultCertRecheck,
+		certDrop:    newCertDropState(),
 
 		consoleAddr: newConsoleAddressState(),
 	}
@@ -585,6 +589,15 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runConsoleAddressPass(ctx, consoleGap)
+	}()
+	// Drops of the earlier certificates an upload covers (feature 056): the ones that never got going or
+	// never ended are given up, and a restart of Traefik that didn't finish is driven, from the first
+	// pass at start (a drop a restart of Caravana interrupted goes on).
+	dropGap := s.certDrop.gap // read here: tests set the field after Start
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runCertificateDropPass(ctx, dropGap)
 	}()
 	return nil
 }

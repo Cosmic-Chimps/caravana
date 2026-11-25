@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.61.0
+  version: 0.62.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -1413,7 +1413,10 @@ paths:
         The report also carries `space` (feature 045): the images Docker holds, with whether a container
         uses each, Docker's leftover volumes, the build cache, and the size of each Nomad host volume
         directory. While a clean-up (`cleanServer`) is requested or running for the server, the answer
-        carries `clean`: its ID and the digests to keep. Answers are `Cache-Control: no-store`; the body
+        carries `clean`: its ID and the digests to keep. The ingress server's agent also reports whether
+        it holds Traefik's certificate store (`traefikStore`), and while a drop of earlier certificates
+        (`dropEarlierCertificates`) is open its answer carries `certificateDrop`: the ID and the names
+        the uploads cover (feature 056). Answers are `Cache-Control: no-store`; the body
         of a sync is at most 4 MiB, since the report may name a thousand images.
       tags: [servers]
       security:
@@ -6153,6 +6156,111 @@ paths:
           $ref: "#/components/responses/Internal"
         "502":
           $ref: "#/components/responses/BadGateway"
+
+  /v1/certificates/drops:
+    post:
+      operationId: dropEarlierCertificates
+      summary: Drop the earlier certificates the uploaded ones cover.
+      description: |
+        Traefik keeps serving and renewing an ACME certificate it already holds, and one for an exact
+        name beats an uploaded wildcard, so after an upload the hosts it covers can keep presenting their
+        earlier certificate (`keptEarlier` on `listUploadedCertificates`). This asks the ingress server's
+        agent to remove from Traefik's certificate store every ACME certificate whose every name an
+        uploaded certificate covers, exactly or as a wildcard one label deeper. The agent does it at its
+        next sync (within 30 seconds) and Caravana then restarts Traefik once: a few seconds without HTTPS.
+        A certificate that also names a host no upload covers is kept (Traefik would order it again).
+
+        The answer is 202 with the drop, `requested`; read it again (`getCertificateDrop`) until it is
+        `done`, `failed` or `lost`. `dropped` says what was removed: each certificate as its names joined
+        with `+`, main name first. Neither a certificate nor a key is ever in an answer.
+
+        Refused with 409 `no_uploaded_certificates` when none is uploaded (or none has a name the agent
+        accepts), `no_agent` when the ingress server has no agent that reports holding Traefik's store
+        (run the installer on it: the message says on which server), and `certificate_drop_running` while
+        another drop is requested, running or restarting. An administrator's call.
+      tags: [domains]
+      responses:
+        "202":
+          description: The drop, `requested`.
+          headers:
+            Location:
+              schema: {type: string}
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateDrop"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/CertificateDropRefused"
+        "500":
+          $ref: "#/components/responses/Internal"
+    get:
+      operationId: listCertificateDrops
+      summary: List the drops of earlier certificates.
+      description: "The newest 20, newest first. Answers are `Cache-Control: no-store`."
+      tags: [domains]
+      responses:
+        "200":
+          description: The drops.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [drops]
+                properties:
+                  drops:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CertificateDrop"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/certificates/drops/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A drop's ID, 32 lowercase hex digits.
+        schema: {type: string}
+    get:
+      operationId: getCertificateDrop
+      summary: Read a drop of earlier certificates.
+      tags: [domains]
+      responses:
+        "200":
+          description: The drop.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateDrop"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`certificate_drop_not_found`: no drop has this ID."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
 
   /v1/apps/{id}/backups:
     parameters:
@@ -13466,6 +13574,38 @@ components:
             bytesFreed: {type: integer, minimum: 0}
             volumesRemoved: {type: integer, minimum: 0}
             error: {type: string, maxLength: 500}
+    CertificateDrop:
+      type: object
+      additionalProperties: false
+      description: |
+        One drop of the earlier certificates the uploads cover. `requested`: waiting for the ingress
+        server's agent's next sync. `running`: handed to the agent. `restarting`: the agent removed the
+        certificates (`dropped`, possibly none: its files may have been rewritten) and Traefik is being
+        restarted. `done`: Traefik runs again with the store as it is now. `failed` (`error` says why: the
+        agent refused or couldn't change the store, never picked it up, or Traefik couldn't be restarted,
+        in which case it still serves the earlier certificates) or `lost` (the agent was handed it and
+        never told how it went). Nothing of a certificate, key or account is in a drop.
+      required: [id, server, status, dropped, error, actor, requestedAt, startedAt, finishedAt]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{32}$"}
+        server: {type: string, description: "The ingress server's name."}
+        status: {type: string, enum: [requested, running, restarting, done, failed, lost]}
+        dropped:
+          type: array
+          maxItems: 100
+          description: "Each certificate removed, as its names joined with `+`, main name first. Empty until the agent says."
+          items: {type: string}
+        error: {type: string, description: "One sentence in Caravana's or the agent's words; empty when none."}
+        actor: {type: string, description: "The person's email, empty for Caravana itself."}
+        requestedAt: {type: string, format: date-time}
+        startedAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
+        finishedAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
     NodeClean:
       type: object
       additionalProperties: false
@@ -13518,6 +13658,29 @@ components:
           properties:
             id: {type: string, pattern: "^[0-9a-f]{32}$"}
             state: {type: string, enum: [applied, failed, refused, running]}
+            reason: {type: string, maxLength: 300, description: One printable line.}
+        traefikStore:
+          type: boolean
+          description: |
+            True when Traefik's certificate store folder is on this server (feature 056): only then is the
+            agent handed a drop of earlier certificates (`dropEarlierCertificates`). Left out when false,
+            and by an agent older than the feature.
+        certificateDrop:
+          type: object
+          additionalProperties: false
+          description: |
+            How the last drop request this agent handled went, from the agent's state. `dropped` (even with no
+            names: the agent's files may have been rewritten) is when Traefik must be restarted. Left out when
+            it handled none.
+          required: [id, state]
+          properties:
+            id: {type: string, pattern: "^[0-9a-f]{32}$"}
+            state: {type: string, enum: [running, dropped, nothing, failed, refused]}
+            dropped:
+              type: array
+              maxItems: 100
+              description: "Each certificate removed, as its lowercase host names joined with `+`."
+              items: {type: string, maxLength: 4096}
             reason: {type: string, maxLength: 300, description: One printable line.}
         reach:
           type: array
@@ -13582,6 +13745,23 @@ components:
           properties:
             id: {type: string, pattern: "^[0-9a-f]{32}$"}
             domain: {type: string, description: A lowercase host name.}
+        certificateDrop:
+          type: object
+          additionalProperties: false
+          description: |
+            A drop of the earlier certificates the uploads cover (`dropEarlierCertificates`) for the agent to
+            run: present only while one is requested or running, and only for the ingress server's agent.
+            `names` are the lowercase host names and wildcards of the uploaded certificates (1 to 1000); the
+            agent checks both members and removes only the stored ACME certificates whose every name they
+            cover. It reports the outcome in its next report.
+          required: [id, names]
+          properties:
+            id: {type: string, pattern: "^[0-9a-f]{32}$"}
+            names:
+              type: array
+              minItems: 1
+              maxItems: 1000
+              items: {type: string}
     AttentionItem:
       type: object
       additionalProperties: false
@@ -15385,6 +15565,17 @@ components:
         none`, or Traefik's job is older than this feature, or Nomad couldn't be read; the message says
         which and what to run). `certificates_unavailable`: certificates can't be uploaded here, for the
         same reasons but `--acme none`. `too_many_certificates`: 30 are uploaded already.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    CertificateDropRefused:
+      description: |
+        `no_uploaded_certificates`: no certificate is uploaded, or none has a name the agent accepts (a
+        lowercase host name or a wildcard one). `no_agent`: the ingress server (the first) has no agent
+        that reports holding Traefik's certificate store, reported lately and ready: the message says to
+        run the installer on that server (without a name when no managed server runs the ingress).
+        `certificate_drop_running`: a drop is requested, running or restarting; wait for it to end.
       content:
         application/json:
           schema:

@@ -15,7 +15,23 @@ import (
 
 // certificatesError maps the certificate refusals to their codes; mapError calls it.
 func certificatesError(err error) *Error {
+	var noAgent *service.DropNoAgentError
+	var re *service.RefusalError
 	switch {
+	case errors.As(err, &noAgent):
+		// The drop's own refusal: it names the ingress server in its sentence and no field (spaceError's
+		// no_agent names the server's route parameter).
+		return &Error{Status: http.StatusConflict, Code: codeNoAgent, Message: err.Error()}
+	case errors.Is(err, service.ErrNoUploadedCertificates):
+		return &Error{Status: http.StatusConflict, Code: codeNoUploadedCertificates, Message: err.Error()}
+	case errors.Is(err, service.ErrCertificateDropRunning):
+		return &Error{Status: http.StatusConflict, Code: codeCertificateDropRunning, Message: err.Error()}
+	case errors.Is(err, service.ErrCertificateDropNotFound):
+		field := "id"
+		if errors.As(err, &re) {
+			field = re.Field
+		}
+		return &Error{Status: http.StatusNotFound, Code: codeCertificateDropNotFound, Field: field, Message: err.Error()}
 	case errors.Is(err, service.ErrIssuerUnavailable):
 		return &Error{Status: http.StatusConflict, Code: codeIssuerUnavailable, Message: err.Error()}
 	case errors.Is(err, service.ErrCertificatesUnavailable):

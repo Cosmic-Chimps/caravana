@@ -181,8 +181,11 @@ func (s *server) syncNode(w http.ResponseWriter, r *http.Request) error {
 		// the console's address, only for the agent that runs beside Caravana (feature 051).
 		ConsoleURL     string                      `json:"consoleURL,omitempty"`
 		ConsoleAddress *service.NodeConsoleAddress `json:"consoleAddress,omitempty"`
+		// CertificateDrop is the drop of earlier certificates the ingress server's agent is asked to run
+		// (feature 056), absent for none.
+		CertificateDrop *service.NodeCertificateDrop `json:"certificateDrop,omitempty"`
 	}{ans.Name, ans.Index, ans.Pool, ans.Role, serversOrEmpty(ans.Servers), toPeersJSON(ans.Peers), ans.GossipKey, ans.Renew, ans.State,
-		toServerChecksJSON(ans.Checks), ans.Issuer, ans.Clean, ans.ConsoleURL, ans.ConsoleAddress}
+		toServerChecksJSON(ans.Checks), ans.Issuer, ans.Clean, ans.ConsoleURL, ans.ConsoleAddress, ans.CertificateDrop}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
