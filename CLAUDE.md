@@ -1235,9 +1235,12 @@ module, constitution unchanged (certificates reach Traefik through its file prov
   back, a private-CA wildcard for `*.cert034.localhost` uploaded through the form, Traefik serving it before the app's domain is
   added, the Domains row saying "uploaded:", Settings' "Serves", Remove), which passed the same day (28 s, `-run
   'TestConsoleLab/^console-(sign-in|certificates)$'`); its host is under `.localhost` so the row is live without DNS.
-  The lab's Traefik must be the 034 job: `deploy/dev/lab.sh up` from this branch. Not run: `install-test.sh` (T016's new checks
-  aren't written). Lima forwards the VM's port 14000 to the
-  Mac's localhost, which the in-process Caravana's directory check uses.
+  The lab's Traefik must be the 034 job: `deploy/dev/lab.sh up` from this branch. Lima forwards the VM's port 14000 to the
+  Mac's localhost, which the in-process Caravana's directory check uses. `install-test.sh` has `check_certificates_host`
+  (Traefik's policy, a private-CA upload served on 443, a covered fake ACME certificate dropped by a rerun, removal) and
+  `check_old_traefik_host`; `ONLY=certificates` runs just them in about 4 minutes. The whole run passed on 2026-11-25 on
+  Ubuntu 24.04 (24 min), after a fix: every rerun said Traefik restarts, because `grep -q` under `pipefail` can fail a
+  pipeline through SIGPIPE, so the installer reads the job before grepping it.
 
 Feature 035 (`specs/035-app-templates`, from a CodeAlta task) is implemented on the worktree branch
 `alta/fresh-kestrel-ng5c`: New app › From a template installs a known app from a few answers. A template is

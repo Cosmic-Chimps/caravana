@@ -893,8 +893,10 @@ run_traefik() {
   # issuer can change from the console and uploaded certificates are served. A job from before
   # has none of it (nor, if it is older still, the file provider of 023, the request numbers of
   # 025, the access log of 047 or the console route of 051): this run restarts it once.
+  # The job is read whole before grep: under pipefail, grep -q leaving at its first match can
+  # kill the reader with SIGPIPE and fail the pipeline, which printed the note on every rerun.
   if [ "$before" != none ]; then
-    nomad_cli job inspect traefik 2>/dev/null | grep -q 'caravana_certificates' ||
+    grep -q 'caravana_certificates' <<<"$(nomad_cli job inspect traefik 2>/dev/null || true)" ||
       echo "  Traefik is restarted once for your own certificates (a few seconds without HTTP)"
   fi
   drop_covered_acme_certificates

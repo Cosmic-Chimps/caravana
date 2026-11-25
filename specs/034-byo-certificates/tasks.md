@@ -36,7 +36,7 @@ Tests are required (constitution VIII): each layer's tests are in the task that 
 
 - [x] **T014** Both Traefik jobs and policies per contracts/traefik.md; proven by hand in the lab (issuer variable with and without EAB items, an upload, Team only still working) · deploy/install, deploy/dev
 - [x] **T015** `install.sh`: the restart-once note, the store clean-up; README · deploy/install
-- [ ] **T016** (open: the existing checks read the rendered `/secrets/traefik.yml` and the restart note is 034's, shellchecked but not run; the checks below aren't written) `install-test.sh`: policy lines, an older job replaced, upload served on 443, the clean-up on a rerun · deploy/dev
+- [x] **T016** `install-test.sh`: policy lines, an older job replaced, upload served on 443, the clean-up on a rerun · deploy/dev (`check_certificates_host` and `check_old_traefik_host`, `ONLY=certificates`; on Ubuntu 24.04 on 2026-11-25 `ONLY=certificates` passed in 3½ min and the full run in 24 min. The full run found that every rerun said Traefik restarts: `grep -q` under `pipefail` let SIGPIPE fail the pipeline, so `run_traefik` reads the job before grepping it)
 
 ## Phase 7: Lab and polish
 
