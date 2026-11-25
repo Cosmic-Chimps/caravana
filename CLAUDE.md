@@ -2219,8 +2219,52 @@ doc: `docs/people.md`. Migration 0043, API 0.60.0 (0.59.0 is 053, secret templat
   The store's DSN escapes the database path (a `#` or `?` in it opened another file). Foreign keys are enforced now, which older migrations
   never did: orphan rows from before (17 declared keys in 15 tables) are kept, not repaired, and every write still works on them
   (`TestOrphansFromBeforeForeignKeysAreKept`; see the plan's Deviations, review fixes); `PRAGMA foreign_key_check` lists them.
-- Not in 053: single sign-on, custom roles, teams, an audit log, per-project Nomad namespaces, sending the invite by mail, a roles page per
+- Not in 053: single sign-on, custom roles, teams, per-project Nomad namespaces, sending the invite by mail, a roles page per
   app, and an invite for someone who already has an account.
+
+Feature 057 (`specs/057-audit-log`, CodeAlta task `jf6s`, worktree branch `alta/mossy-cutter-pg2p`): an audit log of who changed what, one entry per
+change, readable by owners and admins. `plan.md` D1–D14 are the decisions and its Deviations sections (phases A to D) the changes; operator doc:
+`docs/audit-log.md`. Migration 0044 and API 0.61.0 (feature 034, BYO certificates, took the same numbers on its own branch; whichever merges second
+renumbers, as 049 did). No new module, no policy change, constitution unchanged.
+- `internal/audit` is pure (a test forbids `net/http`, `store`, `service`): `Entry` (actor, door, address, action, operation, resource, changes,
+  record, related, fallback), `Event` (an entry with the store's ID and time), the closed lists `Actions()` and `Kinds()` (a note outside them is
+  logged as an error), `Diff(before, after)` (JSON walk, lists of objects keyed by `name|host|id|label|path`, paths like
+  `services[web].domains[new.example.com].path`, values cut at 200 bytes, at most 100 changes) and its redaction (a leaf whose key is or ends with
+  `password`, `token`, `secret`, `secretAccessKey`, `privateKey`, `apiKey`, `signingSecret`, `hash` or `value` shows `set`/`changed`/`removed`, no
+  `from`/`to`; a value or item added whole shows only `{…}`/`[…]`), and the CSV writer (`SafeCell` quotes a leading `= + - @`, tab or CR).
+- Store: `audit_events` has no foreign key (entries outlive apps and people), `audit_settings` (`retention_days` 90, CHECK 30–3650);
+  `InsertAuditEvent`, `ListAuditEvents` (newest first, `before` cursor on the ID, at most 500), `ExportAuditEvents` (callback, oldest first, at most
+  100 000), `PruneAuditEvents`; no update or delete of one entry exists. The prune runs from `Service.Start` (`SetAuditPruneGap`).
+- The recorder (`service/audit.go`): the service notes with `s.audit(ctx, entry)` (`a.audit` in `Auth`) once a change is stored, never failing it (a
+  failed write is logged). The API (every non-GET route but `auditExempt`) and the console (every POST) open an `AuditScope` with `Service.BeginAudit`
+  (door, address, `METHOD /pattern`): the first note is the entry, later notes about the same resource add changes, others are `related`;
+  `Finish(status, fallback)` writes it. The API's scope writes a **fallback** entry (`changed`, `fallback: true`, a warning in the log) for a write
+  that succeeded and noted nothing, from the resource of the route's access rule (`SetFallback`); `NoChange()` says a request changed nothing. The
+  console's scope calls **`NoFallback()`**: it has no route-to-resource rule, so a post nothing noted leaves no entry, and its coverage is the
+  service's notes alone. Actor (`actorFor`): a principal is a `person`, a `token` or a `deploy_token`; with none the door says `webhook` (the app),
+  `host` (the CLI sets `WithAuditDoor`) or `caravana`; a failed sign-in is `anonymous` with the typed email only when it reads as one address.
+  `TestEveryWriteRouteLeavesOneEntry` walks every non-GET API route with stubbed handlers; the exceptions (`syncNode`, `renewNodeCertificate` and the
+  previews sent as POST) are named in `auditExempt` and in the test, and a test fails when the two differ.
+- What is noted: every deploy path through `deployWarned` (`noteDeploy`: `created`, `deployed`, `redeployed`, `rolled back`, `promoted`,
+  `refreshed secrets`, with the deployment as the record), Configure's edits as `updated`, app actions, backups, restores, pins, schedules, projects,
+  environments, previews (closing one is a single entry listing its apps as `related`), domains, Git access, every installation setting and
+  provider, servers, updates, templates, add-ons, console address, people, tokens, passkeys, sign-in, and the CLI (`host`). Clock-driven runs add
+  nothing (D14); what Caravana decides for the owner has Caravana as actor. A diff reads views that give every stored secret the value `\x00stored`
+  (`audit_views.go`, `audit_installation.go`), so a replaced secret is `changed` and a kept one no change.
+- API 0.61.0: `listAuditEvents` (`GET /v1/audit`, filters `actor`, `action`, `kind`, `resource`, `project`, `environment`, `from`, `to`, `before`,
+  `limit`; 422 `invalid_field` naming the parameter), `exportAuditEvents` (`/v1/audit/export`, `from` and `to` required, CSV, at most 100 000 rows),
+  `getAuditSettings`, `putAuditSettings` (owners); owners and admins read, members 403 `not_allowed`, deploy tokens 403 `token_scope`; every answer
+  `no-store`.
+- Console (`internal/ui/audit.go`, `templates/audit.html`): Settings › Audit log (`/settings/audit`, Security group after API tokens, admins and
+  owners only): one GET form of filters (UTC days), entries newest first with the actor in words, the door, the action, the resource (linked to the app
+  and the record while they exist), the address and the changes in a `<details>`; "Older" by cursor keeping the filters; `/settings/audit/export` (its
+  own small GET form, `exportFrom`/`exportTo`, defaults to the last 7 days, the other filters come along as hidden inputs; a refusal is drawn at the
+  form at 422); `POST /settings/audit` is the owners' retention (303 to `?saved=1`, a field error drawn at the input; an admin sees it read-only). Every
+  page and the export are `no-store`. Forms work without JavaScript. `consoleAccess` has an `owner()` rule for the post, and the roles walk expects an
+  admin to be refused it (`ownerOnly`).
+- Tests: sentinel tests in `audit`, `store`, `service`, `api` and `ui` (`TestAuditNeverDrawsASecret` puts a registry password and a secret through
+  console forms and searches the page, the CSV and the log). Not in 057: entries for reads, a per-app audit tab, an MCP tool, streaming to syslog or a
+  SIEM, signing or chaining entries, entries for the agents' routine calls or for clock-driven runs.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM

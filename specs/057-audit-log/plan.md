@@ -241,3 +241,31 @@ merges second renumbers, as 049 did.
     `CleanupSettings`, `ScanSettings`, `ScanRuns`, `ScansOf`, `DeploymentScan`, `ScanWait`, `UpdaterInstalled`, and the test hooks
     `RunDailyScansForTests`, `DropFindingForTests`.
 
+
+### Phase D (the console, docs)
+
+- **The console scope has no fallback.** `AuditScope.NoFallback()` (set by `server.auditScope` in `internal/ui/audit.go`, which
+  wraps every POST route in `routes()` with `Service.BeginAudit(…, audit.DoorConsole, …)`) makes `Finish` write nothing for a post
+  that noted nothing; the API's scope doesn't call it, so its fallback is unchanged (D3). A scope is skipped when the server has no
+  service (a few tests serve the account pages with only an `Auth`). The status is captured by a `statusCapture` writer that passes
+  `Flush` and `Hijack` through; `Finish` runs in a `defer`.
+- **Settings › Audit log** (`/settings/audit`, entry `audit`, icon `scroll-text`, in the Security group after API tokens and not
+  in a member's nav). `consoleAccess` has `admin()` for the two GETs and a new `owner()` for the post; the independent walk table
+  adds `ownerOnly` so an admin is expected to be refused `POST /settings/audit`. The parity twins are `listAuditEvents` +
+  `getAuditSettings` (+ the nav's reads) for the page, `exportAuditEvents` for the export and `putAuditSettings` for the post.
+- **Filters and export.** The filters are one GET form (`actor`, `action`, `kind`, `resource`, `project`, `environment`, `from`,
+  `to`); the dates are UTC days (`to` is that day's last instant), so the console takes dates where the API takes RFC 3339. The export
+  is its own small GET form whose range is `exportFrom`/`exportTo` (default: the last 7 days), so the page's `from`/`to` aren't
+  mistaken for it; the other filters ride along as hidden inputs. A refused range is the page at 422 with the message at the export
+  form; the CSV is the API's writer, with `no-store` and a `Content-Disposition` that is taken back for a refusal.
+- **Links.** A resource links to its app only while the app is stored (`StoredApps`, once per page). A deployment record links to
+  `/apps/<id>/deployments#deployment-<id>`, a backup or restore to the Backups tab and an app action to the app; a backup's resource
+  has the service as its name and no app ID, so it links when exactly one stored app of that place has that service. A schedule run
+  links to `/schedules/<schedule>/runs/<run>`. Anything else is the ID as text.
+- **Words.** The actor is worded as the contract says ("ana@example.com through token ci", "deploy token ci (ana@example.com)", "the
+  webhook of <app>", "Caravana", "the host's command line", "someone who typed <email>"); a change with no `from`/`to` reads `set`,
+  `changed` or `removed`. A fallback entry says "recorded by the route".
+- **Tests** (`internal/ui/audit_test.go`): a real console POST leaves one `console` entry by the owner with no fallback, members get
+  403 and an admin's retention is read-only, filters narrow the list, the Older link pages, a refused post and a post nothing noted
+  leave no entry, the export answers CSV, the retention form saves and refuses at its field, and a registry password and a secret
+  value never reach an entry, the page, the CSV or the log.

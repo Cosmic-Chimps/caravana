@@ -76,14 +76,19 @@ var consoleParity = map[string]parity{
 	// the password setting are the same service calls as the API's. The ceremonies are in consoleOnly.
 	// People (feature 053): the list, the invite form (it lists the projects and their environments), a person's
 	// page and its confirmation of Remove.
-	"GET /settings/people":                {ops: append([]string{"listPeople"}, settingsReads...)},
-	"GET /settings/people/new":            {ops: append([]string{"listProjects"}, settingsReads...)},
-	"POST /settings/people":               {ops: []string{"invitePerson"}},
-	"GET /settings/people/{id}":           {ops: append([]string{"getPerson", "listProjects"}, settingsReads...)},
-	"POST /settings/people/{id}":          {ops: []string{"updatePerson"}},
-	"POST /settings/people/{id}/invite":   {ops: []string{"reinvitePerson"}},
-	"GET /settings/people/{id}/remove":    {ops: append([]string{"getPerson"}, settingsReads...)},
-	"POST /settings/people/{id}/remove":   {ops: []string{"removePerson"}},
+	"GET /settings/people":              {ops: append([]string{"listPeople"}, settingsReads...)},
+	"GET /settings/people/new":          {ops: append([]string{"listProjects"}, settingsReads...)},
+	"POST /settings/people":             {ops: []string{"invitePerson"}},
+	"GET /settings/people/{id}":         {ops: append([]string{"getPerson", "listProjects"}, settingsReads...)},
+	"POST /settings/people/{id}":        {ops: []string{"updatePerson"}},
+	"POST /settings/people/{id}/invite": {ops: []string{"reinvitePerson"}},
+	"GET /settings/people/{id}/remove":  {ops: append([]string{"getPerson"}, settingsReads...)},
+	"POST /settings/people/{id}/remove": {ops: []string{"removePerson"}},
+	// Audit log (feature 057): the page reads listAuditEvents (and getAuditSettings for the retention, with the
+	// nav's reads), the export is exportAuditEvents, and the retention form is putAuditSettings.
+	"GET /settings/audit":                 {ops: append([]string{"listAuditEvents", "getAuditSettings"}, settingsReads...)},
+	"GET /settings/audit/export":          {ops: []string{"exportAuditEvents", "listAuditEvents", "getAuditSettings"}},
+	"POST /settings/audit":                {ops: []string{"putAuditSettings"}},
 	"GET /settings/sign-in":               {ops: append([]string{"listPasskeys", "getSignIn"}, settingsReads...)},
 	"POST /settings/sign-in":              {ops: []string{"putSignIn"}},
 	"POST /settings/passkeys/{id}":        {ops: []string{"updatePasskey"}},

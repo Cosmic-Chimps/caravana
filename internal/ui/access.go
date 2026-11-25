@@ -126,6 +126,13 @@ func adminIfUnreadable() (service.Need, service.Target, bool) {
 	return service.NeedAdmin(), service.Target{}, true
 }
 
+// owner is an owner.
+func owner() accessRule {
+	return func(*server, *http.Request) (service.Need, service.Target, bool) {
+		return service.NeedOwner(), service.Target{}, true
+	}
+}
+
 // appAt is at least level in the place of the app named by {id}.
 func appAt(level service.Level) accessRule {
 	return func(_ *server, r *http.Request) (service.Need, service.Target, bool) {
@@ -519,6 +526,11 @@ var consoleAccess = map[string]accessRule{
 	"POST /settings/notifications/{id}/test":           admin(),
 	"POST /settings/notifications/{id}/secret":         admin(),
 	"POST /settings/notifications/{id}/remove":         admin(),
+
+	// The audit log (feature 057): owners and admins read and export it, owners set how long it is kept.
+	"GET /settings/audit":        admin(),
+	"GET /settings/audit/export": admin(),
+	"POST /settings/audit":       owner(),
 
 	// People (feature 053): owners and admins; the service holds an admin to members.
 	"GET /settings/people":              admin(),

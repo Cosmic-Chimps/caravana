@@ -30,6 +30,7 @@ const (
 	entryTokens          = "tokens"
 	entrySignIn          = "sign-in"
 	entryPeople          = "people"
+	entryAudit           = "audit"
 	entryAppearance      = "appearance"
 )
 
@@ -56,6 +57,7 @@ var settingsGroups = []struct {
 		{entryPeople, "People", "/settings/people", "user"},
 		{entrySignIn, "Sign-in", "/settings/sign-in", "fingerprint"},
 		{entryTokens, "API tokens", "/settings/tokens", "key"},
+		{entryAudit, "Audit log", "/settings/audit", "scroll-text"},
 	}},
 	// This browser: what is kept in the browser, not on the installation (feature 028).
 	{"This browser", []settingsEntry{{entryAppearance, "Appearance", "/settings/appearance", "sun-moon"}}},

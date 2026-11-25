@@ -1,0 +1,129 @@
+{{/* Settings › Audit log (feature 057): who did what, newest first. Owners and admins only. A search
+     is one GET form, an entry's changes are in a <details>, the export is its own small GET form and
+     the retention a post for owners. No entry is edited or deleted from here, and nothing here holds a
+     secret: a changed secret reads "changed", never a value. Takes settingsData; the page's own data is
+     .Audit. Times are UTC first, localtime.js adds the local time. */}}
+
+{{define "audit-error"}}{{with .}}<span role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}{{end}}
+
+{{define "settings-audit"}}
+{{with .Audit}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Audit log</h1>
+    <p class="cv-lede">Who changed what, newest first. Kept {{.Retention}} days. Times are UTC. Nothing here shows a secret: a changed secret says only that it changed.</p>
+  </div>
+</header>
+{{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+
+<form method="get" action="/settings/audit" class="cv-panel cv-audit-filters" autocomplete="off">
+  <label class="cv-fld">
+    <span class="cv-label">Who</span>
+    <input class="cv-field cv-field-mono" type="text" name="actor" value="{{index .Filters "actor"}}" placeholder="an email or a token name" maxlength="254" spellcheck="false" autocapitalize="off">
+  </label>
+  <label class="cv-fld">
+    <span class="cv-label">Action</span>
+    <select class="cv-field cv-select" name="action"{{if index .Errors "action"}} aria-invalid="true"{{end}}>{{range .Actions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+    {{template "audit-error" (index .Errors "action")}}
+  </label>
+  <label class="cv-fld">
+    <span class="cv-label">Kind</span>
+    <select class="cv-field cv-select" name="kind"{{if index .Errors "kind"}} aria-invalid="true"{{end}}>{{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+    {{template "audit-error" (index .Errors "kind")}}
+  </label>
+  <label class="cv-fld">
+    <span class="cv-label">Resource</span>
+    <input class="cv-field cv-field-mono" type="text" name="resource" value="{{index .Filters "resource"}}" placeholder="an ID, such as an app's" maxlength="200" spellcheck="false" autocapitalize="off">
+  </label>
+  <label class="cv-fld">
+    <span class="cv-label">Project</span>
+    <input class="cv-field cv-field-mono" type="text" name="project" value="{{index .Filters "project"}}" maxlength="63" spellcheck="false" autocapitalize="off">
+  </label>
+  <label class="cv-fld">
+    <span class="cv-label">Environment</span>
+    <input class="cv-field cv-field-mono" type="text" name="environment" value="{{index .Filters "environment"}}" maxlength="63" spellcheck="false" autocapitalize="off"{{if index .Errors "environment"}} aria-invalid="true"{{end}}>
+    {{template "audit-error" (index .Errors "environment")}}
+  </label>
+  <label class="cv-fld">
+    <span class="cv-label">From (UTC day)</span>
+    <input class="cv-field cv-field-mono" type="date" name="from" value="{{index .Filters "from"}}"{{if index .Errors "from"}} aria-invalid="true"{{end}}>
+    {{template "audit-error" (index .Errors "from")}}
+  </label>
+  <label class="cv-fld">
+    <span class="cv-label">To (UTC day)</span>
+    <input class="cv-field cv-field-mono" type="date" name="to" value="{{index .Filters "to"}}"{{if index .Errors "to"}} aria-invalid="true"{{end}}>
+    {{template "audit-error" (index .Errors "to")}}
+  </label>
+  <div class="cv-audit-filter-acts flex gap-2">
+    <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Search</button>
+    {{if .Filtered}}<a href="/settings/audit" class="cv-btn cv-btn-secondary cv-btn-sm">Clear</a>{{end}}
+  </div>
+</form>
+
+{{if .Rows}}
+<div class="cv-panel cv-conns">
+  <div class="cv-thead cv-audit-head" aria-hidden="true">
+    <span class="cv-label">When</span><span class="cv-label">What</span><span class="cv-label">Door</span><span class="cv-label">From</span>
+  </div>
+  {{range .Rows}}
+  <div class="cv-conn" id="entry-{{.ID}}">
+    <div class="cv-conn-row cv-audit-row">
+      <span class="cv-conn-meta" data-label="When">{{template "clock" .At}}</span>
+      <div class="cv-conn-name">
+        <span class="cv-audit-what"><span class="cv-audit-actor">{{.Actor}}</span> <span class="cv-audit-action">{{.Action}}</span> <span class="cv-audit-kind">{{.Kind}}</span>{{if .Name}} {{if .Href}}<a href="{{.Href}}" class="cv-conn-link cv-inline-mono">{{.Name}}</a>{{else}}<span class="cv-inline-mono text-fg-1">{{.Name}}</span>{{end}}{{end}}{{with .Place}} <span class="cv-data-muted">in {{.}}</span>{{end}}</span>
+        {{if or .Record .Fallback}}<span class="cv-conn-meta">{{if .Record}}record: {{if .RecordHref}}<a href="{{.RecordHref}}" class="cv-conn-link">{{.Record}}</a>{{else}}{{.Record}}{{end}}{{end}}{{if and .Record .Fallback}} · {{end}}{{if .Fallback}}recorded by the route{{end}}</span>{{end}}
+      </div>
+      <span class="cv-conn-meta" data-label="Door">{{.Door}}</span>
+      <span class="cv-conn-meta" data-label="From">{{or .Address "—"}}</span>
+    </div>
+    {{if or .Changes .Related}}
+    <details class="cv-audit-changes">
+      <summary class="cv-conn-link">{{if .Changes}}{{len .Changes}} change{{if ne (len .Changes) 1}}s{{end}}{{end}}{{if and .Changes .Related}}, {{end}}{{if .Related}}{{len .Related}} related{{end}}</summary>
+      <ul class="cv-audit-list">
+        {{range .Changes}}<li><span class="cv-inline-mono text-fg-1">{{.Path}}</span> <span>{{.Words}}</span></li>{{end}}
+        {{range .Related}}<li><span class="cv-data-muted">also</span> <span>{{.}}</span></li>{{end}}
+      </ul>
+    </details>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{if .Older}}<p class="cv-foot"><a href="{{.Older}}" class="cv-conn-link">Older</a></p>{{end}}
+{{else}}
+<div class="cv-panel"><div class="cv-empty">
+  <p class="cv-empty-title">{{if .Filtered}}No entries match.{{else}}Nothing has been recorded yet.{{end}}</p>
+  <p class="cv-empty-text">{{if .Filtered}}Widen the range or clear a filter.{{else}}Every change anyone makes to this caravana leaves an entry here.{{end}}</p>
+</div></div>
+{{end}}
+
+<form method="get" action="/settings/audit/export" class="cv-panel cv-audit-export" autocomplete="off">
+  <h2 class="cv-label cv-addhead">Export as CSV</h2>
+  {{/* The page's filters narrow the export; its own range is the two days below. */}}
+  {{range .Hidden}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
+  {{template "srow-open" (srow "First day" "UTC, from 00:00." "audit-export-from")}}
+  <input class="cv-field cv-field-mono" type="date" id="audit-export-from" name="exportFrom" value="{{.ExportFrom}}" required{{if index .ExportErrors "exportFrom"}} autofocus aria-invalid="true"{{end}}>
+  {{template "audit-error" (index .ExportErrors "exportFrom")}}
+  {{template "srow-close"}}
+  {{template "srow-open" (srow "Last day" "UTC, until 23:59." "audit-export-to")}}
+  <input class="cv-field cv-field-mono" type="date" id="audit-export-to" name="exportTo" value="{{.ExportTo}}" required{{if index .ExportErrors "exportTo"}} autofocus aria-invalid="true"{{end}}>
+  {{template "audit-error" (index .ExportErrors "exportTo")}}
+  {{template "srow-close"}}
+  <div class="cv-setrow"><div class="cv-setrow-text"><span class="cv-setrow-hint">Oldest first, at most 100,000 entries. A cell that starts like a formula is quoted.</span></div><div class="cv-setrow-ctl"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "download" 14}}Export CSV</button></div></div>
+</form>
+
+<section aria-labelledby="audit-retention-heading" class="cv-pgsec">
+  <h2 id="audit-retention-heading" class="cv-label">How long entries are kept</h2>
+  {{if .CanSet}}
+  <form method="post" action="/settings/audit" class="cv-panel" autocomplete="off">
+    {{template "srow-open" (srow "Retention" "Days, 30 to 3650. Older entries are removed once a day. The change is an entry too." "audit-retention")}}
+    <span class="cv-field cv-field-box cv-field-mono"><input class="cv-field-input" id="audit-retention" type="text" inputmode="numeric" name="retentionDays" value="{{.RetentionValue}}" spellcheck="false"{{if .RetentionError}} autofocus aria-invalid="true" aria-describedby="audit-retention-error"{{end}}><span class="cv-affix cv-affix-suf">days</span></span>
+    {{with .RetentionError}}<span id="audit-retention-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+    {{template "srow-close"}}
+    <div class="cv-setrow"><div class="cv-setrow-text"></div><div class="cv-setrow-ctl"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save retention</button></div></div>
+  </form>
+  {{else}}
+  <div class="cv-panel"><p class="cv-conn-note">Entries are kept {{.Retention}} days. Only an owner changes that.</p></div>
+  {{end}}
+</section>
+{{end}}
+{{end}}

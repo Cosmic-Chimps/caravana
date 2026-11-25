@@ -194,6 +194,33 @@ func TestAuditScopeFinish(t *testing.T) {
 	}
 }
 
+// The console's scope calls NoFallback: a post nothing noted writes no entry, whatever the status; its
+// notes still make the entry, and the API's scope (which doesn't call it) keeps its fallback.
+func TestAuditScopeNoFallback(t *testing.T) {
+	e := newEnv(t)
+	_, sc := e.svc.BeginAudit(context.Background(), audit.DoorConsole, "203.0.113.4", "POST /settings/appearance")
+	sc.NoFallback()
+	sc.Finish(303, audit.Resource{Kind: audit.KindApp, ID: "ignored"})
+	if rows := auditRows(t, e.store); len(rows) != 0 {
+		t.Fatalf("a console post nothing noted left %+v", rows)
+	}
+
+	ctx, sc := e.svc.BeginAudit(context.Background(), audit.DoorConsole, "203.0.113.4", "POST /apps/{id}/restart")
+	sc.NoFallback()
+	e.svc.audit(ctx, appNote("shop--staging--web", audit.ActionRestarted))
+	sc.Finish(303, audit.Resource{})
+	rows := auditRows(t, e.store)
+	if len(rows) != 1 || rows[0].Door != audit.DoorConsole || rows[0].Fallback || rows[0].Action != audit.ActionRestarted {
+		t.Fatalf("a console post that noted: %+v", rows)
+	}
+
+	_, sc = e.svc.BeginAudit(context.Background(), audit.DoorAPI, "203.0.113.4", "POST /v1/x")
+	sc.Finish(204, audit.Resource{})
+	if rows := auditRows(t, e.store); len(rows) != 2 || !rows[1].Fallback {
+		t.Fatalf("the API's scope lost its fallback: %+v", rows)
+	}
+}
+
 // A fallback entry is a warning in the log: a write route that notes nothing is a gap.
 func TestAuditFallbackIsLogged(t *testing.T) {
 	logs := &syncBuffer{}

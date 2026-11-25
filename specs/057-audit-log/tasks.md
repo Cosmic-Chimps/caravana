@@ -49,11 +49,11 @@
 
 ## Phase D — console, docs (US3, US4)
 
-- [ ] T011 Console scope for every POST (`routes()`), Settings › Audit log (`/settings/audit`: filters as one GET
+- [x] T011 Console scope for every POST (`routes()`), Settings › Audit log (`/settings/audit`: filters as one GET
   form, entries newest first with changes in `<details>`, record links, "Older" link by cursor, the export
   link, the retention form for owners), `/settings/audit/export`, `POST /settings/audit`, console access rules,
   the Security nav entry after API tokens, parity test twins. Forms work without JavaScript. `tools/ui-css.sh build`.
-- [ ] T012 UI tests: the page for owner, admin, member (403); filters; a sentinel never drawn.
-- [ ] T013 `docs/audit-log.md`, `changelog.d/057-audit-log.md`, CLAUDE.md's paragraph, the plan's Deviations.
-- [ ] T014 Full verification: `go build`, `go vet`, staticcheck, `go test -race ./...`, gofmt, the cross-compile,
+- [x] T012 UI tests: the page for owner, admin, member (403); filters; a sentinel never drawn.
+- [x] T013 `docs/audit-log.md`, `changelog.d/057-audit-log.md`, CLAUDE.md's paragraph, the plan's Deviations.
+- [x] T014 Full verification: `go build`, `go vet`, staticcheck, `go test -race ./...`, gofmt, the cross-compile,
   `tools/ui-css.sh check`, `tools/release.sh check`.

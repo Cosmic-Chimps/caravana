@@ -70,6 +70,8 @@ type AuditScope struct {
 	finished  bool
 	// unchanged is set by NoChange: the request succeeded and changed nothing, so it needs no fallback.
 	unchanged bool
+	// noFallback is set by NoFallback: a request nothing noted writes no entry at all.
+	noFallback bool
 }
 
 // WithAuditScope returns a context with a scope for one request, and the scope. The door is how the
@@ -131,6 +133,15 @@ func (sc *AuditScope) NoChange() {
 	sc.unchanged = true
 }
 
+// NoFallback tells the scope that a request nothing noted leaves no entry. The console uses it: its
+// form posts include searches, previews and refused or unchanged saves, and it has no route-to-resource
+// rule to name a fallback, so its coverage is the service's notes alone. The API doesn't call it.
+func (sc *AuditScope) NoFallback() {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	sc.noFallback = true
+}
+
 // Finish ends the scope once the handler returned with the status it wrote, and writes the entry. A
 // request that changed something and then failed keeps its entry; one that noted nothing and ended below
 // 400 gets a fallback entry (action changed, the resource given here or by SetFallback, installation
@@ -145,7 +156,7 @@ func (sc *AuditScope) Finish(status int, fallback audit.Resource) {
 	}
 	sc.finished = true
 	w, entry, at := sc.w, sc.entry, sc.at
-	if entry == nil && status < 400 && !sc.unchanged {
+	if entry == nil && status < 400 && !sc.unchanged && !sc.noFallback {
 		res := fallback
 		if res.Kind == "" {
 			res = sc.fallback
