@@ -13,7 +13,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app/apptest"
 )
 
-// openTestStore opens a store in a temp dir with a fake clock that moves one
+// openTestStore opens a store on a migrated copy (migratedDir) with a fake clock that moves one
 // second forward on every call, so timestamps are predictable.
 // openTestStoreWithPerson is openTestStore with one active owner, "p1", for the tests of
 // rows that belong to a person (sessions, API tokens, passkeys).
@@ -30,7 +30,7 @@ func openTestStoreWithPerson(t *testing.T) *Store {
 
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(context.Background(), t.TempDir())
+	s, err := Open(context.Background(), migratedDir(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

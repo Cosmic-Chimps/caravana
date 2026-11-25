@@ -20,6 +20,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/notify"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // notifySecret is a value no page, answer, record or SQLite file may hold. It
@@ -558,7 +559,7 @@ func TestTestNotificationChannel(t *testing.T) {
 // shown once at creation.
 func TestNotificationSecretsStayInTheVariable(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	st, err := store.Open(ctx, dir)
 	if err != nil {
 		t.Fatal(err)

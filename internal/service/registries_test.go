@@ -15,6 +15,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // registryPassword is a secret no page, answer, record or file outside the
@@ -105,7 +106,7 @@ func TestSaveRegistryKeepsTheSecret(t *testing.T) {
 // FR-002: the password is in no SQLite file, which includes the write-ahead log.
 func TestRegistrySecretIsNotInSQLite(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	st, err := store.Open(ctx, dir)
 	if err != nil {
 		t.Fatal(err)

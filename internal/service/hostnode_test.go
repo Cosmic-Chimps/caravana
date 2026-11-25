@@ -13,6 +13,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // nodeLab is a sampler lab whose node reports the lab's machine and whose
@@ -283,7 +284,7 @@ func TestRecordVersion(t *testing.T) {
 
 // Start records the running version before anything else runs.
 func TestStartRecordsTheVersion(t *testing.T) {
-	st, err := store.Open(context.Background(), t.TempDir())
+	st, err := store.Open(context.Background(), storetest.Dir(t))
 	if err != nil {
 		t.Fatal(err)
 	}

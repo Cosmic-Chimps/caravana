@@ -12,6 +12,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 var pathParam = regexp.MustCompile(`\{[^}]+\}`)
@@ -37,7 +38,7 @@ func protectedRoutes(t *testing.T) []route {
 // noAdminServer serves the API with an Auth on a fresh store that has no admin.
 func noAdminServer(t *testing.T, e *testEnv) string {
 	t.Helper()
-	st, err := store.Open(context.Background(), t.TempDir())
+	st, err := store.Open(context.Background(), storetest.Dir(t))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

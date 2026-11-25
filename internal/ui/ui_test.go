@@ -19,6 +19,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 const (
@@ -83,7 +84,7 @@ func newUIEnv(t *testing.T, withAdmin bool, proxies string) *uiEnv {
 // newUIEnvAt is newUIEnv with the console's own address (CARAVANA_PUBLIC_URL) set to publicURL.
 func newUIEnvAt(t *testing.T, withAdmin bool, proxies, publicURL string) *uiEnv {
 	t.Helper()
-	st, err := store.Open(context.Background(), t.TempDir())
+	st, err := store.Open(context.Background(), storetest.Dir(t))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

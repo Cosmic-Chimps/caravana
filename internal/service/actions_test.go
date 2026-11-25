@@ -22,6 +22,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // sentinel is what a command prints in the tests that look for output where it
@@ -173,7 +174,7 @@ func (s *syncBuffer) String() string {
 // service logging at debug level into the returned buffer.
 func newLoggedActionLab(t *testing.T) (*actionLab, *syncBuffer) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	st, err := store.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("open store: %v", err)

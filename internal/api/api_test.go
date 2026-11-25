@@ -26,6 +26,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // syncBuffer is a bytes.Buffer safe for the server's goroutines to write and
@@ -110,7 +111,7 @@ func newTestEnv(t *testing.T, nomadToken string) *testEnv {
 // starts, for the settings that must be made then (a watcher's gap).
 func newTestEnvWith(t *testing.T, nomadToken string, setup func(*service.Service)) *testEnv {
 	t.Helper()
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	st, err := store.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("open store: %v", err)

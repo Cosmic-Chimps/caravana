@@ -19,6 +19,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // Feature 027, T033 (SC-006): what the Operator view reads must never carry a secret or a command's
@@ -72,7 +73,7 @@ type opsSentinelLab struct {
 func newOpsSentinelLab(t *testing.T) *opsSentinelLab {
 	t.Helper()
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	st, err := store.Open(ctx, dir)
 	if err != nil {
 		t.Fatalf("open store: %v", err)

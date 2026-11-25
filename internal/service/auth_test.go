@@ -12,6 +12,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // fakeClock is a clock tests move by hand.
@@ -77,7 +78,7 @@ const (
 // newAuthEnv builds an Auth with no admin yet.
 func newAuthEnv(t *testing.T) *authEnv {
 	t.Helper()
-	st, err := store.Open(context.Background(), t.TempDir())
+	st, err := store.Open(context.Background(), storetest.Dir(t))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 	"github.com/cosmic-chimps/caravana/internal/webauthntest"
 )
 
@@ -48,7 +49,7 @@ func tokenIsActive(t *testing.T, dir, token string) bool {
 }
 
 func TestAdminInitStatusReset(t *testing.T) {
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	var allOutput strings.Builder
 	record := func(stdout, stderr string) { allOutput.WriteString(stdout + stderr) }
 
@@ -108,7 +109,7 @@ func adminHash(t *testing.T, dir string) string {
 }
 
 func TestAdminWeakPasswordAndNoPassword(t *testing.T) {
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	code, _, stderr := admin(t, dir, "short\n", "init", "--email", "you@example.com")
 	if code != 1 || !strings.Contains(stderr, "password") || strings.Contains(stderr, "short\n") {
 		t.Errorf("init with a weak password = %d, %q; want 1 naming the password", code, stderr)
@@ -130,7 +131,7 @@ func TestAdminResetPasswordWithoutAdmin(t *testing.T) {
 }
 
 func TestAdminUsage(t *testing.T) {
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	for name, args := range map[string][]string{
 		"no command":            {},
 		"unknown command":       {"frobnicate"},
@@ -165,7 +166,7 @@ func runAdminDirect(t *testing.T) (int, string, string) {
 }
 
 func TestAdminTokens(t *testing.T) {
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	if code, _, _ := admin(t, dir, "", "create-token", "--name", "ci"); code != 3 {
 		t.Fatalf("create-token without an admin = exit %d, want 3", code)
 	}
@@ -219,7 +220,7 @@ func TestAdminTokens(t *testing.T) {
 // runs `caravana admin init` and `create-token` beside it, and the server
 // accepts the new token without a restart (research R4).
 func TestAdminWhileServerRuns(t *testing.T) {
-	addr, dir := freeAddr(t), t.TempDir()
+	addr, dir := freeAddr(t), storetest.Dir(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	var stderr syncBuffer
 	exit := make(chan int, 1)
@@ -275,7 +276,7 @@ func TestAdminWhileServerRuns(t *testing.T) {
 // in-process server. The gate itself needs the lab or a VM (~12 minutes);
 // this proves its token plumbing works with nothing but the CLI and the API.
 func TestGateAPIStep(t *testing.T) {
-	addr, dir := freeAddr(t), t.TempDir()
+	addr, dir := freeAddr(t), storetest.Dir(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	var stderr syncBuffer
 	exit := make(chan int, 1)
@@ -326,7 +327,7 @@ func setPasswordSignIn(t *testing.T, dir string, on bool, domain string) {
 }
 
 func TestAdminPasskeys(t *testing.T) {
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	var allOutput strings.Builder
 	record := func(stdout, stderr string) { allOutput.WriteString(stdout + stderr) }
 	if code, _, stderr := admin(t, dir, cliPassword+"\n", "init", "--email", "you@example.com"); code != 0 {
@@ -394,7 +395,7 @@ func TestAdminPasskeys(t *testing.T) {
 }
 
 func TestAdminPasskeysWhilePasswordSignInIsOff(t *testing.T) {
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	if code, _, stderr := admin(t, dir, cliPassword+"\n", "init", "--email", "you@example.com"); code != 0 {
 		t.Fatalf("init = %d %s", code, stderr)
 	}
@@ -420,7 +421,7 @@ func TestAdminPasskeysWhilePasswordSignInIsOff(t *testing.T) {
 }
 
 func TestAdminResetTurnsPasswordSignInOn(t *testing.T) {
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	if code, _, stderr := admin(t, dir, cliPassword+"\n", "init", "--email", "you@example.com"); code != 0 {
 		t.Fatalf("init = %d %s", code, stderr)
 	}
@@ -477,7 +478,7 @@ func addCLIPasskeyWith(t *testing.T, dir, password, domain, name string) *webaut
 // first owner without it).
 func TestAdminWithSeveralPeople(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	if code, _, stderr := admin(t, dir, cliPassword+"\n", "init", "--email", "you@example.com"); code != 0 {
 		t.Fatalf("init = %d %s", code, stderr)
 	}

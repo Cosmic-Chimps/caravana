@@ -19,6 +19,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 const (
@@ -49,7 +50,7 @@ func newEnv(t *testing.T) *env {
 // service starts: a stream it refuses, say, which the service finds at its start.
 func newEnvPrepared(t *testing.T, prepare func(*deploytest.Nomad)) *env {
 	t.Helper()
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	st, err := store.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("open store: %v", err)

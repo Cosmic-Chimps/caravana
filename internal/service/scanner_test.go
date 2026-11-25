@@ -19,6 +19,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 	"github.com/cosmic-chimps/caravana/internal/vulns"
 )
 
@@ -186,7 +187,7 @@ func (s *scanLogBuffer) String() string {
 // shortened.
 func newScanEnv(t *testing.T) (*env, *scanLogBuffer) {
 	t.Helper()
-	st, err := store.Open(context.Background(), t.TempDir())
+	st, err := store.Open(context.Background(), storetest.Dir(t))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

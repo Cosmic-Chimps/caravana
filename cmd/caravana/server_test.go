@@ -11,6 +11,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/mesh"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 var nodeTokenFormat = regexp.MustCompile(`^cvnd_[A-Za-z0-9_-]{43}$`)
@@ -25,7 +26,7 @@ func serverCmd(t *testing.T, dir string, args ...string) (code int, stdout, stde
 }
 
 func TestServerAdoptFirst(t *testing.T) {
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	_, pub, err := mesh.NewKey()
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +71,7 @@ func TestServerAdoptFirst(t *testing.T) {
 }
 
 func TestServerCommandRefusals(t *testing.T) {
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	_, pub, _ := mesh.NewKey()
 	cases := []struct {
 		name string

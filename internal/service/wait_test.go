@@ -12,6 +12,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // A Service that was started with New (its default gaps, not the helpers'
@@ -33,7 +34,7 @@ func TestWaitLeavesNothingWritingToTheStore(t *testing.T) {
 
 	// Each round is a chance for the cancellation to cut a write.
 	for round := range 10 {
-		dir := t.TempDir()
+		dir := storetest.Dir(t)
 		st, err := store.Open(ctx, dir)
 		if err != nil {
 			t.Fatal(err)
@@ -65,7 +66,7 @@ func TestWaitLeavesNothingWritingToTheStore(t *testing.T) {
 
 // Wait is safe to call when Start never ran, and again after a Wait.
 func TestWaitWithoutStart(t *testing.T) {
-	st, err := store.Open(context.Background(), t.TempDir())
+	st, err := store.Open(context.Background(), storetest.Dir(t))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 	"github.com/cosmic-chimps/caravana/internal/templates"
 )
 
@@ -37,7 +38,7 @@ type templateLab struct {
 
 func newTemplateLab(t *testing.T) *templateLab {
 	t.Helper()
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	st, err := store.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("open store: %v", err)

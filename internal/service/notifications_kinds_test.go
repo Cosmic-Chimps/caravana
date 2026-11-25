@@ -17,6 +17,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/notify"
 	"github.com/cosmic-chimps/caravana/internal/notify/smtptest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // Values no answer, page, log, row or file may hold (task c6v8).
@@ -386,7 +387,7 @@ func TestEmailDeliveryErrorsHoldNoPassword(t *testing.T) {
 // log line and no file of the store, for every operation on both kinds.
 func TestMailAndBotSecretsStayInTheVariable(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	st, err := store.Open(ctx, dir)
 	if err != nil {
 		t.Fatal(err)

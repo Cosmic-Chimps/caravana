@@ -18,6 +18,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // samplerLab is a service on the fakes with a Traefik source and a node, whose
@@ -34,7 +35,7 @@ var labBase = time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 
 func newSamplerLab(t *testing.T, log *slog.Logger) *samplerLab {
 	t.Helper()
-	st, err := store.Open(context.Background(), t.TempDir())
+	st, err := store.Open(context.Background(), storetest.Dir(t))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -639,7 +640,7 @@ func TestSamplerPrune(t *testing.T) {
 // (and so most likely in the middle of a tick).
 func TestSamplerWaitReturnsAfterCancel(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(ctx, t.TempDir())
+	st, err := store.Open(ctx, storetest.Dir(t))
 	if err != nil {
 		t.Fatal(err)
 	}

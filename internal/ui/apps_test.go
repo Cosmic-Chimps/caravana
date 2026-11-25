@@ -23,6 +23,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 const sampleDigest = "sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44"
@@ -51,7 +52,7 @@ func newConsoleEnv(t *testing.T) *consoleEnv {
 func newConsoleEnvWith(t *testing.T, setup func(*service.Service, *deploytest.Nomad)) *consoleEnv {
 	t.Helper()
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	st, err := store.Open(ctx, dir)
 	if err != nil {
 		t.Fatalf("open store: %v", err)

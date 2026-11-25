@@ -10,6 +10,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // US3: an image from a registry named with a port and a name that isn't
@@ -23,7 +24,7 @@ func TestDeployFromHostWithPort(t *testing.T) {
 	reg.RequireLogin("deploy", registryPassword)
 	reg.AddIndex("acme/shop", "v1", whoamiDigest)
 	nomad.Succeed()
-	st, err := store.Open(ctx, t.TempDir())
+	st, err := store.Open(ctx, storetest.Dir(t))
 	if err != nil {
 		t.Fatal(err)
 	}

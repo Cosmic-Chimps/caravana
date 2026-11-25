@@ -22,6 +22,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // The tests of builds (feature 050) run the real flow against the fake Nomad: a
@@ -50,7 +51,7 @@ type buildLab struct {
 // makes every build succeed.
 func newBuildLab(t *testing.T, play func(deploytest.PlayedBuild) deploytest.BuildPlay) *buildLab {
 	t.Helper()
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	st, err := store.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("open store: %v", err)

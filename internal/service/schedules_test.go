@@ -15,6 +15,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // schedSecret is the value of whoami's secret API_TOKEN in a schedLab. It must
@@ -40,7 +41,7 @@ func newSchedLab(t *testing.T) *schedLab { return newSchedLabEvents(t, false) }
 // for the test that has Nomad's events drive the run watcher.
 func newSchedLabEvents(t *testing.T, events bool) *schedLab {
 	t.Helper()
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	st, err := store.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("open store: %v", err)

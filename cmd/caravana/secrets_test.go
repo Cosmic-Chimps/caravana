@@ -13,6 +13,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app/apptest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // TestNoSecretReachesLogsOrResponses is SC-005: a password, an API token, a
@@ -25,7 +26,7 @@ func TestNoSecretReachesLogsOrResponses(t *testing.T) {
 		newPassword = "second-password-that-is-long"
 		wrongPass   = "wrong-password-that-is-long"
 	)
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 
 	// The webhook token needs a stored app. Seed it before the server holds the
 	// store, so the test needs no registry and no Nomad.

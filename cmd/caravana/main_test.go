@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/httpx"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 func noEnv(string) string { return "" }
@@ -61,7 +62,7 @@ func freeAddr(t *testing.T) string {
 
 func TestRun(t *testing.T) {
 	addr := freeAddr(t)
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -165,7 +166,7 @@ func TestRunWebhookListener(t *testing.T) {
 	var stderr syncBuffer
 	exit := make(chan int, 1)
 	go func() {
-		exit <- runServer(ctx, []string{"-listen", addr, "-webhook-listen", hookAddr, "-data-dir", t.TempDir()}, noEnv, &stderr)
+		exit <- runServer(ctx, []string{"-listen", addr, "-webhook-listen", hookAddr, "-data-dir", storetest.Dir(t)}, noEnv, &stderr)
 	}()
 
 	status := func(url string) int {

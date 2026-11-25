@@ -9,11 +9,12 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/mesh"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // What the host's CLI changes is noted in the audit log (feature 057, phase C), done by the host.
 func TestCLIChangesAreNotedAsTheHost(t *testing.T) {
-	dir := t.TempDir()
+	dir := storetest.Dir(t)
 	code, _, stderr := admin(t, dir, cliPassword+"\n", "init", "--email", "you@example.com")
 	if code != 0 {
 		t.Fatalf("init = %d %s", code, stderr)

@@ -12,6 +12,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/store/storetest"
 )
 
 // leftover sets up what a previous run left behind: the stored app and one
@@ -20,7 +21,7 @@ import (
 func leftover(t *testing.T, status store.Status, version *uint64, inNomad bool) (*store.Store, *deploytest.Nomad, string) {
 	t.Helper()
 	ctx := context.Background()
-	st, err := store.Open(ctx, t.TempDir())
+	st, err := store.Open(ctx, storetest.Dir(t))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
