@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/api"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/config"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/dns"
@@ -78,7 +79,8 @@ func main() {
 func run(ctx context.Context, args []string, getenv func(string) string,
 	stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "admin" {
-		return runAdmin(ctx, args[1:], getenv, stdin, stdout, stderr)
+		// What the host's CLI changes is noted in the audit log as done by the host.
+		return runAdmin(service.WithAuditDoor(ctx, audit.DoorHost), args[1:], getenv, stdin, stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "mcp" {
 		return runMCP(ctx, args[1:], getenv, stdin, stdout, stderr)
@@ -90,7 +92,7 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 		return runNode(ctx, args[1:], getenv, stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "server" {
-		return runServerCommand(ctx, args[1:], getenv, stdout, stderr)
+		return runServerCommand(service.WithAuditDoor(ctx, audit.DoorHost), args[1:], getenv, stdout, stderr)
 	}
 	if len(args) == 1 && args[0] == "help" {
 		fmt.Fprint(stdout, rootUsage)

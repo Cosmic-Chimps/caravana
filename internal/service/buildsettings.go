@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -51,8 +52,14 @@ func (s *Service) SetBuildSettings(ctx context.Context, in BuildSettings) (Build
 			return BuildSettings{}, app.NewFieldError(f.field, "must be from %d to %d %s", f.lo, f.hi, f.unit)
 		}
 	}
+	was, _ := s.BuildSettings(ctx)
 	if err := s.store.SaveBuildSettings(ctx, store.BuildSettings(in)); err != nil {
 		return BuildSettings{}, err
+	}
+	if changes := audit.Diff(buildSettingsView(was), buildSettingsView(in)); len(changes) > 0 {
+		s.noteSetting(ctx, audit.ActionUpdated, settingsResource("builds"), nil, changes...)
+	} else {
+		s.noChange(ctx)
 	}
 	s.buildSlotsChanged() // a higher concurrency lets queued builds start
 	return in, nil

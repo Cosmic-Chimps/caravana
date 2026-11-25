@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/dns"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -168,6 +169,7 @@ func (s *Service) SaveDNSZone(ctx context.Context, in DNSZoneInput) (info DNSZon
 	if err != nil {
 		return DNSZoneInfo{}, false, err
 	}
+	s.noteDNSZoneSaved(ctx, zone, created, existing, stored, in)
 	return info, created, s.applyProxySetting(ctx, info.DNSZone)
 }
 
@@ -238,6 +240,7 @@ func (s *Service) DeleteDNSZone(ctx context.Context, zone string) error {
 	if err := s.store.DeleteDNSZone(ctx, zone); err != nil {
 		return err
 	}
+	s.noteSetting(ctx, audit.ActionDeleted, namedResource(audit.KindDNSZone, zone, zone), nil)
 	for _, r := range rows {
 		s.domainsChanged(r.AppID)
 	}
@@ -288,6 +291,26 @@ func (s *Service) TestDNSZone(ctx context.Context, zone string) (DNSZoneTestResu
 	if err := s.store.SaveDNSZoneTest(ctx, zone, outcome); err != nil {
 		return DNSZoneTestResult{}, err
 	}
+	s.noteSetting(ctx, audit.ActionTested, namedResource(audit.KindDNSZone, zone, zone), nil)
 	info, err := s.DNSZone(ctx, zone)
 	return DNSZoneTestResult{Zone: info, Records: listed}, err
+}
+
+// noteDNSZoneSaved notes a saved zone: created, or updated with the provider and the proxy setting that
+// moved and the token as set or changed (never its value). Saving what it already was changes nothing.
+func (s *Service) noteDNSZoneSaved(ctx context.Context, zone string, created bool, before store.DNSZone, hadToken bool, in DNSZoneInput) {
+	res := namedResource(audit.KindDNSZone, zone, zone)
+	after := map[string]any{"provider": in.Provider, "proxied": in.Proxied}
+	secretIn(after, "token", true, in.Token != nil)
+	if created {
+		s.noteSetting(ctx, audit.ActionCreated, res, nil, diffMaps(nil, after)...)
+		return
+	}
+	was := map[string]any{"provider": before.Provider, "proxied": before.Proxied}
+	secretIn(was, "token", hadToken, false)
+	if changes := diffMaps(was, after); len(changes) > 0 {
+		s.noteSetting(ctx, audit.ActionUpdated, res, nil, changes...)
+		return
+	}
+	s.noChange(ctx)
 }

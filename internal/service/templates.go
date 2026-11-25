@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -222,7 +223,16 @@ func (s *Service) SetTemplateRandom(r io.Reader) {
 // SetTemplateChecking stores the owner's setting: whether Caravana asks the
 // catalog repository for a newer catalog. Off means no request at all.
 func (s *Service) SetTemplateChecking(ctx context.Context, checking bool) error {
-	return s.store.SetTemplateChecking(ctx, checking)
+	was, _ := s.store.TemplateCatalog(ctx)
+	if err := s.store.SetTemplateChecking(ctx, checking); err != nil {
+		return err
+	}
+	if changes := audit.Diff(map[string]any{"checking": was.Checking}, map[string]any{"checking": checking}); len(changes) > 0 {
+		s.noteSetting(ctx, audit.ActionUpdated, settingsResource("templates"), nil, changes...)
+	} else {
+		s.noChange(ctx)
+	}
+	return nil
 }
 
 // catalogInUse is the catalog Caravana offers: the fetched one when it is
@@ -439,7 +449,9 @@ func (s *Service) InstallTemplate(ctx context.Context, name, appID string, input
 	if opts.WithoutBackups {
 		req, extra = withoutBackups(req)
 	}
-	res, err := s.deployComposeWarned(ctx, appID, req, Condition{IfNew: true}, trigger, extra)
+	// A template install reads "installed" with the template's name and version, not "created".
+	res, err := s.deployComposeWarned(withDeployNote(ctx, audit.ActionInstalled,
+		audit.Change{Path: "template", Op: audit.OpAdded, To: t.Name + " " + t.Version}), appID, req, Condition{IfNew: true}, trigger, extra)
 	// A deploy that fails after the app was saved (the image can't be found, the
 	// secret store is down) leaves the app and a failed deployment: the app came
 	// from the template all the same.
@@ -507,6 +519,7 @@ func (s *Service) CheckTemplates(ctx context.Context) error {
 	}
 	st.started, st.checking = now, true
 	st.mu.Unlock()
+	s.noteSetting(ctx, audit.ActionChecked, settingsResource("templates"), nil)
 
 	s.watchers.Add(1)
 	go func() {

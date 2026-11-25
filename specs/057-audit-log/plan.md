@@ -181,3 +181,63 @@ merges second renumbers, as 049 did.
   placed in its project, with `scope` as `<project>/<app>`; the token itself never). A full token's entry is phase C's.
 - **Phase C's, still unnoted.** A template install is a Compose deploy, so for now it reads `created`/`deployed` on the app.
 
+### Phase C (the installation and accounts)
+
+- **Secrets in settings** (`audit_installation.go`): each setting is diffed as a map of what SQLite stores plus one redacted leaf per
+  secret, built by `secretIn` (`stored` on both sides when the setting has one, `stored+` on the after side when the request carried
+  one: `set` for a first secret, `changed` for a replaced one, nothing for a kept one). The leaf keys are the ones `audit.Redacted`
+  hides: registry `password`; destination `secretAccessKey`; provider `apiKey` and `privateKey`; DNS zone `token`; channel `secret` (a
+  Slack, Discord or ntfy address, or a webhook's signing secret), `token` (ntfy, Telegram) and `password` (SMTP). A channel's address is
+  shown as the console shows it (masked where it is the secret). Saving what a setting already is notes nothing (`noChange`).
+- **Actions and resources.** Server: a join command is `created`, the join arriving (`Join`, a request, not a sync) is `updated`
+  with `state waiting → joining` (no principal, so the actor is Caravana), labels `updated` with the labels' diff, Move work off
+  `requested` and Accept work again `updated` (`acceptsWork`), Remove `removed`, Clean up now `requested` with the cleanup as the record
+  (the daily automatic one is the same note with no principal: Caravana), `caravana server adopt-first` `created` or `rotated` (noted by
+  `AdoptFirstServer` through a writer on the CLI's own store). An orphan volume deletion is `deleted` on the `volume` (`requested`
+  when it archives first) with the deletion as the record. Updates are on `settings/updates`: settings `updated`, Check now `checked`,
+  an update request `requested` with the run as the record (the automatic one has no principal: Caravana). Templates: settings and
+  Check now on `settings/templates`; an install is `installed` on the app with `template` (`<name> <version>`) as its change, through a
+  context override (`withDeployNote`) that `noteDeploy` honors. Add-ons: `installed`/`uninstalled` on the `addon` (installing what is
+  installed, removing what isn't: no change); a scan request `requested` on the app, or on `settings/scans` for all of them; scan,
+  build and cleanup settings `updated`. Console address: `requested` (start), `cancelled`, `updated` (switch) on the
+  `console_address` change, which is also the record.
+- **Accounts.** A person invited `invited` (the token never), a new link `invited` with `inviteExpiresAt`, an acceptance
+  `accepted an invite` by the person who accepted (with the address), an update `updated` with the role diff (`orgRole`,
+  `projects[<name>].role`, `.environments.<env>`), `removed`. A token (full or deploy) `created` (name, `owner`, `expiresAt`, `scope`)
+  and `revoked` (revoking twice: no change). A passkey `created` (name and domain, never a credential ID or key), `updated` (rename),
+  `removed`. Sign-in settings `updated` on `settings/sign-in` (the actor says whose). A password change and the host's reset are
+  `updated` on the `account` with `password: changed` and no value. Sign-in and sign-out are on the `account` with the address and the
+  method; a failed sign-in is `anonymous`, with the typed value as the email only when it reads as one address, and a wrong invite
+  token and a failed passkey sign-in are failed sign-ins too (no email). A locked address writes nothing (nothing was checked). The
+  session an accepted invite starts (`StartSessionFor`) is not noted again: the acceptance covers it.
+- **Actor inside Auth.** `actorUnlessKnown`/`actorFor` give the person as the actor of an account note only when the context has no
+  principal, no API scope that was told the actor and isn't the host's CLI, so a token keeps being a token and the CLI stays the host.
+- **The CLI** (`caravana admin …`, `caravana server …`) runs with `WithAuditDoor(ctx, host)`.
+- **Existing tests.** Making the admin and a token now writes entries, so three tests that expected an empty log after setup count
+  from after it (`TestAuthNotesLikeService`, `TestAuditSettingsEndpoints`, and the two list tests of `internal/api/audit_test.go`); no
+  assertion was weakened.
+- **A real-handler fallback check.** With a temporary line printing every fallback entry (removed again), the whole `internal/api`
+  suite, which calls the real handlers for most routes, wrote exactly one: `PUT /v1/updates/settings` with `{}`. `PutUpdateSettings`
+  now calls `noChange` when nothing is set. The routes the API tests never call are covered only by the stub walk.
+- **Exported mutating methods left without a note of their own**, found by listing every exported `Service` and `Auth` method whose
+  name starts with a state-changing verb and reading what it calls:
+  - Notes happen in what they call: `Deploy`, `DeployIf`, `DeployIfResult`, `DeployCompose*`, `Redeploy`, `RedeployVersion`, `Promote`,
+    `CreateApp` (`deployWarned`/Phase B's helpers); `SetSecret*`, `RemoveSecret*`, `SetDomainsIf`, `SetBackupPolicy`,
+    `SetRestoreSchedule`, `SetBackupPlaces` (deploys of one change); `StopApp`, `StartApp` (`actions.go`'s one note);
+    `SetGitToken`, `RemoveGitAccess`, `SetPreviewSettings`, `SetProjectBackupDestination` (their Phase B helper);
+    `CreateAPIToken` (→ `CreateScopedAPIToken`), `RevokeAPITokenByName` (→ `RevokeAPIToken`), `SetBackupDestination`
+    (→ `SaveBackupDestination`), `RequestCleanup` (→ `requestCleanup`, which the daily pass also calls), `InstallAddon` and
+    `RemoveAddon` (→ the scanner's), `PutUpdateSettings` (→ `SetReleaseCheck`, `SetAutoUpdate`), `AdoptFirst` (→
+    `AdoptFirstServer`), `RemovePasskey`, `RemovePasskeyUnchecked` (→ `deletePasskey`).
+  - Routine calls of the agent, D12: `NodeSync`, `NodeCertificate`.
+  - No stored change worth an entry: `BeginPasskeySignIn`, `BeginPasskeyConfirm`, `BeginPasskeyRegistration`, `BeginJoin` (open a
+    ceremony or an attempt in memory), `VerifyPassword`, `FinishPasskeyConfirm` (only move a session's `verified_at`),
+    `StartSessionFor` (above), `CheckSession`, `CheckSessionQuiet`, `CheckAPIToken` (a last-used time), `CheckWebhookToken`,
+    `CheckUpdateOffer`, `MarkDomainsWatched`, `RefreshDomains` (reads and watchers), `InviteFor` (a read that counts a bad token, and
+    notes a failed sign-in as `AcceptInvite` does).
+  - Set up, not state: every `Set…Gap`, `Set…ForTests`, `SetEdge*`, `SetPublicURL`, `SetVersion`, `SetAuth`, `SetDNSProviders`,
+    `SetSecretSources`, `Set…URL`, `SetProRunner`, `SetAptRunner`, `SetHostRoot`, `SetDockerRoot`, `SetCertResolver`, `SetACME`,
+    `SetUpdaterDir`, `SetUpdateRequestPath`, `SetTerminalLimits`, `Start`; the readers `Addons`, `Addon`, `Updates`,
+    `CleanupSettings`, `ScanSettings`, `ScanRuns`, `ScansOf`, `DeploymentScan`, `ScanWait`, `UpdaterInstalled`, and the test hooks
+    `RunDailyScansForTests`, `DropFindingForTests`.
+

@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/notify"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -189,9 +190,11 @@ func (s *Service) SetReleaseCheckGap(d time.Duration) {
 // SetReleaseCheck stores the owner's setting: whether Caravana asks GitHub for
 // new releases. Off means no request at all.
 func (s *Service) SetReleaseCheck(ctx context.Context, enabled bool) error {
+	was, _ := s.store.ReleaseCheck(ctx)
 	if err := s.store.SetReleaseCheckEnabled(ctx, enabled); err != nil {
 		return err
 	}
+	s.noteUpdateSettings(ctx, map[string]any{"checkEnabled": was.Enabled}, map[string]any{"checkEnabled": enabled})
 	s.publish(Change{What: ChangeUpdates})
 	return nil
 }
@@ -762,6 +765,8 @@ func (s *Service) CheckPackages(ctx context.Context) error {
 	}
 	u.packagesStarted, u.checkingPackages = now, true
 	u.mu.Unlock()
+	s.noteSetting(ctx, audit.ActionChecked, settingsResource("updates"), nil,
+		audit.Change{Path: "check", Op: audit.OpAdded, To: "package names"})
 	s.publish(Change{What: ChangeUpdates})
 
 	s.watchers.Add(1)
@@ -839,6 +844,8 @@ func (s *Service) CheckRelease(ctx context.Context) error {
 	}
 	u.releaseStarted, u.checkingRelease = now, true
 	u.mu.Unlock()
+	s.noteSetting(ctx, audit.ActionChecked, settingsResource("updates"), nil,
+		audit.Change{Path: "check", Op: audit.OpAdded, To: "releases"})
 	s.publish(Change{What: ChangeUpdates})
 
 	s.watchers.Add(1)

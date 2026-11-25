@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -207,5 +208,6 @@ func (s *Service) TestBackupDestination(ctx context.Context, name string) (store
 		}
 		return store.DestinationTest{}, err
 	}
+	s.noteSetting(ctx, audit.ActionTested, namedResource(audit.KindBackupDestination, name, name), nil)
 	return out, nil
 }

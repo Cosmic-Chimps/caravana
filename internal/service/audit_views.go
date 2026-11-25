@@ -152,6 +152,19 @@ func targetOrFreshWord(t string) string {
 	return t
 }
 
+// deployNoteOverride says what the deploys under a context are noted as, when they are not a plain deploy:
+// a template install is "installed", with the template as a change.
+type deployNoteOverride struct {
+	action  audit.Action
+	changes []audit.Change
+}
+
+type deployNoteKey struct{}
+
+func withDeployNote(ctx context.Context, action audit.Action, changes ...audit.Change) context.Context {
+	return context.WithValue(ctx, deployNoteKey{}, deployNoteOverride{action: action, changes: changes})
+}
+
 // noteApp notes a change of an app that is not a deploy: who did what, to which app, with the record
 // the change made (nil for none).
 func (s *Service) noteApp(ctx context.Context, action audit.Action, appID string, rec *audit.Record, changes ...audit.Change) {
@@ -169,6 +182,9 @@ func (s *Service) noteDeploy(ctx context.Context, a app.App, m made, deploymentI
 	var changes []audit.Change
 	if m.diff {
 		changes = appChanges(m.before, a)
+	}
+	if o, ok := ctx.Value(deployNoteKey{}).(deployNoteOverride); ok {
+		action, changes = o.action, append(changes, o.changes...)
 	}
 	s.audit(ctx, audit.Entry{Action: action, Resource: appResource(a.ID), Record: deploymentRecord(deploymentID), Changes: changes})
 }

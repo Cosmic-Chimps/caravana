@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -279,6 +280,8 @@ func (s *Service) MoveWorkOff(ctx context.Context, name string, deadline time.Du
 		}
 		return ServerView{}, fmt.Errorf("move work off %s: %w", name, err)
 	}
+	s.noteSetting(ctx, audit.ActionRequested, serverResource(row.ID, row.Name), nil,
+		audit.Change{Path: "acceptsWork", Op: audit.OpChanged, From: "true", To: "false"})
 	s.startMove(mv)
 	s.publish(Change{What: ChangeServers})
 	return s.Server(ctx, name)
@@ -554,6 +557,8 @@ func (s *Service) AcceptWork(ctx context.Context, name string) (ServerView, erro
 	if err := s.deployer.SetNodeEligible(ctx, node.ID, true); err != nil {
 		return ServerView{}, err
 	}
+	s.noteSetting(ctx, audit.ActionUpdated, serverResource(row.ID, row.Name), nil,
+		audit.Change{Path: "acceptsWork", Op: audit.OpChanged, From: "false", To: "true"})
 	s.publish(Change{What: ChangeServers})
 	s.publish(Change{What: ChangeAttention})
 	return s.Server(ctx, name)

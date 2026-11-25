@@ -269,10 +269,11 @@ func TestAnonymousActor(t *testing.T) {
 func TestAuthNotesLikeService(t *testing.T) {
 	e := newAuthEnvWithAdmin(t)
 	ctx := WithAuditDoor(context.Background(), audit.DoorHost)
+	setup := len(auditRows(t, e.store)) // the admin's creation is noted too
 	e.auth.audit(ctx, audit.Entry{Action: audit.ActionSignInFailed, Actor: AnonymousActor("ana@example.com"), Address: "203.0.113.4",
 		Resource: audit.Resource{Kind: audit.KindAccount}})
 	e.auth.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: audit.Resource{Kind: audit.KindAccount, ID: "p1"}})
-	rows := auditRows(t, e.store)
+	rows := auditRows(t, e.store)[setup:]
 	if len(rows) != 2 {
 		t.Fatalf("%d entries", len(rows))
 	}

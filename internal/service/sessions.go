@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -90,6 +91,7 @@ func (a *Auth) SignIn(ctx context.Context, email, password, consoleDomain, addre
 	}
 	if !a.check(password, hash) || !live {
 		a.event("signin_failed", "address", address)
+		a.noteSignInFailed(ctx, email, address)
 		triesLeft, err := a.recordFailure(ctx, at)
 		var limited *SigninLimitError
 		switch {
@@ -110,6 +112,7 @@ func (a *Auth) SignIn(ctx context.Context, email, password, consoleDomain, addre
 		return Session{}, err
 	}
 	a.event("signin", "address", address)
+	a.noteSignedIn(ctx, person, address, "password")
 	return s, nil
 }
 
@@ -152,10 +155,19 @@ func (a *Auth) SignOut(ctx context.Context, sessionValue string) error {
 	if sessionValue == "" {
 		return nil
 	}
+	rec, recErr := a.store.GetSession(ctx, hashToken(sessionValue))
 	if err := a.store.DeleteSession(ctx, hashToken(sessionValue)); err != nil {
 		return fmt.Errorf("sign out: %w", err)
 	}
 	a.event("signout")
+	if recErr != nil {
+		a.noChange(ctx) // no such session: nothing ended
+		return nil
+	}
+	if person, err := a.store.GetPerson(ctx, rec.PersonID); err == nil {
+		a.audit(ctx, audit.Entry{Action: audit.ActionSignedOut, Resource: accountResource(person.ID, person.Email),
+			Actor: audit.Actor{Kind: audit.ActorPerson, Email: person.Email, PersonID: person.ID}})
+	}
 	return nil
 }
 

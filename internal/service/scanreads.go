@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -64,9 +65,15 @@ func (s *Service) SetScanSettings(ctx context.Context, in ScanSettings) (ScanSet
 			return ScanSettings{}, ErrScannerNotInstalled
 		}
 	}
+	was, _ := s.ScanSettings(ctx)
 	if err := s.store.SaveScanSettings(ctx, store.ScanSettings{NotifyLevel: in.NotifyLevel,
 		RefuseFixableCritical: in.RefuseFixableCritical, DailyHour: in.DailyHour, DatabaseURL: in.DatabaseURL}); err != nil {
 		return ScanSettings{}, err
+	}
+	if changes := audit.Diff(scanSettingsView(was), scanSettingsView(in)); len(changes) > 0 {
+		s.noteSetting(ctx, audit.ActionUpdated, settingsResource("scans"), nil, changes...)
+	} else {
+		s.noChange(ctx)
 	}
 	s.publish(Change{What: ChangeScans})
 	s.publish(Change{What: ChangeAttention}) // the notify level moves what is listed

@@ -37,15 +37,15 @@
 
 ## Phase C — notes: the installation and accounts (US1, US2)
 
-- [ ] T008 Registries, backup destinations, notification channels (incl. rotate, test), DNS zones, secret
+- [x] T008 Registries, backup destinations, notification channels (incl. rotate, test), DNS zones, secret
   providers, servers (add, remove, labels, move off, accept work, clean up), orphan volume deletions, cleanup
   settings, updates (settings, check, request update, automatic update as Caravana), templates (settings,
   check, install), add-ons and scans (install, remove, settings, request), build settings, console address
   (start, cancel, switch).
-- [ ] T009 Accounts: people (invite, reinvite, update, remove, accept invite), API tokens (create, revoke), passkeys
+- [x] T009 Accounts: people (invite, reinvite, update, remove, accept invite), API tokens (create, revoke), passkeys
   (add, rename, remove), sign-in settings, password change, sign in / sign out / sign-in failed (console and
   passkey), the CLI (`caravana admin …`) as `host`.
-- [ ] T010 Tests as T007 for these, with sentinels in every secret field.
+- [x] T010 Tests as T007 for these, with sentinels in every secret field.
 
 ## Phase D — console, docs (US3, US4)
 

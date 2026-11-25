@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -181,12 +182,15 @@ func (s *Service) InstallImageScanner(ctx context.Context) (AddonView, error) {
 	case st == store.AddonInstalling || st == store.AddonRemoving:
 		return AddonView{}, ErrAddonBusy
 	case st == store.AddonInstalled:
+		s.noChange(ctx)
 		return s.imageScannerView(ctx)
 	}
 	if err := s.store.SaveAddon(ctx, store.Addon{Name: store.AddonImageScanner, State: store.AddonInstalling,
 		Version: nomadjob.DefaultScannerVersion}); err != nil {
 		return AddonView{}, err
 	}
+	s.noteSetting(ctx, audit.ActionInstalled, namedResource(audit.KindAddon, store.AddonImageScanner, "Image scanner"), nil,
+		audit.Change{Path: "version", Op: audit.OpAdded, To: nomadjob.DefaultScannerVersion})
 	s.scansChanged()
 	s.watchers.Add(1)
 	go func() {
@@ -279,6 +283,7 @@ func (s *Service) RemoveImageScanner(ctx context.Context) (AddonView, error) {
 	case err != nil:
 		return AddonView{}, err
 	case st == "":
+		s.noChange(ctx)
 		return s.imageScannerView(ctx)
 	case st == store.AddonInstalling || st == store.AddonRemoving:
 		return AddonView{}, ErrAddonBusy
@@ -287,6 +292,7 @@ func (s *Service) RemoveImageScanner(ctx context.Context) (AddonView, error) {
 		Version: nomadjob.DefaultScannerVersion}); err != nil {
 		return AddonView{}, err
 	}
+	s.noteSetting(ctx, audit.ActionUninstalled, namedResource(audit.KindAddon, store.AddonImageScanner, "Image scanner"), nil)
 	s.scan.mu.Lock()
 	s.scan.removing = true
 	s.scan.mu.Unlock()

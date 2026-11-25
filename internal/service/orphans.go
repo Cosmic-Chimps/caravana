@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -261,6 +262,8 @@ func (s *Service) DeleteOrphanVolume(ctx context.Context, name, confirm string, 
 			defer release()
 			s.archiveThenDelete(s.background(), d, stub, dest)
 		}()
+		s.noteSetting(ctx, audit.ActionRequested, namedResource(audit.KindVolume, name, name), &audit.Record{Kind: audit.RecordVolumeDeletion, ID: d.ID},
+			audit.Change{Path: "backedUpFirst", Op: audit.OpAdded, To: "true"})
 		s.publish(Change{What: ChangeServers})
 		return d, nil
 	}
@@ -279,6 +282,7 @@ func (s *Service) DeleteOrphanVolume(ctx context.Context, name, confirm string, 
 	if err != nil {
 		return store.VolumeDeletion{}, err
 	}
+	s.noteSetting(ctx, audit.ActionDeleted, namedResource(audit.KindVolume, name, name), &audit.Record{Kind: audit.RecordVolumeDeletion, ID: d.ID})
 	return s.store.GetVolumeDeletion(ctx, d.ID)
 }
 

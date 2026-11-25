@@ -108,6 +108,13 @@ func (sc *AuditScope) SetActor(p Principal) {
 	sc.principal = &p
 }
 
+// hasActor says the API's authenticate already told the scope who acts.
+func (sc *AuditScope) hasActor() bool {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	return sc.principal != nil
+}
+
 // SetFallback tells the scope what the request is about, for the entry Finish writes when nothing was
 // noted: the API takes it from the route's access rule.
 func (sc *AuditScope) SetFallback(r audit.Resource) {
@@ -230,6 +237,13 @@ func (a *Auth) audit(ctx context.Context, e audit.Entry) {
 
 // noChange tells the request's audit scope, if there is one, that the call changed nothing.
 func (s *Service) noChange(ctx context.Context) {
+	if sc := AuditScopeFrom(ctx); sc != nil {
+		sc.NoChange()
+	}
+}
+
+// noChange is Service.noChange for the accounts side.
+func (a *Auth) noChange(ctx context.Context) {
 	if sc := AuditScopeFrom(ctx); sc != nil {
 		sc.NoChange()
 	}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -59,6 +60,12 @@ func (s *Service) SetServerLabels(ctx context.Context, name string, labels map[s
 	if err := s.store.SetServerLabels(ctx, row.Index, labels); err != nil {
 		s.labelMu.Unlock()
 		return ServerView{}, fmt.Errorf("set server labels: %w", err)
+	}
+	changes := audit.Diff(map[string]any{"labels": row.Labels}, map[string]any{"labels": labels})
+	if len(changes) > 0 {
+		s.noteSetting(ctx, audit.ActionUpdated, serverResource(row.ID, row.Name), nil, changes...)
+	} else {
+		s.noChange(ctx)
 	}
 	row.Labels = labels
 	applyErr := s.applyLabels(ctx, row)

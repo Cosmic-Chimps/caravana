@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -162,8 +163,9 @@ func (a *Auth) InitAdmin(ctx context.Context, email, password string) error {
 		return err
 	}
 	now := a.now().UTC()
+	id := newPersonID()
 	err = a.store.CreatePerson(ctx, store.PersonRecord{
-		ID: newPersonID(), Email: email, OrgRole: string(OrgOwner), State: personActive, PasswordHash: hash,
+		ID: id, Email: email, OrgRole: string(OrgOwner), State: personActive, PasswordHash: hash,
 		PasswordChangedAt: &now, PasswordSignIn: true, CreatedAt: now,
 	}, nil)
 	if errors.Is(err, store.ErrAlreadyExists) {
@@ -172,6 +174,8 @@ func (a *Auth) InitAdmin(ctx context.Context, email, password string) error {
 		return fmt.Errorf("init admin: %w", err)
 	}
 	a.event("admin_created")
+	a.audit(ctx, audit.Entry{Action: audit.ActionCreated, Resource: personResource(id, email),
+		Changes: audit.Diff(nil, map[string]any{"orgRole": string(OrgOwner)})})
 	return nil
 }
 
@@ -284,6 +288,8 @@ func (a *Auth) ResetPassword(ctx context.Context, email, password string) error 
 		return fmt.Errorf("reset password: %w", err)
 	}
 	a.event("password_reset")
+	a.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: accountResource(who.ID, who.Email),
+		Changes: []audit.Change{{Path: "password", Op: audit.OpChanged}}})
 	// The owner at the host's shell is the way back in when every passkey is
 	// lost, so a reset turns password sign-in on again (passkeys are kept).
 	if err := a.passwordSignInOn(ctx, who.ID); err != nil {
@@ -321,6 +327,9 @@ func (a *Auth) ChangePassword(ctx context.Context, personID, current, next, keep
 		return fmt.Errorf("change password: %w", err)
 	}
 	a.event("password_changed")
+	a.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: accountResource(person.ID, person.Email),
+		Actor:   a.actorUnlessKnown(ctx, person.ID, person.Email),
+		Changes: []audit.Change{{Path: "password", Op: audit.OpChanged}}})
 	return nil
 }
 

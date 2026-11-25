@@ -60,6 +60,7 @@ func putRetention(t *testing.T, e *testEnv, days int) {
 
 func TestListAuditEvents(t *testing.T) {
 	e := newTestEnv(t, "")
+	setup := auditRowCount(t, e.Store) // the owner and the test token, noted when the environment is made
 	putRetention(t, e, 365)
 
 	status, hdr, raw := getAudit(t, e, "")
@@ -67,10 +68,10 @@ func TestListAuditEvents(t *testing.T) {
 		t.Fatalf("GET /v1/audit = %d %v %s", status, hdr, raw)
 	}
 	body := decodeAudit(t, raw)
-	if len(body.Events) != 1 || body.Next != "" {
+	if len(body.Events) != 1+setup || body.Next != "" {
 		t.Fatalf("events = %s", raw)
 	}
-	ev := body.Events[0]
+	ev := body.Events[0] // the newest first
 	for _, k := range []string{"id", "at", "actor", "door", "action", "operation", "resource", "changes", "fallback"} {
 		if _, ok := ev[k]; !ok {
 			t.Errorf("event has no %q: %v", k, ev)
@@ -101,6 +102,7 @@ func TestListAuditEvents(t *testing.T) {
 
 func TestListAuditEventsPagesAndFilters(t *testing.T) {
 	e := newTestEnv(t, "")
+	setup := auditRowCount(t, e.Store) // the owner and the test token, noted when the environment is made
 	for _, days := range []int{31, 32, 33, 34, 35} {
 		putRetention(t, e, days)
 	}
@@ -125,7 +127,7 @@ func TestListAuditEventsPagesAndFilters(t *testing.T) {
 	}
 	_, _, raw = getAudit(t, e, "?limit=4&before="+page.Next)
 	rest := decodeAudit(t, raw)
-	if len(rest.Events) != 2 || rest.Next != "" {
+	if len(rest.Events) != 2+setup || rest.Next != "" {
 		t.Fatalf("page 2 = %s", raw)
 	}
 
@@ -142,7 +144,7 @@ func TestListAuditEventsPagesAndFilters(t *testing.T) {
 		"?resource=other": 0,
 		"?project=shop":   0,
 		"?from=2000-01-01T00:00:00Z&to=2001-01-01T00:00:00Z": 0,
-		"?from=2000-01-01T00:00:00Z":                         6,
+		"?from=2000-01-01T00:00:00Z":                         6 + setup,
 	} {
 		status, _, raw := getAudit(t, e, query)
 		if got := len(decodeAudit(t, raw).Events); status != http.StatusOK || got != want {
@@ -236,6 +238,7 @@ func TestExportAuditEvents(t *testing.T) {
 
 func TestAuditSettingsEndpoints(t *testing.T) {
 	e := newTestEnv(t, "")
+	setup := auditRowCount(t, e.Store) // the owner and the test token are noted when the environment is made
 	status, hdr, raw := call(t, http.MethodGet, e.URL+"/v1/audit/settings", "", "")
 	if status != http.StatusOK || hdr.Get("Cache-Control") != "no-store" || strings.TrimSpace(string(raw)) != `{"retentionDays":90}` {
 		t.Fatalf("GET settings = %d %v %s", status, hdr, raw)
@@ -261,8 +264,8 @@ func TestAuditSettingsEndpoints(t *testing.T) {
 			t.Errorf("%s: PUT %s = %d %s", name, tc.body, status, raw)
 		}
 	}
-	if n := auditRowCount(t, e.Store); n != 0 {
-		t.Errorf("refused changes left %d entries", n)
+	if n := auditRowCount(t, e.Store); n != setup {
+		t.Errorf("refused changes left %d entries", n-setup)
 	}
 	status, _, raw = call(t, http.MethodPut, e.URL+"/v1/audit/settings", "application/json", `{"retentionDays":3650}`)
 	if status != http.StatusOK || strings.TrimSpace(string(raw)) != `{"retentionDays":3650}` {
