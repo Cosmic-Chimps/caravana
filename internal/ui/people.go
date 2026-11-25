@@ -115,6 +115,9 @@ func (s *server) peopleSection(r *http.Request, base peopleData) (peopleData, er
 		if err != nil {
 			return base, err
 		}
+		// The rows are made here and nowhere else: peoplePage and renderSettings both pass the section
+		// through, so appending to rows a base already had listed everyone twice.
+		base.Rows = nil
 		for _, p := range people {
 			base.Rows = append(base.Rows, s.personRowOf(r, p))
 		}
