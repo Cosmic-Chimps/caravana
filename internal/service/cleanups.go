@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -145,6 +146,8 @@ func (s *Service) requestCleanup(ctx context.Context, row store.Server, trigger 
 	if err != nil {
 		return store.ImageCleanup{}, fmt.Errorf("request a clean-up: %w", err)
 	}
+	s.noteSetting(ctx, audit.ActionRequested, serverResource(row.ID, row.Name), &audit.Record{Kind: audit.RecordCleanup, ID: c.ID},
+		audit.Change{Path: "dockerVolumes", Op: audit.OpAdded, To: fmt.Sprint(dockerVolumes)})
 	s.publish(Change{What: ChangeServers})
 	return c, nil
 }
@@ -338,8 +341,15 @@ func (s *Service) PutCleanupSettings(ctx context.Context, automatic bool, keepDe
 	if keepDeployments < 1 || keepDeployments > 10 {
 		return store.CleanupSettings{}, app.NewFieldError("keepDeployments", "must be 1 to 10")
 	}
+	was, _ := s.store.CleanupSettings(ctx)
 	if err := s.store.SaveCleanupSettings(ctx, automatic, keepDeployments); err != nil {
 		return store.CleanupSettings{}, err
+	}
+	if changes := audit.Diff(map[string]any{"automatic": was.Automatic, "keepDeployments": was.KeepDeployments},
+		map[string]any{"automatic": automatic, "keepDeployments": keepDeployments}); len(changes) > 0 {
+		s.noteSetting(ctx, audit.ActionUpdated, settingsResource("cleanup"), nil, changes...)
+	} else {
+		s.noChange(ctx)
 	}
 	return s.store.CleanupSettings(ctx)
 }

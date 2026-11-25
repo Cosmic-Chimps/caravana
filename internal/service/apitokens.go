@@ -6,10 +6,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -129,7 +131,8 @@ func (a *Auth) CreateAPIToken(ctx context.Context, personID, name string, expire
 // need not exist yet: the token is made before the app's first deploy. A bad
 // scope is an *app.FieldError naming scope.project or scope.app.
 func (a *Auth) CreateScopedAPIToken(ctx context.Context, personID, name string, expiresAt *time.Time, scope *TokenScope) (CreatedAPIToken, error) {
-	if p, err := a.store.GetPerson(ctx, personID); errors.Is(err, store.ErrNotFound) || err == nil && p.State != personActive {
+	owner, err := a.store.GetPerson(ctx, personID)
+	if errors.Is(err, store.ErrNotFound) || err == nil && owner.State != personActive {
 		if err := a.anyone(ctx); err != nil {
 			return CreatedAPIToken{}, err // nobody exists yet: ErrNoAdmin
 		}
@@ -170,11 +173,21 @@ func (a *Auth) CreateScopedAPIToken(ctx context.Context, personID, name string, 
 	} else if err != nil {
 		return CreatedAPIToken{}, fmt.Errorf("create api token %q: %w", name, err)
 	}
+	// The entry says whose token it is, its name, when it ends and, for a deploy token (placed in its
+	// project), the app it is for. The token itself never appears.
+	view := map[string]any{"name": name, "owner": owner.Email}
+	res := audit.Resource{Kind: audit.KindToken, ID: rec.ID, Name: name}
+	if rec.ExpiresAt != nil {
+		view["expiresAt"] = rec.ExpiresAt.UTC().Format(time.RFC3339)
+	}
 	if scope != nil {
 		a.event("token_created", "tokenName", name, "scopeProject", scope.Project, "scopeApp", scope.App)
+		view["scope"] = scope.Project + "/" + scope.App
+		res.Project = scope.Project
 	} else {
 		a.event("token_created", "tokenName", name)
 	}
+	a.audit(ctx, audit.Entry{Action: audit.ActionCreated, Resource: res, Changes: audit.Diff(nil, view)})
 	return CreatedAPIToken{Token: token, Info: tokenInfo(rec, now)}, nil
 }
 
@@ -278,11 +291,22 @@ func (a *Auth) ListAPITokens(ctx context.Context, personID string) ([]APITokenIn
 // but stays in the list. An unknown ID, or another person's token, is store.ErrNotFound;
 // revoking twice changes nothing.
 func (a *Auth) RevokeAPIToken(ctx context.Context, personID, id string) error {
+	before, _ := a.store.ListAPITokens(ctx, personID)
+	idx := slices.IndexFunc(before, func(t store.APITokenRecord) bool { return t.ID == id })
 	name, err := a.store.RevokeAPIToken(ctx, personID, id, a.now().UTC())
 	if err != nil {
 		return err // already says which token; an unknown one is store.ErrNotFound
 	}
 	a.event("token_revoked", "tokenName", name)
+	if idx >= 0 && before[idx].RevokedAt != nil {
+		a.noChange(ctx) // revoked before: nothing changed
+		return nil
+	}
+	res := audit.Resource{Kind: audit.KindToken, ID: id, Name: name}
+	if idx >= 0 && before[idx].ScopeProject != "" {
+		res.Project = before[idx].ScopeProject
+	}
+	a.audit(ctx, audit.Entry{Action: audit.ActionRevoked, Resource: res})
 	return nil
 }
 

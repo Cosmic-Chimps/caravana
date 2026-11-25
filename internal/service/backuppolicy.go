@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -38,7 +39,7 @@ func (s *Service) SetBackupPolicy(ctx context.Context, appID, service string, po
 	services[i].Backup = &policy
 	a.Services = services
 
-	var m made
+	m := made{action: audit.ActionUpdated}
 	if rec.Compose != nil {
 		file := withBackup(*rec.Compose, service, policy)
 		m.file = &file
@@ -71,7 +72,7 @@ func (s *Service) SetRestoreSchedule(ctx context.Context, appID, service string,
 	services[i].Backup = &policy
 	a.Services = services
 
-	var m made
+	m := made{action: audit.ActionUpdated}
 	if rec.Compose != nil {
 		file := withBackup(*rec.Compose, service, policy)
 		m.file = &file
@@ -108,7 +109,7 @@ func (s *Service) SetBackupPlaces(ctx context.Context, appID, service, destinati
 	services[i].Backup = &policy
 	a.Services = services
 
-	var m made
+	m := made{action: audit.ActionUpdated}
 	if rec.Compose != nil {
 		file := withBackup(*rec.Compose, service, policy)
 		m.file = &file

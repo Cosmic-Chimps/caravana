@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -325,6 +326,7 @@ func (s *Service) SetPreviewSettings(ctx context.Context, project string, in Pre
 	if err != nil {
 		return PreviewSettingsResult{}, err
 	}
+	before := rec
 	acts, err := s.store.PreviewActivity(ctx, project)
 	if err != nil {
 		return PreviewSettingsResult{}, err
@@ -378,7 +380,25 @@ func (s *Service) SetPreviewSettings(ctx context.Context, project string, in Pre
 		return PreviewSettingsResult{}, err
 	}
 	s.publish(Change{What: ChangeApps})
+	s.notePreviewSettings(ctx, before, rec, in.Password != nil)
 	return PreviewSettingsResult{Settings: previewSettingsOf(rec, len(open)), Warnings: warnings}, nil
+}
+
+// notePreviewSettings notes a change of a project's preview settings: the limit, the days and whether
+// there is a password (never the password or its hash: the keys are redacted by Diff).
+func (s *Service) notePreviewSettings(ctx context.Context, before, after store.ProjectRecord, newPassword bool) {
+	view := func(rec store.ProjectRecord, typed bool) map[string]any {
+		m := map[string]any{"limit": rec.PreviewLimit, "expireAfterDays": rec.PreviewExpireDays}
+		if rec.PreviewPasswordHash != "" {
+			m["password"] = "stored"
+			if typed {
+				m["password"] = "stored+"
+			}
+		}
+		return m
+	}
+	s.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: projectResource(after.ID, after.DisplayName),
+		Changes: audit.Diff(view(before, false), view(after, newPassword))})
 }
 
 // syncPreviewRowsLocked writes Traefik's variable from the table and the stored
@@ -498,16 +518,33 @@ func (s *Service) ClosePreview(ctx context.Context, project, environment string,
 		ids = append(ids, rec.App.ID)
 	}
 	slices.Sort(ids)
+	// One entry for the close, which lists the apps it deleted (the reaper's has Caravana as its actor).
+	entry := audit.Entry{Action: audit.ActionDeleted, Resource: environmentResource(project, environment)}
 	for _, id := range ids {
-		if err := s.DeleteApp(ctx, id); err != nil && !errors.Is(err, store.ErrNotFound) {
+		if err := s.deleteApp(ctx, id); err != nil && !errors.Is(err, store.ErrNotFound) {
+			s.noteClosedPreview(ctx, entry) // what was deleted before the failure stays deleted
 			return fmt.Errorf("close preview %s/%s: %w", project, environment, err)
 		}
+		entry.Related = append(entry.Related, audit.Related{Kind: audit.KindApp, ID: id, Action: audit.ActionDeleted})
 	}
-	if err := s.DeleteEnvironment(ctx, project, environment); err != nil {
+	if err := s.deleteEnvironment(ctx, project, environment); err != nil {
+		s.noteClosedPreview(ctx, entry)
 		return err
 	}
+	s.noteClosedPreview(ctx, entry)
 	s.log.Info("closed a preview", "project", project, "environment", environment, "apps", len(ids), "by", string(trigger))
 	return nil
+}
+
+// noteClosedPreview notes a close of a preview, whole or half: nothing when no app was deleted and the
+// environment is still there.
+func (s *Service) noteClosedPreview(ctx context.Context, e audit.Entry) {
+	if len(e.Related) == 0 {
+		if ok, err := s.store.EnvironmentExists(ctx, e.Resource.Project, e.Resource.Environment); err != nil || ok {
+			return
+		}
+	}
+	s.audit(ctx, e)
 }
 
 // runPreviewReaper closes the expired previews every gap, the first pass one gap

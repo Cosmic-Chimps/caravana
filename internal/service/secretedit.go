@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -90,7 +91,7 @@ func (s *Service) editSecrets(ctx context.Context, appID, service string, cond C
 	services[i].Secrets = list
 	a.Services = services
 
-	var m made
+	m := made{action: audit.ActionUpdated}
 	if rec.Compose != nil {
 		// The secrets are part of the kept file's overlay: change its names to
 		// follow the app, so the editor and the app never disagree (the Compose

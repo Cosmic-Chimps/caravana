@@ -101,6 +101,7 @@ type settingsData struct {
 	Appearance      appearanceForm
 	SignIn          signInView
 	People          peopleData
+	Audit           auditData
 	// Status, when not 0, is the HTTP status of the response (a refused form draws its page at 4xx).
 	Status int
 }
@@ -274,6 +275,8 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 			return
 		}
 		data.People = people
+	case entryAudit:
+		// The handler read the log; nothing else here.
 	case entryAppearance:
 		// The cookie is what holds, whatever was just posted.
 		data.Appearance.Choice = "system"

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -74,6 +75,13 @@ type made struct {
 	// dns is what the DNS check found (feature 048), for ensureDNSRecords to
 	// act on; nil when the deploy didn't come through the check.
 	dns *dnsPlan
+	// action is what the audit log calls this deploy (feature 057): deployed when empty, created
+	// when the deploy made the app, redeployed, rolled back, promoted, updated...
+	action audit.Action
+	// diff says the entry lists what changed from before (the stored app this deploy replaced, nil
+	// for a new app); a redeploy of the stored app changes nothing and lists nothing.
+	diff   bool
+	before *app.App
 }
 
 // droppedFileWarning is recorded when a deploy from a definition (or from a
@@ -193,6 +201,7 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	m.dns = plan
 	m.warnings = append(m.warnings, PlainBackupPasswords(a)...)
 	var oldApp *app.App // the stored app this deploy replaces, nil for a new one
+	m.diff = true
 	if old, err := s.store.GetApp(ctx, a.ID); err == nil {
 		m.warnings = append(m.warnings, unmountedVolumes(old.App, a, s.droppedVolumeServers(ctx, old.App, a))...)
 		m.warnings = append(m.warnings, RemovedSecrets(old.App, a)...)
@@ -205,6 +214,10 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	}
 	if err := s.saveApp(ctx, a, cond, m.file); err != nil {
 		return DeployResult{}, err
+	}
+	m.before = oldApp
+	if oldApp == nil && m.action == "" {
+		m.action = audit.ActionCreated
 	}
 	s.appChanged(a.ID)
 	if oldApp != nil {
@@ -397,7 +410,7 @@ func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigge
 	}
 	// The app isn't saved again otherwise, so its kept file stays; the deployment records
 	// it too, so the history keeps the file this deploy came from.
-	return recordOnly(s.deployWarned(ctx, a, trigger, made{file: rec.Compose, warnings: previewWarnings}, nil))
+	return recordOnly(s.deployWarned(ctx, a, trigger, made{file: rec.Compose, warnings: previewWarnings, action: audit.ActionRedeployed}, nil))
 }
 
 // deploy runs one deploy of a, which was not made from a Compose file, with
@@ -438,8 +451,13 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 		rec, err = s.store.CreateDeployment(ctx, a.ID, dep, &a, m.file, source)
 	}
 	if err != nil {
+		// The app may have been stored by this very deploy: say so, with no record to link.
+		if m.diff {
+			s.noteDeploy(ctx, a, m, "")
+		}
 		return DeployResult{}, err
 	}
+	s.noteDeploy(ctx, a, m, dep.ID)
 	s.deploymentChanged(a.ID)
 	state := s.markLatest(a.ID, dep.ID)
 	if builds {

@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -145,7 +146,7 @@ func (s *Service) Promote(ctx context.Context, appID, to string, cond Condition,
 	default:
 		return store.DeploymentRecord{}, fmt.Errorf("app %q is now at revision %s: %w", p.target.App.ID, p.target.Revision, ErrAppChanged)
 	}
-	return recordOnly(s.saveAndDeploy(ctx, p.result, cond, trigger, made{}, &pinned{digests: p.from.Deployment.Digests, source: p.from.Deployment.ID}))
+	return recordOnly(s.saveAndDeploy(ctx, p.result, cond, trigger, made{action: audit.ActionPromoted}, &pinned{digests: p.from.Deployment.Digests, source: p.from.Deployment.ID}))
 }
 
 // targetPlace is the place appID's counterpart has in environment to of the
@@ -572,6 +573,8 @@ func (s *Service) CopyApp(ctx context.Context, appID, to string) (store.AppRecor
 		return store.AppRecord{}, nil, err
 	}
 	s.appChanged(a.ID)
+	s.audit(ctx, audit.Entry{Action: audit.ActionCopied, Resource: appResource(a.ID),
+		Changes: []audit.Change{{Path: "copiedFrom", Op: audit.OpAdded, To: appID}}})
 
 	var missing []MissingSecret
 	for _, svc := range a.Services {

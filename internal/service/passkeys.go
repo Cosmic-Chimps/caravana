@@ -16,6 +16,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -322,6 +323,7 @@ func (a *Auth) FinishPasskeySignIn(ctx context.Context, rp RelyingParty, ceremon
 		return Session{}, err
 	}
 	a.event("passkey_signin", "address", address, "passkey", found.ID)
+	a.noteSignedIn(ctx, who, address, "passkey")
 	return s, nil
 }
 
@@ -330,6 +332,9 @@ func (a *Auth) FinishPasskeySignIn(ctx context.Context, rp RelyingParty, ceremon
 // log gets the event with a reason word, never anything the browser sent.
 func (a *Auth) failPasskey(ctx context.Context, at *attempt, event, address, reason string) error {
 	a.event(event, "address", address, "reason", reason)
+	if event == "passkey_signin_failed" {
+		a.noteSignInFailed(ctx, "", address) // a passkey failure has no email to show
+	}
 	triesLeft, err := a.recordFailure(ctx, at)
 	var limited *SigninLimitError
 	switch {
@@ -684,6 +689,10 @@ func (a *Auth) FinishPasskeyRegistration(ctx context.Context, sessionValue strin
 		return Passkey{}, fmt.Errorf("add passkey: %w", err)
 	}
 	a.event("passkey_added", "passkey", r.ID)
+	// The entry names the passkey and the domain it works at, never its credential ID or key.
+	a.audit(ctx, audit.Entry{Action: audit.ActionCreated, Resource: passkeyResource(r.ID, name),
+		Actor:   a.actorUnlessKnown(ctx, person.ID, person.Email),
+		Changes: audit.Diff(nil, map[string]any{"name": name, "domain": r.RPID})})
 	return passkeyOf(r), nil
 }
 
@@ -737,6 +746,7 @@ func (a *Auth) RenamePasskey(ctx context.Context, personID, id, name string) (Pa
 	if err != nil {
 		return Passkey{}, err
 	}
+	old, _ := a.store.GetPasskey(ctx, personID, id)
 	if err := a.store.RenamePasskey(ctx, personID, id, name); errors.Is(err, store.ErrNotFound) {
 		return Passkey{}, ErrPasskeyNotFound
 	} else if err != nil {
@@ -749,6 +759,13 @@ func (a *Auth) RenamePasskey(ctx context.Context, personID, id, name string) (Pa
 		return Passkey{}, fmt.Errorf("rename passkey: %w", err)
 	}
 	a.event("passkey_renamed", "passkey", id)
+	if old.Name == name {
+		a.noChange(ctx)
+	} else {
+		a.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: passkeyResource(id, name),
+			Actor:   a.actorFor(ctx, personID),
+			Changes: []audit.Change{{Path: "name", Op: audit.OpChanged, From: old.Name, To: name}}})
+	}
 	return passkeyOf(rec), nil
 }
 
@@ -790,12 +807,14 @@ func (a *Auth) RemovePasskeyUnchecked(ctx context.Context, personID, id string) 
 }
 
 func (a *Auth) deletePasskey(ctx context.Context, personID, id, how string) error {
+	old, _ := a.store.GetPasskey(ctx, personID, id)
 	if err := a.store.DeletePasskey(ctx, personID, id); errors.Is(err, store.ErrNotFound) {
 		return ErrPasskeyNotFound
 	} else if err != nil {
 		return fmt.Errorf("remove passkey: %w", err)
 	}
 	a.event("passkey_removed", "passkey", id, "how", how)
+	a.audit(ctx, audit.Entry{Action: audit.ActionRemoved, Resource: passkeyResource(id, old.Name), Actor: a.actorFor(ctx, personID)})
 	return nil
 }
 
@@ -840,6 +859,10 @@ func (a *Auth) SetPasswordSignIn(ctx context.Context, personID string, on bool, 
 		} else {
 			a.event("password_signin_off")
 		}
+		a.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: settingsResource("sign-in"), Actor: a.actorFor(ctx, personID),
+			Changes: []audit.Change{{Path: "passwordSignIn", Op: audit.OpChanged, From: fmt.Sprint(person.PasswordSignIn), To: fmt.Sprint(on)}}})
+	} else {
+		a.noChange(ctx)
 	}
 	return a.SignInSettings(ctx, personID)
 }
@@ -859,5 +882,7 @@ func (a *Auth) passwordSignInOn(ctx context.Context, personID string) error {
 		return fmt.Errorf("turn password sign-in on: %w", err)
 	}
 	a.event("password_signin_on")
+	a.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: settingsResource("sign-in"), Actor: a.actorFor(ctx, personID),
+		Changes: []audit.Change{{Path: "passwordSignIn", Op: audit.OpChanged, From: "false", To: "true"}}})
 	return nil
 }

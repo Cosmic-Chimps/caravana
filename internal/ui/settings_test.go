@@ -29,6 +29,7 @@ var settingsPages = []struct{ path, entry string }{
 	{"/settings/notifications", "Notifications"},
 	{"/settings/sign-in", "Sign-in"},
 	{"/settings/tokens", "API tokens"},
+	{"/settings/audit", "Audit log"},
 	{"/settings/appearance", "Appearance"},
 }
 
@@ -72,7 +73,7 @@ func TestSettingsNavOnEveryPage(t *testing.T) {
 		want := map[string][]string{
 			"":             {"Account=/settings"},
 			"Connections":  {"Registries=/settings/registries", "Builds=/settings/builds", "Secret providers=/settings/secret-providers", "Backup storage=/settings/backup-storage", "Certificates=/settings/certificates", "DNS providers=/settings/dns", "Notifications=/settings/notifications"},
-			"Security":     {"People=/settings/people", "Sign-in=/settings/sign-in", "API tokens=/settings/tokens"},
+			"Security":     {"People=/settings/people", "Sign-in=/settings/sign-in", "API tokens=/settings/tokens", "Audit log=/settings/audit"},
 			"This browser": {"Appearance=/settings/appearance"},
 		}
 		for title, items := range want {
@@ -929,7 +930,7 @@ func TestSettingsAfterTheCritique(t *testing.T) {
 		}
 		// One HTML list for both orders: the wide nav keeps the contract's order, in its groups.
 		got := settingsNavOf(t, e.mustGet(t, "/settings/tokens"))
-		if strings.Join(got["Connections"], " ") != "Registries=/settings/registries Builds=/settings/builds Secret providers=/settings/secret-providers Backup storage=/settings/backup-storage Certificates=/settings/certificates DNS providers=/settings/dns Notifications=/settings/notifications" || strings.Join(got["Security"], " ") != "People=/settings/people Sign-in=/settings/sign-in API tokens=/settings/tokens*" {
+		if strings.Join(got["Connections"], " ") != "Registries=/settings/registries Builds=/settings/builds Secret providers=/settings/secret-providers Backup storage=/settings/backup-storage Certificates=/settings/certificates DNS providers=/settings/dns Notifications=/settings/notifications" || strings.Join(got["Security"], " ") != "People=/settings/people Sign-in=/settings/sign-in API tokens=/settings/tokens* Audit log=/settings/audit" {
 			t.Errorf("the nav's order changed: %v", got)
 		}
 	})

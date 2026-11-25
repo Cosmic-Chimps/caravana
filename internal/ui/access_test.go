@@ -109,6 +109,8 @@ type walkRequest struct {
 	// when open) get through.
 	member bool
 	admin  bool
+	// ownerOnly says an admin is refused too: the route is the owner's (the audit log's retention).
+	ownerOnly bool
 	// redirects says a member who is refused is sent to their first visible place instead (a page
 	// that defaults to a place they can't see).
 	redirects bool
@@ -179,9 +181,12 @@ func requestsFor(key string) []walkRequest {
 	only := func(admin bool) []walkRequest {
 		return []walkRequest{{label: "plain", path: fill(path, nil), admin: true, member: !admin}}
 	}
+	if key == "POST /settings/audit" {
+		return []walkRequest{{label: "plain", path: fill(path, nil), admin: true, ownerOnly: true}}
+	}
 	switch {
 	// The installation: owners and admins.
-	case strings.HasPrefix(path, "/ops"), strings.HasPrefix(path, "/parts/ops/"), strings.HasPrefix(path, "/settings/people"),
+	case strings.HasPrefix(path, "/ops"), strings.HasPrefix(path, "/parts/ops/"), strings.HasPrefix(path, "/settings/people"), strings.HasPrefix(path, "/settings/audit"),
 		strings.HasPrefix(path, "/settings/registries"), strings.HasPrefix(path, "/settings/builds"),
 		strings.HasPrefix(path, "/settings/secret-providers"), strings.HasPrefix(path, "/settings/backup"),
 		strings.HasPrefix(path, "/settings/notifications"), strings.HasPrefix(path, "/settings/certificates"),
@@ -357,6 +362,12 @@ func TestConsoleRolesWalkEveryRoute(t *testing.T) {
 						t.Errorf("%s = %d, want %d (the session is over)", where, resp.StatusCode, wantStatus)
 					}
 				case "owner", "admin":
+					if c.name == "admin" && wr.ownerOnly {
+						if resp.StatusCode != http.StatusForbidden {
+							t.Errorf("%s = %d, want 403: only an owner may", where, resp.StatusCode)
+						}
+						break
+					}
 					if resp.StatusCode != http.StatusNoContent {
 						t.Errorf("%s = %d %q, want it let through", where, resp.StatusCode, shortLine(body))
 					}

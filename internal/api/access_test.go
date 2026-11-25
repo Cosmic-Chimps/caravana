@@ -20,6 +20,7 @@ import (
 //	signed            any signed-in person (their own account, and lists the service filters for them;
 //	                  the schedule routes by ID, which the service judges by the schedule's app)
 //	admin             an owner or an admin
+//	owner             an owner only
 //	app:view|deploy|maintain
 //	                  that level in the place of the app named by {id}
 //	appcfg            maintain in an environment, deploy in a preview: the level that changes an app
@@ -48,7 +49,9 @@ var walkClasses = map[string][]string{
 		"GET /v1/schedules/{scheduleId}/runs", "GET /v1/schedules/{scheduleId}/runs/{runId}",
 		"POST /v1/schedules/{scheduleId}/runs/{runId}/stop", "GET /v1/schedules/{scheduleId}/runs/{runId}/output",
 	},
+	"owner": {"PUT /v1/audit/settings"},
 	"admin": {
+		"GET /v1/audit", "GET /v1/audit/export", "GET /v1/audit/settings",
 		"GET /v1/people", "POST /v1/people", "GET /v1/people/{personId}", "PUT /v1/people/{personId}", "DELETE /v1/people/{personId}",
 		"POST /v1/people/{personId}/invite",
 		"POST /v1/projects", "DELETE /v1/projects/{project}", "GET /v1/host", "GET /v1/activity",
@@ -187,6 +190,8 @@ func walkRequests(class, key string, pathPattern string) []walkRequest {
 		out = append(out, walkRequest{label: "any", path: fill(walkTargets[0]), kind: "signed"})
 	case "admin":
 		out = append(out, walkRequest{label: "any", path: fill(walkTargets[0]), kind: "admin"})
+	case "owner":
+		out = append(out, walkRequest{label: "any", path: fill(walkTargets[0]), kind: "owner"})
 	case "app:view", "app:deploy", "app:maintain", "appcfg":
 		for _, tg := range walkTargets {
 			need := map[string]int{"app:view": lvView, "app:deploy": lvDeploy, "app:maintain": lvMaintain, "appcfg": configureNeed(tg.env)}[class]
@@ -292,7 +297,7 @@ func (wr walkRequest) allowedFor(caller, key string) bool {
 		switch wr.kind {
 		case "signed":
 			return true
-		case "admin":
+		case "admin", "owner":
 			return false
 		case "project":
 			return memberProjectLevel(wr.project) >= wr.need
@@ -300,8 +305,10 @@ func (wr walkRequest) allowedFor(caller, key string) bool {
 		return memberLevel(wr.project, wr.env) >= wr.need
 	}
 	switch caller {
-	case "owner", "admin token":
+	case "owner":
 		return true
+	case "admin token":
+		return wr.kind != "owner" // an owner's work, such as the audit retention, is not an admin's
 	case "member token":
 		return member()
 	case "deploy token":

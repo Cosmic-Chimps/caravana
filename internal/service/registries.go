@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -81,6 +82,7 @@ func (s *Service) SaveRegistry(ctx context.Context, entry, username string, pass
 	if err != nil {
 		return store.Registry{}, err
 	}
+	s.noteRegistrySaved(ctx, entry, stored, storedUser, username, password != nil)
 	private, err := s.privateRegistries(ctx)
 	if err == nil {
 		err = s.deployer.SyncRegistryCopies(ctx, entry, private)
@@ -112,6 +114,7 @@ func (s *Service) DeleteRegistry(ctx context.Context, entry string) error {
 	if err := s.store.DeleteRegistry(ctx, host, path); err != nil {
 		return err
 	}
+	s.noteSetting(ctx, audit.ActionDeleted, namedResource(audit.KindRegistry, entry, entry), nil)
 	private, err := s.privateRegistries(ctx)
 	if err == nil {
 		err = s.deployer.SyncRegistryCopies(ctx, entry, private)
@@ -149,6 +152,7 @@ func (s *Service) TestRegistry(ctx context.Context, entry string) (store.Registr
 	if err := s.store.SaveRegistryTest(ctx, host, path, outcome); err != nil {
 		return store.Registry{}, err
 	}
+	s.noteSetting(ctx, audit.ActionTested, namedResource(audit.KindRegistry, entry, entry), nil)
 	return s.store.GetRegistry(ctx, host, path)
 }
 
@@ -209,4 +213,23 @@ func canonicalRegistryHost(host string) (string, error) {
 		return "", app.NewFieldError("host", "%q isn't a registry host: write it as in an image name, like ghcr.io or registry.example.com:5000 (docker.io for Docker Hub)", host)
 	}
 	return ref.Registry, nil
+}
+
+// noteRegistrySaved notes a saved registry entry: created, or updated with the user name and the
+// password as set or changed (never its value). Saving what is already stored changes nothing.
+func (s *Service) noteRegistrySaved(ctx context.Context, entry string, existed bool, oldUser, user string, sentPassword bool) {
+	after := map[string]any{"username": user}
+	secretIn(after, "password", true, sentPassword)
+	if !existed {
+		s.noteSetting(ctx, audit.ActionCreated, namedResource(audit.KindRegistry, entry, entry), nil, diffMaps(nil, after)...)
+		return
+	}
+	before := map[string]any{"username": oldUser}
+	secretIn(before, "password", true, false)
+	changes := diffMaps(before, after)
+	if len(changes) == 0 {
+		s.noChange(ctx)
+		return
+	}
+	s.noteSetting(ctx, audit.ActionUpdated, namedResource(audit.KindRegistry, entry, entry), nil, changes...)
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/edge"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -699,6 +700,13 @@ func (s *Service) CheckDomain(ctx context.Context, host, appID string) (DomainCh
 	if err != nil {
 		return DomainCheck{}, fmt.Errorf("check %q: %w", host, err)
 	}
+	// Check now is the owner's: a POST that refreshes what the Domains page shows, and the log says so.
+	dom := audit.Resource{Kind: audit.KindDomain, ID: host, Name: host}
+	if target != nil && target.rec != nil {
+		dom = appResource(target.rec.App.ID)
+		dom.Kind, dom.ID, dom.Name = audit.KindDomain, host, host
+	}
+	s.audit(ctx, audit.Entry{Action: audit.ActionChecked, Resource: dom})
 	return DomainCheck{Host: host, Records: recordsFor(host, expected), DNS: f.DNS, Certificate: f.Certificate, CheckedAt: f.CheckedAt, ManagedZone: zone.Zone}, nil
 }
 

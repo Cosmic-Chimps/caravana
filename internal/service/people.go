@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -242,6 +243,9 @@ func (s *Service) InvitePerson(ctx context.Context, in PersonInput) (Invited, er
 	if err != nil {
 		return Invited{}, err
 	}
+	// The entry says who was invited and with what role; the invite token never appears.
+	s.audit(ctx, audit.Entry{Action: audit.ActionInvited, Resource: personResource(rec.ID, email),
+		Changes: audit.Diff(nil, personAuditView(person))})
 	s.log.Info("person invited", "person", rec.ID, "role", rec.OrgRole, "by", rec.InvitedBy)
 	return Invited{Person: person, Token: token}, nil
 }
@@ -279,6 +283,8 @@ func (s *Service) ReinvitePerson(ctx context.Context, id string) (Invited, error
 	if err != nil {
 		return Invited{}, err
 	}
+	s.audit(ctx, audit.Entry{Action: audit.ActionInvited, Resource: personResource(rec.ID, rec.Email),
+		Changes: []audit.Change{{Path: "inviteExpiresAt", Op: audit.OpChanged, To: expires.Format(time.RFC3339)}}})
 	return Invited{Person: person, Token: token}, nil
 }
 
@@ -325,6 +331,9 @@ func (s *Service) AcceptInvite(ctx context.Context, token, password, address str
 		return Person{}, fmt.Errorf("accept invite: %w", err)
 	}
 	a.event("invite_accepted", "person", rec.ID)
+	// The person who accepted is the actor: nobody is signed in yet.
+	s.audit(ctx, audit.Entry{Action: audit.ActionAcceptedInvite, Resource: personResource(rec.ID, rec.Email), Address: address,
+		Actor: audit.Actor{Kind: audit.ActorPerson, Email: rec.Email, PersonID: rec.ID}})
 	done, err := s.store.GetPerson(ctx, rec.ID)
 	if err != nil {
 		return Person{}, fmt.Errorf("accept invite: %w", err)
@@ -336,6 +345,9 @@ func (s *Service) AcceptInvite(ctx context.Context, token, password, address str
 // ErrInviteInvalid, or the *SigninLimitError the fifth failure makes.
 func (s *Service) inviteFailed(ctx context.Context, at *attempt, address string) error {
 	s.auth.event("invite_failed", "address", address)
+	// A wrong invite token is a failed sign-in of nobody: no email, and the typed token is never kept.
+	s.audit(ctx, audit.Entry{Action: audit.ActionSignInFailed, Resource: audit.Resource{Kind: audit.KindAccount},
+		Address: address, Actor: audit.Actor{Kind: audit.ActorAnonymous}})
 	if _, err := s.auth.recordFailure(ctx, at); err != nil {
 		return err
 	}
@@ -417,6 +429,7 @@ func (s *Service) UpdatePerson(ctx context.Context, id string, in PersonInput) (
 	if err != nil {
 		return Person{}, err
 	}
+	was, _ := s.personOf(ctx, rec)
 	if rec.OrgRole == string(OrgOwner) && in.OrgRole != OrgOwner {
 		if err := s.keepAnOwner(ctx); err != nil {
 			return Person{}, err
@@ -431,7 +444,16 @@ func (s *Service) UpdatePerson(ctx context.Context, id string, in PersonInput) (
 	if err != nil {
 		return Person{}, fmt.Errorf("update person: %w", err)
 	}
-	return s.personOf(ctx, done)
+	updated, err := s.personOf(ctx, done)
+	if err != nil {
+		return Person{}, err
+	}
+	if changes := audit.Diff(personAuditView(was), personAuditView(updated)); len(changes) > 0 {
+		s.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: personResource(id, rec.Email), Changes: changes})
+	} else {
+		s.noChange(ctx)
+	}
+	return updated, nil
 }
 
 // RemovePerson deletes a person with their sessions, API tokens, passkeys and roles, in one
@@ -462,6 +484,7 @@ func (s *Service) RemovePerson(ctx context.Context, id string) error {
 	} else if err != nil {
 		return fmt.Errorf("remove person %s: %w", rec.Email, err)
 	}
+	s.audit(ctx, audit.Entry{Action: audit.ActionRemoved, Resource: personResource(id, rec.Email)})
 	s.log.Info("person removed", "person", id, "by", callerEmail(ctx))
 	return nil
 }

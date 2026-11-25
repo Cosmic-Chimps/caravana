@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/clusterca"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/hostos"
@@ -332,6 +333,8 @@ func (s *Service) CreateJoin(ctx context.Context, name, pool, fallbackURL string
 	case err != nil:
 		return ServerJoin{}, fmt.Errorf("create join: %w", err)
 	}
+	s.noteSetting(ctx, audit.ActionCreated, serverResource(row.ID, row.Name), nil,
+		diffMaps(nil, map[string]any{"name": row.Name, "pool": row.Pool, "state": store.ServerWaiting})...)
 	s.publish(Change{What: ChangeServers})
 	command, note := s.joinCommand(token, fallbackURL)
 	return ServerJoin{Server: waitingView(row), Token: token, Command: command, CommandNote: note, ExpiresAt: expires}, nil
@@ -477,6 +480,9 @@ func (s *Service) Join(ctx context.Context, req JoinRequest, remoteAddr string) 
 	case err != nil:
 		return NodeAnswer{}, fmt.Errorf("join: %w", err)
 	}
+	// A join is a request, not a sync: the server's arrival is noted (never the token or the key).
+	s.noteSetting(ctx, audit.ActionUpdated, serverResource(joined.ID, joined.Name), nil,
+		audit.Change{Path: "state", Op: audit.OpChanged, From: store.ServerWaiting, To: store.ServerJoining})
 	// The facts are the first report: the page shows the machine at once. A sync replaces it.
 	first := NodeReport{Agent: req.Facts.Agent, Nomad: req.Facts.Nomad, Docker: req.Facts.Docker,
 		DockerRunning: req.Facts.Docker != "", DiskFreeMB: req.Facts.DiskFreeMB, DiskTotalMB: req.Facts.DiskTotalMB,
@@ -1065,6 +1071,7 @@ func (s *Service) RemoveServer(ctx context.Context, nameOrID string) error {
 		return fmt.Errorf("remove server: %w", err)
 	}
 	s.hostIO.forget(row.Index)
+	s.noteSetting(ctx, audit.ActionRemoved, serverResource(row.ID, row.Name), nil)
 	if err := s.reconcileRoles(ctx); err != nil {
 		return err
 	}
@@ -1104,6 +1111,8 @@ func AdoptFirstServer(ctx context.Context, st *store.Store, now func() time.Time
 		if _, err := st.RotateFirstServer(ctx, tokenHash, publicKey, endpoint); err != nil {
 			return "", fmt.Errorf("adopt first server: %w", err)
 		}
+		// The CLI of the host (door host) or the installer's: the node token and the key are never noted.
+		auditWriter{store: st, now: now}.note(ctx, audit.Entry{Action: audit.ActionRotated, Resource: serverResource("", name)})
 		return token, nil
 	}
 	t := now().UTC()
@@ -1122,5 +1131,7 @@ func AdoptFirstServer(ctx context.Context, st *store.Store, now func() time.Time
 		_ = st.DeleteServer(ctx, v.Index)
 		return "", fmt.Errorf("adopt first server: index 1 is taken by a server that isn't the first")
 	}
+	auditWriter{store: st, now: now}.note(ctx, audit.Entry{Action: audit.ActionCreated, Resource: serverResource(v.ID, v.Name),
+		Changes: diffMaps(nil, map[string]any{"name": v.Name, "pool": v.Pool, "state": store.ServerReady})})
 	return token, nil
 }

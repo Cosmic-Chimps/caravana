@@ -29,16 +29,19 @@ var errNotOpen = &Error{Status: http.StatusForbidden, Code: codeNotAllowed, Mess
 // accessAllows is the check of the person behind the request against the route's rule: nil when
 // allowed, errNotOpen for a route without a rule or a request the rule can't read, else the
 // service's *NotAllowedError.
-func (s *server) accessAllows(r *http.Request, rt route) error {
+//
+// It also returns the target the rule read, which says what the request is about: the audit log's
+// fallback entry names it (feature 057).
+func (s *server) accessAllows(r *http.Request, rt route) (service.Target, error) {
 	rule, listed := accessRules[rt.method+" "+rt.path]
 	if !listed {
-		return errNotOpen
+		return service.Target{}, errNotOpen
 	}
 	need, target, ok := rule(r)
 	if !ok {
-		return errNotOpen
+		return service.Target{}, errNotOpen
 	}
-	return s.svc.Allow(r.Context(), need, target)
+	return target, s.svc.Allow(r.Context(), need, target)
 }
 
 // signedIn is any person: their own account, and the lists the service filters for them.
@@ -52,6 +55,13 @@ func signedIn() accessRule {
 func admin() accessRule {
 	return func(*http.Request) (service.Need, service.Target, bool) {
 		return service.NeedAdmin(), service.Target{}, true
+	}
+}
+
+// owner is an owner.
+func owner() accessRule {
+	return func(*http.Request) (service.Need, service.Target, bool) {
+		return service.NeedOwner(), service.Target{}, true
 	}
 }
 
@@ -333,6 +343,12 @@ var accessRules = map[string]accessRule{
 	"GET /v1/schedules/{scheduleId}/runs/{runId}":        signedIn(),
 	"POST /v1/schedules/{scheduleId}/runs/{runId}/stop":  signedIn(),
 	"GET /v1/schedules/{scheduleId}/runs/{runId}/output": signedIn(),
+
+	// The audit log (feature 057): owners and admins read and export, owners change the retention.
+	"GET /v1/audit":          admin(),
+	"GET /v1/audit/export":   admin(),
+	"GET /v1/audit/settings": admin(),
+	"PUT /v1/audit/settings": owner(),
 
 	// People: owners and admins; the service holds an admin to members only.
 	"GET /v1/people":                    admin(),

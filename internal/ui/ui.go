@@ -358,6 +358,9 @@ func (s *server) routeTable() []route {
 		{"POST", "/settings/notifications/{id}/remove", s.protected(s.requireSession(s.removeNotification))},
 		{"GET", "/invite", s.showInvite},
 		{"POST", "/invite", s.protected(s.acceptInvite)},
+		{"GET", "/settings/audit", s.requireSession(s.showAudit)},
+		{"GET", "/settings/audit/export", s.requireSession(s.exportAudit)},
+		{"POST", "/settings/audit", s.protected(s.requireSession(s.saveAudit))},
 		{"GET", "/settings/people", s.requireSession(s.showPeople)},
 		{"GET", "/settings/people/new", s.requireSession(s.showNewPerson)},
 		{"POST", "/settings/people", s.protected(s.requireSession(s.invitePerson))},
@@ -389,7 +392,12 @@ func Routes() []Route {
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	for _, rt := range s.routeTable() {
-		mux.HandleFunc(rt.method+" "+rt.path, rt.handler)
+		h := rt.handler
+		if rt.method == http.MethodPost {
+			// Every form post runs in an audit scope (feature 057): the service's notes become one entry.
+			h = s.auditScope(rt, h)
+		}
+		mux.HandleFunc(rt.method+" "+rt.path, h)
 	}
 	mux.HandleFunc("/", s.notFound)
 	return s.securityHeaders(s.rememberMode(mux))
@@ -452,7 +460,7 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 		}
 		// Settings › People (feature 053).
 		if name == "settings" {
-			files = append(files, "templates/people.html")
+			files = append(files, "templates/people.html", "templates/audit.html")
 		}
 		// The image scanner's shared pieces (feature 044): an app's Security panel and the Operator page.
 		if name == "app" || name == "opssecurity" {

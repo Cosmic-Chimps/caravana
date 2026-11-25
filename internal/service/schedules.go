@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/cronwords"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -383,6 +384,8 @@ func (s *Service) CreateSchedule(ctx context.Context, in NewSchedule) (Schedule,
 		return Schedule{}, err
 	}
 	s.schedulesChanged(rec.AppID)
+	s.audit(ctx, audit.Entry{Action: audit.ActionCreated, Resource: scheduleResource(rec),
+		Changes: audit.Diff(nil, scheduleAuditView(rec))})
 	return s.scheduleOf(ctx, rec, &c.app)
 }
 
@@ -429,6 +432,8 @@ func (s *Service) UpdateSchedule(ctx context.Context, id string, in NewSchedule)
 		}
 	}
 	s.schedulesChanged(rec.AppID)
+	s.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: scheduleResource(rec),
+		Changes: audit.Diff(scheduleAuditView(old), scheduleAuditView(rec))})
 	return s.scheduleOf(ctx, rec, &c.app)
 }
 
@@ -471,6 +476,7 @@ func (s *Service) DeleteSchedule(ctx context.Context, id string) error {
 	}
 	s.schedulesChanged(rec.AppID)
 	s.publish(Change{What: ChangeAttention})
+	s.audit(ctx, audit.Entry{Action: audit.ActionDeleted, Resource: scheduleResource(rec)})
 	return nil
 }
 
@@ -489,6 +495,10 @@ func (s *Service) PauseSchedule(ctx context.Context, id string) (Schedule, error
 			return Schedule{}, err
 		}
 		s.schedulesChanged(rec.AppID)
+		s.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: scheduleResource(rec),
+			Changes: []audit.Change{{Path: "paused", Op: audit.OpAdded, To: "true"}}})
+	} else {
+		s.noChange(ctx)
 	}
 	return s.GetSchedule(ctx, id)
 }
@@ -512,6 +522,10 @@ func (s *Service) ResumeSchedule(ctx context.Context, id string) (Schedule, erro
 			return Schedule{}, err
 		}
 		s.schedulesChanged(rec.AppID)
+		s.audit(ctx, audit.Entry{Action: audit.ActionUpdated, Resource: scheduleResource(rec),
+			Changes: []audit.Change{{Path: "paused", Op: audit.OpRemoved, From: "true"}}})
+	} else {
+		s.noChange(ctx)
 	}
 	return s.GetSchedule(ctx, id)
 }

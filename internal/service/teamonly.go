@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -363,6 +364,10 @@ func (s *Service) RotateTeamPassword(ctx context.Context, appID, host string) (s
 		return "", err
 	}
 	s.domainsChanged(appID)
+	// The domain is the resource; the password itself is never in an entry.
+	r := appResource(appID)
+	r.Kind, r.ID, r.Name = audit.KindDomain, host, host
+	s.audit(ctx, audit.Entry{Action: audit.ActionRotated, Resource: r})
 	return password, nil
 }
 

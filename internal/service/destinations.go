@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -224,6 +225,7 @@ func (s *Service) SaveBackupDestination(ctx context.Context, name string, in Des
 	if err != nil {
 		return store.BackupDestination{}, err
 	}
+	s.noteDestinationSaved(ctx, name, existing, isNew, saved, in.SecretAccessKey != nil)
 	s.publish(Change{What: ChangeAttention}) // "no backup destination" may be resolved
 	if err := s.repointBackups(ctx); err != nil {
 		return saved, fmt.Errorf("saved, but the backup jobs still point at the old destination: %w", err)
@@ -244,8 +246,15 @@ func (s *Service) SetDefaultBackupDestination(ctx context.Context, name string) 
 	if err := s.checkDefaultChange(ctx, name); err != nil {
 		return err
 	}
+	was, _ := s.store.GetBackupDestination(ctx)
 	if err := s.store.SetDefaultBackupDestination(ctx, name); err != nil {
 		return err
+	}
+	if was.Name == name {
+		s.noChange(ctx)
+	} else {
+		s.noteSetting(ctx, audit.ActionUpdated, namedResource(audit.KindBackupDestination, name, name), nil,
+			audit.Change{Path: "default", Op: audit.OpChanged, From: was.Name, To: name})
 	}
 	s.publish(Change{What: ChangeAttention})
 	if err := s.repointBackups(ctx); err != nil {
@@ -284,6 +293,7 @@ func (s *Service) DeleteBackupDestination(ctx context.Context, name string) erro
 	if err := s.store.DeleteBackupDestination(ctx, name); err != nil {
 		return err
 	}
+	s.noteSetting(ctx, audit.ActionDeleted, namedResource(audit.KindBackupDestination, name, name), nil)
 	s.publish(Change{What: ChangeAttention})
 	if err := s.deployer.DeleteBackupSecret(ctx, d.SecretPath); err != nil {
 		return fmt.Errorf("removed, but its secret key is still stored: %w", err)
@@ -578,4 +588,29 @@ func (s *Service) repointBackups(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// destinationView is what a diff of a destination reads: the stored row (no secret key) and, under a
+// redacted key, whether the secret key is set.
+func destinationAuditView(d store.BackupDestination, secretSent bool) map[string]any {
+	m := map[string]any{"endpoint": d.Endpoint, "region": d.Region, "bucket": d.Bucket, "prefix": d.Prefix,
+		"accessKeyID": d.AccessKeyID, "default": d.IsDefault}
+	secretIn(m, "secretAccessKey", true, secretSent)
+	return m
+}
+
+// noteDestinationSaved notes a saved destination: created, or updated with what moved; saving what it
+// already was changes nothing.
+func (s *Service) noteDestinationSaved(ctx context.Context, name string, before store.BackupDestination, isNew bool, after store.BackupDestination, secretSent bool) {
+	res := namedResource(audit.KindBackupDestination, name, name)
+	if isNew {
+		s.noteSetting(ctx, audit.ActionCreated, res, nil, diffMaps(nil, destinationAuditView(after, secretSent))...)
+		return
+	}
+	changes := diffMaps(destinationAuditView(before, false), destinationAuditView(after, secretSent))
+	if len(changes) == 0 {
+		s.noChange(ctx)
+		return
+	}
+	s.noteSetting(ctx, audit.ActionUpdated, res, nil, changes...)
 }

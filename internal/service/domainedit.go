@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/compose"
 )
 
@@ -47,7 +48,7 @@ func (s *Service) SetDomainsIf(ctx context.Context, appID, service string, domai
 		a := rec.App
 		a.Services = slices.Clone(a.Services)
 		a.Services[i].Domains = domains
-		return s.saveAndDeploy(ctx, a, cond, trigger, made{}, nil)
+		return s.saveAndDeploy(ctx, a, cond, trigger, made{action: audit.ActionUpdated}, nil)
 	}
 
 	file, err := withDomains(*rec.Compose, service, domains, rec.App.Services[i].Ports)
@@ -60,7 +61,7 @@ func (s *Service) SetDomainsIf(ctx context.Context, appID, service string, domai
 	if err != nil {
 		return DeployResult{}, err
 	}
-	res, err := s.saveAndDeploy(ctx, a, cond, trigger, made{file: &file, warnings: warnings}, nil)
+	res, err := s.saveAndDeploy(ctx, a, cond, trigger, made{file: &file, warnings: warnings, action: audit.ActionUpdated}, nil)
 	return res, inFile(err, a, file)
 }
 

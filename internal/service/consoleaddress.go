@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/dns"
 	"github.com/cosmic-chimps/caravana/internal/edge"
@@ -395,6 +396,9 @@ func (s *Service) StartConsoleAddressChange(ctx context.Context, domain string, 
 	} else if err != nil {
 		return store.ConsoleAddressChange{}, err
 	}
+	s.noteConsoleChange(ctx, audit.ActionRequested, c,
+		audit.Change{Path: "domain", Op: audit.OpChanged, From: current, To: domain},
+		audit.Change{Path: "redirectDays", Op: audit.OpAdded, To: fmt.Sprint(redirectDays)})
 	// An app deploy that follows must already see the domain as the console's.
 	if _, _, err := s.refreshConsoleRoutedLocked(ctx); err != nil {
 		s.log.Warn("console address: refresh what the route carries", "error", err)
@@ -548,6 +552,7 @@ func (s *Service) CancelConsoleAddressChange(ctx context.Context, id string) (st
 	case err != nil:
 		return store.ConsoleAddressChange{}, err
 	}
+	s.noteConsoleChange(ctx, audit.ActionCancelled, c)
 	s.consoleChanged()
 	if err := s.reconcileConsoleRouteLocked(ctx); err != nil {
 		// The change is cancelled; the pass takes the domain out of the route when Nomad answers.
@@ -587,8 +592,16 @@ func (s *Service) SwitchConsoleAddress(ctx context.Context, id string) (store.Co
 	} else if err != nil {
 		return store.ConsoleAddressChange{}, err
 	}
+	s.noteConsoleChange(ctx, audit.ActionUpdated, c,
+		audit.Change{Path: "domain", Op: audit.OpChanged, From: c.OldDomain, To: c.Domain})
 	s.consoleChanged()
 	return c, nil
+}
+
+// noteConsoleChange notes a step of a change of the console's address: the change is the record.
+func (s *Service) noteConsoleChange(ctx context.Context, action audit.Action, c store.ConsoleAddressChange, changes ...audit.Change) {
+	s.noteSetting(ctx, action, namedResource(audit.KindConsoleAddress, c.ID, c.Domain),
+		&audit.Record{Kind: audit.RecordConsoleAddressChange, ID: c.ID}, changes...)
 }
 
 // consoleChanged tells the pages the change moved.

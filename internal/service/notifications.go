@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/notify"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -235,6 +236,8 @@ func (s *Service) CreateNotificationChannel(ctx context.Context, in Notification
 		_ = s.deployer.DeleteNotificationSecret(context.WithoutCancel(ctx), id)
 		return CreatedNotificationChannel{}, err
 	}
+	s.noteSetting(ctx, audit.ActionCreated, channelResource(row), nil,
+		diffMaps(nil, channelAuditView(row, channelSecrets{}, channelSecretsOf(secrets)))...)
 	return CreatedNotificationChannel{NotificationChannel: channelView(row, hasToken), SigningSecret: signing}, nil
 }
 
@@ -272,6 +275,7 @@ func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p No
 	if err := checkPatchFields(row.Kind, p); err != nil {
 		return NotificationChannel{}, err
 	}
+	was := row
 	if p.Name != nil {
 		if row.Name, err = channelName(*p.Name); err != nil {
 			return NotificationChannel{}, err
@@ -318,7 +322,9 @@ func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p No
 		}
 	}
 	// A channel made before the topic was a secret moves with this save.
+	stored := channelSecretsOf(items)
 	changed := carryNtfyTopic(&row, items)
+	sent := channelSecrets{}
 	if p.URL != nil {
 		if strings.TrimSpace(*p.URL) == "" {
 			return NotificationChannel{}, app.NewFieldError("url", "is empty; leave it out to keep the address set before")
@@ -331,6 +337,7 @@ func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p No
 		if row.Kind != notify.KindWebhook {
 			items[secretURL] = address
 			changed = true
+			sent.url = true
 		}
 	}
 	if p.Token != nil {
@@ -341,6 +348,7 @@ func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p No
 		}
 		items[secretToken] = *p.Token
 		changed = true
+		sent.token = *p.Token != ""
 	}
 	if p.Password != nil {
 		if err := checkSMTPPassword(*p.Password); err != nil {
@@ -348,6 +356,7 @@ func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p No
 		}
 		items[secretPassword] = *p.Password
 		changed = true
+		sent.password = *p.Password != ""
 	}
 	if changed {
 		if err := s.deployer.SaveNotificationSecret(ctx, id, items); err != nil {
@@ -358,6 +367,12 @@ func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p No
 	row.UpdatedAt = time.Now().UTC()
 	if err := s.store.SaveNotificationChannel(ctx, row); err != nil {
 		return NotificationChannel{}, err
+	}
+	if changes := diffMaps(channelAuditView(was, stored, channelSecrets{}), channelAuditView(row, stored.with(sent), sent)); len(changes) > 0 {
+		action := audit.ActionUpdated
+		s.noteSetting(ctx, action, channelResource(row), nil, changes...)
+	} else {
+		s.noChange(ctx)
 	}
 	hasToken := false
 	switch row.Kind {
@@ -393,7 +408,8 @@ func checkPatchFields(kind string, p NotificationChannelPatch) error {
 // DeleteNotificationChannel removes a channel, its secrets and its deliveries.
 // An unknown channel is store.ErrNotFound.
 func (s *Service) DeleteNotificationChannel(ctx context.Context, id string) error {
-	if _, err := s.store.GetNotificationChannel(ctx, id); err != nil {
+	row, err := s.store.GetNotificationChannel(ctx, id)
+	if err != nil {
 		return err
 	}
 	// The secret first, so a failure leaves the channel listed and the delete
@@ -401,7 +417,11 @@ func (s *Service) DeleteNotificationChannel(ctx context.Context, id string) erro
 	if err := s.deployer.DeleteNotificationSecret(ctx, id); err != nil {
 		return err
 	}
-	return s.store.DeleteNotificationChannel(ctx, id)
+	if err := s.store.DeleteNotificationChannel(ctx, id); err != nil {
+		return err
+	}
+	s.noteSetting(ctx, audit.ActionDeleted, channelResource(row), nil)
+	return nil
 }
 
 // RotateNotificationSecret makes a new signing secret for a webhook channel and
@@ -426,6 +446,7 @@ func (s *Service) RotateNotificationSecret(ctx context.Context, id string) (stri
 	if err := s.store.SaveNotificationChannel(ctx, row); err != nil {
 		return "", err
 	}
+	s.noteSetting(ctx, audit.ActionRotated, channelResource(row), nil)
 	return signing, nil
 }
 
@@ -475,6 +496,7 @@ func (s *Service) TestNotificationChannel(ctx context.Context, id string) (store
 	if err := s.store.EnqueueDelivery(ctx, d); err != nil {
 		return store.Delivery{}, err
 	}
+	s.noteSetting(ctx, audit.ActionTested, channelResource(row), nil)
 	if err := s.store.PruneDeliveries(ctx, row.ID, recentDeliveries); err != nil {
 		s.log.Warn("prune notification deliveries", "channel", row.ID, "error", err)
 	}

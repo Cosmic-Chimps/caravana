@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -208,6 +209,8 @@ func (s *Service) RequestUpdate(ctx context.Context, version, trigger, tokenName
 		}
 		return store.UpdateRun{}, err
 	}
+	s.noteSetting(ctx, audit.ActionRequested, settingsResource("updates"), &audit.Record{Kind: audit.RecordUpdateRun, ID: run.ID},
+		audit.Change{Path: "version", Op: audit.OpChanged, From: current, To: version})
 	s.publish(Change{What: ChangeUpdates})
 	return run, nil
 }
@@ -643,9 +646,12 @@ func (s *Service) SetAutoUpdate(ctx context.Context, enabled bool, hour int) err
 	if hour < 0 || hour > 23 {
 		return app.NewFieldError("autoUpdateHour", "must be an hour from 0 to 23")
 	}
+	was, _ := s.store.ReleaseCheck(ctx)
 	if err := s.store.SetAutoUpdate(ctx, enabled, hour); err != nil {
 		return err
 	}
+	s.noteUpdateSettings(ctx, map[string]any{"autoUpdate": was.AutoUpdate, "autoUpdateHour": was.AutoUpdateHour},
+		map[string]any{"autoUpdate": enabled, "autoUpdateHour": hour})
 	s.publish(Change{What: ChangeUpdates})
 	return nil
 }
@@ -662,6 +668,9 @@ type UpdateSettings struct {
 func (s *Service) PutUpdateSettings(ctx context.Context, in UpdateSettings) error {
 	if in.AutoUpdateHour != nil && (*in.AutoUpdateHour < 0 || *in.AutoUpdateHour > 23) {
 		return app.NewFieldError("autoUpdateHour", "must be an hour from 0 to 23")
+	}
+	if in.CheckEnabled == nil && in.AutoUpdate == nil && in.AutoUpdateHour == nil {
+		s.noChange(ctx) // nothing to store
 	}
 	if in.CheckEnabled != nil {
 		if err := s.SetReleaseCheck(ctx, *in.CheckEnabled); err != nil {

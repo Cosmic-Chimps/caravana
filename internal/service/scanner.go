@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -773,6 +774,12 @@ func (s *Service) RequestScan(ctx context.Context, appID string) ([]store.ScanRu
 		}
 		runs = append(runs, run)
 	}
+	res := settingsResource("scans")
+	if appID != "" {
+		res = appResource(appID)
+	}
+	s.noteSetting(ctx, audit.ActionRequested, res, nil,
+		audit.Change{Path: "scan", Op: audit.OpAdded, To: plural(len(runs), "image")})
 	return runs, nil
 }
 

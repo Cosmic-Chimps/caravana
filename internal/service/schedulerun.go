@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -263,7 +264,14 @@ func (s *Service) RunScheduleNow(ctx context.Context, id string) (ScheduleRun, e
 	if err := s.runBlocker(ctx, rec, sched.Service); err != nil {
 		return ScheduleRun{}, err
 	}
-	return s.startRun(ctx, sched, RunTriggerOwner, nil)
+	run, err := s.startRun(ctx, sched, RunTriggerOwner, nil)
+	if err != nil {
+		return run, err
+	}
+	// Only the owner's run now: a run on the clock is Caravana's own record (plan D14).
+	s.audit(ctx, audit.Entry{Action: audit.ActionRanCommand, Resource: scheduleResource(sched),
+		Record: &audit.Record{Kind: audit.RecordScheduleRun, ID: run.ID}})
+	return run, nil
 }
 
 // StopScheduleRun stops a run that is going: why is written first (the
@@ -297,6 +305,10 @@ func (s *Service) StopScheduleRun(ctx context.Context, scheduleID, runID string)
 		return ScheduleRun{}, err
 	}
 	s.schedulesChanged(run.AppID)
+	if sched, err := s.store.GetSchedule(ctx, scheduleID); err == nil {
+		s.audit(ctx, audit.Entry{Action: audit.ActionStopped, Resource: scheduleResource(sched),
+			Record: &audit.Record{Kind: audit.RecordScheduleRun, ID: runID}})
+	}
 	stopped, err := s.store.GetRun(ctx, runID)
 	if err != nil {
 		return ScheduleRun{}, err

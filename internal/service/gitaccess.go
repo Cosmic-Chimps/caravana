@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -122,10 +123,12 @@ func (s *Service) NewDeployKey(ctx context.Context, appID, service string) (GitA
 		return GitAccessView{}, err
 	}
 	g := deploy.GitAccess{Kind: app.BuildAccessDeployKey, PrivateKey: private, PublicKey: public, CreatedAt: time.Now().UTC()}
+	was := s.gitAccessBefore(ctx, appID, service)
 	if err := s.deployer.SaveGitAccess(ctx, appID, service, g); err != nil {
 		return GitAccessView{}, gitStoreError("write", err)
 	}
 	s.appChanged(appID)
+	s.noteGitAccess(ctx, audit.ActionCreated, appID, service, was, &g)
 	return viewOfGitAccess(g), nil
 }
 
@@ -166,10 +169,12 @@ func (s *Service) SetGitToken(ctx context.Context, appID, service, username, tok
 		return GitAccessView{}, err
 	}
 	g := deploy.GitAccess{Kind: app.BuildAccessToken, Username: username, Token: token, CreatedAt: time.Now().UTC()}
+	was := s.gitAccessBefore(ctx, appID, service)
 	if err := s.deployer.SaveGitAccess(ctx, appID, service, g); err != nil {
 		return GitAccessView{}, gitStoreError("write", err)
 	}
 	s.appChanged(appID)
+	s.noteGitAccess(ctx, audit.ActionCreated, appID, service, was, &g)
 	return viewOfGitAccess(g), nil
 }
 
@@ -201,7 +206,7 @@ func (s *Service) RemoveGitAccess(ctx context.Context, appID, service string) er
 	if err := s.gitAccessService(ctx, appID, service, false); err != nil {
 		return err
 	}
-	_, found, err := s.deployer.ReadGitAccess(ctx, appID, service)
+	was, found, err := s.deployer.ReadGitAccess(ctx, appID, service)
 	if err != nil {
 		return gitStoreError("read", err)
 	}
@@ -212,7 +217,52 @@ func (s *Service) RemoveGitAccess(ctx context.Context, appID, service string) er
 		return gitStoreError("delete", err)
 	}
 	s.appChanged(appID)
+	s.noteGitAccess(ctx, audit.ActionDeleted, appID, service, &was, nil)
 	return nil
+}
+
+// gitAccessBefore is the service's Git access as it is now, nil when it has none or can't be read: the
+// log compares it with the new one by kind and user name, never by key or token.
+func (s *Service) gitAccessBefore(ctx context.Context, appID, service string) *deploy.GitAccess {
+	g, found, err := s.deployer.ReadGitAccess(ctx, appID, service)
+	if err != nil || !found {
+		return nil
+	}
+	return &g
+}
+
+// noteGitAccess notes a change of a service's Git access. The views hold the kind and the user name, and
+// the key or token only as a redacted field (Diff shows "set", never the value).
+func (s *Service) noteGitAccess(ctx context.Context, action audit.Action, appID, service string, before, after *deploy.GitAccess) {
+	view := func(g *deploy.GitAccess) any {
+		if g == nil {
+			return nil
+		}
+		m := map[string]any{"kind": string(g.Kind)}
+		if g.Username != "" {
+			m["username"] = g.Username
+		}
+		switch g.Kind {
+		case app.BuildAccessToken:
+			m["token"] = "stored"
+		case app.BuildAccessDeployKey:
+			m["privateKey"] = "stored"
+			m["publicKey"] = g.PublicKey // public: the owner copies it into the repository's settings
+		}
+		return m
+	}
+	r := appResource(appID)
+	r.Kind, r.ID, r.Name = audit.KindGitAccess, appID+"/"+service, service
+	if before != nil && after != nil {
+		action = audit.ActionUpdated
+	}
+	b, a := view(before), view(after)
+	// A new key or token replaces the old one even when the view says the same: say so.
+	changes := audit.Diff(b, a)
+	if before != nil && after != nil && len(changes) == 0 {
+		changes = []audit.Change{{Path: "secret", Op: audit.OpChanged}}
+	}
+	s.audit(ctx, audit.Entry{Action: action, Resource: r, Changes: changes})
 }
 
 // gitStoreError words a failure of Nomad's variables as an unavailable secret

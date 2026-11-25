@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/secrets/bella"
@@ -233,6 +234,7 @@ func (s *Service) SaveSecretProvider(ctx context.Context, in SecretProviderInput
 	if err := s.store.SaveSecretProvider(ctx, p); err != nil {
 		return SecretProviderInfo{}, false, err
 	}
+	s.noteProviderSaved(ctx, created, existing, stored, p, in)
 	if changed {
 		if err := s.store.ClearSecretProviderTest(ctx, in.Name); err != nil {
 			return SecretProviderInfo{}, false, err
@@ -298,7 +300,11 @@ func (s *Service) DeleteSecretProvider(ctx context.Context, name string) error {
 	if err := s.deployer.DeleteSecretProviderCredentials(ctx, name); err != nil {
 		return err
 	}
-	return s.store.DeleteSecretProvider(ctx, name)
+	if err := s.store.DeleteSecretProvider(ctx, name); err != nil {
+		return err
+	}
+	s.noteSetting(ctx, audit.ActionDeleted, namedResource(audit.KindSecretProvider, name, name), nil)
+	return nil
 }
 
 // TestSecretProvider reads the provider once and records the outcome with the
@@ -337,6 +343,7 @@ func (s *Service) TestSecretProvider(ctx context.Context, name string) (SecretPr
 	if err := s.store.SaveSecretProviderTest(ctx, name, outcome); err != nil {
 		return SecretProviderInfo{}, err
 	}
+	s.noteSetting(ctx, audit.ActionTested, namedResource(audit.KindSecretProvider, name, name), nil)
 	return s.SecretProvider(ctx, name)
 }
 
@@ -348,4 +355,30 @@ func failureWords(err error) string {
 		return se.Reason
 	}
 	return "Caravana couldn't read the provider"
+}
+
+// providerAuditView is what a diff of a provider reads: its settings and the two credentials as redacted
+// leaves (set when stored or sent), never their values.
+func providerAuditView(p store.SecretProvider, hadAPIKey, hadPrivateKey, sentAPIKey, sentPrivateKey bool) map[string]any {
+	m := map[string]any{"kind": p.Kind, "url": p.URL, "project": p.Project, "environment": p.Environment, "allowed": p.Allowed}
+	secretIn(m, "apiKey", hadAPIKey, sentAPIKey)
+	secretIn(m, "privateKey", hadPrivateKey, sentPrivateKey)
+	return m
+}
+
+// noteProviderSaved notes a saved provider: created, or updated with what moved. Saving what it already
+// was changes nothing.
+func (s *Service) noteProviderSaved(ctx context.Context, created bool, before store.SecretProvider, stored map[string]string, p store.SecretProvider, in SecretProviderInput) {
+	res := namedResource(audit.KindSecretProvider, p.Name, p.Name)
+	after := providerAuditView(p, true, true, in.APIKey != nil, in.PrivateKey != nil)
+	if created {
+		s.noteSetting(ctx, audit.ActionCreated, res, nil, diffMaps(nil, after)...)
+		return
+	}
+	was := providerAuditView(before, stored[deploy.SecretProviderAPIKey] != "", stored[deploy.SecretProviderPrivateKey] != "", false, false)
+	if changes := diffMaps(was, after); len(changes) > 0 {
+		s.noteSetting(ctx, audit.ActionUpdated, res, nil, changes...)
+		return
+	}
+	s.noChange(ctx)
 }

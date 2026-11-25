@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -297,6 +298,8 @@ func (s *Service) OpenTerminal(ctx context.Context, appID, copyID, shell string,
 		return nil, err
 	}
 	s.actionsChanged(appID)
+	// Noted at once: the terminal is a GET, so no scope holds the note back, and what is typed is never kept.
+	s.noteApp(ctx, audit.ActionOpenedTerminal, appID, actionRecord(id))
 
 	// The session lives with the process, not with the request that opened it.
 	runCtx, cancel := context.WithCancel(s.background())
