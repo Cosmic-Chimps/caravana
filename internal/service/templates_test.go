@@ -527,12 +527,22 @@ func newCatalogServer(t *testing.T) *catalogServer {
 	return cs
 }
 
-// publish makes bundle the release's catalog.json with its true sums.
+// publish makes bundle the release's catalog.v2.json with its true sums.
 func (cs *catalogServer) publish(bundle []byte) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	cs.files["/SHA256SUMS"] = string(templates.Sums(bundle))
+	cs.files["/SHA256SUMS"] = string(templates.Sums(templates.Bundles{V2: bundle}))
+	cs.files["/catalog.v2.json"] = string(bundle)
+}
+
+// publishOld makes bundle the catalog.json of a release made before format 2:
+// its SHA256SUMS has no line for catalog.v2.json and there is no such file.
+func (cs *catalogServer) publishOld(bundle []byte) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.files["/SHA256SUMS"] = string(templates.Sums(templates.Bundles{V1: bundle}))
 	cs.files["/catalog.json"] = string(bundle)
+	delete(cs.files, "/catalog.v2.json")
 }
 
 func (cs *catalogServer) paths() []string {
@@ -598,7 +608,7 @@ func TestTemplateCatalogCheck(t *testing.T) {
 				t.Errorf("request %q: a query, a cookie or another header went out", r)
 			}
 		}
-		if got := cs.paths(); strings.Join(got, ",") != "/SHA256SUMS,/catalog.json" {
+		if got := cs.paths(); strings.Join(got, ",") != "/SHA256SUMS,/catalog.v2.json" {
 			t.Errorf("requests = %v", got)
 		}
 
@@ -606,7 +616,7 @@ func TestTemplateCatalogCheck(t *testing.T) {
 			if err := l.svc.fetchAndRecordTemplates(ctx); err != nil {
 				t.Fatal(err)
 			}
-			if got := cs.paths(); strings.Join(got, ",") != "/SHA256SUMS,/catalog.json,/SHA256SUMS" {
+			if got := cs.paths(); strings.Join(got, ",") != "/SHA256SUMS,/catalog.v2.json,/SHA256SUMS" {
 				t.Errorf("requests = %v", got)
 			}
 			if view, _ := l.svc.TemplateCatalog(ctx); view.Version != futureCatVer || view.Error != "" {
@@ -644,7 +654,7 @@ func TestTemplateCatalogCheck(t *testing.T) {
 		if err := l.svc.fetchAndRecordTemplates(ctx); err != nil {
 			t.Fatal(err)
 		}
-		if got := cs.paths(); strings.Join(got, ",") != "/SHA256SUMS,/catalog.json,/SHA256SUMS" {
+		if got := cs.paths(); strings.Join(got, ",") != "/SHA256SUMS,/catalog.v2.json,/SHA256SUMS" {
 			t.Errorf("requests = %v: the old catalog was fetched twice", got)
 		}
 	})
@@ -653,7 +663,7 @@ func TestTemplateCatalogCheck(t *testing.T) {
 		l, cs := check(t)
 		_, bundle := templates.Embedded()
 		cs.mu.Lock()
-		cs.files["/SHA256SUMS"] = string(templates.Sums(bundle))
+		cs.files["/SHA256SUMS"] = string(templates.Sums(templates.Bundles{V2: bundle}))
 		cs.mu.Unlock()
 		if err := l.svc.fetchAndRecordTemplates(ctx); err != nil {
 			t.Fatal(err)
@@ -671,11 +681,11 @@ func TestTemplateCatalogCheck(t *testing.T) {
 		{"a bad sum", func(cs *catalogServer, t *testing.T) {
 			cs.publish(catalogBundle(t, futureCatVer, goodCatalogTemplate("whoami")))
 			cs.mu.Lock()
-			cs.files["/catalog.json"] += " "
+			cs.files["/catalog.v2.json"] += " "
 			cs.mu.Unlock()
 		}, failCatalogSum},
 		{"an unknown format", func(cs *catalogServer, t *testing.T) {
-			cs.publish([]byte(`{"format": 2, "version": "2027.01.01", "templates": []}`))
+			cs.publish([]byte(`{"format": 3, "version": "2027.01.01", "templates": []}`))
 		}, failCatalogFormat},
 		{"an invalid template", func(cs *catalogServer, t *testing.T) {
 			bad := goodCatalogTemplate("whoami")

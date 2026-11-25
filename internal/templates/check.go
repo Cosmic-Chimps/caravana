@@ -16,17 +16,110 @@ import (
 // registry, it only proves the translator accepts the app.
 const checkDigest = "@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
-// Check proves a template can be installed, without a registry or Nomad: it
-// renders the template with its example inputs and fixed stand-ins for the
-// generated secrets, translates the Compose file (a warning is an error: a
-// template must be clean), runs Nomad's limits with settings, parses every
-// image reference and translates the job.
+// Check proves a template can be installed, without a registry or Nomad. It
+// does the following for every combination of its choice inputs' answers (at
+// most 64), once with every optional input empty and once with each filled
+// with its example: render the template with the example inputs and fixed
+// stand-ins for the generated secrets, translate the Compose file (a warning is
+// an error: a template must be clean), run Nomad's limits with settings, parse
+// every image reference and translate the job.
 //
-// The error names the template and the path of the defect.
+// The error names the template and the path of the defect, and, for a template
+// with choices, the answers it was rendered with.
 func Check(t Template, settings nomadjob.Settings) error {
-	fail := func(field, format string, args ...any) error { return defect(t, field, format, args...) }
+	if t.Unsupported != "" {
+		return nil // this Caravana can't read it; the catalog lists it as unavailable
+	}
+	for _, c := range checkCases(t) {
+		if err := checkOnce(t, settings, c.answers, c.where); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-	inputs, err := t.CheckInputs(t.ExampleInputs())
+// checkCase is one set of answers Check renders with, and how it reads in an error.
+type checkCase struct {
+	answers map[string]string
+	where   string
+}
+
+// checkCases lists the answers Check renders with: each combination of the
+// choice inputs, with the optional inputs empty and, when there are any, filled.
+func checkCases(t Template) []checkCase {
+	var choices []Input
+	var optional []Input
+	for _, in := range t.Inputs {
+		switch {
+		case in.Type == TypeChoice:
+			choices = append(choices, in)
+		case !in.IsRequired():
+			optional = append(optional, in)
+		}
+	}
+	base := t.ExampleInputs()
+	for _, in := range choices {
+		delete(base, in.Name)
+	}
+	var cases []checkCase
+	var walk func(i int, picked map[string]string, label []string)
+	walk = func(i int, picked map[string]string, label []string) {
+		if i == len(choices) {
+			variants := []struct {
+				filled bool
+				note   string
+			}{{false, "optional inputs empty"}}
+			if len(optional) > 0 {
+				variants = append(variants, struct {
+					filled bool
+					note   string
+				}{true, "optional inputs filled"})
+			}
+			for _, v := range variants {
+				answers := make(map[string]string, len(base)+len(picked))
+				for k, val := range base {
+					answers[k] = val
+				}
+				if !v.filled {
+					for _, in := range optional {
+						delete(answers, in.Name)
+					}
+				}
+				for k, val := range picked {
+					answers[k] = val
+				}
+				parts := slices.Clone(label)
+				if len(optional) > 0 {
+					parts = append(parts, v.note)
+				}
+				where := ""
+				if len(parts) > 0 {
+					where = "with " + strings.Join(parts, ", ")
+				}
+				cases = append(cases, checkCase{answers: answers, where: where})
+			}
+			return
+		}
+		in := choices[i]
+		for _, c := range in.Choices {
+			picked[in.Name] = c.Value
+			walk(i+1, picked, append(slices.Clone(label), in.Name+"="+c.Value))
+			delete(picked, in.Name)
+		}
+	}
+	walk(0, map[string]string{}, nil)
+	return cases
+}
+
+func checkOnce(t Template, settings nomadjob.Settings, answers map[string]string, where string) error {
+	fail := func(field, format string, args ...any) error {
+		if where != "" {
+			format = "(" + where + ") " + format
+		}
+		return defect(t, field, format, args...)
+	}
+
+	inputs, err := t.CheckInputs(answers)
 	if err != nil {
 		return fail("inputs", "the examples don't pass: %v", err)
 	}
@@ -94,6 +187,9 @@ func Check(t Template, settings nomadjob.Settings) error {
 // first failure.
 func CheckCatalog(c Catalog, settings nomadjob.Settings) error {
 	for _, t := range c.Templates {
+		if t.Unsupported != "" {
+			continue
+		}
 		if err := Check(t, settings); err != nil {
 			return err
 		}
@@ -104,7 +200,7 @@ func CheckCatalog(c Catalog, settings nomadjob.Settings) error {
 // The embedded catalog: the bundle `caravana template bundle` made, and its
 // sums. A test checks the sum, the parse and Check on every template.
 //
-//go:embed catalog/catalog.json catalog/SHA256SUMS
+//go:embed catalog/catalog.v2.json catalog/SHA256SUMS
 var embedded embed.FS
 
 var (
@@ -118,7 +214,7 @@ var (
 // catch) the catalog is empty.
 func Embedded() (Catalog, []byte) {
 	embeddedOnce.Do(func() {
-		bundle, err := embedded.ReadFile("catalog/catalog.json")
+		bundle, err := embedded.ReadFile("catalog/" + BundleV2File)
 		if err != nil {
 			return
 		}

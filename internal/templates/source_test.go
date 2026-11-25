@@ -33,10 +33,11 @@ func sourceOf(t *testing.T) fstest.MapFS {
 
 func TestReadSource(t *testing.T) {
 	fsys := sourceOf(t)
-	bundle, err := ReadSource(fsys, "")
+	bundles, err := ReadSource(fsys, "")
 	if err != nil {
 		t.Fatalf("ReadSource: %v", err)
 	}
+	bundle := bundles.V2
 	c, err := ParseCatalog(bundle)
 	if err != nil {
 		t.Fatalf("the bundle doesn't parse: %v", err)
@@ -54,7 +55,7 @@ func TestReadSource(t *testing.T) {
 
 	t.Run("deterministic", func(t *testing.T) {
 		again, err := ReadSource(fsys, "")
-		if err != nil || !bytes.Equal(bundle, again) {
+		if err != nil || !bytes.Equal(bundle, again.V2) || !bytes.Equal(bundles.V1, again.V1) {
 			t.Errorf("second read differs (%v)", err)
 		}
 	})
@@ -63,7 +64,7 @@ func TestReadSource(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c, _ := ParseCatalog(b); c.Version != "2026.12.01.2" {
+		if c, _ := ParseCatalog(b.V2); c.Version != "2026.12.01.2" {
 			t.Errorf("version = %q", c.Version)
 		}
 		if _, err := ReadSource(fsys, "bad"); err == nil {
@@ -122,15 +123,26 @@ func TestReadSourceRefusals(t *testing.T) {
 
 func TestSums(t *testing.T) {
 	bundle := []byte("hello\n")
-	sums := Sums(bundle)
+	sums := Sums(Bundles{V1: bundle})
 	if want := "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03  catalog.json\n"; string(sums) != want {
 		t.Errorf("Sums = %q, want %q", sums, want)
 	}
-	if err := VerifySums(bundle, sums); err != nil {
+	both := Sums(Bundles{V1: bundle, V2: []byte("two\n")})
+	if lines := strings.Split(strings.TrimSpace(string(both)), "\n"); len(lines) != 2 || !strings.HasSuffix(lines[1], "  catalog.v2.json") {
+		t.Errorf("Sums of both = %q", both)
+	}
+	// A reader that knows only catalog.json (Caravana 0.22) finds its line among the two.
+	if got, err := SumFromSums(both, BundleV1File); err != nil || got != SumOf(bundle) {
+		t.Errorf("the format-1 line = %q, %v", got, err)
+	}
+	if err := VerifySums(bundle, sums, BundleV1File); err != nil {
 		t.Errorf("VerifySums: %v", err)
 	}
-	if err := VerifySums([]byte("hello!\n"), sums); err == nil || !strings.Contains(err.Error(), "doesn't match") {
+	if err := VerifySums([]byte("hello!\n"), sums, BundleV1File); err == nil || !strings.Contains(err.Error(), "doesn't match") {
 		t.Errorf("a changed bundle: %v", err)
+	}
+	if err := VerifySums(bundle, sums, BundleV2File); err == nil {
+		t.Error("a sums file with no format-2 line verified a format-2 bundle")
 	}
 	other := "0000000000000000000000000000000000000000000000000000000000000000  other.txt\n"
 	for name, text := range map[string]string{
@@ -139,13 +151,13 @@ func TestSums(t *testing.T) {
 		"not hex":         strings.Repeat("z", 64) + "  catalog.json\n",
 		"empty":           "",
 	} {
-		if err := VerifySums(bundle, []byte(text)); err == nil {
+		if err := VerifySums(bundle, []byte(text), BundleV1File); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 	// Binary mode and other lines are fine, and the sum may be uppercase.
 	text := other + "5891B5B522D5DF086D0FF0B110FBD9D21BB4FC7163AF34D08286A2E846F6BE03 *catalog.json\r\n"
-	if err := VerifySums(bundle, []byte(text)); err != nil {
+	if err := VerifySums(bundle, []byte(text), BundleV1File); err != nil {
 		t.Errorf("binary-mode line: %v", err)
 	}
 }
@@ -238,15 +250,18 @@ func TestEmbeddedCatalog(t *testing.T) {
 	if len(c.Templates) == 0 || len(bundle) == 0 {
 		t.Fatal("the embedded catalog is empty or can't be read")
 	}
-	if err := VerifySums(bundle, EmbeddedSums()); err != nil {
+	if err := VerifySums(bundle, EmbeddedSums(), BundleV2File); err != nil {
 		t.Errorf("the embedded bundle and its SHA256SUMS disagree: %v (run caravana template bundle)", err)
 	}
-	if string(EmbeddedSums()) != string(Sums(bundle)) {
+	if string(EmbeddedSums()) != string(Sums(Bundles{V2: bundle})) {
 		t.Error("SHA256SUMS isn't exactly what `caravana template bundle` writes")
 	}
 	again, err := ParseCatalog(bundle)
 	if err != nil {
 		t.Fatalf("ParseCatalog: %v", err)
+	}
+	if again.Format != Format {
+		t.Errorf("the embedded catalog is format %d, want %d", again.Format, Format)
 	}
 	if again.Version != c.Version {
 		t.Errorf("version %q vs %q", again.Version, c.Version)

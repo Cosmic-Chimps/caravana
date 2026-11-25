@@ -370,8 +370,8 @@ func catalogRelease(t *testing.T) (*httptest.Server, *int) {
 		mu.Unlock()
 		switch r.URL.Path {
 		case "/SHA256SUMS":
-			_, _ = w.Write(templates.Sums(bundle))
-		case "/catalog.json":
+			_, _ = w.Write(templates.Sums(templates.Bundles{V2: bundle}))
+		case "/catalog.v2.json":
 			_, _ = w.Write(bundle)
 		default:
 			http.NotFound(w, r)
