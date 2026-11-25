@@ -37,7 +37,43 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The same race tests as CI, as parallel jobs, one per large package and one for all the others.
+  # Under the race detector the larger packages (api, service, ui) each took about 23 minutes on a
+  # GitHub runner on 2026-11-17 and went past 50 on 2026-11-25 (after 054, 055, 057, 034 and 056),
+  # mostly in migrations: every test built a store and -race instruments the whole of SQLite. Tests
+  # now copy a store migrated once (internal/store/storetest), the real fix; each job still gets
+  # 120 minutes as a ceiling, and the run takes as long as the slowest one. The release job waits
+  # for all four, so nothing is committed, tagged or built from a commit that fails them.
+  test:
+    name: race (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [api, service, ui, rest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The commit the release job will start from (see its checkout).
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: go test -race
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          if [ "$GROUP" = rest ]; then
+            pkgs="$(go list ./... | grep -v -E '/internal/(api|service|ui)$')"
+          else
+            pkgs="./internal/$GROUP"
+          fi
+          # shellcheck disable=SC2086 # one argument per package
+          go test -race -timeout 120m $pkgs
+
   release:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -85,12 +121,9 @@ jobs:
       - name: notes
         run: tools/release.sh notes "$VERSION" >"$RUNNER_TEMP/notes.md"
 
-      # The same checks as CI: a release is never built from a commit that fails them.
+      # The same checks as CI: a release is never built from a commit that fails them. The race
+      # tests are the `test` job above, which this job waits for.
       - run: go vet ./...
-      # Under the race detector the larger packages (api, service, ui) each took about 23 minutes on a
-      # GitHub runner on 2026-11-17 and went past 50 on 2026-11-25 (after 054, 055, 057, 034 and 056);
-      # they run in parallel, so the job takes about an hour while each package gets 120.
-      - run: go test -race -timeout 120m ./...
 
       # Only now, with the checks green, does a dispatched run commit and tag. Main and the tag
       # go up in one atomic push: both or neither.
