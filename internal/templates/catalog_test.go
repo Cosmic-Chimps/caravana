@@ -51,9 +51,9 @@ func TestParseCatalogRefusals(t *testing.T) {
 		{"notes with a secret", func(x *Template) { x.Notes = "{{db_password}}" }, "demo: notes:"},
 		{"bad requires", func(x *Template) { x.Requires = "v1" }, "demo: requires:"},
 		{"a broken reason with a line break", func(x *Template) { x.Broken = "a\nb" }, "demo: broken:"},
-		{"thirteen inputs", func(x *Template) {
+		{"twenty-one inputs", func(x *Template) {
 			x.Inputs = nil
-			for i := 0; i < 13; i++ {
+			for i := 0; i < 21; i++ {
 				x.Inputs = append(x.Inputs, Input{Name: "i" + string(rune('a'+i)), Label: "L", Type: TypeSecret, Example: "x"})
 			}
 		}, "demo: inputs:"},
@@ -134,7 +134,7 @@ func TestParseCatalogCatalogRules(t *testing.T) {
 		want string
 		is   error
 	}{
-		"unknown format": {`{"format": 2, "version": "2026.11.12", "templates": []}`, "format 2", ErrUnknownFormat},
+		"unknown format": {`{"format": 3, "version": "2026.11.12", "templates": []}`, "format 3", ErrUnknownFormat},
 		"no format":      {`{"version": "2026.11.12"}`, "format 0", ErrUnknownFormat},
 		"not JSON":       {`nope`, "read catalog", nil},
 		"bad version":    {`{"format": 1, "version": "v1", "templates": []}`, "version:", nil},

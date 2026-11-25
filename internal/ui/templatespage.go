@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -286,6 +288,12 @@ func (s *server) showTemplateLogo(w http.ResponseWriter, r *http.Request, sessio
 
 // ---- one template ---------------------------------------------------------------------
 
+// templateChoiceView is one answer of a choice input.
+type templateChoiceView struct {
+	Value, Label string
+	Checked      bool
+}
+
 // templateInputView is one question of the form.
 type templateInputView struct {
 	Field                formField
@@ -294,6 +302,48 @@ type templateInputView struct {
 	Mode                 string // inputmode, or ""
 	Secret               bool
 	Required             bool
+	// Optional says the answer may be left empty (catalog format 2's required: false).
+	Optional bool
+	// Choice inputs (format 2) are drawn as radios (up to four answers) or a select.
+	Choice      bool
+	Radios      bool
+	NoneChecked bool // no answer is chosen yet: a select starts with "Choose…"
+	Choices     []templateChoiceView
+	// WhenData, for an input another answer asks for, is that condition as JSON for the script
+	// (data-when): {"signin": ["github"]}. WhenHeading is what the group of such inputs is called.
+	WhenData, WhenHeading string
+	// Autofocus and Retype are set when the form is drawn: this input has the first error, and a
+	// secret that was typed before the form was drawn again has to be typed again.
+	Autofocus, Retype bool
+}
+
+// HTMLRequired says to write the required attribute: an input under a condition gets it from the
+// script only while it is shown, since without script every input is on the page.
+func (v templateInputView) HTMLRequired() bool { return v.Required && v.WhenData == "" }
+
+// DataRequired is the same for an input under a condition.
+func (v templateInputView) DataRequired() bool { return v.Required && v.WhenData != "" }
+
+// setValue puts an answer in the input: the field's value, or the choice that is checked.
+func (v *templateInputView) setValue(value string) {
+	v.Field.Value = value
+	if !v.Choice {
+		return
+	}
+	v.NoneChecked = true
+	for i := range v.Choices {
+		v.Choices[i].Checked = v.Choices[i].Value == value
+		if v.Choices[i].Checked {
+			v.NoneChecked = false
+		}
+	}
+}
+
+// templateInputGroup is a run of inputs the form draws together: those asked for by the same answer
+// are under one heading, in a fieldset the script hides while that answer isn't chosen.
+type templateInputGroup struct {
+	WhenData, Heading string
+	Inputs            []templateInputView
 }
 
 // templateServiceView is one line of "What it makes".
@@ -301,13 +351,16 @@ type templateServiceView struct {
 	Name, Image string
 	Domains     []string // "your domain"
 	TeamOnly    bool
-	Backup      string // "postgres", "mysql", "mongodb", "volume", "sqlite", or ""
+	Backup      string   // "postgres", "mysql", "mongodb", "volume", "sqlite", or ""
+	Secrets     []string // the names of its secrets (a preview only)
 }
 
 // templatePreviewView is what a Preview shows: the app the answers make.
 type templatePreviewView struct {
 	Services []templateServiceView
 	Warnings []string
+	// Compose is the file the answers make (it holds no secret).
+	Compose string
 }
 
 // templateFormView is the template's form with what was typed (never a secret).
@@ -316,6 +369,8 @@ type templateFormView struct {
 	Name   formField
 	Place  placeChoice
 	Inputs []templateInputView
+	// Groups is Inputs in runs of the same condition, made when the form is drawn.
+	Groups []templateInputGroup
 	// WithoutBackups is the checkbox "Install without backups for now".
 	WithoutBackups bool
 	Notice         sentence
@@ -437,7 +492,7 @@ func newTemplateForm(t service.TemplateInfo, place string) templateFormView {
 	f.Place.Value = place
 	for _, in := range t.Inputs {
 		v := templateInputView{Field: formField{ID: "in_" + in.Name}, Label: in.Label, Help: in.Help, Example: in.Example,
-			Type: "text", Secret: in.Type == templates.TypeSecret, Required: in.Default == ""}
+			Type: "text", Secret: in.Type == templates.TypeSecret, Required: in.IsRequired() && in.Default == "", Optional: !in.IsRequired()}
 		switch in.Type {
 		case templates.TypeDomain:
 			v.Mode = "url"
@@ -445,13 +500,70 @@ func newTemplateForm(t service.TemplateInfo, place string) templateFormView {
 			v.Type, v.Mode = "email", "email"
 		case templates.TypeSecret:
 			v.Type = "password"
+		case templates.TypeChoice:
+			v.Choice = true
+			v.Radios = len(in.Choices) <= 4 && (in.IsRequired() || in.Default != "")
+			for _, c := range in.Choices {
+				v.Choices = append(v.Choices, templateChoiceView{Value: c.Value, Label: c.Label})
+			}
+			// A choice with no default is required, however it is drawn.
+			v.Required = in.IsRequired()
+		}
+		if len(in.When) > 0 {
+			v.WhenData, v.WhenHeading = whenWords(t.Template, in.When)
 		}
 		if in.Type != templates.TypeSecret {
-			v.Field.Value = in.Default
+			v.setValue(in.Default)
 		}
 		f.Inputs = append(f.Inputs, v)
 	}
 	return f
+}
+
+// whenWords says a condition on an input twice: as the JSON the script reads, and as the heading
+// of the group it puts the input in ("Only for GitHub").
+func whenWords(t templates.Template, c templates.Condition) (data, heading string) {
+	clauses := map[string][]string{}
+	var words []string
+	for _, name := range slices.Sorted(maps.Keys(c)) {
+		cv := c[name]
+		clauses[name] = cv.Values
+		var labels []string
+		in, _ := inputNamed(t, name)
+		for _, value := range cv.Values {
+			labels = append(labels, in.ChoiceLabel(value))
+		}
+		words = append(words, strings.Join(labels, " or "))
+	}
+	b, err := json.Marshal(clauses)
+	if err != nil {
+		return "", ""
+	}
+	return string(b), "Only for " + strings.Join(words, " and ")
+}
+
+func inputNamed(t templates.Template, name string) (templates.Input, bool) {
+	for _, in := range t.Inputs {
+		if in.Name == name {
+			return in, true
+		}
+	}
+	return templates.Input{}, false
+}
+
+// groups sets what depends on the form as a whole and makes the groups.
+func (f *templateFormView) makeGroups() {
+	f.Groups = nil
+	for i := range f.Inputs {
+		in := &f.Inputs[i]
+		in.Autofocus = f.Focus == in.Field.ID
+		in.Retype = in.Secret && f.Posted
+		if n := len(f.Groups); n > 0 && f.Groups[n-1].WhenData == in.WhenData {
+			f.Groups[n-1].Inputs = append(f.Groups[n-1].Inputs, *in)
+			continue
+		}
+		f.Groups = append(f.Groups, templateInputGroup{WhenData: in.WhenData, Heading: in.WhenHeading, Inputs: []templateInputView{*in}})
+	}
 }
 
 // markFirstError chooses the error that is announced and the field that is focused.
@@ -505,6 +617,7 @@ func (s *server) drawTemplate(w http.ResponseWriter, r *http.Request, status int
 	refusal := form.Place.Error
 	form.Place = pl.choice(form.Place.Value)
 	form.Place.Error = refusal
+	form.makeGroups()
 
 	head, err := s.shellPage(r, t.Title, navHome, crumb{Label: "New app", Href: gridHref("", "", form.Place)}, crumb{Label: t.Title})
 	if err != nil {
@@ -550,10 +663,15 @@ func (s *server) createFromTemplate(w http.ResponseWriter, r *http.Request, sess
 	form.Name.Value = val("name")
 	form.WithoutBackups = r.PostForm.Get("withoutBackups") != ""
 	answers := map[string]string{}
-	for i, in := range t.Inputs {
+	for _, in := range t.Inputs {
 		answers[in.Name] = val("in_" + in.Name)
-		if in.Type != templates.TypeSecret {
-			form.Inputs[i].Field.Value = answers[in.Name]
+	}
+	// What an input that the choices made doesn't ask for was sent with is dropped by the service,
+	// and isn't drawn back either.
+	asked := t.Asked(answers)
+	for i, in := range t.Inputs {
+		if in.Type != templates.TypeSecret && asked[in.Name] {
+			form.Inputs[i].setValue(answers[in.Name])
 		}
 	}
 	preview := r.PostForm.Get("action") == "preview"
@@ -593,12 +711,15 @@ func (s *server) createFromTemplate(w http.ResponseWriter, r *http.Request, sess
 			s.drawTemplate(w, r, status, t, form, nil)
 			return
 		}
-		view := &templatePreviewView{}
+		view := &templatePreviewView{Compose: p.Compose}
 		for _, svc := range p.App.Services {
 			sv := templateServiceView{Name: svc.Name, Image: svc.Image}
 			for _, d := range svc.Domains {
 				sv.Domains = append(sv.Domains, "your domain")
 				sv.TeamOnly = sv.TeamOnly || d.TeamOnly
+			}
+			for _, sec := range svc.Secrets {
+				sv.Secrets = append(sv.Secrets, sec.Name)
 			}
 			if svc.Backup != nil {
 				sv.Backup = svc.Backup.Engine
@@ -768,6 +889,9 @@ func (s *server) installedNoticeOf(r *http.Request, rec store.AppRecord) *instal
 	// Compose file or as one of its domains; else the notes keep "<your …>".
 	held := appTexts(rec)
 	for name, v := range checked {
+		if in, _ := inputNamed(info.Template, name); in.Type == templates.TypeChoice {
+			continue // one of the template's own words, checked against its list
+		}
 		if !slices.ContainsFunc(held, func(s string) bool { return strings.Contains(s, v) }) {
 			delete(checked, name)
 		}

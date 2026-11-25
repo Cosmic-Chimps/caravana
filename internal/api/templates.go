@@ -1,13 +1,13 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
-	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 	"github.com/cosmic-chimps/caravana/internal/templates"
@@ -90,7 +90,7 @@ type templateJSON struct {
 	Lab         bool                       `json:"lab"`
 	Inputs      []templates.Input          `json:"inputs"`
 	Generated   []templates.Generated      `json:"generated"`
-	Services    map[string]compose.Overlay `json:"services"`
+	Services    map[string]json.RawMessage `json:"services"`
 	Compose     string                     `json:"compose"`
 	HasLogo     bool                       `json:"hasLogo"`
 	Available   bool                       `json:"available"`
@@ -98,9 +98,10 @@ type templateJSON struct {
 }
 
 func toTemplateJSON(t service.TemplateInfo) templateJSON {
-	services := t.Services
-	if services == nil {
-		services = map[string]compose.Overlay{}
+	// The overlay as the manifest has it, with the items' "when" where they were written.
+	services, err := t.ServicesJSON()
+	if err != nil || services == nil {
+		services = map[string]json.RawMessage{}
 	}
 	return templateJSON{Name: t.Name, Title: t.Title, Version: t.Version, Description: t.Description,
 		Tags: nonNil(t.Tags), Upstream: t.Upstream, AppName: t.AppName, Notes: t.Notes, Requires: t.Requires,

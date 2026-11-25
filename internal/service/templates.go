@@ -37,7 +37,8 @@ import (
 // The catalog check's address and limits.
 const (
 	// DefaultTemplatesURL is where the catalog repository's latest release
-	// publishes SHA256SUMS and catalog.json.
+	// publishes SHA256SUMS, catalog.v2.json (format 2) and catalog.json (format 1,
+	// for older Caravanas).
 	DefaultTemplatesURL = "https://github.com/Cosmic-Chimps/caravana-templates/releases/latest/download/"
 
 	templatesSumsLimit   = 4 << 10 // what is read of SHA256SUMS
@@ -255,7 +256,7 @@ func (s *Service) catalogInUse(ctx context.Context) (templates.Catalog, string, 
 	}
 	// The row was verified when it was written; a bundle that no longer matches
 	// its sum or doesn't parse is not trusted.
-	cat, err := templates.ParseCatalog(row.Bundle)
+	cat, err := templates.ParseCatalogFor(row.Bundle, s.templateNeedsNewer)
 	if err != nil || templates.SumOf(row.Bundle) != row.BundleSum {
 		s.log.Warn("the stored template catalog is unreadable; using the built-in one")
 		return embedded, CatalogEmbedded, row, nil
@@ -267,6 +268,9 @@ func (s *Service) catalogInUse(ctx context.Context) (templates.Catalog, string, 
 // unavailable says why this Caravana doesn't offer t; empty when it does. A
 // development build counts as new enough.
 func (s *Service) unavailable(t templates.Template) string {
+	if t.Unsupported != "" {
+		return t.Unsupported
+	}
 	if t.Broken != "" {
 		return t.Broken
 	}
@@ -274,6 +278,11 @@ func (s *Service) unavailable(t templates.Template) string {
 		return "needs caravana " + t.Requires + " or newer"
 	}
 	return ""
+}
+
+// templateNeedsNewer says a template's `requires` is a release newer than this one.
+func (s *Service) templateNeedsNewer(requires string) bool {
+	return hostos.IsReleaseVersion(s.runningVersion) && hostos.ReleaseNewer(requires, s.runningVersion)
 }
 
 func (s *Service) info(t templates.Template) TemplateInfo {
@@ -403,7 +412,7 @@ func (s *Service) PreviewTemplate(ctx context.Context, name, appID string, input
 	}
 	a, warnings, err := s.PreviewCompose(ctx, appID, req)
 	if err != nil {
-		return TemplatePreview{}, templateError(t, err)
+		return TemplatePreview{}, templateError(t, checked, err)
 	}
 	return TemplatePreview{App: a, Warnings: append(warnings, extra...), Compose: req.Compose}, nil
 }
@@ -450,8 +459,14 @@ func (s *Service) InstallTemplate(ctx context.Context, name, appID string, input
 		req, extra = withoutBackups(req)
 	}
 	// A template install reads "installed" with the template's name and version, not "created".
-	res, err := s.deployComposeWarned(withDeployNote(ctx, audit.ActionInstalled,
-		audit.Change{Path: "template", Op: audit.OpAdded, To: t.Name + " " + t.Version}), appID, req, Condition{IfNew: true}, trigger, extra)
+	// The entry also says which alternative was chosen: a choice is never secret.
+	changes := []audit.Change{{Path: "template", Op: audit.OpAdded, To: t.Name + " " + t.Version}}
+	for _, in := range t.Inputs {
+		if in.Type == templates.TypeChoice && checked[in.Name] != "" {
+			changes = append(changes, audit.Change{Path: "choices." + in.Name, Op: audit.OpAdded, To: checked[in.Name]})
+		}
+	}
+	res, err := s.deployComposeWarned(withDeployNote(ctx, audit.ActionInstalled, changes...), appID, req, Condition{IfNew: true}, trigger, extra)
 	// A deploy that fails after the app was saved (the image can't be found, the
 	// secret store is down) leaves the app and a failed deployment: the app came
 	// from the template all the same.
@@ -465,7 +480,7 @@ func (s *Service) InstallTemplate(ctx context.Context, name, appID string, input
 		}
 	}
 	if err != nil {
-		return res, templateError(t, err)
+		return res, templateError(t, checked, err)
 	}
 	return res, nil
 }
@@ -473,8 +488,8 @@ func (s *Service) InstallTemplate(ctx context.Context, name, appID string, input
 // templateError puts a refusal at a domain host that came from an input where
 // the owner typed it: "inputs.domain", not "services.web.domains[0].host" in a
 // file the owner never saw (research R5). Any other error is returned as it is.
-func templateError(t templates.Template, err error) error {
-	paths := t.DomainInputs()
+func templateError(t templates.Template, checked map[string]string, err error) error {
+	paths := t.DomainInputsFor(checked)
 	var taken *DomainTakenError
 	if errors.As(err, &taken) {
 		if input, ok := paths[taken.Field]; ok {
@@ -622,30 +637,36 @@ type catalogUpdate struct {
 	version string
 }
 
-// fetchCatalog asks for SHA256SUMS and, only when the catalog changed, for
-// catalog.json, and verifies it. Every failure is a *checkFailure.
+// fetchCatalog asks for SHA256SUMS and, only when the catalog changed, for the
+// bundle, and verifies it. The bundle is catalog.v2.json (format 2) when
+// SHA256SUMS has a line for it, else catalog.json: a release made before
+// format 2 has only that one. Every failure is a *checkFailure.
 func (s *Service) fetchCatalog(ctx context.Context, row store.TemplateCatalogRow) (*catalogUpdate, error) {
 	sums, err := s.fetchTemplateFile(ctx, "SHA256SUMS", templatesSumsLimit)
 	if err != nil {
 		return nil, err
 	}
-	sum, err := templates.SumFromSums(sums)
+	file := templates.BundleV2File
+	sum, err := templates.SumFromSums(sums, file)
 	if err != nil {
-		return nil, &checkFailure{failCatalogBad}
+		file = templates.BundleV1File
+		if sum, err = templates.SumFromSums(sums, file); err != nil {
+			return nil, &checkFailure{failCatalogBad}
+		}
 	}
 	embedded, embeddedBundle := templates.Embedded()
 	if sum == row.BundleSum || sum == templates.SumOf(embeddedBundle) {
 		return nil, nil // nothing new: the same catalog as the last check, or the built-in one
 	}
 
-	bundle, err := s.fetchTemplateFile(ctx, "catalog.json", templatesBundleLimit)
+	bundle, err := s.fetchTemplateFile(ctx, file, templatesBundleLimit)
 	if err != nil {
 		return nil, err
 	}
-	if err := templates.VerifySums(bundle, sums); err != nil {
+	if err := templates.VerifySums(bundle, sums, file); err != nil {
 		return nil, &checkFailure{failCatalogSum}
 	}
-	cat, err := templates.ParseCatalog(bundle)
+	cat, err := templates.ParseCatalogFor(bundle, s.templateNeedsNewer)
 	switch {
 	case errors.Is(err, templates.ErrUnknownFormat):
 		return nil, &checkFailure{failCatalogFormat}

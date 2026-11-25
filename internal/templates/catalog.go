@@ -13,10 +13,10 @@
 package templates
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"regexp"
 	"slices"
@@ -29,8 +29,14 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/compose"
 )
 
-// Format is the catalog format this Caravana reads.
-const Format = 1
+// The catalog formats this Caravana reads. Format 1 is what every Caravana up to
+// 0.22 reads and what catalog.json keeps being; format 2 (feature 058) adds
+// choice inputs, optional inputs, conditions and 20 inputs, in catalog.v2.json.
+const (
+	FormatV1 = 1
+	// Format is the newest format, the one the embedded catalog is in.
+	Format = 2
+)
 
 // Limits of the format.
 const (
@@ -38,7 +44,10 @@ const (
 	maxDescription = 200
 	maxTags        = 6
 	maxNotes       = 2000
-	maxInputs      = 12
+	maxInputsV1    = 12
+	maxInputs      = 20
+	maxChoices     = 8
+	maxCombos      = 64
 	maxGenerated   = 12
 	maxLabel       = 40
 	maxHelp        = 200
@@ -57,6 +66,8 @@ const (
 	TypeEmail  = "email"
 	TypeText   = "text"
 	TypeSecret = "secret"
+	// TypeChoice (format 2) is one of a short list of answers.
+	TypeChoice = "choice"
 )
 
 // Generated secret alphabets.
@@ -107,10 +118,19 @@ type Template struct {
 	Inputs    []Input                    `json:"inputs,omitempty"`
 	Generated []Generated                `json:"generated,omitempty"`
 	Services  map[string]compose.Overlay `json:"services,omitempty"`
+	// ItemWhens holds the conditions (format 2) of the items of each service's
+	// lists: ItemWhens[service][field] has one entry per item of the list
+	// (domains, secrets, identities, publish), nil for an item with none. In
+	// JSON each is the item's own "when". A list with no condition has no entry.
+	ItemWhens map[string]map[string][]Condition `json:"-"`
 	// Compose is the Compose file with placeholders.
 	Compose string `json:"compose,omitempty"`
 	// Logo is an SVG, or empty.
 	Logo string `json:"logo,omitempty"`
+	// Unsupported, when not empty, says the catalog lists this template but this
+	// Caravana can't read it (it was made for a newer one): only its name,
+	// title and description are known. It is never in JSON.
+	Unsupported string `json:"-"`
 }
 
 // InLab says whether the catalog's lab job installs the template.
@@ -126,6 +146,29 @@ type Input struct {
 	// Pattern is a Go regular expression a text input must match entirely.
 	Pattern string `json:"pattern,omitempty"`
 	Example string `json:"example,omitempty"`
+	// Required (format 2) false lets the owner leave the input empty; an empty
+	// optional input renders as an empty string. nil means true.
+	Required *bool `json:"required,omitempty"`
+	// Choices are the answers of a choice input, 2 to 8.
+	Choices []Choice `json:"choices,omitempty"`
+	// When (format 2) asks the input only when earlier choice inputs have the
+	// given answers. An input that isn't asked is empty, and anything sent for
+	// it is ignored.
+	When Condition `json:"when,omitempty"`
+}
+
+// IsRequired says an empty answer is refused (when the input is asked and
+// has no default).
+func (in Input) IsRequired() bool { return in.Required == nil || *in.Required }
+
+// ChoiceLabel is the label of a choice value, or the value itself.
+func (in Input) ChoiceLabel(value string) string {
+	for _, c := range in.Choices {
+		if c.Value == value {
+			return c.Label
+		}
+	}
+	return value
 }
 
 // Generated is a secret Caravana makes at install.
@@ -162,47 +205,137 @@ var (
 	releaseRE     = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 	tagRE         = regexp.MustCompile(`^[a-z0-9][a-z0-9 -]{0,23}$`)
 	inputNameRE   = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
+	choiceValueRE = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 	placeholderRE = regexp.MustCompile(`\{\{\s*([a-z][a-z0-9_]*)\s*\}\}`)
 )
 
-// ParseCatalog reads a bundle and checks every rule of the format contract.
-// An unknown format is ErrUnknownFormat; any other defect is an *Error naming
-// the template and the field. Unknown fields are refused: a field a newer
-// catalog adds means a new format, and a field silently dropped would be a
-// template doing less than it says.
-func ParseCatalog(data []byte) (Catalog, error) {
+// ParseCatalog reads a bundle (format 1 or 2) and checks every rule of the
+// format contract. An unknown format is ErrUnknownFormat; any other defect is an
+// *Error naming the template and the field. Unknown fields are refused: a field a
+// newer catalog adds means a new format, and a field silently dropped would be
+// a template doing less than it says. See ParseCatalogFor for the one tolerance
+// format 2 has.
+func ParseCatalog(data []byte) (Catalog, error) { return ParseCatalogFor(data, nil) }
+
+// ParseCatalogFor is ParseCatalog for a Caravana that knows which `requires`
+// it is too old for: needsNewer(requires) says the release is newer than the
+// running one (nil: none is). In a format-2 catalog a template that this
+// Caravana can't read keeps the rest of the catalog: one with a field it doesn't
+// know, or one that fails the rules and whose `requires` is newer than the
+// running release, is listed with Unsupported set instead of failing the whole
+// catalog. A broken file, an unknown field at the catalog's top level and a
+// template that fails the rules with no such excuse still fail it.
+func ParseCatalogFor(data []byte, needsNewer func(requires string) bool) (Catalog, error) {
 	var head struct {
 		Format int `json:"format"`
 	}
 	if err := json.Unmarshal(data, &head); err != nil {
 		return Catalog{}, fmt.Errorf("read catalog: %w", err)
 	}
-	if head.Format != Format {
+	if head.Format != FormatV1 && head.Format != Format {
 		return Catalog{}, fmt.Errorf("catalog format %d: %w", head.Format, ErrUnknownFormat)
 	}
-	var c Catalog
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&c); err != nil {
+	var raw struct {
+		Format    int               `json:"format"`
+		Version   string            `json:"version"`
+		Templates []json.RawMessage `json:"templates"`
+	}
+	if err := decodeStrict(data, &raw); err != nil {
 		return Catalog{}, fmt.Errorf("read catalog: %w", err)
 	}
-	if dec.More() {
-		return Catalog{}, errors.New("read catalog: more than one JSON value")
-	}
+	c := Catalog{Format: raw.Format, Version: raw.Version}
 	if !catalogVerRE.MatchString(c.Version) {
 		return Catalog{}, &Error{Field: "version", Message: fmt.Sprintf("%q must look like 2026.11.12 or 2026.11.12.2", c.Version)}
 	}
 	seen := map[string]bool{}
-	for _, t := range c.Templates {
+	for i, one := range raw.Templates {
+		var t Template
+		err := json.Unmarshal(one, &t)
+		if err == nil {
+			err = t.validate(c.Format)
+		}
+		if err != nil {
+			stub, ok := unsupportedStub(one, err, c.Format, needsNewer)
+			if !ok {
+				var e *Error
+				if errors.As(err, &e) {
+					return Catalog{}, err
+				}
+				return Catalog{}, fmt.Errorf("read catalog: templates[%d]: %w", i, err)
+			}
+			t = stub
+		}
 		if seen[t.Name] {
 			return Catalog{}, defect(t, "name", "is used by two templates")
 		}
 		seen[t.Name] = true
-		if err := t.Validate(); err != nil {
-			return Catalog{}, err
-		}
+		c.Templates = append(c.Templates, t)
 	}
 	return c, nil
+}
+
+// unsupportedStub makes the listing of a template this Caravana can't read, if
+// the failure has the excuse of being newer than it: an unknown field, or a
+// `requires` the running release is too old for. The template's own words are
+// read loosely and only used when they are fit to show.
+func unsupportedStub(raw json.RawMessage, cause error, format int, needsNewer func(string) bool) (Template, bool) {
+	if format < Format {
+		return Template{}, false
+	}
+	var loose struct {
+		Name        string   `json:"name"`
+		Title       string   `json:"title"`
+		Version     string   `json:"version"`
+		Description string   `json:"description"`
+		Tags        []string `json:"tags"`
+		Upstream    string   `json:"upstream"`
+		AppName     string   `json:"appName"`
+		Requires    string   `json:"requires"`
+	}
+	if err := json.Unmarshal(raw, &loose); err != nil {
+		return Template{}, false
+	}
+	if app.ValidName("name", loose.Name) != nil || len(loose.Name) > maxName {
+		return Template{}, false
+	}
+	reason := ""
+	switch {
+	case releaseRE.MatchString(loose.Requires) && needsNewer != nil && needsNewer(loose.Requires):
+		reason = "needs caravana " + loose.Requires + " or newer"
+	case isUnknownField(cause):
+		reason = "made for a newer caravana: it uses something this one doesn't know"
+	default:
+		return Template{}, false
+	}
+	t := Template{Name: loose.Name, Title: loose.Name, Version: "?", Unsupported: reason}
+	if printable(loose.Title, maxTitle) {
+		t.Title = loose.Title
+	}
+	if versionRE.MatchString(loose.Version) {
+		t.Version = loose.Version
+	}
+	if printable(loose.Description, maxDescription) {
+		t.Description = loose.Description
+	} else {
+		t.Description = "This template can't be read by this version of caravana."
+	}
+	if len(loose.Tags) <= maxTags {
+		for _, tag := range loose.Tags {
+			if tagRE.MatchString(tag) && !slices.Contains(t.Tags, tag) {
+				t.Tags = append(t.Tags, tag)
+			}
+		}
+	}
+	if u, err := url.Parse(loose.Upstream); err == nil && u.Scheme == "https" && u.Host != "" {
+		t.Upstream = loose.Upstream
+	}
+	if app.ValidName("appName", loose.AppName) == nil {
+		t.AppName = loose.AppName
+	}
+	if releaseRE.MatchString(loose.Requires) {
+		t.Requires = loose.Requires
+	}
+	return t, true
 }
 
 // printable says s has 1 to max printable characters and no line break.
@@ -214,9 +347,15 @@ func printable(s string, max int) bool {
 	return !strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsPrint(r) })
 }
 
-// Validate checks the template against the format contract, without
+// Validate checks the template against the format contract (format 2), without
 // translating it (Check does that). The error is an *Error.
-func (t Template) Validate() error {
+func (t Template) Validate() error { return t.validate(Format) }
+
+// validate checks the template against the rules of a format. Format 1 is
+// what Caravana 0.22 and older read: no choice inputs, no optional ones, no
+// conditions and at most 12 inputs; a template that passes it can go in
+// catalog.json.
+func (t Template) validate(format int) error {
 	if err := app.ValidName("name", t.Name); err != nil || len(t.Name) > maxName {
 		return defect(t, "name", "must be a lowercase DNS label of at most %d characters, without %q", maxName, "--")
 	}
@@ -262,11 +401,11 @@ func (t Template) Validate() error {
 	if len(t.Compose) > compose.MaxComposeBytes {
 		return defect(t, "compose", "is %d bytes; at most %d are read", len(t.Compose), compose.MaxComposeBytes)
 	}
-	names, err := t.validateNames()
+	names, err := t.validateNames(format)
 	if err != nil {
 		return err
 	}
-	if err := t.validatePlaceholders(names); err != nil {
+	if err := t.validatePlaceholders(names, format); err != nil {
 		return err
 	}
 	if t.Logo != "" {
@@ -287,11 +426,17 @@ const (
 
 // validateNames checks the inputs and the generated secrets, and returns the
 // kind of each declared name.
-func (t Template) validateNames() (map[string]nameKind, error) {
+func (t Template) validateNames(format int) (map[string]nameKind, error) {
 	names := map[string]nameKind{}
-	if len(t.Inputs) > maxInputs {
-		return nil, defect(t, "inputs", "has %d inputs; at most %d are allowed", len(t.Inputs), maxInputs)
+	limit := maxInputs
+	if format < Format {
+		limit = maxInputsV1
 	}
+	if len(t.Inputs) > limit {
+		return nil, defect(t, "inputs", "has %d inputs; at most %d are allowed", len(t.Inputs), limit)
+	}
+	index := map[string]int{}
+	combos := 1
 	for i, in := range t.Inputs {
 		f := fmt.Sprintf("inputs[%d]", i)
 		if !inputNameRE.MatchString(in.Name) {
@@ -306,14 +451,22 @@ func (t Template) validateNames() (map[string]nameKind, error) {
 		if len(in.Help) > maxHelp || strings.ContainsFunc(in.Help, unicode.IsControl) {
 			return nil, defect(t, f+".help", "must be plain text of at most %d bytes", maxHelp)
 		}
-		switch in.Type {
-		case TypeDomain, TypeEmail, TypeText:
-			names[in.Name] = plainName
-		case TypeSecret:
-			names[in.Name] = secretName
-		default:
-			return nil, defect(t, f+".type", "must be one of %s, %s, %s, %s", TypeDomain, TypeEmail, TypeText, TypeSecret)
+		if format < Format && (in.Required != nil || len(in.Choices) > 0 || in.When != nil) {
+			return nil, defect(t, f, "uses required, choices or when, which catalog format 1 doesn't have")
 		}
+		switch {
+		case in.Type == TypeDomain, in.Type == TypeEmail, in.Type == TypeText:
+			names[in.Name] = plainName
+		case in.Type == TypeChoice && format >= Format:
+			names[in.Name] = plainName
+		case in.Type == TypeSecret:
+			names[in.Name] = secretName
+		case format < Format:
+			return nil, defect(t, f+".type", "must be one of %s, %s, %s, %s", TypeDomain, TypeEmail, TypeText, TypeSecret)
+		default:
+			return nil, defect(t, f+".type", "must be one of %s, %s, %s, %s, %s", TypeDomain, TypeEmail, TypeText, TypeSecret, TypeChoice)
+		}
+		index[in.Name] = i
 		if in.Type == TypeText {
 			if in.Pattern == "" {
 				return nil, defect(t, f+".pattern", "is required for a text input")
@@ -327,10 +480,22 @@ func (t Template) validateNames() (map[string]nameKind, error) {
 		} else if in.Pattern != "" {
 			return nil, defect(t, f+".pattern", "only a text input has a pattern")
 		}
+		if in.Type == TypeChoice {
+			if err := t.validateChoices(f, in); err != nil {
+				return nil, err
+			}
+			combos *= len(in.Choices)
+		} else if len(in.Choices) > 0 {
+			return nil, defect(t, f+".choices", "only a choice input has choices")
+		}
 		if in.Type == TypeSecret && in.Default != "" {
 			return nil, defect(t, f+".default", "a secret input has no default")
 		}
-		if in.Default == "" && in.Example == "" {
+		if in.Type == TypeChoice {
+			if in.Example != "" {
+				return nil, defect(t, f+".example", "a choice input has no example: every choice is checked")
+			}
+		} else if in.Default == "" && in.Example == "" {
 			return nil, defect(t, f+".example", "is required when there is no default")
 		}
 		// The example and the default must be valid answers.
@@ -342,6 +507,15 @@ func (t Template) validateNames() (map[string]nameKind, error) {
 				return nil, defect(t, f+v.field, "%s", err.Error())
 			}
 		}
+		if in.When != nil {
+			earlier := func(name string) bool { j, ok := index[name]; return ok && j < i }
+			if err := t.validateCondition(f+".when", in.When, false, earlier); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if combos > maxCombos {
+		return nil, defect(t, "inputs", "its choices make %d combinations; at most %d are checked", combos, maxCombos)
 	}
 	if len(t.Generated) > maxGenerated {
 		return nil, defect(t, "generated", "has %d secrets; at most %d are allowed", len(t.Generated), maxGenerated)
@@ -365,14 +539,87 @@ func (t Template) validateNames() (map[string]nameKind, error) {
 	return names, nil
 }
 
+// validateChoices checks a choice input's list and default.
+func (t Template) validateChoices(f string, in Input) error {
+	if n := len(in.Choices); n < 2 || n > maxChoices {
+		return defect(t, f+".choices", "has %d choices; a choice input has 2 to %d", n, maxChoices)
+	}
+	seen := map[string]bool{}
+	for j, c := range in.Choices {
+		cf := fmt.Sprintf("%s.choices[%d]", f, j)
+		if !choiceValueRE.MatchString(c.Value) {
+			return defect(t, cf+".value", "%q must be lowercase letters, digits, _ and -, starting with a letter, at most 32 characters", c.Value)
+		}
+		if seen[c.Value] {
+			return defect(t, cf+".value", "%q is listed twice", c.Value)
+		}
+		seen[c.Value] = true
+		if !printable(c.Label, maxLabel) {
+			return defect(t, cf+".label", "must be 1 to %d printable characters", maxLabel)
+		}
+	}
+	if in.Default != "" && !seen[in.Default] {
+		return defect(t, f+".default", "%q is not one of the choices", in.Default)
+	}
+	return nil
+}
+
+// inputOf is the declared input called name.
+func (t Template) inputOf(name string) (Input, bool) {
+	for _, in := range t.Inputs {
+		if in.Name == name {
+			return in, true
+		}
+	}
+	return Input{}, false
+}
+
+// validateCondition checks a condition: it names inputs (not generated secrets;
+// allowed, when not nil, narrows which), compares a choice input only with its
+// own values, and says "not empty" (CondValue.Any) only where allowAny.
+func (t Template) validateCondition(field string, c Condition, allowAny bool, allowed func(name string) bool) error {
+	if len(c) == 0 {
+		return defect(t, field, "must name at least one input")
+	}
+	for _, name := range c.names() {
+		in, ok := t.inputOf(name)
+		if !ok {
+			return defect(t, field, "names %q, which is not an input", name)
+		}
+		if allowed != nil && !allowed(name) {
+			return defect(t, field, "names %q, which must be declared before this input", name)
+		}
+		cv := c[name]
+		if cv.Any {
+			if !allowAny {
+				return defect(t, field, "%q must be compared with a value here", name)
+			}
+			continue
+		}
+		if len(cv.Values) == 0 {
+			return defect(t, field, "%q needs a value, a list of values or true", name)
+		}
+		if in.Type != TypeChoice {
+			return defect(t, field, "%q isn't a choice input: say true for \"not empty\"", name)
+		}
+		for _, v := range cv.Values {
+			if !slices.ContainsFunc(in.Choices, func(ch Choice) bool { return ch.Value == v }) {
+				return defect(t, field, "%q is not a choice of %q", v, name)
+			}
+		}
+	}
+	return nil
+}
+
 // compilePattern anchors a text input's pattern the way the contract says.
 func compilePattern(p string) (*regexp.Regexp, error) {
 	return regexp.Compile(`^(?:` + p + `)$`)
 }
 
-// validatePlaceholders checks where each placeholder is and that every
-// declared name is used (R2).
-func (t Template) validatePlaceholders(names map[string]nameKind) error {
+// validatePlaceholders checks where each placeholder is, that every
+// condition names a real input and that every declared name is used (R2). A
+// choice input used only in conditions counts as used.
+func (t Template) validatePlaceholders(names map[string]nameKind, format int) error {
 	used := map[string]bool{}
 
 	// A plain place accepts plain names only; a secret value place accepts both.
@@ -389,13 +636,34 @@ func (t Template) validatePlaceholders(names map[string]nameKind) error {
 		}
 		return nil
 	}
+	useCondition := func(c Condition) {
+		for name := range c {
+			used[name] = true
+		}
+	}
 
 	if err := scan("compose", t.Compose, false); err != nil {
 		return err
 	}
+	marks, err := scanMarkers(t.Compose)
+	if err != nil {
+		var me *MarkerError
+		if errors.As(err, &me) {
+			return defect(t, "compose", "line %d: %s", me.Line, me.Message)
+		}
+		return defect(t, "compose", "%v", err)
+	}
+	if format < Format && len(marks) > 0 {
+		return defect(t, "compose", "line %d: a marker comment is catalog format 2; format 1 has none", marks[0].Line+1)
+	}
+	for _, m := range marks {
+		if err := t.validateCondition(fmt.Sprintf("compose: line %d", m.Line+1), m.Cond, true, nil); err != nil {
+			return err
+		}
+		useCondition(m.Cond)
+	}
 	// Notes are shown, so they take plain names only, and a name used only
 	// there doesn't count as used (it would be a question that changes nothing).
-	notesUsed := map[string]bool{}
 	for _, m := range placeholderRE.FindAllStringSubmatch(t.Notes, -1) {
 		kind, ok := names[m[1]]
 		switch {
@@ -404,7 +672,6 @@ func (t Template) validatePlaceholders(names map[string]nameKind) error {
 		case kind == secretName:
 			return defect(t, "notes", "uses the secret {{%s}}: notes are shown, so only plain inputs may be in them", m[1])
 		}
-		notesUsed[m[1]] = true
 	}
 
 	for _, svc := range sortedOverlayNames(t.Services) {
@@ -416,10 +683,30 @@ func (t Template) validatePlaceholders(names map[string]nameKind) error {
 			}
 		}
 	}
+	for _, svc := range slices.Sorted(maps.Keys(t.ItemWhens)) {
+		for _, field := range whenLists {
+			for i, c := range t.ItemWhens[svc][field] {
+				if c == nil {
+					continue
+				}
+				f := fmt.Sprintf("services.%s.%s[%d].when", svc, field, i)
+				if format < Format {
+					return defect(t, f, "a condition is catalog format 2; format 1 has none")
+				}
+				if err := t.validateCondition(f, c, true, nil); err != nil {
+					return err
+				}
+				useCondition(c)
+			}
+		}
+	}
+	for _, in := range t.Inputs {
+		useCondition(in.When)
+	}
 
 	for _, in := range t.Inputs {
 		if !used[in.Name] {
-			return defect(t, "inputs."+in.Name, "is declared but never used in the Compose file or the services")
+			return defect(t, "inputs."+in.Name, "is declared but never used in the Compose file, the services or a condition")
 		}
 	}
 	for _, g := range t.Generated {

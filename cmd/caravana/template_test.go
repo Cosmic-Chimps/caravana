@@ -82,7 +82,7 @@ func TestTemplateBundle(t *testing.T) {
 	if code != exitOK || !strings.Contains(stdout, "1 templates") {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
-	bundle, err := os.ReadFile(filepath.Join(out, "catalog.json"))
+	bundle, err := os.ReadFile(filepath.Join(out, "catalog.v2.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestTemplateBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := templates.VerifySums(bundle, sums); err != nil {
+	if err := templates.VerifySums(bundle, sums, templates.BundleV2File); err != nil {
 		t.Errorf("the sums don't match the bundle: %v", err)
 	}
 	cat, err := templates.ParseCatalog(bundle)

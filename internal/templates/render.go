@@ -48,6 +48,11 @@ func checkValue(in Input, v string) (string, error) {
 		if !ok || !emailLocal.MatchString(local) || len(host) > 253 || !hostRE.MatchString(strings.ToLower(host)) {
 			return "", errors.New("must be an email address like you@example.com")
 		}
+	case TypeChoice:
+		if !slices.ContainsFunc(in.Choices, func(c Choice) bool { return c.Value == v }) {
+			return "", errors.New("is not one of the choices")
+		}
+		return v, nil
 	case TypeText:
 		re, err := compilePattern(in.Pattern)
 		if err != nil {
@@ -92,11 +97,17 @@ func (t Template) checkInputs(in map[string]string, secretsRequired bool) (map[s
 	}
 	out := make(map[string]string, len(t.Inputs))
 	for _, input := range t.Inputs {
+		// An input another answer doesn't ask for is empty, and whatever was
+		// sent for it is dropped here: it is never checked, rendered or kept.
+		if !input.When.Holds(out) {
+			out[input.Name] = ""
+			continue
+		}
 		v := strings.TrimSpace(in[input.Name])
 		if v == "" {
 			v = input.Default
 		}
-		if v == "" && input.Type == TypeSecret && !secretsRequired {
+		if v == "" && (!input.IsRequired() || (input.Type == TypeSecret && !secretsRequired)) {
 			out[input.Name] = ""
 			continue
 		}
@@ -110,6 +121,26 @@ func (t Template) checkInputs(in map[string]string, secretsRequired bool) (map[s
 		out[input.Name] = v
 	}
 	return out, nil
+}
+
+// Asked says which inputs the answers in ask for: false for an input whose
+// condition doesn't hold. The answers aren't checked; a choice that isn't one
+// of its choices simply holds no condition.
+func (t Template) Asked(in map[string]string) map[string]bool {
+	cur := make(map[string]string, len(t.Inputs))
+	asked := make(map[string]bool, len(t.Inputs))
+	for _, input := range t.Inputs {
+		if !input.When.Holds(cur) {
+			cur[input.Name], asked[input.Name] = "", false
+			continue
+		}
+		v := strings.TrimSpace(in[input.Name])
+		if v == "" {
+			v = input.Default
+		}
+		cur[input.Name], asked[input.Name] = v, true
+	}
+	return asked
 }
 
 var alphabets = map[string]string{
@@ -161,16 +192,22 @@ func sample(r io.Reader, alphabet string, length int) (string, error) {
 	return string(out), nil
 }
 
+// previewStandIn takes the place of a secret the owner typed, in a preview.
+const previewStandIn = "preview"
+
 // PreviewValues returns values for a preview: the checked inputs, with each
-// secret input and each generated secret empty. A preview makes nothing.
+// secret input that was typed a stand-in and each generated secret empty. A
+// preview makes nothing, and shows secret names only.
 func (t Template) PreviewValues(inputs map[string]string) map[string]string {
 	values := maps.Clone(inputs)
 	if values == nil {
 		values = map[string]string{}
 	}
 	for _, in := range t.Inputs {
-		if in.Type == TypeSecret {
-			values[in.Name] = ""
+		if in.Type == TypeSecret && values[in.Name] != "" {
+			// Not the secret: a stand-in, so a condition that asks "is it given?"
+			// reads as it will at install. The preview shows secret names only.
+			values[in.Name] = previewStandIn
 		}
 	}
 	for _, g := range t.Generated {
@@ -233,12 +270,20 @@ func (t Template) Render(values map[string]string) (compose.Request, error) {
 		return ""
 	}
 
-	req := compose.Request{Compose: substitute(t.Compose, values, missing)}
+	text, err := applyMarkers(t.Compose, values)
+	if err != nil {
+		var me *MarkerError
+		if errors.As(err, &me) {
+			return compose.Request{}, defect(t, "compose", "line %d: %s", me.Line, me.Message)
+		}
+		return compose.Request{}, err
+	}
+	req := compose.Request{Compose: substitute(text, values, missing)}
 	if len(t.Services) > 0 {
 		req.Services = make(map[string]compose.Overlay, len(t.Services))
 	}
 	for svc, ov := range t.Services {
-		ov = cloneOverlay(ov)
+		ov = t.keptItems(svc, cloneOverlay(ov), values)
 		for _, ref := range overlayStrings(&ov) {
 			*ref.s = substitute(*ref.s, values, missing)
 		}
@@ -250,6 +295,35 @@ func (t Template) Render(values map[string]string) (compose.Request, error) {
 	return req, nil
 }
 
+// keep is items without those whose condition (the i-th of conds) doesn't
+// hold; nil when none is left.
+func keep[T any](items []T, conds []Condition, values map[string]string) []T {
+	if len(conds) == 0 {
+		return items
+	}
+	var out []T
+	for i, it := range items {
+		if i < len(conds) && conds[i] != nil && !conds[i].Holds(values) {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+// keptItems drops the items of a service's lists whose condition doesn't hold.
+func (t Template) keptItems(svc string, ov compose.Overlay, values map[string]string) compose.Overlay {
+	w := t.ItemWhens[svc]
+	if len(w) == 0 {
+		return ov
+	}
+	ov.Domains = keep(ov.Domains, w["domains"], values)
+	ov.Secrets = keep(ov.Secrets, w["secrets"], values)
+	ov.Identities = keep(ov.Identities, w["identities"], values)
+	ov.Publish = keep(ov.Publish, w["publish"], values)
+	return ov
+}
+
 // RenderNotes shows the template's notes with the plain inputs filled in. A
 // name without a value reads as <your label>, so the page can show the notes
 // before anything is typed.
@@ -258,7 +332,13 @@ func (t Template) RenderNotes(inputs map[string]string) string {
 	for _, in := range t.Inputs {
 		labels[in.Name] = in.Label
 	}
-	return substitute(t.Notes, inputs, func(name string) string {
+	given := make(map[string]string, len(inputs))
+	for k, v := range inputs {
+		if v != "" {
+			given[k] = v
+		}
+	}
+	return substitute(t.Notes, given, func(name string) string {
 		label := labels[name]
 		if label == "" {
 			label = name
@@ -268,14 +348,17 @@ func (t Template) RenderNotes(inputs map[string]string) string {
 }
 
 // ExampleInputs are answers that pass CheckInputs: each input's default, else
-// its example.
+// its example, else a choice's first answer. An optional input is given too.
 func (t Template) ExampleInputs() map[string]string {
 	out := make(map[string]string, len(t.Inputs))
 	for _, in := range t.Inputs {
-		if in.Default != "" {
+		switch {
+		case in.Default != "":
 			out[in.Name] = in.Default
-		} else {
+		case in.Example != "":
 			out[in.Name] = in.Example
+		case in.Type == TypeChoice && len(in.Choices) > 0:
+			out[in.Name] = in.Choices[0].Value
 		}
 	}
 	return out
@@ -283,8 +366,21 @@ func (t Template) ExampleInputs() map[string]string {
 
 // DomainInputs maps the overlay path of each domain host that is exactly one
 // domain input ("services.hollo.domains[0].host") to that input's name, so a
-// refusal at that path can be shown at the input the owner typed (R5).
-func (t Template) DomainInputs() map[string]string {
+// refusal at that path can be shown at the input the owner typed (R5). The
+// paths are those of the template's own list: see DomainInputsFor for a
+// template whose domains have conditions.
+func (t Template) DomainInputs() map[string]string { return t.domainInputs(nil) }
+
+// DomainInputsFor is DomainInputs for the app these answers make: a domain
+// whose condition doesn't hold is gone, so the ones after it have moved up.
+func (t Template) DomainInputsFor(values map[string]string) map[string]string {
+	if len(t.ItemWhens) == 0 {
+		return t.domainInputs(nil)
+	}
+	return t.domainInputs(values)
+}
+
+func (t Template) domainInputs(values map[string]string) map[string]string {
 	domainInput := map[string]bool{}
 	for _, in := range t.Inputs {
 		if in.Type == TypeDomain {
@@ -293,7 +389,11 @@ func (t Template) DomainInputs() map[string]string {
 	}
 	out := map[string]string{}
 	for svc, ov := range t.Services {
-		for i, d := range ov.Domains {
+		domains := ov.Domains
+		if values != nil {
+			domains = keep(domains, t.ItemWhens[svc]["domains"], values)
+		}
+		for i, d := range domains {
 			m := placeholderRE.FindStringSubmatch(d.Host)
 			if m != nil && m[0] == d.Host && domainInput[m[1]] {
 				out[fmt.Sprintf("services.%s.domains[%d].host", svc, i)] = m[1]

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.64.0
+  version: 0.65.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -10211,19 +10211,105 @@ components:
         label: {type: string}
         type:
           type: string
-          enum: [domain, email, text, secret]
+          enum: [domain, email, text, secret, choice]
           description: |
             `domain`: a host name (lowercased). `email`. `text`: matches `pattern` entirely.
-            `secret`: 1 to 4096 bytes on one line, only ever sent to the secret store. Every
-            other type may only hold letters, digits and `. _ @ + : / = -`.
+            `secret`: 1 to 4096 bytes on one line, only ever sent to the secret store. `choice`
+            (catalog format 2): one of `choices`' values. Every other type may only hold letters,
+            digits and `. _ @ + : / = -`.
         help: {type: string}
         default:
           type: string
-          description: Used when the answer is empty. Never on a `secret`.
+          description: Used when the answer is empty. Never on a `secret`; on a `choice` it is one of the values.
         pattern:
           type: string
           description: A Go regular expression, for `text` only.
         example: {type: string}
+        required:
+          type: boolean
+          description: |
+            Catalog format 2. `false` lets the owner leave the input empty (when it is asked and has no
+            default); an empty optional input renders as an empty string. Absent means `true`: an empty
+            answer is refused with `invalid_field` on `inputs.<name>`.
+        choices:
+          type: array
+          minItems: 2
+          maxItems: 8
+          description: The answers of a `choice` input, in the order the console shows them.
+          items:
+            $ref: "#/components/schemas/TemplateChoice"
+        when:
+          $ref: "#/components/schemas/TemplateCondition"
+
+    TemplateChoice:
+      type: object
+      additionalProperties: false
+      required: [value, label]
+      properties:
+        value:
+          type: string
+          pattern: "^[a-z][a-z0-9_-]{0,31}$"
+          description: What is sent in `inputs` and what a `{{placeholder}}` renders.
+        label:
+          type: string
+          maxLength: 40
+
+    TemplateCondition:
+      type: object
+      minProperties: 1
+      description: |
+        Catalog format 2: the thing it is on is there only when every named input has the given answer.
+        The keys are input names; each value is `true` (the input is not empty), one answer, or a list of
+        answers (a choice input has one of them). On an input, the names are earlier `choice` inputs and the
+        input is asked only when the condition holds; an input that isn't asked is empty, and anything sent
+        for it in `inputs` is ignored (never checked, rendered or kept). On an item of a service's lists the
+        item is dropped from the rendered overlay when it doesn't hold. The same words end a line of the
+        template's Compose file as a `# when signin=github` comment.
+      additionalProperties:
+        oneOf:
+          - type: boolean
+            const: true
+          - type: string
+          - type: array
+            minItems: 1
+            items: {type: string}
+
+    TemplateOverlay:
+      type: object
+      description: |
+        The overlay of one service, as `ComposeOverlay` has it, with `{{placeholders}}` unrendered. Each
+        item of `domains`, `secrets`, `identities` and `publish` also may have `when`
+        (`TemplateCondition`); the rendered overlay that is deployed has none.
+      properties:
+        domains:
+          type: array
+          items: {$ref: "#/components/schemas/TemplateOverlayItem"}
+        health:
+          type: object
+        secrets:
+          type: array
+          items: {$ref: "#/components/schemas/TemplateOverlayItem"}
+        backup:
+          $ref: "#/components/schemas/BackupPolicy"
+        identities:
+          type: array
+          items: {$ref: "#/components/schemas/TemplateOverlayItem"}
+        placement:
+          $ref: "#/components/schemas/Placement"
+        scale:
+          $ref: "#/components/schemas/ServiceScale"
+        disconnect:
+          $ref: "#/components/schemas/ServiceDisconnect"
+        publish:
+          type: array
+          items: {$ref: "#/components/schemas/TemplateOverlayItem"}
+
+    TemplateOverlayItem:
+      type: object
+      description: An item of a list of `ComposeOverlay` (a domain, a secret, an identity or a published port), and its `when`.
+      properties:
+        when:
+          $ref: "#/components/schemas/TemplateCondition"
 
     TemplateGenerated:
       type: object
@@ -10275,10 +10361,13 @@ components:
           type: object
           description: The overlay per service of the Compose file, with its `{{placeholders}}` unrendered.
           additionalProperties:
-            $ref: "#/components/schemas/ComposeOverlay"
+            $ref: "#/components/schemas/TemplateOverlay"
         compose:
           type: string
-          description: The Compose file with its `{{placeholders}}`.
+          description: |
+            The Compose file with its `{{placeholders}}`. In catalog format 2 a single-line entry may end
+            with a `# when signin=github` marker comment (see `TemplateCondition`); the rendered file
+            has none.
         hasLogo: {type: boolean}
         available: {type: boolean}
         unavailable: {type: string}
@@ -10293,7 +10382,11 @@ components:
           description: The new app's ID, as `deployApp`'s path has it (`AppID`).
         inputs:
           type: object
-          description: The answers by input name. An empty answer takes the input's default.
+          description: |
+            The answers by input name; a `choice` input's answer is one of its values. An empty answer takes
+            the input's default. An input that is not asked (its `when` doesn't hold for the earlier answers)
+            may be sent and is ignored; one that is asked and has no default is required unless
+            `required` is `false`.
           additionalProperties: {type: string}
         withoutBackups:
           type: boolean

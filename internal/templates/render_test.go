@@ -361,7 +361,7 @@ func TestExampleInputsAndPreviewValues(t *testing.T) {
 	}
 
 	pv := tpl.PreviewValues(map[string]string{"domain": "a.example.com", "api_key": "typed"})
-	if pv["api_key"] != "" || pv["db_password"] != "" || pv["domain"] != "a.example.com" {
+	if pv["api_key"] != previewStandIn || pv["db_password"] != "" || pv["domain"] != "a.example.com" {
 		t.Errorf("PreviewValues = %v", pv)
 	}
 	if _, err := tpl.Render(pv); err == nil {
