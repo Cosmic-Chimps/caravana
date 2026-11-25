@@ -67,11 +67,14 @@ var consoleParity = map[string]parity{
 	"GET /settings/notifications": {ops: settingsReads},
 	// Certificates (feature 023): the table is listCertificates; the issuer, the contact email and Warn when are getCertificateSettings.
 	// Feature 034: the uploaded certificates are listUploadedCertificates, and the forms upload, remove and set the issuer.
-	"GET /settings/certificates":                       {ops: append([]string{"getCertificateSettings", "listUploadedCertificates"}, settingsReads...)},
+	// Feature 056: the page lists the drops (listCertificateDrops), the button is dropEarlierCertificates and the panel's part is getCertificateDrop.
+	"GET /settings/certificates":                       {ops: append([]string{"getCertificateSettings", "listUploadedCertificates", "listCertificateDrops"}, settingsReads...)},
 	"POST /settings/certificates":                      {ops: []string{"putCertificateSettings"}},
 	"POST /settings/certificates/upload":               {ops: []string{"uploadCertificate"}},
 	"POST /settings/certificates/uploaded/{id}/remove": {ops: []string{"deleteUploadedCertificate"}},
 	"POST /settings/certificates/issuer":               {ops: []string{"putCertificateIssuer", "deleteCertificateIssuer"}},
+	"POST /settings/certificates/drop":                 {ops: []string{"dropEarlierCertificates"}},
+	"GET /parts/settings/certificates/drop":            {ops: []string{"getCertificateDrop"}},
 	"GET /settings/tokens":                             {ops: append([]string{"listProjects"}, settingsReads...)},
 	// Appearance (feature 028): the theme is a preference of the browser, kept in its own cookie, like
 	// the Developer/Operator view; the API has no look and nothing to read or change for it.

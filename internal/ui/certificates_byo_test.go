@@ -215,7 +215,7 @@ func TestUploadedRowSaysWhatItServesAndWhatStaysEarlier(t *testing.T) {
 	}
 	got := text(e.pageOf(t, "/settings/certificates"))
 	for _, want := range []string{"Serves a.byo.test.", "Still on their earlier certificate: b.byo.test, c.byo.test.",
-		"Traefik keeps a certificate it already has: run the installer again on this server to drop it."} {
+		"Traefik keeps a certificate it already has: drop the earlier certificates, below, to serve this one."} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the page lacks %q:\n%s", want, got)
 		}

@@ -685,6 +685,16 @@
 {{end}}
 {{end}}
 
+{{/* cert-drop: the inside of the drop's panel (feature 056): the status, one sentence and when. It holds the
+     names of what was dropped and the record's sentence, never a certificate. Takes a certDropView. */}}
+{{define "cert-drop"}}
+<div class="cv-def">
+  <p>{{template "status-pill" .Status}}</p>
+  <p class="text-base text-fg-1" role="status">{{template "sentence" .Summary}}</p>
+  {{if .ID}}<p class="text-sm text-fg-2">Asked {{template "clock" .Asked}}{{with .Actor}} by {{.}}{{end}}{{if .HasEnded}}, ended {{template "clock" .Ended}}{{end}}.</p>{{end}}
+</div>
+{{end}}
+
 {{/* ------------------------------------------------------------ Certificates
      Feature 023: the certificate each domain's last check found, problems first, and how they are
      issued. The issuer and the contact email are Traefik's static configuration (set by the
@@ -770,6 +780,20 @@
     <p class="cv-empty-title">No uploaded certificates.</p>
     <p class="cv-empty-text">Upload one to use a certificate you bought, or your company's.</p>
   </div></div>
+  {{end}}
+  {{with .Drop}}
+  <div id="drop" class="cv-panel" aria-live="polite"{{if .Open}} hx-get="{{.PartHref}}" hx-trigger="every 3s" hx-swap="innerHTML"{{end}}>{{template "cert-drop" .}}</div>
+  {{end}}
+  {{if or .CanDrop .DropRefusal}}
+  <div id="drop-form">
+    {{with .DropRefusal}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+    {{if .CanDrop}}
+    <form method="post" action="/settings/certificates/drop" class="cv-actions">
+      <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Drop the earlier certificates</button>
+      <p class="cv-hint">Traefik restarts once: a few seconds without HTTPS.</p>
+    </form>
+    {{end}}
+  </div>
   {{end}}
   {{if .UploadWhy}}
   <p class="cv-hint" id="upload-unavailable">{{.UploadWhy}}</p>

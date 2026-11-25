@@ -344,6 +344,8 @@ func (s *server) routeTable() []route {
 		{"POST", "/settings/certificates/upload", s.protected(s.requireSession(s.uploadCertificate))},
 		{"POST", "/settings/certificates/uploaded/{id}/remove", s.protected(s.requireSession(s.removeUploadedCertificate))},
 		{"POST", "/settings/certificates/issuer", s.protected(s.requireSession(s.setCertificateIssuer))},
+		{"POST", "/settings/certificates/drop", s.protected(s.requireSession(s.dropCertificates))},
+		{"GET", "/parts/settings/certificates/drop", s.requirePart(s.partCertificateDrop)},
 		{"POST", "/settings/dns", s.protected(s.requireSession(s.saveDNSZone))},
 		{"POST", "/settings/dns/test", s.protected(s.requireSession(s.testDNSZone))},
 		{"POST", "/settings/dns/remove", s.protected(s.requireSession(s.removeDNSZone))},

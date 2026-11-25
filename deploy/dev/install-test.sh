@@ -235,8 +235,9 @@ for r in (json.load(sys.stdin) or {}).values():
 # caravana/certificates/*; a certificate uploaded through the API (from a private CA made here) is served on
 # 443 for $APP, which it covers, without a Traefik restart, and its key reaches neither Traefik's job nor
 # Caravana's journal; an ACME certificate Traefik held for $APP before the upload is dropped by a rerun of
-# VERSION's installer, which says so, and the store keeps the one it doesn't cover; removing the upload
-# gives $APP back to Traefik. Needs TOKEN and whoami answering on $APP.
+# VERSION's installer, which says so, and the store keeps the one it doesn't cover; the same through the API
+# (feature 056: POST /v1/certificates/drops, the agent drops it, Traefik's task restarts once in place, a second
+# drop finds nothing); removing the upload gives $APP back to Traefik. Needs TOKEN and whoami answering on $APP.
 check_certificates_host() {
   local ver="$1" policy out code body id alloc0 end keyline mode0 hosts
   policy="$(vm sudo caravana-nomad acl policy info traefik-read)"
@@ -285,6 +286,47 @@ check_certificates_host() {
   done
   out="$(install "$ver")" || { echo "$out"; die "the second rerun failed"; }
   ! grep -q 'dropped the earlier certificates' <<<"$out" || die "a second rerun dropped something again:\n$out"
+
+  say "the console's button drops an earlier certificate the same way, and restarts Traefik once"
+  vm sudo python3 -I "$WORK/certs/acme-inject.py" /var/lib/caravana-host/traefik/acme.json "$WORK/certs/acme-fake.json" ||
+    die "couldn't write the fake ACME certificates into Traefik's store again"
+  hosts="$(acme_store_hosts)"
+  { grep -qx "$APP" <<<"$hosts" && grep -qx other.test <<<"$hosts"; } || die "the store should hold $APP and other.test again:\n$hosts"
+  mode0="$(vm sudo stat -c '%a %U' /var/lib/caravana-host/traefik/acme.json)"
+  alloc0="$(traefik_alloc)"
+  started0="$(traefik_started)" || die "couldn't read when Traefik's task started"
+  # The agent says it holds the store with its next report (every 30 s): an answer of no_agent is tried again.
+  end=$((SECONDS + 120))
+  while :; do
+    out="$(api -X POST -w '\n%{http_code}' "https://$DOMAIN/v1/certificates/drops")"
+    code="${out##*$'\n'}" body="${out%$'\n'*}"
+    [ "$code" = 409 ] && grep -q '"no_agent"' <<<"$body" && [ "$SECONDS" -lt "$end" ] || break
+    sleep 5
+  done
+  [ "$code" = 202 ] || die "dropping the earlier certificates should be 202, got $code: $body"
+  id="$(jsonq 'd["id"]' <<<"$body")"
+  wait_certificate_drop "$id" 180
+  [ "$(jsonq '",".join(d["dropped"])' <<<"$DROP_BODY")" = "$APP" ] ||
+    die "the drop should name $APP and not other.test:\n$DROP_BODY"
+  hosts="$(acme_store_hosts)"
+  ! grep -qx "$APP" <<<"$hosts" || die "the store still holds the ACME certificate of $APP after the drop:\n$hosts"
+  grep -qx other.test <<<"$hosts" || die "the drop removed other.test from the store:\n$hosts"
+  [ "$(vm sudo stat -c '%a %U' /var/lib/caravana-host/traefik/acme.json)" = "$mode0" ] || die "the drop changed the store's mode or owner"
+  [ "$(traefik_alloc)" = "$alloc0" ] || die "Traefik's allocation changed: a restart through Nomad is in place"
+  [ "$(traefik_started)" != "$started0" ] || die "Traefik's task wasn't restarted by the drop (it started at $started0 and still did)"
+  end=$((SECONDS + 120))
+  until app_verified; do
+    [ "$SECONDS" -lt "$end" ] || die "after the drop Traefik should serve the uploaded certificate for $APP within 2 minutes"
+    sleep 3
+  done
+  # Nothing is covered now: a second drop ends done with no names, and leaves Traefik running as it was.
+  started0="$(traefik_started)" || die "couldn't read when Traefik's task started"
+  out="$(api -X POST -w '\n%{http_code}' "https://$DOMAIN/v1/certificates/drops")"
+  code="${out##*$'\n'}" body="${out%$'\n'*}"
+  [ "$code" = 202 ] || die "a second drop should be 202, got $code: $body"
+  wait_certificate_drop "$(jsonq 'd["id"]' <<<"$body")" 180
+  [ "$(jsonq 'len(d["dropped"])' <<<"$DROP_BODY")" = 0 ] || die "a second drop should name nothing:\n$DROP_BODY"
+  [ "$(traefik_started)" = "$started0" ] || die "a drop with nothing to drop restarted Traefik"
 
   say "removing the upload gives $APP back to Traefik's own certificate"
   code="$(api -o /dev/null -w '%{http_code}' -X DELETE "https://$DOMAIN/v1/certificates/uploaded/$id")"
@@ -741,6 +783,30 @@ ca_call() {
 # traefik_alloc: the ID of Traefik's running allocation, to see that nothing restarted it.
 traefik_alloc() {
   vm sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}} {{end}}{{end}}' traefik | awk '{print $1}'
+}
+
+# traefik_started: when the task of Traefik's running allocation last started. A restart through Nomad is in
+# place (the allocation stays) and moves this. The answer is read into a variable before it is parsed: under
+# pipefail, a reader that leaves early can fail the pipeline through SIGPIPE.
+traefik_started() {
+  local json
+  json="$(vm sudo caravana-nomad alloc status -json "$(traefik_alloc)")" || return 1
+  jsonq 'd["TaskStates"]["traefik"]["StartedAt"]' <<<"$json"
+}
+
+# wait_certificate_drop ID SECONDS: wait until the drop is done and leave its answer in DROP_BODY. A drop that
+# fails or is lost, or isn't done in time, fails the check. Traefik restarts during a drop, and the API is
+# reached through it, so a call that gets no answer is tried again.
+DROP_BODY=""
+wait_certificate_drop() {
+  local id="$1" end=$((SECONDS + $2)) status=""
+  until [ "$status" = "done" ]; do
+    case "$status" in failed | lost) die "the drop should be done, it is $status:\n$DROP_BODY" ;; esac
+    [ "$SECONDS" -lt "$end" ] || die "the drop should be done within $2 s; last seen: ${status:-nothing}\n$DROP_BODY"
+    sleep 3
+    DROP_BODY="$(api -sS "https://$DOMAIN/v1/certificates/drops/$id" 2>/dev/null || true)"
+    status="$(jsonq 'd["status"]' <<<"$DROP_BODY" 2>/dev/null || true)"
+  done
 }
 
 # console_change_status HOST ID: the status of a change of the console's address, or nothing while Caravana

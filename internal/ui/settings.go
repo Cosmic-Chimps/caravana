@@ -266,6 +266,9 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 			return
 		}
 		data.Certificates = cert
+		if cert.Drop != nil && cert.Drop.Open {
+			data.Refresh = certDropRefreshSeconds
+		}
 	case entryPeople:
 		data.People.Errors = cmpMap(data.People.Errors)
 		people, err := s.peopleSection(r, data.People)

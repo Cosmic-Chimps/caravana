@@ -70,6 +70,14 @@ type certificatesData struct {
 	// IssuerSaved draws the notice of a saved issuer, which names the issuer.
 	IssuerSaved bool
 
+	// Dropping the earlier certificates (feature 056). Drop is the panel of the drop it tells about (nil
+	// for none); DropID is the drop the address names; CanDrop says the button is drawn (a host is still
+	// on its earlier certificate and no drop is open); DropRefusal is the sentence of a refused post.
+	Drop        *certDropView
+	DropID      string
+	CanDrop     bool
+	DropRefusal sentence
+
 	// The issuer. IssuerValue and IssuerNote are its row; Issue is the Change issuer form.
 	IssuerValue string
 	IssuerNote  string
@@ -255,6 +263,12 @@ func (s *server) certificatesSection(ctx context.Context, now time.Time, f setti
 		data.Email = "not set"
 	}
 	s.uploadsSection(&data, now, cs, uploaded)
+	drops, err := s.svc.CertificateDrops(ctx)
+	if err != nil {
+		return form, err
+	}
+	data.Drop = certDropPanel(now, drops, form.DropID)
+	data.CanDrop = data.CanDrop && (data.Drop == nil || !data.Drop.Open)
 	issuerFormOf(&data, cs)
 	if data.IssuerSaved {
 		where := cs.IssuerName
@@ -312,6 +326,7 @@ func (s *server) showCertificates(w http.ResponseWriter, r *http.Request, sessio
 	case q.Get("upload") == "removed":
 		data.Certificates.UploadedNotice = "Removed. Its hosts go back to their earlier certificate once Traefik has noticed."
 	}
+	data.Certificates.DropID = q.Get("drop")
 	if key := q.Get("preset"); key != "" {
 		for _, p := range service.ACMEPresets {
 			if p.Key == key {
@@ -361,6 +376,9 @@ func (s *server) uploadsSection(data *certificatesData, now time.Time, cs servic
 	}
 	for _, u := range list {
 		data.Uploads = append(data.Uploads, uploadedRowOf(now, u, back))
+		if len(u.KeptEarlier) > 0 {
+			data.CanDrop = true
+		}
 		if u.ID == data.UploadedID && data.UploadedNotice != "" {
 			data.UploadedNotice = "Uploaded. It covers " + strings.Join(u.Names, ", ") + "."
 			if data.UploadReplaced {
@@ -427,7 +445,7 @@ func uploadedRowOf(now time.Time, u service.UploadedCertificateView, back string
 				plain(": upload a certificate that covers them too."))
 		}
 		if plainKept {
-			row.Kept = append(row.Kept, plain(" Traefik keeps a certificate it already has: run the installer again on this server to drop it."))
+			row.Kept = append(row.Kept, plain(" Traefik keeps a certificate it already has: drop the earlier certificates, below, to serve this one."))
 		}
 	}
 	return row

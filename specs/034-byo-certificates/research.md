@@ -59,8 +59,8 @@ is skipped. **Decisions**: (1) an upload with exactly the names of an earlier up
 (2) Caravana reports covered hosts that still present another certificate (`keptEarlier`), from the real
 handshake; (3) the installer, which already stops Traefik to reset the store on a change of `--acme`, drops
 from every store file the ACME certificates whose every name is covered by an uploaded one. Caravana can't
-do (3) itself: the store is a host volume its policy denies, on purpose. A console action for it is a
-follow-up task.
+do (3) itself: the store is a host volume its policy denies, on purpose. The console's action for it is
+feature 056 (`specs/056-drop-earlier-certificates`): the server agent drops them and Caravana restarts Traefik.
 
 ## R6 · Certificates as content, in `secrets/`
 

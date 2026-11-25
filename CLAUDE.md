@@ -2279,6 +2279,46 @@ doc: `docs/people.md`. Migration 0043, API 0.60.0 (0.59.0 is 053, secret templat
 - Not in 053: single sign-on, custom roles, teams, an audit log, per-project Nomad namespaces, sending the invite by mail, a roles page per
   app, and an invite for someone who already has an account.
 
+Feature 056 (`specs/056-drop-earlier-certificates`, CodeAlta task `69pt`, worktree branch `alta/hushed-mistral-bf5s`, phases A to C, a follow-up of 034's
+research R5): Settings › Certificates drops the ACME certificates an upload covers, so a host that kept its earlier certificate presents the upload, and
+the console still never gets root. `plan.md` D1–D12 are the decisions; operator doc: the section "When a domain still shows its earlier certificate" of
+`docs/certificates.md`. Migration 0045, API 0.62.0, no new module, no policy change (Traefik is restarted with `alloc-lifecycle`, in the policy since 016).
+- The agent does it (D1, `internal/nodeagent/certdrop.go`): Traefik's store is the folder `/var/lib/caravana-host/traefik` of the first server. The sync answer's
+  `certificateDrop {id, names}` is an ID and names, nothing else: the ID must be 32 hex digits (else ignored with a stderr line), the names 1–1000 lowercase host
+  names or `*.` and one (`nodeagent.ValidDropName`; else the outcome is `refused`). `DropCovered` removes a stored certificate when every name (`domain.main`,
+  `sans`, lower-cased, and each a host name) is covered by `certs.Covers`, keeping every other JSON member as it was; it runs over `acme.json` and
+  `acme-<12 hex>.json` (regular files only, at most 32 MiB), checks all files before writing any, and rewrites a changed one through a temporary file and a
+  rename with its mode and owner (`rewriteFile`). The outcome (`running`, `dropped`, `nothing`, `failed`, `refused`; `dropped` lists each certificate as its
+  names joined with `+`) is kept in `state.json` and in the report beside `traefikStore` (the folder exists). A run found `running` goes again and says
+  `dropped`, with no names when nothing is left, since its files may be rewritten already. After a run that dropped, `Sync` posts the report once more at once,
+  so Traefik is restarted within a second. Nothing of a certificate, key or account is printed, logged or reported (sentinel tests).
+- The same rule is `caravana node drop-certificates --names a,b,*.c [--dry-run]` (prints the dropped names on one line), which `install.sh`'s
+  `drop_covered_acme_certificates` calls instead of its Python (so the installer no longer needs `python3`; it passes only the names that look like host names).
+- The record (`service/certificatedrops.go`, migration 0045 `certificate_drops`, one open drop in all): `RequestCertificateDrop` (admin) needs an upload with a
+  name the agent accepts (`ErrNoUploadedCertificates`), the first server's ready, fresh agent saying `traefikStore` (else `*DropNoAgentError`, `ErrNoAgent`, "run
+  the installer on server X") and no open drop (`ErrCertificateDropRunning`). `certificateDropHandoff` in `NodeSync` hands only the first server's agent the
+  request (names read at that moment), marks `requested` as `running`, and settles from the report: `dropped` → `restarting`, `nothing` → `done` (its store
+  never rewritten: `rewritten_at` NULL, which is how the console tells it from a restart-only `done`), `failed` and `refused` → `failed` with the agent's
+  sentence. `validateReport` checks the block (32 hex ID, one of five states, at most 100 entries of host names joined with `+`, a printable reason of at most
+  300 bytes). Restarting runs in the background (`ProxyCopy`, `RestartCopy`): the drop is `done` when Traefik's task started after `rewritten_at`, whoever
+  restarted it, and the covered hosts are checked again. A pass every minute (`SetCertificateDropPassGap`) fails a request nobody picked up in 10 minutes,
+  loses a run with no outcome after 10, and retries a restart that didn't finish and fails it after 10 with what the owner is left with. A status change
+  publishes `ChangeServers`.
+- API 0.62.0: `dropEarlierCertificates` (`POST /v1/certificates/drops`, 202, `Location`), `listCertificateDrops`, `getCertificateDrop`, schema `CertificateDrop`, the
+  sync report's `traefikStore` and `certificateDrop` and the answer's `certificateDrop`, codes `no_uploaded_certificates`, `certificate_drop_running`,
+  `certificate_drop_not_found` (and `no_agent`, with no field). Admin only; deploy tokens are denied by the default deny.
+- Console (`internal/ui/certdrop.go`): under the uploaded certificates, while a host is on its earlier certificate and no drop is open, the form
+  `POST /settings/certificates/drop` ("Drop the earlier certificates", "Traefik restarts once: a few seconds without HTTPS.") answers 303 to
+  `/settings/certificates?drop=<id>#drop`; a refusal draws the page again with 409 and its sentence at the form. The panel `#drop` (the drop the address names, else the
+  newest while it is open or ended within the hour) is read again from `/parts/settings/certificates/drop` every 3 s while open and answers 286 once it isn't, with a
+  `noscript` refresh. Forms work without JavaScript; both routes are admin rules.
+- Tests: `nodeagent` (the rule's table, the folder walk, the outcomes, a run again, the second post, no leak), `cmd/caravana`, `store`, `service`
+  (every refusal, the hand-off, each settling, the restart, the pass's deadlines, no PEM through a report), `api` (the real agent end to end against a store with
+  sentinels), `ui` (`certdrop_test.go`, the walk and parity tables). `deploy/dev/install-test.sh`'s `check_certificates_host` has a console drop after its rerun
+  drop (written and shellchecked; the run on a VM, `ONLY=certificates`, is still to be made).
+- Not in 056: dropping a certificate that also names a host no upload covers (Traefik would order it again, 034 R4), choosing which to drop, any other change of
+  Traefik's store, a store on a server that isn't the ingress.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

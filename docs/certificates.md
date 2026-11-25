@@ -71,10 +71,22 @@ log or export shows it. At most 30 certificates can be uploaded.
 Traefik keeps a certificate it already has. If a domain had a Let's Encrypt certificate before you uploaded
 one that covers it (or was added in the few seconds before Traefik picked the upload up: upload first, then
 add the domains), Traefik goes on serving and renewing the earlier one, and the uploaded certificate's row
-says "Still on their earlier certificate". Run the installer again on the server: it drops the ACME
-certificates whose every name an uploaded certificate covers, and says which.
+says "Still on their earlier certificate". Press **Drop the earlier certificates** under the uploaded
+certificates on Settings › Certificates. The agent on the first server removes from Traefik's store every ACME
+certificate whose every name an uploaded certificate covers, and Caravana then restarts Traefik once: a few
+seconds without HTTPS. The page follows it (waiting for the agent, dropping, restarting) and ends in one
+sentence: the names that were dropped, or that every earlier certificate also names a host no upload covers, or
+why it failed. Only names travel between the agent and Caravana, never a certificate or a key. It needs the
+first server's agent to be up to date and to have reported lately; if it isn't, the page says to run the
+installer on that server. The API is `POST /v1/certificates/drops` (an administrator's, 202; read it with
+`GET /v1/certificates/drops/{id}`).
 
-One case the installer can't fix: a service whose domains are partly covered by the upload. Traefik asks the
+If Traefik obtains or renews a certificate in the seconds between the rewrite and its restart, it writes its old
+store back and the drop doesn't hold: the row still lists the host after the check that follows, so press the
+button again. Running the installer again on the server does the same drop and says which certificates it
+dropped.
+
+One case dropping can't fix: a service whose domains are partly covered by the upload. Traefik asks the
 ACME issuer for all the names of a route together, so its certificate names the covered one too, and wins.
 The uploaded certificate's row names the domain and the other names of its route. Upload a certificate that
 covers every domain of the service (a bought wildcard usually also names the apex:

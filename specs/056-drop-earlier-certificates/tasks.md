@@ -31,9 +31,9 @@ Plan: `plan.md` (D1–D12). Each phase ends with `go build ./...`, `go vet ./...
 
 ## Phase C: the console, docs and the VM check
 
-- [ ] T010 `internal/ui/certificates.go` and `templates/settings.html`: the form, the panel and its part (D11),
+- [x] T010 `internal/ui/certificates.go` and `templates/settings.html`: the form, the panel and its part (D11),
   `consoleAccess`, `tools/ui-css.sh build` if styles change.
-- [ ] T011 Docs: `docs/certificates.md`, research R5's pointer, `changelog.d/056-drop-earlier-certificates.md`,
+- [x] T011 Docs: `docs/certificates.md`, research R5's pointer, `changelog.d/056-drop-earlier-certificates.md`,
   CLAUDE.md's paragraph.
-- [ ] T012 `deploy/dev/install-test.sh`: the console drop in `check_certificates_host` (D12); shellcheck.
+- [x] T012 `deploy/dev/install-test.sh`: the console drop in `check_certificates_host` (D12); shellcheck.
 - [ ] T013 Run `ONLY=certificates deploy/dev/install-test.sh` on a VM.

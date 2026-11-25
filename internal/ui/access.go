@@ -507,6 +507,8 @@ var consoleAccess = map[string]accessRule{
 	"POST /settings/certificates/upload":               admin(),
 	"POST /settings/certificates/uploaded/{id}/remove": admin(),
 	"POST /settings/certificates/issuer":               admin(),
+	"POST /settings/certificates/drop":                 admin(),
+	"GET /parts/settings/certificates/drop":            admin(),
 	"POST /settings/dns":                               admin(),
 	"POST /settings/dns/test":                          admin(),
 	"POST /settings/dns/remove":                        admin(),
