@@ -241,7 +241,7 @@ func TestInstallFromTemplatePageWithChoices(t *testing.T) {
 		if strings.Contains(rec.Compose.Compose, "GITHUB") || !strings.Contains(rec.Compose.Compose, "OTHER_ID") {
 			t.Errorf("the kept file:\n%s", rec.Compose.Compose)
 		}
-		resp, page := e.get(t, next)
+		_, page := e.get(t, next)
 		pages = append(pages, page)
 		if !strings.Contains(text(page), "Sign in at https://who.example.com with bitbucket.") {
 			t.Errorf("the notes after the install:\n%s", text(page))

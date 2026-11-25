@@ -193,12 +193,3 @@ func putWhens(overlay json.RawMessage, whens map[string][]Condition) (json.RawMe
 func isUnknownField(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "unknown field")
 }
-
-// whenOf is the condition of item i of a service's list, or nil.
-func (t Template) whenOf(service, field string, i int) Condition {
-	conds := t.ItemWhens[service][field]
-	if i < len(conds) {
-		return conds[i]
-	}
-	return nil
-}

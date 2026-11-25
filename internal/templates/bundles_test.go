@@ -75,17 +75,16 @@ func sourceWithFormat2(t *testing.T) fstest.MapFS {
 	t.Helper()
 	fsys := sourceOf(t)
 	add := func(name string, tpl Template, v1 bool) {
-		manifest, err := json.MarshalIndent(tpl, "", "  ")
-		if err != nil {
-			t.Fatal(err)
-		}
 		file, composeFile := "template.json", "compose.yaml"
 		if v1 {
 			file, composeFile = "template.v1.json", "compose.v1.yaml"
 		}
 		stripped := tpl
 		stripped.Compose = ""
-		manifest, _ = json.MarshalIndent(stripped, "", "  ")
+		manifest, err := json.MarshalIndent(stripped, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
 		fsys["templates/"+name+"/"+file] = &fstest.MapFile{Data: manifest}
 		fsys["templates/"+name+"/"+composeFile] = &fstest.MapFile{Data: []byte(tpl.Compose)}
 	}
