@@ -36,4 +36,5 @@ Plan: `plan.md` (D1–D12). Each phase ends with `go build ./...`, `go vet ./...
 - [x] T011 Docs: `docs/certificates.md`, research R5's pointer, `changelog.d/056-drop-earlier-certificates.md`,
   CLAUDE.md's paragraph.
 - [x] T012 `deploy/dev/install-test.sh`: the console drop in `check_certificates_host` (D12); shellcheck.
-- [ ] T013 Run `ONLY=certificates deploy/dev/install-test.sh` on a VM.
+- [x] T013 Run `ONLY=certificates deploy/dev/install-test.sh` on a VM. Passed on 2026-11-25 on Ubuntu 24.04 (3 min 17 s), after
+  the check stopped reusing the upload's `id` for the drop's.

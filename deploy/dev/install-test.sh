@@ -239,7 +239,7 @@ for r in (json.load(sys.stdin) or {}).values():
 # (feature 056: POST /v1/certificates/drops, the agent drops it, Traefik's task restarts once in place, a second
 # drop finds nothing); removing the upload gives $APP back to Traefik. Needs TOKEN and whoami answering on $APP.
 check_certificates_host() {
-  local ver="$1" policy out code body id alloc0 end keyline mode0 hosts
+  local ver="$1" policy out code body id drop alloc0 end keyline mode0 hosts
   policy="$(vm sudo caravana-nomad acl policy info traefik-read)"
   grep -qF 'path "caravana/acme"' <<<"$policy" || die "Traefik's policy doesn't read caravana/acme:\n$policy"
   grep -qF 'path "caravana/certificates/*"' <<<"$policy" || die "Traefik's policy doesn't read caravana/certificates/*:\n$policy"
@@ -304,8 +304,8 @@ check_certificates_host() {
     sleep 5
   done
   [ "$code" = 202 ] || die "dropping the earlier certificates should be 202, got $code: $body"
-  id="$(jsonq 'd["id"]' <<<"$body")"
-  wait_certificate_drop "$id" 180
+  drop="$(jsonq 'd["id"]' <<<"$body")"
+  wait_certificate_drop "$drop" 180
   [ "$(jsonq '",".join(d["dropped"])' <<<"$DROP_BODY")" = "$APP" ] ||
     die "the drop should name $APP and not other.test:\n$DROP_BODY"
   hosts="$(acme_store_hosts)"

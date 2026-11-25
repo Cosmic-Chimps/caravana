@@ -2315,7 +2315,7 @@ the console still never gets root. `plan.md` D1–D12 are the decisions; operato
 - Tests: `nodeagent` (the rule's table, the folder walk, the outcomes, a run again, the second post, no leak), `cmd/caravana`, `store`, `service`
   (every refusal, the hand-off, each settling, the restart, the pass's deadlines, no PEM through a report), `api` (the real agent end to end against a store with
   sentinels), `ui` (`certdrop_test.go`, the walk and parity tables). `deploy/dev/install-test.sh`'s `check_certificates_host` has a console drop after its rerun
-  drop (written and shellchecked; the run on a VM, `ONLY=certificates`, is still to be made).
+  drop, which passed on 2026-11-25 on Ubuntu 24.04 (`ONLY=certificates`, 3 min 17 s).
 - Not in 056: dropping a certificate that also names a host no upload covers (Traefik would order it again, 034 R4), choosing which to drop, any other change of
   Traefik's store, a store on a server that isn't the ingress.
 
