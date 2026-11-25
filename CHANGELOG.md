@@ -10,6 +10,318 @@ released sections only. `tools/release.sh unreleased` shows what the next releas
 Each section has the changes that matter to a user, in this order and only as needed: Added,
 Changed, Fixed, Security, then **Upgrade** when an upgrade needs more than rerunning the installer.
 
+## 0.23.0 - 2026-11-25
+
+### Added
+- **Another ACME issuer.** Settings › Certificates can now get every domain's certificate from an ACME issuer other
+  than Let's Encrypt: Google Trust Services, ZeroSSL, DigiCert (presets fill their address) or any ACME server, with
+  the External Account Binding key ID and HMAC key those issuers give you. Saving restarts Traefik once; renewal stays
+  automatic. The HMAC key is kept in Nomad's variables and never shown again. Going back to Let's Encrypt finds its
+  certificates where they were.
+- **Upload a certificate.** A certificate you bought, or your company's, with its intermediates and its private key: a
+  single name, several, or a wildcard. Caravana checks that the key matches, the chain is complete, the certificate
+  isn't expired and which names it covers, then Traefik serves it for those names at once, with no restart, and asks the
+  ACME issuer for none of them. Nothing renews an uploaded certificate: its expiry shows on Domains and in Settings, and
+  a needs-you item and a notification come before it ends. Uploading one with the same names replaces it; removing it
+  hands its names back to the ACME issuer. The console's own domain can use one too. See `docs/certificates.md`.
+- **Domains say who issued each certificate**: Let's Encrypt, the other issuer, or "uploaded: <subject>".
+- API 0.63.0: `putCertificateIssuer`, `deleteCertificateIssuer`, `listUploadedCertificates`, `uploadCertificate`,
+  `getUploadedCertificate`, `deleteUploadedCertificate`, the issuer on `getCertificateSettings`, the uploaded certificate
+  on a domain's certificate, the needs-you kind `certificate_expiring`, and the codes `issuer_unavailable`,
+  `certificates_unavailable`, `too_many_certificates` and `certificate_not_found`. Admins only; deploy tokens are refused.
+- **A Space section on each server's page.** Operator › Servers › (server) shows what could go: images no container
+  uses (count and size), Docker's own leftover volumes, the build cache and the volumes no app declares any more.
+  Each server's agent now reports its images and the size of its Nomad volume directories with every sync; a
+  server without an agent says so and lists only the volumes Nomad can read. The disk-nearly-full item on the
+  needs-you list links to it. API 0.50.0 (`getServerSpace`, `cleanServer` and six more operations), and one MCP
+  read tool, `get_server_space`. See `docs/reclaim-space.md`.
+- **Unused images are removed every day, and on Clean up now.** At 04:00 UTC each managed server removes the images
+  no container uses, keeping the digests of each app's last 3 healthy deployments (a setting, 1 to 10) so Redeploy
+  this version and a rollback start without a pull, every deployment under way, every stored app's definition (a
+  stopped app starts without a pull) and Caravana's helper images. The daily run can be switched off in the same
+  place; Clean up now can also remove Docker's leftover volumes, which the daily run never does. Each clean-up is
+  recorded with what it removed and freed, and listed in the activity feed. Nomad forgets the images it pulled when
+  it restarts, so without this old app images stayed for good.
+- **Delete a volume nobody declares any more.** A volume dropped from a definition or renamed in a Compose file keeps
+  its data on the server; the Space section lists it with its app, size and when it was last deployed with, and
+  Delete… asks for its name typed exactly. When the backup destination is set, Back up first archives it there
+  (`<app>/volumes/<time>/<volume>.tar.gz`) and deletes it only after the archive is made. A volume a stored app
+  declares or a copy still mounts is refused, and every deletion is in the activity feed. The deploy warning for a
+  dropped volume now names the server that holds its data.
+- **MySQL, MariaDB and MongoDB are backed up without stopping them.** `backup: {engine: mysql}` (for the official
+  `mysql` and `mariadb` images, or one built on them) and `backup: {engine: mongodb}` (the official `mongo` image)
+  work like PostgreSQL's: each scheduled run and each Back up now dumps the live database and uploads it to the
+  backup destination (`<time>.sql.gz`, `<time>.archive.gz`), and a restore loads a dump back into the running
+  service. Records, pins, retention, restore schedules, `schedule: never`, the needs-you items, notifications and
+  the built-in schedules list work as for PostgreSQL. The login is the one the image reads to start
+  (`MARIADB_ROOT_PASSWORD` and friends, `MONGO_INITDB_ROOT_USERNAME` and `MONGO_INITDB_ROOT_PASSWORD`) and reaches the
+  backup job only through its own Nomad Variable, never in its arguments; a password given as plain environment is a
+  deploy warning, as for PostgreSQL. In the console the Backups tab offers "Back up daily" on these images and the
+  Compose form has the two engines. API 0.51.0 (`mysql` and `mongodb` engines). See `docs/database-backups.md`.
+- **Requests: see each HTTP request Traefik served, per app.** The new Requests page (sidebar, and a tab on every
+  app after Logs) lists the requests of one project › environment newest first: when, the service, the method,
+  the host and path, the status, how long it took, the bytes and the client's address. Filter by status class
+  (2xx to 5xx), method, path prefix, minimum duration and client; a histogram of the range is stacked by status;
+  a row opens the Logs around its time. Monitoring's Errors chart links to the 5xx of its range (a click on the
+  plot opens the minute you point at) and its apps table has a Requests link per service. Only the path is
+  recorded: Traefik drops the query string and every header before the line exists, and Caravana stores
+  nothing. The page says how far back it read; after a Traefik restart the earlier allocations are read too while Nomad keeps them. `GET /v1/requests` (API 0.53.0). See `docs/requests.md`.
+- **Caravana makes the DNS record for a domain you add, at Cloudflare.** Connect a zone in Settings › DNS providers
+  with a Cloudflare API token (Zone › DNS › Edit for that zone) and, at the deploy that adds a domain under it,
+  Caravana creates an A record (and an AAAA record when the installation has an IPv6 address) pointing at this
+  installation, with the comment `caravana:<app>`; it removes the records when the domain goes or the app is deleted.
+  It never changes a record you made: a host that already has a record pointing elsewhere refuses the deploy, naming
+  the domain. A zone can proxy its records through Cloudflare (the orange cloud), and changing that brings the records
+  Caravana made to the new setting. Test lists the zone's records, Remove forgets the zone and leaves the records at
+  Cloudflare. The Domains page says which domains' records Caravana made, and its Add panel names the zones Caravana
+  handles itself. The installation's public address comes from `CARAVANA_PUBLIC_URL`. API 0.54.0 (`listDNSZones`,
+  `putDNSZone`, `deleteDNSZone`, `testDNSZone`, `listDNSRecords`; codes `dns_record_exists`, `dns_address_unknown`,
+  `dns_provider_refused`, `dns_provider_unavailable`, `dns_zone_not_found`). See `docs/dns-providers.md`.
+- **A preview for every pull request.** An environment named `pr-<number>` is a preview: caravana-action's new
+  `preview: true` opens it with a deploy token, copies the app of `staging` into it with the pull request's image and
+  its own address, and removes it when the pull request closes. A deploy token may now create preview environments
+  of its own project and delete its own app and the empty environment there, and nothing else.
+- **Limit, expiry and a password for previews.** Each project keeps at most 5 open previews by default (0 to 20) and
+  closes one 7 days after its newest deploy (1 to 30), so a missed close still cleans up. An optional project
+  password makes every preview address Team only. All three are on the new Previews page (sidebar, "setup per
+  project"), whose first tab lists every open preview with its address, memory, state and a Close… button; the
+  project's settings page shows each preview's expiry too. The API has `getPreviews`, `putPreviewSettings` and
+  `closePreview` (0.55.0). See `docs/previews.md`, including the one wildcard DNS record to set by hand.
+- **Deploy a repository that has a Dockerfile, with no CI.** New app has a **Build from Git** tab: give a repository, a
+  branch, an optional folder and Dockerfile, and the image to push to. A deploy clones the branch, builds the Dockerfile
+  with rootless BuildKit as a Nomad batch job, pushes the image with the credentials of the registry entry that covers
+  it (Settings › Registries) and deploys the pushed digest like any image: health checked, reverted on failure.
+  Rollback and promotion deploy a past digest and never build. Through the API a service has `build` and its `image` is
+  the repository builds push to. See `docs/building-from-git.md`.
+- **Private repositories.** A deploy key that Caravana makes (its public half and fingerprint are shown, the private
+  half stays in a Nomad Variable and in no page, answer or log) or a token you give. Configure has a Build panel for
+  the source and the Git access, and Next steps on a new app's page walk through the key or token, the push webhook and
+  the first build. The keys of github.com and gitlab.com are built in; any other SSH host gives its key.
+- **A push builds and deploys.** The app's webhook is the repository's push webhook: GitHub, GitLab (also its
+  `X-Gitlab-Token`), Gitea and Forgejo bodies are understood. A push to another branch, a branch deletion, a ping and a
+  push of the commit already live build nothing.
+- **Builds on the Deployments tab.** A deployment that built shows a Build stage (queued, building with the time it has
+  taken, built in 41 s, failed), the commit, branch and subject, and a **Build log** page that follows a build that is
+  going. A failed build fails its deployment with the last log lines, sends the usual `deploy.failed` notification and
+  leaves the running version alone. A newer deploy cancels the build in progress.
+- **Settings › Builds**: memory, CPU, timeout, builds at once and the size of each app's build cache. API 0.56.0:
+  `getDeploymentBuild`, `getGitAccess`, `createDeployKey`, `putGitToken`, `deleteGitAccess`, `getBuildSettings`,
+  `putBuildSettings`, `Service.build`, `Deployment.build`, `WebhookResult.skipped`.
+- **A secret can be built from text and references.** Instead of one reference replacing a whole value, a secret may be
+  a `template` with `refs`: `Host=postgres;Username=banana;Password=${pw}` with `pw` read from your secret provider
+  (Bella Baxter). A deploy reads the references, puts each value where its `${name}` is (`$$` is a literal `$`) and
+  keeps the result like any other secret, so a connection string can use a password that never leaves the provider.
+  Refresh secrets builds the values again and rolls the app out when one changed. A template that doesn't parse, or a
+  reference that is missing or unused, is refused naming `services[i].secrets[j].template` or `…refs.<name>`. The console
+  lists a template read-only ("template with 2 references: …") and keeps it through a save; set one through the API or
+  the Compose overlay (the Aspire publisher sends them). API 0.59.0. See `docs/secret-providers.md`.
+- **People and roles.** An installation can have several people, each with their own sign-in and API tokens. An
+  owner or an admin invites someone from **Settings › People** (an email, a role, an optional end date and, for a
+  member, a role per project with an override per environment) and sends them the link Caravana shows once; they
+  choose a password and are in. A member sees only the places where they have a role: a **viewer** reads, a **deployer**
+  deploys new images, redeploys, restarts and backs up now, a **maintainer** changes how an app is set up. A guest has
+  an end date, after which they can't sign in. The installation's pages (Operator view, servers, registries, backup
+  storage, notifications, people and the rest) are for owners and admins. See `docs/people.md`.
+- **API tokens act as their person.** `GET /v1/me` says who a credential is, the people have their own routes
+  (`listPeople`, `invitePerson`, `getPerson`, `updatePerson`, `removePerson`, `reinvitePerson`, and the public
+  `acceptInvite`), and a refusal is `403 not_allowed` with the field that needs more. A deploy-level person may
+  deploy images only: any other change is refused, naming the field, which is what the CI action and MCP's
+  `deploy_image` send. MCP has a read tool, `get_me`.
+- **Who did it.** Deployments, actions, backups started by hand and restores say who made them: "by you",
+  "by ana@example.com", or "through the API by ci (ana@example.com)". The API records carry `actor`.
+- **Network and disk throughput per server.** Each server's page (Operator › Servers) has a **Network and disk**
+  section: bytes per second in and out of its public network interface, bytes read and written on the disk that
+  holds Nomad's data and Docker, and how busy that disk is. **Monitoring › This host** draws two small charts of
+  the same over the page's range. The server's agent reads the kernel's counters and Caravana works out the rates,
+  so nothing new is installed or logged in to. A server without an agent, or with an older one, shows a dash and
+  says why. `GET /v1/host` has the same numbers under `io`. See `docs/host-io.md`.
+- **Drop the earlier certificates, from the console.** After you upload a certificate, a domain that already had a
+  Let's Encrypt certificate keeps presenting it, and the uploaded certificate's row says "Still on their earlier
+  certificate". Settings › Certificates now has a **Drop the earlier certificates** button for it: the agent on the
+  first server removes from Traefik's store the ACME certificates whose every name an upload covers, Traefik restarts
+  once (a few seconds without HTTPS), and the page says what was dropped. Only names are exchanged, never a
+  certificate or a key. The API is `dropEarlierCertificates` (`POST /v1/certificates/drops`), with
+  `listCertificateDrops` and `getCertificateDrop`.
+- **An audit log: who changed what.** Every change leaves one entry with when, who (a person, a token, a webhook, Caravana
+  itself, or the host's command line), the door it came through (console, API, MCP, webhook), what was done, to what, and
+  the fields that changed, such as a domain removed and another added. A secret, a token or a password is never in an
+  entry: it shows as `set`, `changed` or `removed`. Failed sign-ins, deploys, rollbacks, promotions, deletions, settings,
+  tokens, people, servers and more are all there. Owners and admins read it in **Settings › Audit log** (filters, 100 a
+  page, **Older**, changes under each entry) and over the API (`listAuditEvents`), and export a range as CSV. Entries are
+  kept 90 days by default; an owner sets 30 to 3650 days. No route edits or deletes an entry. API 0.62.0 (`listAuditEvents`,
+  `exportAuditEvents`, `getAuditSettings`, `putAuditSettings`). See `docs/audit-log.md`.
+- **Templates can ask a choice.** An app template may now have a *choice* between a few answers (shown as radios, or a
+  select for more than four), inputs that are optional, up to 20 inputs (it was 12), and inputs, Compose lines and
+  deploy settings that only one answer needs. The page of a template groups those under "Only for GitHub" and the like,
+  hides the groups another choice doesn't ask for (with script; without it every input is shown and only the asked ones
+  are read), and its Preview lists the secrets and the Compose file the answers make. What is typed for an input a choice
+  doesn't ask for, a password included, is ignored and kept nowhere.
+- **Codemagic Patch is one template again:** pick GitHub, Bitbucket Cloud or GitLab at install (in the template catalog).
+- `caravana template check` renders every combination of a template's choices, with its optional inputs empty and filled.
+- API 0.65.0: the template's inputs have `required`, `choices` and `when`, the type `choice`; its services' list items may
+  have `when`.
+- **Autoscaling.** A service may carry `scale: {min, max, target, cooldownSeconds}` (API, Compose overlay or
+  Configure's Scaling panel), with one target: `cpu` (percent of its reservation), `requestsPerCopy` or `p95`
+  (milliseconds; both need a domain). After each minute's sample Caravana adds one copy when the value stayed over
+  the target, removes one when the load would stay well under it on one copy fewer, and waits the cooldown between
+  steps, never past `min` or `max`. Each step is an app action `scale` with its counts and reason, shown in Recent
+  actions, the Activity feed and Monitoring. A deploy keeps the count the service has now; `replicas` becomes the
+  starting count. A service at its maximum and still over its target is on the needs-you list (`scale_at_max`).
+  A service with a volume or a published port can't scale. See `docs/autoscaling.md`. API 0.47.0.
+- **Several backup destinations, and a second copy of every backup.** Settings › Backup storage keeps any number of
+  named S3-compatible destinations: add, edit (leave the key empty to keep it), **Test** (lists, writes and removes a
+  small object from the servers), **Make default** and Remove (refused for the default and for one a service or
+  project uses, naming who). A service's backups go to its policy's `destination`, else its project's default
+  (project settings › Backups go to), else the installation's default, and may be copied to up to two others with
+  `copyTo` and `copyKeep`, for every engine. The Backups tab has a **Where backups go…** form and says on each backup
+  where it is ("in main · copied to offsite", "copying to offsite…", "deleted from main, kept in offsite"). A failed
+  copy is its own needs-you item and notification. See `docs/backup-destinations.md`.
+- **Restore from a place.** A restore reads the backup from its own destination or from any copy that still has it;
+  **Restore from** chooses (Automatic tries them in order), so a bucket you lost doesn't lose the backup. API 0.58.0:
+  `listBackupDestinations`, `putBackupDestination`, `deleteBackupDestination`, `testBackupDestination`, the policy's
+  `destination`, `copyTo` and `copyKeep`, `Backup.destination` and `copies`, `Restore.destination`, the restore's
+  `{from}` body and `Project.backupDestination`.
+- **Change the console's address from the console.** Operator › Console address checks a new domain (its name, its DNS
+  and, once Traefik has the route, a certificate for it) before anything moves, and a Switch then moves Caravana to it
+  within about a minute: no SSH session, no rerun of the installer. The console never gets root: the server agent that
+  runs beside Caravana rewrites the public URL and the installer's record of the domain after checking both as text,
+  restarts Caravana and puts the old files back if it doesn't answer. If a Cloudflare zone is connected and has no
+  record for the domain, **Create the record in the zone and check** makes it.
+- **The old address keeps working for a while.** For 0, 7, 30 or 90 days (30 by default) the old domain stays routed and
+  keeps its certificate: its pages redirect to the same path on the new address, and its `/v1/…` API and
+  `/.well-known/…` discovery documents are still served, so CI tokens, Git webhooks and joined servers keep working
+  until you update them. The page lists what holds the old address: passkeys (they belong to a domain; password
+  sign-in stays on at the new one), webhook, deploy and API tokens, the workload identity issuer, and joined servers,
+  which follow by themselves. See `docs/console-address.md`.
+- API 0.57.0: `getConsoleAddress`, `startConsoleAddressChange`, `getConsoleAddressChange`, `cancelConsoleAddressChange`
+  and `switchConsoleAddress`, with the codes `domain_not_here`, `console_address_change_open`,
+  `console_address_unsupported`, `console_address_change_not_found`, `console_address_not_cancellable`,
+  `console_address_not_ready` and `console_address_check_failed`. Deploy tokens are refused.
+- **Email and Telegram notification channels.** Settings › Notifications can now send what needs you, and how deploys
+  end, by email (through any SMTP server, with STARTTLS, TLS or, for a mail server on the same host, no encryption) and to
+  a Telegram chat (through a bot you make with BotFather). They have the same events, Send a test, Pause, Edit and
+  Remove as the other channels, and the same retries (after 30 seconds, then 2 minutes). The SMTP password and the bot
+  token are write-only: they live only in the cluster's secret store and are never shown or logged. The API takes
+  them as `email` and `password`, and `telegram` and `token`, on the notification channel calls (API 0.52.0).
+- **Image scanning, an add-on.** Operator › Security installs the image scanner (Grype, pinned by digest; about
+  3.5 GB of disk on one server and about 204 MB downloaded a day, nothing until you install it). Installed, it
+  scans each image a healthy deploy brings and, every day, every image a running app uses, from a kept SBOM so the
+  rescan pulls nothing. Findings show on the app's Deployments tab (Security panel, counts on each history entry)
+  and on Operator › Security, with advisory links, fixed versions, EPSS and "known exploited". A package with a
+  fixable critical (or high, a setting) is a needs-you item `image_vulnerable` and a notification. An optional gate
+  refuses to deploy an image with a fixable critical (422 `image_vulnerable`). Nothing about your servers or apps
+  is sent anywhere; a mirror of the database can be set. API 0.49.0 (`/v1/addons`, `/v1/scans`,
+  `/v1/apps/{id}/scan`), MCP tool `get_app_scan`. See `docs/image-scanning.md`.
+- **Copies survive a short network cut.** When a server stops answering, Nomad now keeps its copies running for
+  five minutes (`disconnect.lostAfterSeconds`, 60 to 86400, settable per service through the API and the Compose
+  overlay) instead of replacing them after about 45 seconds. A service without a volume or a published port gets
+  replacements meanwhile and keeps its original copies when the server returns; a service with a volume or a
+  published port waits for its server. A cut longer than the limit behaves as before. A service with a domain
+  also gets a Traefik health check on its `health.path`, so the proxy stops sending to the unreachable copy
+  within one interval. A service with a domain and only a TCP health check, or an HTTP check on another port,
+  keeps today's behaviour, and setting `disconnect` on it is refused. See `docs/network-blips.md`. API 0.48.0.
+- **A cut-off server reads "disconnected", not "down".** While Nomad keeps the copies of a server it stopped hearing,
+  the console and the API (`state: "disconnected"`, `disconnectedSince`, `keptCopies`; a copy's `status:
+  "disconnected"`) say so, the server takes no new work, and the needs-you list stays quiet. If the copies are lost
+  after `lostAfterSeconds`, the server is down and the `server_down` item opens as before.
+- **Server labels and placement rules.** Give a server labels on its page or through the API (`ssd=true`, `region=eu`),
+  and say on which servers a service runs: `placement.require` (labels a server must have), `placement.prefer`
+  (labels the scheduler favours, with a weight) and `placement.avoid` (server names it never runs on), through the API,
+  the Compose overlay or Configure. The rules become the job's constraints and affinities (the export writes them),
+  and a rule no server satisfies is refused before anything is registered, naming the field (`409 placement_impossible`).
+  A service with rules whose copies can't be placed is on the needs-you list. See `docs/placement-and-drain.md`.
+- **Move work off a server.** On a server's page (or `POST /v1/servers/{name}/drain`), the server stops taking new
+  work and its copies move to other servers one at a time, each waiting for its replacement to pass its health checks.
+  Services with a volume or a published port, Traefik and batch runs stay and are listed with their reason. The page
+  follows the move; **Accept work again** (`DELETE …/drain`) lets the server take work, and cancels a move in progress.
+  A move that passes its deadline with copies left is on the needs-you list. API 0.46.0.
+
+### Changed
+- **A PostgreSQL backup lists only its own objects when it keeps the newest ones.** The upload step now looks at
+  files ending in the engine's extension (`.dump`) and is told it, which is what lets the three engines share one
+  script. An app gets it at its next deploy.
+- **The Logs page accepts a window.** `/logs?from=…&to=…` (RFC 3339) reads exactly that window, paused, which
+  is where a request's row leads. The range bar returns to the live ranges.
+- **The prefix `pr-` is kept for previews.** An environment name that starts with `pr-` must be `pr-<number>`.
+- The console's live updates, lists and pages follow the person's role: a member's Apps, Projects, Logs, Requests,
+  Monitoring and Schedules show their places only, and the buttons they can't use aren't drawn.
+- **The installer drops covered certificates with Caravana's own agent.** Rerunning the installer still removes the
+  ACME certificates an upload covers and says which, with the same rule as the button, and no longer needs
+  `python3` for it.
+- **One way to write a date in the console.** A time more than a week away (a schedule's next run, a
+  certificate's expiry, when a preview closes, when a server started) now reads "Nov 29 18:11 UTC", with
+  the year only when it isn't this year, like every other date on the console; it was "2026-11-29".
+  The local time added beside it uses the same form.
+- **The installer refuses a container.** Run inside a Docker or LXC container, or on a node of a
+  container platform (Virtuozzo, Jelastic), the installer now stops before changing anything and says
+  so: Caravana runs Docker and Nomad and makes network interfaces, a firewall and a private network,
+  which a container doesn't allow. Install it on a VM or a physical server.
+- **The console and Caravana's watchers follow Nomad's event stream.** One subscription tells Caravana
+  when a copy, a rollout, a job or a server changes, so pages refresh, rollouts end and schedule runs and
+  backups are recorded within moments instead of on the next poll. Every watcher still reads Nomad on a
+  slow timer as a safety net, so nothing stops working if the stream is down: Caravana logs that it lost
+  the stream once, reconnects by itself and looks at everything again when it is back. The
+  all-allocations query that ran while a page was open is gone.
+
+### Fixed
+- **A server with cloud-init boots cleanly again.** Caravana's private network unit no longer forms an
+  ordering loop with cloud-init at boot, which made systemd drop a job to break it (on some boots ssh,
+  leaving the server unreachable) and left the system degraded. Rerun the installer to get the new unit;
+  it takes effect at the next boot.
+- **No more 502s while a new copy starts outside a deploy.** Nomad registers a copy before it listens, and a copy
+  placed by an autoscale step, Move work off or a reschedule isn't hidden the way a deploy hides its new copies,
+  so the proxy sent it a few requests too early. Every router now retries a connection that failed on the next
+  copy. Only a request that never reached the copy is retried, so a POST is never sent twice.
+- A data directory whose path holds `#`, `?`, `%` or a space no longer makes the database open at a shorter path
+  (SQLite read the rest as a fragment or a query). The path is escaped when the store opens.
+- A terminal opened through the API whose first line is typed at once (a script) now runs it at the
+  size asked for with `cols` and `rows`, not at 80x24: Caravana passes nothing typed on to Nomad
+  before the starting size.
+
+### Security
+- In a preview (`pr-<n>`), a person with only the deploy role, or a deploy token, may use only the secret references
+  (a `from` or a template's refs: provider and path) that the app of the same name already has in the project's other
+  environments. Any other reference is `403 not_allowed`, naming it; maintain may add one. `docs/people.md` now also
+  says plainly what roles don't protect: deploy rights on an app are in effect access to its secrets, view includes
+  logs, and a secret provider's allowed places are a security boundary.
+
+### Upgrade
+- Rerun the installer once on an existing host: Traefik's static configuration is now a file its job renders, so
+  Traefik restarts once (a few seconds without HTTP). Until then Settings › Certificates asks for the rerun. A later run
+  also drops the certificates Let's Encrypt issued for names an uploaded certificate covers, since Traefik would keep
+  serving those.
+- Rerun the installer on every server so its agent reports its images (it does so from its next sync). Until then
+  the server's Space section says it has no agent reporting its images.
+- Rerun the installer on the first server: Traefik's job now writes its access log, so Traefik restarts once
+  (a short gap on ports 80 and 443). Until then the Requests page says "Traefik isn't writing its access log
+  yet" and the API answers `accessLog: false`.
+- Nothing to rerun: the new columns are added when Caravana starts, and the Nomad policy is unchanged. Previews need caravana-action with preview mode, and one wildcard DNS
+  record for the preview addresses.
+- Nothing to do on a host beyond rerunning the installer as usual: builds use the jobs, variables (`nomad/jobs/*`,
+  `caravana/*`), host volumes and file reads Caravana's Nomad policy already allows. The first build pulls the Git and
+  BuildKit images (about 100 MB), and an image to push to needs a registry entry whose credentials may push.
+- The one admin becomes the **owner** (same email, password, passkeys, sessions and tokens). Rerunning the
+  installer is all: nothing else to rerun on the host. Records made before have no `actor`.
+- Rerun the installer on a server to get the numbers for it: an older agent reports no I/O, and the page says so.
+- The button needs the first server's agent to be up to date: rerun the installer on that server once. Until its
+  agent reports that it holds Traefik's certificate store, the button answers that the installer must be run.
+- Migration 0045 adds the log's two tables when Caravana starts. There is nothing to rerun and nothing to configure.
+  Changes made before the upgrade aren't in the log.
+- Older Caravana versions keep reading the catalog's `catalog.json`, which stays in the format they know, so their
+  template list keeps updating; templates that need the new format are offered to this version and newer ones, and a
+  template made for a newer version than yours is listed as unavailable instead of stopping the catalog.
+- The destination you have becomes `main`, the default, with its key where it was: nothing to do, and every backup
+  and restore recorded so far says `main`.
+- Rerun the installer once on an existing host before the first change: Traefik's console route now reads its hosts
+  from a Nomad Variable, so Traefik restarts once (a few seconds without HTTP). Until then the page asks for the rerun.
+  The agent that applies the switch is the one servers already use, so nothing else is installed.
+- Apps get the disconnect policy and the Traefik health check at their next deploy; running apps don't change
+  until then.
+- Nothing to do: the token's existing `read-job` and `node` rules cover the stream's topics.
+- Rerun the installer on the first server: Caravana's Nomad policy gains `node:write` (node labels, eligibility).
+  Until you do, saving a label or moving work off says Nomad refused it.
+- Each app picks the retry up at its next deploy; no installer rerun is needed.
+
 ## 0.22.0 - 2026-11-17
 
 ### Added
