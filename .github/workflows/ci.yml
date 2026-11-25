@@ -29,7 +29,8 @@ jobs:
       - run: go tool staticcheck ./...
       # Under the race detector the larger packages (api, service, ui) each take about 23 minutes on a
       # GitHub runner (1400 s on 2026-11-17), and a slower runner went past 30: hence 50.
-      - run: go test -race -timeout 50m ./...
+      # The larger packages went past 50 minutes under -race on 2026-11-25; see release.yml.
+      - run: go test -race -timeout 120m ./...
 
       # Lab, VM and install scripts can't run in CI; shellcheck (preinstalled on ubuntu-latest)
       # checks them. deploy/dev/install-test.sh runs the installer on a VM.

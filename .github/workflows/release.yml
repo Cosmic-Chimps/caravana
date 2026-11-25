@@ -87,9 +87,10 @@ jobs:
 
       # The same checks as CI: a release is never built from a commit that fails them.
       - run: go vet ./...
-      # Under the race detector the larger packages (api, service, ui) each take about 23 minutes on a
-      # GitHub runner (1400 s on 2026-11-17), and a slower runner went past 30: hence 50.
-      - run: go test -race -timeout 50m ./...
+      # Under the race detector the larger packages (api, service, ui) each took about 23 minutes on a
+      # GitHub runner on 2026-11-17 and went past 50 on 2026-11-25 (after 054, 055, 057, 034 and 056);
+      # they run in parallel, so the job takes about an hour while each package gets 120.
+      - run: go test -race -timeout 120m ./...
 
       # Only now, with the checks green, does a dispatched run commit and tag. Main and the tag
       # go up in one atomic push: both or neither.

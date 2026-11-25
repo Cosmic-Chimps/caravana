@@ -83,11 +83,17 @@ func TestBackupIsCopiedToItsDestination(t *testing.T) {
 	ctx := context.Background()
 	e := newCopyEnv(t)
 	older := seedBackup(t, e, 0, false)
+	// The older copy is queued and marked copied with the watcher's passes held off: a pass between
+	// the two writes would start a job for it (a race the release's -race run hit on 2026-11-25).
+	e.svc.copyMu.Lock()
 	if err := e.store.QueueBackupCopies(ctx, "whoami", older.ID, []string{"offsite"}); err != nil {
+		e.svc.copyMu.Unlock()
 		t.Fatal(err)
 	}
-	if err := e.store.SaveBackupCopy(ctx, store.BackupCopy{AppID: "whoami", BackupID: older.ID, Destination: "offsite",
-		Status: store.CopySucceeded, Object: "offsite-bucket/caravana/whoami/web/1700000000.dump"}); err != nil {
+	err := e.store.SaveBackupCopy(ctx, store.BackupCopy{AppID: "whoami", BackupID: older.ID, Destination: "offsite",
+		Status: store.CopySucceeded, Object: "offsite-bucket/caravana/whoami/web/1700000000.dump"})
+	e.svc.copyMu.Unlock()
+	if err != nil {
 		t.Fatal(err)
 	}
 
