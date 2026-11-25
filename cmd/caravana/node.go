@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/netip"
 	"os"
+	"sort"
+	"strings"
 
 	"github.com/cosmic-chimps/caravana/internal/mesh"
 	"github.com/cosmic-chimps/caravana/internal/nodeagent"
@@ -31,6 +33,10 @@ commands:
   show FIELD        print public-key, name, index, role or first
   leave             take this server out of the cluster (not the first server)
   space             print what Docker and Nomad's volume directories hold, as JSON (reads only)
+  drop-certificates --names a.example.com,*.example.org [--dry-run]
+                    remove from Traefik's store the ACME certificates whose every name those names
+                    cover (what an uploaded certificate replaces); prints the names it dropped, one
+                    line; --dry-run only says which
 
 Run it as root. CARAVANA_INSECURE=1 (or --insecure) skips checking the console's certificate.
 `
@@ -58,7 +64,8 @@ func runNode(ctx context.Context, args []string, getenv func(string) string,
 	var (
 		address, url, token *string
 		insecure, renew     *bool
-		checks              *bool
+		checks, dryRun      *bool
+		dropNames           *string
 		cpu                 *int
 		issuer              *string
 	)
@@ -76,6 +83,9 @@ func runNode(ctx context.Context, args []string, getenv func(string) string,
 	case "sync":
 		renew = fs.Bool("renew", false, "renew the Nomad certificate now")
 		checks = fs.Bool("checks", false, "print the checks the console reports")
+	case "drop-certificates":
+		dropNames = fs.String("names", "", "the names an uploaded certificate covers, comma-separated")
+		dryRun = fs.Bool("dry-run", false, "say which certificates would be dropped, and change nothing")
 	case "up", "show", "leave", "space":
 	default:
 		fmt.Fprintf(stderr, "caravana node: unknown command %q\n\n%s", command, nodeUsage)
@@ -101,6 +111,15 @@ func runNode(ctx context.Context, args []string, getenv func(string) string,
 	if cpu != nil && *cpu < 0 {
 		fmt.Fprintf(stderr, "caravana node %s: --cpu-total-compute can't be negative\n", command)
 		return exitUsage
+	}
+
+	var dropList []string
+	if command == "drop-certificates" {
+		var problem string
+		if dropList, problem = parseDropNames(*dropNames); problem != "" {
+			fmt.Fprintf(stderr, "caravana node drop-certificates: --names %s\n", problem)
+			return exitUsage
+		}
 	}
 
 	// Every path is under root: "/" on a server, a folder in tests (CARAVANA_NODE_ROOT, which also
@@ -176,6 +195,11 @@ func runNode(ctx context.Context, args []string, getenv func(string) string,
 		}
 	case "leave":
 		err = agent.Leave(ctx)
+	case "drop-certificates":
+		var dropped []string
+		if dropped, err = agent.DropCoveredCertificates(dropList, *dryRun); err == nil {
+			fmt.Fprintln(stdout, strings.Join(dropped, ", "))
+		}
 	case "space":
 		var report *nodeagent.SpaceReport
 		if report, err = agent.SpaceNow(ctx); err == nil {
@@ -189,4 +213,32 @@ func runNode(ctx context.Context, args []string, getenv func(string) string,
 		return exitFailed
 	}
 	return exitOK
+}
+
+// parseDropNames reads --names: comma-separated, each entry trimmed and lower-cased, empty entries (the
+// installer's trailing comma) skipped, the rest sorted without duplicates. A problem is a sentence that
+// says which rule failed and which entry (by number), never the entry itself.
+func parseDropNames(arg string) (names []string, problem string) {
+	seen := map[string]bool{}
+	for i, n := range strings.Split(arg, ",") {
+		n = strings.ToLower(strings.TrimSpace(n))
+		if n == "" {
+			continue
+		}
+		if !nodeagent.ValidDropName(n) {
+			return nil, fmt.Sprintf("entry %d isn't a host name: lowercase labels of a-z, 0-9 and -, at least two, optionally after *.", i+1)
+		}
+		if !seen[n] {
+			seen[n] = true
+			names = append(names, n)
+		}
+	}
+	if len(names) == 0 {
+		return nil, "is required: one or more host names, comma-separated"
+	}
+	if len(names) > 1000 {
+		return nil, "has more than 1000 names"
+	}
+	sort.Strings(names)
+	return names, ""
 }

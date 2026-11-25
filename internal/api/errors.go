@@ -49,6 +49,15 @@ const (
 	codeDestinationInUse      = "destination_in_use"
 	codeBackupMissing         = "backup_missing"
 	codeNotAllowed            = "not_allowed"
+	// The certificate codes (feature 034).
+	codeIssuerUnavailable       = "issuer_unavailable"
+	codeCertificatesUnavailable = "certificates_unavailable"
+	codeTooManyCertificates     = "too_many_certificates"
+	codeCertificateNotFound     = "certificate_not_found"
+	// The drop of the earlier certificates (feature 056). no_agent is the cleanups' own.
+	codeNoUploadedCertificates  = "no_uploaded_certificates"
+	codeCertificateDropRunning  = "certificate_drop_running"
+	codeCertificateDropNotFound = "certificate_drop_not_found"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with

@@ -167,6 +167,14 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 			row.Mark = "failed"
 		}
 		row.Action, row.Href = "Open findings", appHref+"/deployments#security"
+	case service.AttentionCertificateExpiring:
+		// An uploaded certificate near its end (feature 034): its replacement is uploaded in Settings.
+		// A warning, failed once it has ended.
+		row.Mark = "warning"
+		if it.Level == metrics.DiskFailed {
+			row.Mark = "failed"
+		}
+		row.Action, row.Href = "Open certificates", "/settings/certificates"
 	case service.AttentionCaravanaUpdateFailed:
 		// A rolled back, refused or lost update is a warning; one that failed is a failure.
 		row.Mark = "warning"

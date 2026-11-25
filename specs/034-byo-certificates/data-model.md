@@ -1,6 +1,6 @@
 # Data model (034)
 
-## SQLite, migration `0027_byo_certificates.sql` (0026 is feature 033's)
+## SQLite, migration `0046_byo_certificates.sql`
 
 `certificate_settings` gains (all about the custom issuer; empty = the installer's):
 
@@ -27,4 +27,4 @@ INTEGER, `uploaded_at`. No key, no chain.
 ## Derived, never stored
 
 - `issuerName`, `status` of an uploaded certificate, `domains`, `keptEarlier`, the attention items.
-- Whether the ingress supports the feature: job `traefik`'s meta `caravana_certificates`, cached a minute.
+- Whether the ingress supports the feature: job `traefik`'s meta `caravana_certificates`, read on every settings read.

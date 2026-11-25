@@ -1185,6 +1185,63 @@ nothing is fetched). The contracts are `contracts/api.md` and `contracts/console
   `http://localhost:7091`. A credential ID is not secret: it is in the options answers (`allowCredentials`,
   `excludeCredentials`), never in a page or a log line.
 
+Feature 034 (`specs/034-byo-certificates`, CodeAlta task `k83w`, worktree branch `alta/quick-baker-rvch`): bring your own
+certificates, another ACME issuer or an uploaded certificate. `research.md` R1–R10 are the lab's facts (2026-11-12 and 11-24, a
+second Traefik and a Pebble ACME server requiring EAB); operator doc `docs/certificates.md`. Migration 0046, API 0.63.0 (merged after 055 and 057), no new
+module, constitution unchanged (certificates reach Traefik through its file provider, like 023's Team only).
+- Traefik's static configuration is a file both jobs render into `secrets/traefik.yml` (`--configFile` is the only argument:
+  Traefik reads a file or flags, never both, and an EAB key can't be a flag). It reads the Nomad Variable `caravana/acme`
+  (items `server`, `email`, `eab_kid`, `eab_hmac`, `ca`, `storage`, always all six) with `change_mode = "restart"`, so a new
+  issuer restarts Traefik's task in place, and `caravana/certificates/<id>` (`certificate`, `key`, `names`) into
+  `secrets/dynamic/certificates.yml` (`noop`, the file provider's watch). The provider's directory moved from `local/dynamic` to
+  `secrets/dynamic` (with 023's `team.yml` and 051's `caravana.yml`): Nomad's fs API can't read `secrets/`. The job-scoped
+  policy `traefik-read` gains those two paths and must be applied before the job (without it the task waits at
+  "Missing: nomad.var.get"). The job's meta `caravana_certificates = "1"` is how Caravana knows (`deploy.IngressFeatures`), and
+  `ProxyAccessLog` takes it too (the access log of 047 is in the file now). The resolver keeps the name `letsencrypt`; each
+  issuer has its own store file `acme-<12 hex of SHA-256(server + "\n" + key ID)>.json`, the installer's stays `acme.json`.
+- `internal/certs` (standard library only): `Parse` (the key matches, the chain is complete, dates, DNS names, RSA 2048+ or
+  ECDSA, not encrypted; every refusal a `*certs.Error` on `certificate` or `key` with no key bytes), `Covers`/`SameNames`,
+  `CheckDirectory` (one GET, no redirect, never registers: an EAB key can be single-use), `ValidServer`, `NormalizeHMAC`,
+  `NormalizeCAPEM`; `certstest` makes CAs and leaves.
+- Service: `SetCertificateIssuer`/`ResetCertificateIssuer` (`certissuer.go`; the variable before SQLite, a stored HMAC key kept
+  only for its key ID, the issuer's CA added to the domain checks' roots), `UploadCertificate` and friends
+  (`uploadedcerts.go`; same names replace, 30 at most, variable before row with rollback, covered hosts checked again after 15 s),
+  a host presenting an upload is judged by the upload's dates (`judgeUploaded`, matched by the leaf's SHA-256, stored as
+  `domain_checks.cert_fingerprint`) and names it (`Uploaded`); `keptEarlier` lists covered hosts on another certificate with
+  `alsoAsks`. Needs-you `certificate_expiring` (one per upload, key `certificate_expiring|||<id>`) replaces
+  `domain_cert_expiring` for those hosts. `IssuerUnavailable`/`UploadUnavailable`: `installed_without_issuer` (`--acme none`),
+  `traefik_outdated`, `nomad_unreachable`.
+- API 0.63.0: `putCertificateIssuer`, `deleteCertificateIssuer`, `listUploadedCertificates`, `uploadCertificate` (201),
+  `getUploadedCertificate`, `deleteUploadedCertificate`, the settings' `issuerName`, `acme`, `issuerUnavailable` and
+  `uploadUnavailable`, `fingerprint` and `uploaded` on a certificate, the attention kind and the webhook's `certificate` and
+  `names`, codes `issuer_unavailable`, `certificates_unavailable`, `too_many_certificates`, `certificate_not_found`; the two
+  forms answer field errors with 422 like `putCertificateSettings`. Admin only; deploy tokens are denied by the default deny.
+- Console (`internal/ui/certificates.go`, `templates/settings.html`): Settings › Certificates has the Uploaded certificates
+  section (`POST /settings/certificates/upload`, `/uploaded/{id}/remove`; a refusal draws the certificate box back without any
+  key block, the key box never) and Change issuer (`POST /settings/certificates/issuer`, `?preset=google|zerossl|digicert#issuer`
+  fills the URL, the HMAC field is never filled and empty keeps it, the CA is sent only when typed or "remove" is ticked).
+  Domains name the issuer through `Service.IssuerName` (SQLite and `CARAVANA_ACME` only, no Nomad read per render). No
+  designer pass.
+- Lab facts: Traefik asks ACME for every name of a router when one isn't covered, so a router mixing covered and uncovered
+  hosts gets one ACME certificate for all, and an exact name beats a wildcard in Traefik's store (R4, R5). The same happens
+  to a router added in the seconds before Traefik picks an upload up. The installer drops ACME certificates whose every name
+  an upload covers (`drop_covered_acme_certificates`, python3) and says Traefik restarts once for 034.
+- Tests: `cmd/caravana/traefik_conf_test.go` renders both jobs' templates; the gate step `certificates`
+  (`gate_certificates_test.go`, lab only: a Pebble job requiring EAB with 20-day certificates, Caravana restarted with
+  `CARAVANA_CERT_RESOLVER=letsencrypt` through the lab's `SetEnv`, the issuer's refusals, a Pebble certificate and its renewal
+  after a Traefik restart, a private-CA wildcard serving two hosts with no ACME order, `certificate_expiring`, the fallback,
+  no HMAC or key in any answer, log or data file) passed on 2026-11-24 (74 s, `-run 'TestLab/^(api-needs-token|certificates)$'`).
+  `TestConsoleLab` has a step `console-certificates` (`console_certificates_test.go`: a refused upload drawn at `key` with no key
+  back, a private-CA wildcard for `*.cert034.localhost` uploaded through the form, Traefik serving it before the app's domain is
+  added, the Domains row saying "uploaded:", Settings' "Serves", Remove), which passed the same day (28 s, `-run
+  'TestConsoleLab/^console-(sign-in|certificates)$'`); its host is under `.localhost` so the row is live without DNS.
+  The lab's Traefik must be the 034 job: `deploy/dev/lab.sh up` from this branch. Lima forwards the VM's port 14000 to the
+  Mac's localhost, which the in-process Caravana's directory check uses. `install-test.sh` has `check_certificates_host`
+  (Traefik's policy, a private-CA upload served on 443, a covered fake ACME certificate dropped by a rerun, removal) and
+  `check_old_traefik_host`; `ONLY=certificates` runs just them in about 4 minutes. The whole run passed on 2026-11-25 on
+  Ubuntu 24.04 (24 min), after a fix: every rerun said Traefik restarts, because `grep -q` under `pipefail` can fail a
+  pipeline through SIGPIPE, so the installer reads the job before grepping it.
+
 Feature 035 (`specs/035-app-templates`, from a CodeAlta task) is implemented on the worktree branch
 `alta/fresh-kestrel-ng5c`: New app › From a template installs a known app from a few answers. A template is
 a manifest plus a Compose file with `{{placeholders}}`; installing it is a normal Compose deploy of a new app.
@@ -2259,6 +2316,46 @@ from `/proc` (the maintainer's decision, 2026-11-24; a Beszel add-on went to the
   shellchecked, **not run**. The lab's node is unmanaged, so a `TestConsoleLab` step could only show `no_agent`, which the UI tests cover.
 - Not in 055: alerts or needs-you items for I/O, per-container I/O, IOPS, latency, a threshold setting, a monitoring add-on. Rerun the installer on a server to get an
   agent that reports I/O.
+
+Feature 056 (`specs/056-drop-earlier-certificates`, CodeAlta task `69pt`, worktree branch `alta/hushed-mistral-bf5s`, phases A to C, a follow-up of 034's
+research R5): Settings › Certificates drops the ACME certificates an upload covers, so a host that kept its earlier certificate presents the upload, and
+the console still never gets root. `plan.md` D1–D12 are the decisions; operator doc: the section "When a domain still shows its earlier certificate" of
+`docs/certificates.md`. Migration 0047, API 0.64.0 (merged after 055 and 057; 034 is 0046 and 0.63.0), no new module, no policy change (Traefik is restarted with `alloc-lifecycle`, in the policy since 016).
+- The agent does it (D1, `internal/nodeagent/certdrop.go`): Traefik's store is the folder `/var/lib/caravana-host/traefik` of the first server. The sync answer's
+  `certificateDrop {id, names}` is an ID and names, nothing else: the ID must be 32 hex digits (else ignored with a stderr line), the names 1–1000 lowercase host
+  names or `*.` and one (`nodeagent.ValidDropName`; else the outcome is `refused`). `DropCovered` removes a stored certificate when every name (`domain.main`,
+  `sans`, lower-cased, and each a host name) is covered by `certs.Covers`, keeping every other JSON member as it was; it runs over `acme.json` and
+  `acme-<12 hex>.json` (regular files only, at most 32 MiB), checks all files before writing any, and rewrites a changed one through a temporary file and a
+  rename with its mode and owner (`rewriteFile`). The outcome (`running`, `dropped`, `nothing`, `failed`, `refused`; `dropped` lists each certificate as its
+  names joined with `+`) is kept in `state.json` and in the report beside `traefikStore` (the folder exists). A run found `running` goes again and says
+  `dropped`, with no names when nothing is left, since its files may be rewritten already. After a run that dropped, `Sync` posts the report once more at once,
+  so Traefik is restarted within a second. Nothing of a certificate, key or account is printed, logged or reported (sentinel tests).
+- The same rule is `caravana node drop-certificates --names a,b,*.c [--dry-run]` (prints the dropped names on one line), which `install.sh`'s
+  `drop_covered_acme_certificates` calls instead of its Python (so the installer no longer needs `python3`; it passes only the names that look like host names).
+- The record (`service/certificatedrops.go`, migration 0045 `certificate_drops`, one open drop in all): `RequestCertificateDrop` (admin) needs an upload with a
+  name the agent accepts (`ErrNoUploadedCertificates`), the first server's ready, fresh agent saying `traefikStore` (else `*DropNoAgentError`, `ErrNoAgent`, "run
+  the installer on server X") and no open drop (`ErrCertificateDropRunning`). `certificateDropHandoff` in `NodeSync` hands only the first server's agent the
+  request (names read at that moment), marks `requested` as `running`, and settles from the report: `dropped` → `restarting`, `nothing` → `done` (its store
+  never rewritten: `rewritten_at` NULL, which is how the console tells it from a restart-only `done`), `failed` and `refused` → `failed` with the agent's
+  sentence. `validateReport` checks the block (32 hex ID, one of five states, at most 100 entries of host names joined with `+`, a printable reason of at most
+  300 bytes). Restarting runs in the background (`ProxyCopy`, `RestartCopy`): the drop is `done` when Traefik's task started after `rewritten_at`, whoever
+  restarted it, and the covered hosts are checked again. A pass every minute (`SetCertificateDropPassGap`) fails a request nobody picked up in 10 minutes,
+  loses a run with no outcome after 10, and retries a restart that didn't finish and fails it after 10 with what the owner is left with. A status change
+  publishes `ChangeServers`.
+- API 0.64.0: `dropEarlierCertificates` (`POST /v1/certificates/drops`, 202, `Location`), `listCertificateDrops`, `getCertificateDrop`, schema `CertificateDrop`, the
+  sync report's `traefikStore` and `certificateDrop` and the answer's `certificateDrop`, codes `no_uploaded_certificates`, `certificate_drop_running`,
+  `certificate_drop_not_found` (and `no_agent`, with no field). Admin only; deploy tokens are denied by the default deny.
+- Console (`internal/ui/certdrop.go`): under the uploaded certificates, while a host is on its earlier certificate and no drop is open, the form
+  `POST /settings/certificates/drop` ("Drop the earlier certificates", "Traefik restarts once: a few seconds without HTTPS.") answers 303 to
+  `/settings/certificates?drop=<id>#drop`; a refusal draws the page again with 409 and its sentence at the form. The panel `#drop` (the drop the address names, else the
+  newest while it is open or ended within the hour) is read again from `/parts/settings/certificates/drop` every 3 s while open and answers 286 once it isn't, with a
+  `noscript` refresh. Forms work without JavaScript; both routes are admin rules.
+- Tests: `nodeagent` (the rule's table, the folder walk, the outcomes, a run again, the second post, no leak), `cmd/caravana`, `store`, `service`
+  (every refusal, the hand-off, each settling, the restart, the pass's deadlines, no PEM through a report), `api` (the real agent end to end against a store with
+  sentinels), `ui` (`certdrop_test.go`, the walk and parity tables). `deploy/dev/install-test.sh`'s `check_certificates_host` has a console drop after its rerun
+  drop, which passed on 2026-11-25 on Ubuntu 24.04 (`ONLY=certificates`, 3 min 17 s).
+- Not in 056: dropping a certificate that also names a host no upload covers (Traefik would order it again, 034 R4), choosing which to drop, any other change of
+  Traefik's store, a store on a server that isn't the ingress.
 
 Feature 057 (`specs/057-audit-log`, CodeAlta task `jf6s`, worktree branch `alta/mossy-cutter-pg2p`): an audit log of who changed what, one entry per
 change, readable by owners and admins. `plan.md` D1–D14 are the decisions and its Deviations sections (phases A to D) the changes; operator doc:

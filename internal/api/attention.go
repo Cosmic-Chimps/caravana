@@ -44,6 +44,10 @@ type attentionItemJSON struct {
 	// movable copies still run on the server (named by server above).
 	Queued int `json:"queued,omitzero"`
 	Left   int `json:"left,omitzero"`
+	// certificate_expiring (feature 034): the uploaded certificate's ID and names; expiresAt (above) is
+	// when it ends, and level is failed once it has, else warning. The item has no appId.
+	Certificate string   `json:"certificate,omitempty"`
+	Names       []string `json:"names,omitempty"`
 	// scale_at_max (feature 043): the service's count, which is its maximum.
 	Count  int       `json:"count,omitzero"`
 	At     time.Time `json:"at"`
@@ -77,6 +81,9 @@ func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
 	}
 	if it.Kind == service.AttentionCaravanaUpdateFailed {
 		out.Level = string(it.Level) // failed for a run that failed, else warning
+	}
+	if it.Kind == service.AttentionCertificateExpiring {
+		out.Certificate, out.Names, out.Level = it.Certificate, it.Names, string(it.Level) // failed once it has ended, else warning
 	}
 	return out
 }

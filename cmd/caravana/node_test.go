@@ -189,3 +189,96 @@ func TestNodeSpace(t *testing.T) {
 		t.Errorf("space made files: %v", entries)
 	}
 }
+
+const nodeTestStore = `{"le": {"Account": {"PrivateKey": "s3cret-account-sentinel"}, "Certificates": [
+  {"domain": {"main": "a.example.com"}, "certificate": "s3cret-certificate-sentinel", "key": "s3cret-key-sentinel"},
+  {"domain": {"main": "b.example.com", "sans": ["www.b.example.com"]}, "certificate": "x", "key": "y"},
+  {"domain": {"main": "other.test"}, "certificate": "x", "key": "y"}]}}`
+
+func TestNodeDropCertificates(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "var/lib/caravana-host/traefik")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "acme.json")
+	if err := os.WriteFile(path, []byte(nodeTestStore), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read := func() string {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+
+	// A dry run says what it would drop and writes nothing. Names are lower-cased and an empty entry is skipped.
+	code, stdout, stderr := nodeRun(t, root, "drop-certificates", "--dry-run", "--names", "A.example.com,*.b.example.com,")
+	if code != exitOK || stdout != "a.example.com\n" || stderr != "" || read() != nodeTestStore {
+		t.Fatalf("dry run: %d %q %q", code, stdout, stderr)
+	}
+	code, stdout, _ = nodeRun(t, root, "drop-certificates", "--names", "a.example.com,*.example.com,*.b.example.com,")
+	if code != exitOK || stdout != "a.example.com, b.example.com+www.b.example.com\n" {
+		t.Fatalf("drop: %d %q", code, stdout)
+	}
+	if got := read(); strings.Contains(got, "a.example.com") || strings.Contains(got, "b.example.com") ||
+		!strings.Contains(got, "other.test") || !strings.Contains(got, "s3cret-account-sentinel") {
+		t.Errorf("store after the drop:\n%s", got)
+	}
+	for _, out := range []string{stdout, stderr} {
+		if strings.Contains(out, "sentinel") {
+			t.Errorf("output holds store content: %q", out)
+		}
+	}
+	// Again: nothing left, one empty line.
+	if code, stdout, _ = nodeRun(t, root, "drop-certificates", "--names", "a.example.com"); code != exitOK || stdout != "\n" {
+		t.Errorf("nothing to drop: %d %q", code, stdout)
+	}
+	// A server with no store folder has nothing to drop either.
+	if code, stdout, _ = nodeRun(t, t.TempDir(), "drop-certificates", "--names", "a.example.com"); code != exitOK || stdout != "\n" {
+		t.Errorf("no folder: %d %q", code, stdout)
+	}
+}
+
+func TestNodeDropCertificatesRefusals(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "var/lib/caravana-host/traefik")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	usage := map[string][]string{
+		"no names":        {"drop-certificates"},
+		"empty names":     {"drop-certificates", "--names", " , "},
+		"a bare label":    {"drop-certificates", "--names", "a.example.com,localhost"},
+		"a path":          {"drop-certificates", "--names", "a.example.com/x"},
+		"a short wild":    {"drop-certificates", "--names", "*.com"},
+		"an argument":     {"drop-certificates", "--names", "a.example.com", "extra"},
+		"an unknown flag": {"drop-certificates", "--names", "a.example.com", "--all"},
+	}
+	for name, args := range usage {
+		if code, stdout, stderr := nodeRun(t, root, args...); code != exitUsage || stdout != "" || stderr == "" {
+			t.Errorf("%s: %d %q %q", name, code, stdout, stderr)
+		}
+	}
+	// The usage error names the entry's number, not its text.
+	if _, _, stderr := nodeRun(t, root, "drop-certificates", "--names", "a.example.com,not_a_host"); !strings.Contains(stderr, "entry 2") || strings.Contains(stderr, "not_a_host") {
+		t.Errorf("usage error: %q", stderr)
+	}
+	// A file that isn't a store is exit 1, naming the file and nothing of what it holds.
+	if err := os.WriteFile(filepath.Join(dir, "acme.json"), []byte("s3cret-not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := nodeRun(t, root, "drop-certificates", "--names", "a.example.com")
+	if code != exitFailed || !strings.Contains(stderr, "acme.json") || strings.Contains(stderr, "s3cret") {
+		t.Errorf("a bad store: %d %q", code, stderr)
+	}
+	// Not root, and no test root: refused like the other commands.
+	old := geteuid
+	geteuid = func() int { return 1000 }
+	defer func() { geteuid = old }()
+	var out, errb bytes.Buffer
+	if code := run(context.Background(), []string{"node", "drop-certificates", "--names", "a.example.com"}, noEnv, strings.NewReader(""), &out, &errb); code != exitFailed || !strings.Contains(errb.String(), "run it as root") {
+		t.Errorf("not root: %d %q", code, errb.String())
+	}
+}

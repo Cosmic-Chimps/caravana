@@ -191,7 +191,7 @@ func requestsFor(key string) []walkRequest {
 		strings.HasPrefix(path, "/settings/secret-providers"), strings.HasPrefix(path, "/settings/backup"),
 		strings.HasPrefix(path, "/settings/notifications"), strings.HasPrefix(path, "/settings/certificates"),
 		strings.HasPrefix(path, "/settings/dns"), strings.HasPrefix(path, "/templates/check"), strings.HasPrefix(path, "/templates/settings"),
-		path == "/parts/platform", path == "/parts/monitoring/host", path == "/projects/new", key == "POST /projects",
+		path == "/parts/platform", path == "/parts/monitoring/host", path == "/parts/settings/certificates/drop", path == "/projects/new", key == "POST /projects",
 		key == "POST /projects/{project}/delete", key == "POST /apps/{id}/security/scan":
 		return only(true)
 	// The person's own: signed in.

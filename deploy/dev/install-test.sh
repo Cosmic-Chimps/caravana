@@ -26,6 +26,11 @@
 # Feature 045's clean-up is checked with four versions of an app: Nomad forgets the images it pulled when it
 # restarts, the agent reports them, and a clean-up removes the one the keep rule doesn't keep.
 #
+# Feature 034's certificates are checked with a private CA made by openssl on the Mac: Traefik's policy, an
+# older Traefik job replaced with one restart, an upload served on 443, and an ACME certificate the upload
+# covers dropped from Traefik's store by a rerun. ONLY=certificates runs just those on a fresh VM (about ten
+# minutes).
+#
 # Feature 051's change of the console's address runs last, before the uninstall: it leaves the VM on
 # console2.caravana.test. ONLY=console-address runs just that check on a fresh VM (install, admin, whoami,
 # the check: about ten minutes); KEEP=1 keeps the VM.
@@ -56,28 +61,52 @@ die() {
 vm() { limactl shell --workdir / "$NAME" "$@"; }
 # https GET inside the VM, with DOMAIN or APP resolved to the VM itself (Traefik's own certificate).
 vm_curl() { vm curl -ksS --max-time 5 --resolve "$DOMAIN:443:127.0.0.1" --resolve "$APP:443:127.0.0.1" "$@"; }
+# traefik_exec CMD...: runs CMD in Traefik's running task. Traefik's rendered files are in the task's
+# secrets/ folder (feature 034), which Nomad's fs API can't read. A rerun of the installer may be replacing
+# Traefik's allocation: it waits up to 90 s for a running one, and tries again when the exec failed because
+# the allocation it chose was stopped meanwhile. A failure in the allocation that still runs is returned.
+traefik_exec() {
+  local alloc out end=$((SECONDS + 90))
+  while :; do
+    alloc="$(traefik_alloc)"
+    if [ -n "$alloc" ]; then
+      if out="$(vm sudo caravana-nomad alloc exec -task traefik "$alloc" "$@" 2>"$WORK/traefik-exec.err")"; then
+        printf '%s\n' "$out"
+        return 0
+      fi
+      if [ "$(traefik_alloc)" = "$alloc" ]; then
+        cat "$WORK/traefik-exec.err" >&2
+        return 1
+      fi
+    fi
+    [ "$SECONDS" -lt "$end" ] || die "Traefik has no running allocation"
+    sleep 2
+  done
+}
+# traefik_conf: Traefik's static configuration as its task rendered it. Without a custom issuer it holds
+# no secret.
+traefik_conf() { traefik_exec cat /secrets/traefik.yml; }
 
 # check_domains_host: Caravana's env file has the three lines feature 023 added, and Traefik's job
 # reads a directory with the Team only template, whose file exists in the running allocation.
 check_domains_host() {
-  local env spec alloc
+  local env spec conf
   env="$(vm sudo cat /etc/caravana/caravana.env)"
   grep -q '^CARAVANA_ACME=none$' <<<"$env" || die "the env file has no CARAVANA_ACME=none:\n$(grep -v NOMAD_TOKEN <<<"$env")"
   grep -q "^CARAVANA_ACME_EMAIL=$EMAIL$" <<<"$env" || die "the env file has no CARAVANA_ACME_EMAIL"
   grep -q '^CARAVANA_EDGE_ADDRESS=127.0.0.1:443$' <<<"$env" || die "the env file has no CARAVANA_EDGE_ADDRESS"
   spec="$(vm sudo caravana-nomad job inspect traefik)"
-  grep -q 'providers.file.directory=/local/dynamic' <<<"$spec" || die "Traefik doesn't read /local/dynamic"
-  grep -q 'local/dynamic/team.yml' <<<"$spec" || die "Traefik's job has no team.yml template"
-  alloc="$(vm sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}} {{end}}{{end}}' traefik | awk '{print $1}')"
-  [ -n "$alloc" ] || die "Traefik has no running allocation"
-  vm sudo caravana-nomad alloc fs "$alloc" traefik/local/dynamic/team.yml >/dev/null || die "team.yml isn't in Traefik's allocation"
+  grep -q 'secrets/dynamic/team.yml' <<<"$spec" || die "Traefik's job has no team.yml template"
+  conf="$(traefik_conf)"
+  grep -A1 '^  file:' <<<"$conf" | grep -q 'directory: /secrets/dynamic' || die "Traefik doesn't read /secrets/dynamic:\n$conf"
+  traefik_exec test -f /secrets/dynamic/team.yml || die "team.yml isn't in Traefik's allocation"
 }
 
 # check_monitoring_host: what feature 025 needs from the host. Caravana's env file names Docker's
 # root as Docker says it, Caravana's Nomad policy lets it read nodes, and Traefik's job has the
 # two metrics arguments and serves its numbers on the loopback entrypoint.
 check_monitoring_host() {
-  local env spec policy root code
+  local env conf policy root code
   env="$(vm sudo cat /etc/caravana/caravana.env)"
   root="$(vm sudo docker info --format '{{.DockerRootDir}}')"
   [ -n "$root" ] || die "docker info didn't say where Docker's root is"
@@ -85,10 +114,9 @@ check_monitoring_host() {
     die "the env file should say CARAVANA_DOCKER_ROOT=$root:\n$(grep -v NOMAD_TOKEN <<<"$env")"
   policy="$(vm sudo caravana-nomad acl policy info caravana | tr -d '\n')"
   grep -Eq 'node \{ *policy = "write" *\}' <<<"$policy" || die "Caravana's Nomad policy has no node { policy = \"write\" }"
-  spec="$(vm sudo caravana-nomad job inspect traefik)"
-  grep -q -- '--metrics.prometheus=true' <<<"$spec" || die "Traefik's job doesn't turn on its metrics"
-  grep -q -- '--metrics.prometheus.buckets=0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10' <<<"$spec" ||
-    die "Traefik's job doesn't have the finer buckets"
+  conf="$(traefik_conf)"
+  grep -A1 '^  prometheus:' <<<"$conf" | grep -q 'buckets: \[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10\]' ||
+    die "Traefik doesn't turn on its metrics with the finer buckets:\n$conf"
   local end=$((SECONDS + 60))
   until code="$(vm curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/metrics 2>/dev/null)" && [ "$code" = 200 ]; do
     [ "$SECONDS" -lt "$end" ] || die "http://127.0.0.1:8081/metrics answers $code, not 200"
@@ -101,12 +129,11 @@ check_monitoring_host() {
 # accessLog true and, once the app has been called, a request of it. Needs TOKEN and the app whoami
 # answering, so it runs after "deploy whoami".
 check_requests_host() {
-  local spec body
-  spec="$(vm sudo caravana-nomad job inspect traefik)"
-  grep -q -- '--accesslog=true' <<<"$spec" || die "Traefik's job doesn't write its access log"
-  grep -q -- '--accesslog.format=json' <<<"$spec" || die "Traefik's access log isn't JSON"
-  grep -q -- '--accesslog.fields.headers.defaultmode=drop' <<<"$spec" || die "Traefik's access log doesn't drop the headers"
-  grep -q -- '--accesslog.fields.queryparameters.defaultmode=drop' <<<"$spec" || die "Traefik's access log doesn't drop the query string"
+  local conf body
+  conf="$(traefik_conf)"
+  grep -A1 '^accessLog:' <<<"$conf" | grep -q 'format: json' || die "Traefik doesn't write its access log as JSON:\n$conf"
+  grep -A1 '^    headers:' <<<"$conf" | grep -q 'defaultMode: drop' || die "Traefik's access log doesn't drop the headers"
+  grep -A1 '^    queryParameters:' <<<"$conf" | grep -q 'defaultMode: drop' || die "Traefik's access log doesn't drop the query string"
   local end=$((SECONDS + 60))
   until body="$(api -fsS "https://$DOMAIN/v1/requests?app=whoami" 2>/dev/null)" &&
     grep -q '"accessLog":true' <<<"$body" && grep -q '"path":"/"' <<<"$body"; do
@@ -115,6 +142,201 @@ check_requests_host() {
     app_answers >/dev/null 2>&1 || true
     sleep 2
   done
+}
+
+# check_old_traefik_host VERSION: a Traefik job from before feature 034 (no caravana_certificates meta) is
+# replaced by a rerun of VERSION's installer, which says Traefik restarts once for the certificates.
+check_old_traefik_host() {
+  local ver="$1" out
+  vm sudo bash -c "grep -v 'caravana_certificates' /opt/caravana/$ver/traefik.nomad.hcl >/tmp/traefik-old.hcl &&
+    caravana-nomad job run -detach -var console_domain=$DOMAIN -var acme=none -var acme_email=$EMAIL /tmp/traefik-old.hcl >/dev/null" ||
+    die "couldn't put back a Traefik job without the certificates meta"
+  ! grep -q 'caravana_certificates' < <(vm sudo caravana-nomad job inspect traefik) || die "the old Traefik job still has the certificates meta"
+  out="$(install "$ver")"
+  grep -q 'Traefik is restarted once for your own certificates (a few seconds without HTTP)' <<<"$out" ||
+    die "the rerun over an older Traefik job should say it is restarted for the certificates:\n$out"
+  grep -q 'caravana_certificates' < <(vm sudo caravana-nomad job inspect traefik) || die "the rerun didn't put back the certificates meta"
+  # The rerun registers the job with -detach: wait until its version is the one running.
+  local want end=$((SECONDS + 120))
+  want="$(vm sudo caravana-nomad job inspect -t '{{.Version}}' traefik)"
+  until [ "$(vm sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.JobVersion}} {{end}}{{end}}' traefik | tr -d ' ')" = "$want" ]; do
+    [ "$SECONDS" -lt "$end" ] || die "Traefik's job version $want should be the one running within 2 minutes"
+    sleep 2
+  done
+}
+
+# make_certs: in $WORK/certs (which the VM reads at the same path), a private CA and a certificate it signs
+# for $APP, and two self-signed certificates for a fake ACME store: one for $APP and one for other.test.
+make_certs() {
+  local d="$WORK/certs" h
+  mkdir -p "$d"
+  openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=Caravana install-test CA" \
+    -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" \
+    -keyout "$d/ca.key" -out "$d/ca.pem" 2>/dev/null || die "openssl couldn't make the test CA"
+  openssl req -newkey rsa:2048 -nodes -subj "/CN=$APP" -keyout "$d/app.key" -out "$d/app.csr" 2>/dev/null ||
+    die "openssl couldn't make the request for $APP"
+  printf 'basicConstraints=CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:%s\n' \
+    "$APP" >"$d/app.ext"
+  openssl x509 -req -in "$d/app.csr" -CA "$d/ca.pem" -CAkey "$d/ca.key" -CAcreateserial -days 2 \
+    -extfile "$d/app.ext" -out "$d/app.pem" 2>/dev/null || die "openssl couldn't sign the certificate for $APP"
+  for h in "$APP" other.test; do
+    openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=$h" -addext "subjectAltName=DNS:$h" \
+      -keyout "$d/acme-$h.key" -out "$d/acme-$h.pem" 2>/dev/null || die "openssl couldn't make the fake ACME certificate of $h"
+  done
+  # The upload: the leaf and its root (a private CA's chain is complete when it ends at the root).
+  python3 -I -c 'import json, sys; print(json.dumps({"certificate": open(sys.argv[1]).read() + open(sys.argv[2]).read(), "key": open(sys.argv[3]).read()}))' \
+    "$d/app.pem" "$d/ca.pem" "$d/app.key" >"$d/upload.json"
+  # The fake ACME certificates as Traefik's store holds them (PEM bytes, base64 in JSON).
+  python3 -I -c '
+import base64, json, sys
+d, hosts = sys.argv[1], sys.argv[2:]
+b64 = lambda p: base64.b64encode(open(p, "rb").read()).decode()
+print(json.dumps([{"domain": {"main": h}, "certificate": b64(f"{d}/acme-{h}.pem"), "key": b64(f"{d}/acme-{h}.key"), "Store": "default"} for h in hosts]))
+' "$d" "$APP" other.test >"$d/acme-fake.json"
+  # Run as root in the VM: adds the fake certificates to the store of Traefik's default resolver, keeping
+  # what the store has (Traefik writes its account there), mode 0600 for a new file.
+  cat >"$d/acme-inject.py" <<'PY'
+import json, os, sys
+
+store, fake = sys.argv[1], sys.argv[2]
+data = {}
+if os.path.exists(store):
+    with open(store) as f:
+        text = f.read()
+    if text.strip():
+        data = json.loads(text)
+resolver = data.setdefault("letsencrypt", {})
+resolver.setdefault("Account", None)
+resolver["Certificates"] = (resolver.get("Certificates") or []) + json.load(open(fake))
+mode = os.stat(store).st_mode & 0o777 if os.path.exists(store) else 0o600
+tmp = store + ".install-test"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+os.chmod(tmp, mode)
+os.replace(tmp, store)
+PY
+}
+
+# app_verified: $APP answers 200 over HTTPS with a certificate the test CA signed (curl verifies it).
+app_verified() {
+  [ "$(vm curl -sS --max-time 5 --resolve "$APP:443:127.0.0.1" --cacert "$WORK/certs/ca.pem" -o /dev/null -w '%{http_code}' "https://$APP/" 2>/dev/null)" = 200 ]
+}
+
+# acme_store_hosts: the main names of the certificates in Traefik's ACME store, one per line.
+acme_store_hosts() {
+  vm sudo cat /var/lib/caravana-host/traefik/acme.json |
+    python3 -I -c 'import json, sys
+for r in (json.load(sys.stdin) or {}).values():
+    for c in (r.get("Certificates") or []) if isinstance(r, dict) else []:
+        print((c.get("domain") or {}).get("main", ""))'
+}
+
+# check_certificates_host VERSION: feature 034 on the host. Traefik's policy reads only caravana/acme and
+# caravana/certificates/*; a certificate uploaded through the API (from a private CA made here) is served on
+# 443 for $APP, which it covers, without a Traefik restart, and its key reaches neither Traefik's job nor
+# Caravana's journal; an ACME certificate Traefik held for $APP before the upload is dropped by a rerun of
+# VERSION's installer, which says so, and the store keeps the one it doesn't cover; the same through the API
+# (feature 056: POST /v1/certificates/drops, the agent drops it, Traefik's task restarts once in place, a second
+# drop finds nothing); removing the upload gives $APP back to Traefik. Needs TOKEN and whoami answering on $APP.
+check_certificates_host() {
+  local ver="$1" policy out code body id drop alloc0 end keyline mode0 hosts
+  policy="$(vm sudo caravana-nomad acl policy info traefik-read)"
+  grep -qF 'path "caravana/acme"' <<<"$policy" || die "Traefik's policy doesn't read caravana/acme:\n$policy"
+  grep -qF 'path "caravana/certificates/*"' <<<"$policy" || die "Traefik's policy doesn't read caravana/certificates/*:\n$policy"
+  ! grep -qF 'path "caravana/*"' <<<"$policy" || die "Traefik's policy reads all of caravana/:\n$policy"
+
+  make_certs
+  ! app_verified || die "$APP already presents a certificate of the test CA"
+  alloc0="$(traefik_alloc)"
+  out="$(api -X POST -H 'Content-Type: application/json' -w '\n%{http_code}' "https://$DOMAIN/v1/certificates/uploaded" -d "@$WORK/certs/upload.json")"
+  code="${out##*$'\n'}" body="${out%$'\n'*}"
+  [ "$code" = 201 ] || die "uploading the certificate for $APP should be 201, got $code: $body"
+  id="$(jsonq 'd["id"]' <<<"$body")"
+  [ "$(jsonq '",".join(d["names"]) + " " + str(d["trusted"])' <<<"$body")" = "$APP False" ] ||
+    die "the upload should name $APP and be untrusted (a private CA): $body"
+  end=$((SECONDS + 120))
+  until app_verified; do
+    [ "$SECONDS" -lt "$end" ] || die "Traefik should serve the uploaded certificate for $APP within 2 minutes"
+    sleep 3
+  done
+  [ "$(traefik_alloc)" = "$alloc0" ] || die "Traefik restarted to serve the upload; the file provider should pick it up"
+  keyline="$(sed -n 2p "$WORK/certs/app.key")"
+  ! grep -qF "$keyline" < <(vm sudo caravana-nomad job inspect traefik) || die "the uploaded key is in Traefik's job"
+  ! grep -qF "$keyline" < <(vm sudo journalctl -u caravana -o cat) || die "the uploaded key is in Caravana's journal"
+
+  say "an ACME certificate held before the upload is dropped by a rerun"
+  vm sudo python3 -I "$WORK/certs/acme-inject.py" /var/lib/caravana-host/traefik/acme.json "$WORK/certs/acme-fake.json" ||
+    die "couldn't write the fake ACME certificates into Traefik's store"
+  hosts="$(acme_store_hosts)"
+  { grep -qx "$APP" <<<"$hosts" && grep -qx other.test <<<"$hosts"; } || die "the store should hold $APP and other.test:\n$hosts"
+  mode0="$(vm sudo stat -c '%a %U' /var/lib/caravana-host/traefik/acme.json)"
+  out="$(install "$ver")" || { echo "$out"; die "the rerun over the fake ACME certificates failed"; }
+  grep -qF "dropped the earlier certificates of $APP: an uploaded certificate covers them" <<<"$out" ||
+    die "the rerun should say it dropped the ACME certificate of $APP:\n$out"
+  ! grep -q 'dropped the earlier certificates of.*other\.test' <<<"$out" || die "the rerun dropped other.test, which no upload covers:\n$out"
+  grep -q '^changed: .*certificates' <<<"$out" || die "the rerun should list certificates as changed: $(grep '^changed:' <<<"$out")"
+  hosts="$(acme_store_hosts)"
+  ! grep -qx "$APP" <<<"$hosts" || die "the store still holds the ACME certificate of $APP:\n$hosts"
+  grep -qx other.test <<<"$hosts" || die "the rerun dropped other.test from the store:\n$hosts"
+  [ "$(vm sudo stat -c '%a %U' /var/lib/caravana-host/traefik/acme.json)" = "$mode0" ] || die "the rerun changed the store's mode or owner"
+  end=$((SECONDS + 120))
+  until app_verified; do
+    [ "$SECONDS" -lt "$end" ] || die "after the rerun Traefik should serve the uploaded certificate for $APP again within 2 minutes"
+    sleep 3
+  done
+  out="$(install "$ver")" || { echo "$out"; die "the second rerun failed"; }
+  ! grep -q 'dropped the earlier certificates' <<<"$out" || die "a second rerun dropped something again:\n$out"
+
+  say "the console's button drops an earlier certificate the same way, and restarts Traefik once"
+  vm sudo python3 -I "$WORK/certs/acme-inject.py" /var/lib/caravana-host/traefik/acme.json "$WORK/certs/acme-fake.json" ||
+    die "couldn't write the fake ACME certificates into Traefik's store again"
+  hosts="$(acme_store_hosts)"
+  { grep -qx "$APP" <<<"$hosts" && grep -qx other.test <<<"$hosts"; } || die "the store should hold $APP and other.test again:\n$hosts"
+  mode0="$(vm sudo stat -c '%a %U' /var/lib/caravana-host/traefik/acme.json)"
+  alloc0="$(traefik_alloc)"
+  started0="$(traefik_started)" || die "couldn't read when Traefik's task started"
+  # The agent says it holds the store with its next report (every 30 s): an answer of no_agent is tried again.
+  end=$((SECONDS + 120))
+  while :; do
+    out="$(api -X POST -w '\n%{http_code}' "https://$DOMAIN/v1/certificates/drops")"
+    code="${out##*$'\n'}" body="${out%$'\n'*}"
+    [ "$code" = 409 ] && grep -q '"no_agent"' <<<"$body" && [ "$SECONDS" -lt "$end" ] || break
+    sleep 5
+  done
+  [ "$code" = 202 ] || die "dropping the earlier certificates should be 202, got $code: $body"
+  drop="$(jsonq 'd["id"]' <<<"$body")"
+  wait_certificate_drop "$drop" 180
+  [ "$(jsonq '",".join(d["dropped"])' <<<"$DROP_BODY")" = "$APP" ] ||
+    die "the drop should name $APP and not other.test:\n$DROP_BODY"
+  hosts="$(acme_store_hosts)"
+  ! grep -qx "$APP" <<<"$hosts" || die "the store still holds the ACME certificate of $APP after the drop:\n$hosts"
+  grep -qx other.test <<<"$hosts" || die "the drop removed other.test from the store:\n$hosts"
+  [ "$(vm sudo stat -c '%a %U' /var/lib/caravana-host/traefik/acme.json)" = "$mode0" ] || die "the drop changed the store's mode or owner"
+  [ "$(traefik_alloc)" = "$alloc0" ] || die "Traefik's allocation changed: a restart through Nomad is in place"
+  [ "$(traefik_started)" != "$started0" ] || die "Traefik's task wasn't restarted by the drop (it started at $started0 and still did)"
+  end=$((SECONDS + 120))
+  until app_verified; do
+    [ "$SECONDS" -lt "$end" ] || die "after the drop Traefik should serve the uploaded certificate for $APP within 2 minutes"
+    sleep 3
+  done
+  # Nothing is covered now: a second drop ends done with no names, and leaves Traefik running as it was.
+  started0="$(traefik_started)" || die "couldn't read when Traefik's task started"
+  out="$(api -X POST -w '\n%{http_code}' "https://$DOMAIN/v1/certificates/drops")"
+  code="${out##*$'\n'}" body="${out%$'\n'*}"
+  [ "$code" = 202 ] || die "a second drop should be 202, got $code: $body"
+  wait_certificate_drop "$(jsonq 'd["id"]' <<<"$body")" 180
+  [ "$(jsonq 'len(d["dropped"])' <<<"$DROP_BODY")" = 0 ] || die "a second drop should name nothing:\n$DROP_BODY"
+  [ "$(traefik_started)" = "$started0" ] || die "a drop with nothing to drop restarted Traefik"
+
+  say "removing the upload gives $APP back to Traefik's own certificate"
+  code="$(api -o /dev/null -w '%{http_code}' -X DELETE "https://$DOMAIN/v1/certificates/uploaded/$id")"
+  [ "$code" = 204 ] || die "removing the upload should be 204, got $code"
+  end=$((SECONDS + 120))
+  while app_verified; do
+    [ "$SECONDS" -lt "$end" ] || die "$APP still presents the removed certificate after 2 minutes"
+    sleep 3
+  done
+  app_answers || die "whoami should answer after the upload is removed"
 }
 
 # check_updates_host MODE: what feature 027's Updates page needs from the host, through the API: the unit's
@@ -589,6 +811,30 @@ traefik_alloc() {
   vm sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}} {{end}}{{end}}' traefik | awk '{print $1}'
 }
 
+# traefik_started: when the task of Traefik's running allocation last started. A restart through Nomad is in
+# place (the allocation stays) and moves this. The answer is read into a variable before it is parsed: under
+# pipefail, a reader that leaves early can fail the pipeline through SIGPIPE.
+traefik_started() {
+  local json
+  json="$(vm sudo caravana-nomad alloc status -json "$(traefik_alloc)")" || return 1
+  jsonq 'd["TaskStates"]["traefik"]["StartedAt"]' <<<"$json"
+}
+
+# wait_certificate_drop ID SECONDS: wait until the drop is done and leave its answer in DROP_BODY. A drop that
+# fails or is lost, or isn't done in time, fails the check. Traefik restarts during a drop, and the API is
+# reached through it, so a call that gets no answer is tried again.
+DROP_BODY=""
+wait_certificate_drop() {
+  local id="$1" end=$((SECONDS + $2)) status=""
+  until [ "$status" = "done" ]; do
+    case "$status" in failed | lost) die "the drop should be done, it is $status:\n$DROP_BODY" ;; esac
+    [ "$SECONDS" -lt "$end" ] || die "the drop should be done within $2 s; last seen: ${status:-nothing}\n$DROP_BODY"
+    sleep 3
+    DROP_BODY="$(api -sS "https://$DOMAIN/v1/certificates/drops/$id" 2>/dev/null || true)"
+    status="$(jsonq 'd["status"]' <<<"$DROP_BODY" 2>/dev/null || true)"
+  done
+}
+
 # console_change_status HOST ID: the status of a change of the console's address, or nothing while Caravana
 # doesn't answer.
 console_change_status() {
@@ -1061,6 +1307,38 @@ main_console_address() {
   echo "INSTALL TEST PASSED (console-address, $IMAGE)"
 }
 
+# main_certificates: ONLY=certificates. A fresh VM, one install and feature 034's host checks: the rendered
+# static configuration (the 023, 025 and 047 checks read it), an older Traefik job replaced, and
+# check_certificates_host. About ten minutes. KEEP=1 keeps the VM.
+main_certificates() {
+  command -v limactl >/dev/null || die "Lima isn't installed"
+  trap cleanup EXIT
+  rm -rf "$WORK" && mkdir -p "$WORK"
+  local v1 out
+  v1="0.0.0-dev.$(date +%s)"
+  V1="$v1"
+  say "building release $v1"
+  release "$v1"
+  start_vm
+  say "install $v1"
+  out="$(install "$v1" --email "$EMAIL" --domain "$DOMAIN" --acme none --address "$ADDR")" || { echo "$out"; die "install"; }
+  printf '%s\n' "$PASSWORD" | vm sudo caravana admin init --email "$EMAIL" >/dev/null
+  TOKEN="$(vm sudo caravana admin create-token --name install-test </dev/null)"
+  say "Traefik's rendered configuration (features 023 and 025)"
+  check_domains_host
+  check_monitoring_host
+  say "a Traefik job from before feature 034 is restarted once for the certificates, and says so"
+  check_old_traefik_host "$v1"
+  check_domains_host
+  say "deploy whoami"
+  deploy_whoami
+  say "the access log in the rendered configuration (feature 047)"
+  check_requests_host
+  say "Traefik's policy, an uploaded certificate served on 443, and a covered ACME certificate dropped by a rerun (feature 034)"
+  check_certificates_host "$v1"
+  echo "INSTALL TEST PASSED (certificates, $IMAGE)"
+}
+
 main() {
   command -v limactl >/dev/null || die "Lima isn't installed"
   trap cleanup EXIT
@@ -1195,14 +1473,8 @@ PY
   say "a rerun rewrites a mesh unit from before task c6wd and reloads systemd"
   check_mesh_unit_rewritten "$v1"
 
-  say "a Traefik job from before feature 025 is restarted once for its request numbers, and says so"
-  vm sudo bash -c "grep -v 'metrics.prometheus' /opt/caravana/$v1/traefik.nomad.hcl >/tmp/traefik-old.hcl &&
-    caravana-nomad job run -detach -var console_domain=$DOMAIN -var acme=none -var acme_email=$EMAIL /tmp/traefik-old.hcl >/dev/null" ||
-    die "couldn't put back a Traefik job without the metrics arguments"
-  ! grep -q -- 'metrics.prometheus' < <(vm sudo caravana-nomad job inspect traefik) || die "the old Traefik job still has the metrics arguments"
-  out="$(install "$v1")"
-  grep -q 'Traefik is restarted once for its request numbers (a few seconds without HTTP)' <<<"$out" ||
-    die "the rerun over an older Traefik job should say it is restarted for its request numbers:\n$out"
+  say "a Traefik job from before feature 034 is restarted once for the certificates, and says so"
+  check_old_traefik_host "$v1"
   check_monitoring_host
 
   say "deploy whoami"
@@ -1218,6 +1490,8 @@ PY
 
   say "network and disk rates from the agent's counters (feature 055)"
   check_host_io
+  say "Traefik's policy, an uploaded certificate served on 443, and a covered ACME certificate dropped by a rerun (feature 034)"
+  check_certificates_host "$v1"
 
   say "the cluster's issuer, its discovery documents and an identity token (feature 038)"
   check_issuer_host
@@ -1301,5 +1575,6 @@ PY
 case "${ONLY:-}" in
   "") main "$@" ;;
   console-address) main_console_address "$@" ;;
-  *) echo "ONLY=$ONLY isn't a check: console-address" >&2; exit 2 ;;
+  certificates) main_certificates "$@" ;;
+  *) echo "ONLY=$ONLY isn't a check: console-address or certificates" >&2; exit 2 ;;
 esac

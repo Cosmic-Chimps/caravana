@@ -686,6 +686,16 @@
 {{end}}
 {{end}}
 
+{{/* cert-drop: the inside of the drop's panel (feature 056): the status, one sentence and when. It holds the
+     names of what was dropped and the record's sentence, never a certificate. Takes a certDropView. */}}
+{{define "cert-drop"}}
+<div class="cv-def">
+  <p>{{template "status-pill" .Status}}</p>
+  <p class="text-base text-fg-1" role="status">{{template "sentence" .Summary}}</p>
+  {{if .ID}}<p class="text-sm text-fg-2">Asked {{template "clock" .Asked}}{{with .Actor}} by {{.}}{{end}}{{if .HasEnded}}, ended {{template "clock" .Ended}}{{end}}.</p>{{end}}
+</div>
+{{end}}
+
 {{/* ------------------------------------------------------------ Certificates
      Feature 023: the certificate each domain's last check found, problems first, and how they are
      issued. The issuer and the contact email are Traefik's static configuration (set by the
@@ -701,6 +711,7 @@
 </header>
 {{if .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{.Notice}}</span></div>{{end}}
 {{if .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Alert}}</span></div>{{end}}
+{{if .UploadedNotice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{.UploadedNotice}}</span></div>{{end}}
 {{range .Banners}}
 <div class="cv-panel cv-dmbanner">
   <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
@@ -736,6 +747,78 @@
   {{end}}
 </section>
 
+<section aria-labelledby="uploads-heading" class="cv-pgsec" id="uploads">
+  <h2 id="uploads-heading" class="cv-label">{{.UploadsHead}}</h2>
+  {{if .UploadAlert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.UploadAlert}}</span></div>{{end}}
+  {{if .Uploads}}
+  <div class="cv-panel cv-upcerts">
+    {{range .Uploads}}
+    <div class="cv-upcert" id="upload-{{.ID}}">
+      <span class="cv-certmark"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+      <div class="cv-upcert-main">
+        <p class="cv-upcert-names" title="{{.AllNames}}">{{range $i, $n := .Names}}{{if $i}}, {{end}}<span class="cv-inline-mono">{{$n}}</span>{{end}}{{if .More}} <span class="cv-inline-mono">+{{.More}}</span>{{end}}</p>
+        <p class="cv-upcert-meta">
+          <span>{{.Issuer}}</span>
+          <span class="cv-certexp{{if .Expiry.Warn}} cv-certexp-warn{{end}}"{{with .Expiry.Title}} title="{{.}}"{{end}}>{{.Expiry.Text}}</span>
+          <span class="cv-inline-mono">{{.KeyType}}</span>
+          {{if .Untrusted}}<span>not trusted by browsers</span>{{end}}
+        </p>
+        {{if .Serves}}<p class="cv-upcert-line">{{template "sentence" .Serves}}</p>{{end}}
+        {{if .Kept}}<p class="cv-upcert-line">{{template "sentence" .Kept}}</p>{{end}}
+      </div>
+      <details class="cv-confirm cv-upcert-remove">
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="Remove the certificate for {{.AllNames}}">Remove</summary>
+        <form method="post" action="/settings/certificates/uploaded/{{.ID}}/remove" class="cv-confirm-body">
+          <p>Remove this certificate? {{.Back}}</p>
+          <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Remove certificate</button></div>
+        </form>
+      </details>
+    </div>
+    {{end}}
+  </div>
+  {{else if not .UploadWhy}}
+  <div class="cv-panel"><div class="cv-empty">
+    <p class="cv-empty-title">No uploaded certificates.</p>
+    <p class="cv-empty-text">Upload one to use a certificate you bought, or your company's.</p>
+  </div></div>
+  {{end}}
+  {{with .Drop}}
+  <div id="drop" class="cv-panel" aria-live="polite"{{if .Open}} hx-get="{{.PartHref}}" hx-trigger="every 3s" hx-swap="innerHTML"{{end}}>{{template "cert-drop" .}}</div>
+  {{end}}
+  {{if or .CanDrop .DropRefusal}}
+  <div id="drop-form">
+    {{with .DropRefusal}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+    {{if .CanDrop}}
+    <form method="post" action="/settings/certificates/drop" class="cv-actions">
+      <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Drop the earlier certificates</button>
+      <p class="cv-hint">Traefik restarts once: a few seconds without HTTPS.</p>
+    </form>
+    {{end}}
+  </div>
+  {{end}}
+  {{if .UploadWhy}}
+  <p class="cv-hint" id="upload-unavailable">{{.UploadWhy}}</p>
+  {{else}}
+  <details class="cv-confirm cv-upform"{{if .UploadOpen}} open{{end}} id="upload">
+    <summary class="cv-btn cv-btn-secondary cv-btn-sm">Upload a certificate</summary>
+    <form method="post" action="/settings/certificates/upload" class="cv-confirm-body" autocomplete="off">
+      <label class="cv-fld" for="upload-certificate">
+        <span class="cv-label">Certificate and its intermediates (PEM)</span>
+        <textarea class="cv-field cv-field-area cv-field-mono" id="upload-certificate" name="certificate" rows="6" autocapitalize="off" spellcheck="false" autocomplete="off" placeholder="-----BEGIN CERTIFICATE-----"{{if .UploadCertErr}} aria-invalid="true" aria-describedby="upload-certificate-error" autofocus{{end}}>{{.UploadCert}}</textarea>
+        {{with .UploadCertErr}}<span id="upload-certificate-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+      </label>
+      <label class="cv-fld" for="upload-key">
+        <span class="cv-label">Private key (PEM)</span>
+        <textarea class="cv-field cv-field-area cv-field-mono" id="upload-key" name="key" rows="4" autocapitalize="off" spellcheck="false" autocomplete="off" placeholder="-----BEGIN PRIVATE KEY-----"{{if .UploadKeyErr}} aria-invalid="true" aria-describedby="upload-key-error" autofocus{{end}}></textarea>
+        {{with .UploadKeyErr}}<span id="upload-key-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+      </label>
+      <p class="cv-hint">The key is stored in Nomad's variables and is never shown again. Nothing renews an uploaded certificate: caravana warns {{.WarnDays}} days before it ends.</p>
+      <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Check and upload</button></div>
+    </form>
+  </details>
+  {{end}}
+</section>
+
 <section aria-labelledby="issued-heading" class="cv-pgsec">
   <div class="cv-certsechead">
     <h2 id="issued-heading" class="cv-label">How certificates are issued</h2>
@@ -754,10 +837,66 @@
     </details>
   </div>
   <dl class="cv-panel cv-certsettings">
-    <div class="cv-certset"><dt>Issuer</dt> <dd>{{.Issuer}}</dd> <dd class="cv-certset-note">{{.IssuerHint}}</dd></div>
+    <div class="cv-certset"><dt>Issuer</dt> <dd>{{.Issuer}}</dd> <dd class="cv-certset-note">{{.IssuerHint}}{{with .IssuerExtra}} <span class="cv-inline-mono">{{.}}</span>{{end}}</dd></div>
     <div class="cv-certset"><dt>Contact email</dt> <dd>{{.Email}}</dd> <dd class="cv-certset-note">{{.EmailHint}}</dd></div>
     <div class="cv-certset"><dt>Warn when</dt> <dd>{{.WarnDays}} d before expiry</dd> <dd class="cv-certset-note">{{if .WarnLocked}}Applies once certificates are issued. {{end}}Sends to the channels set up in <a href="/settings/notifications">Notifications</a>.</dd></div>
   </dl>
+  <div id="issuer" class="cv-issuerbox">
+  {{with .Issue}}
+  {{if .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Alert}}</span></div>{{end}}
+  {{if .Why}}
+  <p class="cv-hint" id="issuer-unavailable">{{.Why}}</p>
+  {{else}}
+  <details class="cv-confirm cv-issueredit"{{if .Open}} open{{end}} id="change-issuer">
+    <summary class="cv-btn cv-btn-secondary cv-btn-sm">Change issuer</summary>
+    <form method="post" action="/settings/certificates/issuer" class="cv-confirm-body" autocomplete="off">
+      <fieldset class="cv-radios">
+        <legend class="cv-label">Issuer</legend>
+        <label class="cv-radio"><input type="radio" name="issuer" value="installer"{{if eq .Choice "installer"}} checked{{end}}><span>{{.Installer}} (what the installer set)</span></label>
+        <label class="cv-radio"><input type="radio" name="issuer" value="custom"{{if eq .Choice "custom"}} checked{{end}}><span>Another ACME issuer</span></label>
+      </fieldset>
+      <label class="cv-fld" for="issuer-server">
+        <span class="cv-label">ACME directory URL</span>
+        <input class="cv-field" type="text" id="issuer-server" name="server" value="{{.Server}}" placeholder="https://acme.example.com/directory" spellcheck="false" autocapitalize="off" autocomplete="off"{{if index .Errs "server"}} aria-invalid="true" aria-describedby="issuer-server-error" autofocus{{end}}>
+        <span class="cv-hint">{{range $i, $p := .Presets}}{{if $i}} · {{end}}<a href="{{$p.Href}}">{{$p.Name}}</a>{{end}}</span>
+        {{with index .Errs "server"}}<span id="issuer-server-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+      </label>
+      <label class="cv-fld" for="issuer-email">
+        <span class="cv-label">Contact email</span>
+        <input class="cv-field" type="text" id="issuer-email" name="email" value="{{.Email}}" spellcheck="false" autocapitalize="off" autocomplete="off"{{if index .Errs "email"}} aria-invalid="true" aria-describedby="issuer-email-error" autofocus{{end}}>
+        {{with index .Errs "email"}}<span id="issuer-email-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+      </label>
+      <label class="cv-fld" for="issuer-eab-id">
+        <span class="cv-label">EAB key ID</span>
+        <input class="cv-field cv-field-mono" type="text" id="issuer-eab-id" name="eabKeyId" value="{{.EABKeyID}}" spellcheck="false" autocapitalize="off" autocomplete="off"{{if index .Errs "eabKeyId"}} aria-invalid="true" aria-describedby="issuer-eab-id-error" autofocus{{end}}>
+        <span class="cv-hint">Only for an issuer that requires External Account Binding.</span>
+        {{with index .Errs "eabKeyId"}}<span id="issuer-eab-id-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+      </label>
+      <label class="cv-fld" for="issuer-eab-key">
+        <span class="cv-label">EAB HMAC key</span>
+        <input class="cv-field cv-field-mono" type="password" id="issuer-eab-key" name="eabHmacKey" value="" spellcheck="false" autocapitalize="off" autocomplete="off"{{if index .Errs "eabHmacKey"}} aria-invalid="true" aria-describedby="issuer-eab-key-error" autofocus{{end}}>
+        {{if .EABKeySet}}<span class="cv-hint">Leave empty to keep the stored key.</span>{{end}}
+        {{with index .Errs "eabHmacKey"}}<span id="issuer-eab-key-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+      </label>
+      <details class="cv-confirm"{{if or .CA .RemoveCA (index .Errs "caCertificate")}} open{{end}}>
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm">The issuer's own CA certificate (PEM)</summary>
+        <div class="cv-confirm-body">
+          <label class="cv-fld" for="issuer-ca">
+            <span class="cv-label">CA certificate</span>
+            <textarea class="cv-field cv-field-area cv-field-mono" id="issuer-ca" name="caCertificate" rows="5" autocapitalize="off" spellcheck="false" autocomplete="off" placeholder="-----BEGIN CERTIFICATE-----"{{if index .Errs "caCertificate"}} aria-invalid="true" aria-describedby="issuer-ca-error" autofocus{{end}}>{{.CA}}</textarea>
+            <span class="cv-hint">Only for an issuer with a private CA.{{if .HasCA}} A CA certificate is stored: leave the box empty to keep it.{{end}}</span>
+            {{with index .Errs "caCertificate"}}<span id="issuer-ca-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+          </label>
+          {{if .HasCA}}<label class="cv-check"><input type="checkbox" name="removeCA" value="1"{{if .RemoveCA}} checked{{end}}><span>Remove the stored CA certificate</span></label>{{end}}
+        </div>
+      </details>
+      <p class="cv-hint">Saving restarts Traefik once: a few seconds without HTTP, this page included. Every domain then gets a new certificate from the new issuer.</p>
+      <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and restart Traefik</button></div>
+    </form>
+  </details>
+  {{end}}
+  {{end}}
+  </div>
 </section>
 {{end}}
 {{end}}

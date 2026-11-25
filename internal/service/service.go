@@ -200,6 +200,18 @@ type Service struct {
 	// Console address (feature 051), see consoleaddress.go.
 	consoleAddr consoleAddressState
 
+	// Certificates (feature 034), see certissuer.go and uploadedcerts.go: acmeClient reads a custom
+	// issuer's directory (nil: the default), issuerCA is the issuer's CA for the domain checks,
+	// certRecheck is how long after an upload or removal the covered hosts are checked again, and
+	// certMu makes the uploads and removals one at a time.
+	acmeClient  atomic.Pointer[func(ca string) *http.Client]
+	issuerCA    issuerCAState
+	certRecheck time.Duration
+	certMu      sync.Mutex
+	// certDrop is the timing and the in-flight restarts of the drops of earlier certificates (feature 056),
+	// see certificatedrops.go.
+	certDrop certDropState
+
 	// Previews (feature 049), see previews.go.
 	previewGap    time.Duration // between two passes of the reaper
 	previewExpiry atomic.Int64  // when positive, how long every preview may sit idle, in nanoseconds (the lab's shortcut)
@@ -305,6 +317,9 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		deleting:   map[string]bool{},
 
 		previewGap: defaultPreviewReapGap,
+
+		certRecheck: defaultCertRecheck,
+		certDrop:    newCertDropState(),
 
 		consoleAddr: newConsoleAddressState(),
 
@@ -589,6 +604,15 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runConsoleAddressPass(ctx, consoleGap)
+	}()
+	// Drops of the earlier certificates an upload covers (feature 056): the ones that never got going or
+	// never ended are given up, and a restart of Traefik that didn't finish is driven, from the first
+	// pass at start (a drop a restart of Caravana interrupted goes on).
+	dropGap := s.certDrop.gap // read here: tests set the field after Start
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runCertificateDropPass(ctx, dropGap)
 	}()
 	return nil
 }

@@ -23,11 +23,14 @@ type DomainCheckRecord struct {
 	CertStatus           string
 	CertIssuer           string
 	CertNotAfter         *time.Time // nil when there is none
-	CheckedAt            time.Time
+	// CertFingerprint is the SHA-256 of the leaf the handshake showed, lower-case hex; empty when
+	// none was presented. It tells an uploaded certificate from an ACME one (feature 034).
+	CertFingerprint string
+	CheckedAt       time.Time
 }
 
 const domainCheckColumns = `host, app_id, service, state, dns_status, dns_seen, dns_expected,
-	cert_status, cert_issuer, cert_not_after, checked_at`
+	cert_status, cert_issuer, cert_not_after, cert_fingerprint, checked_at`
 
 // UpsertDomainCheck saves the check of a host, replacing the one there is.
 func (s *Store) UpsertDomainCheck(ctx context.Context, r DomainCheckRecord) error {
@@ -41,14 +44,14 @@ func (s *Store) UpsertDomainCheck(ctx context.Context, r DomainCheckRecord) erro
 	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO domain_checks (`+domainCheckColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (host) DO UPDATE SET app_id = excluded.app_id, service = excluded.service,
 			state = excluded.state, dns_status = excluded.dns_status, dns_seen = excluded.dns_seen,
 			dns_expected = excluded.dns_expected, cert_status = excluded.cert_status,
 			cert_issuer = excluded.cert_issuer, cert_not_after = excluded.cert_not_after,
-			checked_at = excluded.checked_at`,
+			cert_fingerprint = excluded.cert_fingerprint, checked_at = excluded.checked_at`,
 		r.Host, r.AppID, r.Service, r.State, r.DNSStatus, string(seen), string(expected),
-		r.CertStatus, r.CertIssuer, optionalTime(r.CertNotAfter), formatTime(r.CheckedAt))
+		r.CertStatus, r.CertIssuer, optionalTime(r.CertNotAfter), r.CertFingerprint, formatTime(r.CheckedAt))
 	if err != nil {
 		return fmt.Errorf("save check of %q: %w", r.Host, err)
 	}
@@ -110,7 +113,7 @@ func scanDomainCheck(row scanner) (DomainCheckRecord, error) {
 	var seen, expected, checked string
 	var notAfter sql.NullString
 	err := row.Scan(&r.Host, &r.AppID, &r.Service, &r.State, &r.DNSStatus, &seen, &expected,
-		&r.CertStatus, &r.CertIssuer, &notAfter, &checked)
+		&r.CertStatus, &r.CertIssuer, &notAfter, &r.CertFingerprint, &checked)
 	if err != nil {
 		return DomainCheckRecord{}, err
 	}

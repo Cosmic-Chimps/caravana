@@ -3,7 +3,6 @@ package deploy
 import (
 	"context"
 	"errors"
-	"net/http"
 	"slices"
 
 	"github.com/hashicorp/nomad/api"
@@ -96,19 +95,18 @@ func (d *Deployer) ProxyCopies(ctx context.Context) ([]Copy, error) {
 }
 
 // ProxyAccessLog says whether Traefik's job writes its access log: one of its
-// tasks' arguments is --accesslog=true. A host the installer made before
-// feature 047 has the job without it, and the page says to run the installer
-// again. A host with no job named traefik is ErrNoProxy.
+// tasks' arguments is --accesslog=true, or the job renders its static
+// configuration from a file (feature 034's meta caravana_certificates), which
+// always has the access log. A host the installer made before feature 047 has
+// the job without it, and the page says to run the installer again. A host with
+// no job named traefik is ErrNoProxy.
 func (d *Deployer) ProxyAccessLog(ctx context.Context) (bool, error) {
-	job, _, err := d.nomad.Jobs().Info(ProxyJob, (&api.QueryOptions{}).WithContext(ctx))
+	job, err := d.proxyJob(ctx)
 	if err != nil {
-		if ctx.Err() != nil {
-			return false, ctx.Err()
-		}
-		if statusOf(err) == http.StatusNotFound {
-			return false, ErrNoProxy
-		}
-		return false, d.callError("read the traefik job", err)
+		return false, err
+	}
+	if job.Meta[certificatesMeta] == "1" {
+		return true, nil
 	}
 	for _, g := range job.TaskGroups {
 		if g == nil {

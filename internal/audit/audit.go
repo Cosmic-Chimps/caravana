@@ -142,6 +142,7 @@ const (
 	KindAddon               Kind = "addon"
 	KindGitAccess           Kind = "git_access"
 	KindConsoleAddress      Kind = "console_address"
+	KindCertificate         Kind = "certificate"
 	KindSettings            Kind = "settings"
 	KindInstallation        Kind = "installation"
 )
@@ -152,7 +153,7 @@ func Kinds() []Kind {
 		KindApp, KindProject, KindEnvironment, KindSchedule, KindBackup, KindDomain, KindToken,
 		KindWebhookToken, KindRegistry, KindBackupDestination, KindNotificationChannel, KindDNSZone,
 		KindSecretProvider, KindPerson, KindPasskey, KindAccount, KindServer, KindVolume, KindAddon,
-		KindGitAccess, KindConsoleAddress, KindSettings, KindInstallation,
+		KindGitAccess, KindConsoleAddress, KindCertificate, KindSettings, KindInstallation,
 	}
 }
 
@@ -191,6 +192,7 @@ const (
 	RecordCleanup              RecordKind = "cleanup"
 	RecordVolumeDeletion       RecordKind = "volume_deletion"
 	RecordConsoleAddressChange RecordKind = "console_address_change"
+	RecordCertificateDrop      RecordKind = "certificate_drop"
 )
 
 // Record links an entry to the record it is about.

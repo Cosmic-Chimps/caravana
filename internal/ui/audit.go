@@ -342,6 +342,8 @@ func (l auditLinks) hrefs(e audit.Event) (resource, record string) {
 		if e.Resource.Kind == audit.KindSchedule && e.Resource.ID != "" {
 			record = "/schedules/" + url.PathEscape(e.Resource.ID) + "/runs/" + url.PathEscape(e.Record.ID)
 		}
+	case audit.RecordCertificateDrop:
+		record = "/settings/certificates" // the drops are listed there
 	}
 	return resource, record
 }

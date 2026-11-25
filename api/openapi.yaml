@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.62.0
+  version: 0.64.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -1426,7 +1426,10 @@ paths:
         The report also carries `space` (feature 045): the images Docker holds, with whether a container
         uses each, Docker's leftover volumes, the build cache, and the size of each Nomad host volume
         directory. While a clean-up (`cleanServer`) is requested or running for the server, the answer
-        carries `clean`: its ID and the digests to keep. Answers are `Cache-Control: no-store`; the body
+        carries `clean`: its ID and the digests to keep. The ingress server's agent also reports whether
+        it holds Traefik's certificate store (`traefikStore`), and while a drop of earlier certificates
+        (`dropEarlierCertificates`) is open its answer carries `certificateDrop`: the ID and the names
+        the uploads cover (feature 056). Answers are `Cache-Control: no-store`; the body
         of a sync is at most 4 MiB, since the report may name a thousand images.
       tags: [servers]
       security:
@@ -5946,6 +5949,84 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /v1/settings/certificates/issuer:
+    put:
+      operationId: putCertificateIssuer
+      summary: Set the ACME issuer that gives the domains their certificates.
+      description: |
+        Another ACME issuer instead of the installer's Let's Encrypt (Google Trust Services, ZeroSSL,
+        DigiCert, step-ca, …). Before anything is saved Caravana reads the directory at `server`
+        (10 seconds, no redirects, at most 64 KiB) and refuses an address that isn't an ACME directory,
+        or one whose directory says External Account Binding is required when `eabKeyId` is empty
+        (`invalid_field` on `eabKeyId`). It never registers an account: an EAB key can be single-use.
+        The EAB HMAC key is write-only: kept only in a Nomad Variable, never returned, logged or put in
+        a job. A missing `eabHmacKey` keeps the stored key, but only when `eabKeyId` is the stored key's
+        ID; a new key ID needs its key (`invalid_field` on `eabHmacKey`), and a key without a key ID is
+        refused on `eabKeyId`. A missing `caCertificate` keeps the stored one and an empty one removes
+        it. Saving applies by itself: Traefik's task restarts once (a few seconds without HTTP, the
+        console included) and every domain gets its certificate from the new issuer as it is asked for.
+        Each issuer has its own account and certificate store in Traefik's volume, so going back finds
+        the earlier ones. 409 `issuer_unavailable` (the message says why and what to run) when the
+        installation was made with `--acme none` or Traefik's job is older than this feature; 502 when
+        Nomad can't be written (nothing is half-saved). Answers the settings as they are now.
+      tags: [domains]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateIssuerRequest"
+      responses:
+        "200":
+          description: The settings, with the issuer set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/CertificateConflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/CertificateInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+    delete:
+      operationId: deleteCertificateIssuer
+      summary: Go back to the installer's issuer.
+      description: |
+        Removes the custom issuer: Traefik restarts its task once and uses the issuer the installer set
+        (Let's Encrypt), with the certificates it had before, while they are valid. It is 200 also when
+        no custom issuer was set. 409 `issuer_unavailable` as for `putCertificateIssuer`.
+      tags: [domains]
+      responses:
+        "200":
+          description: The settings, with the installer's issuer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/CertificateConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
   /v1/certificates:
     get:
       operationId: listCertificates
@@ -5967,6 +6048,230 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/certificates/uploaded:
+    get:
+      operationId: listUploadedCertificates
+      summary: List the certificates an owner uploaded.
+      description: |
+        Oldest upload first. Each says which served domains presented it at their last check
+        (`domains`) and which it covers whose last check presented another certificate that isn't
+        Traefik's own (`keptEarlier`): Traefik keeps a certificate it already has, so those need the
+        installer run again on the server to drop it. The private key is never returned.
+      tags: [domains]
+      responses:
+        "200":
+          description: The uploaded certificates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadedCertificateList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: uploadCertificate
+      summary: Upload a certificate and its private key.
+      description: |
+        A PEM chain (the certificate and its intermediates, in any order) and its private key (PKCS#8,
+        PKCS#1 or SEC 1, not encrypted; either field may hold both). Caravana checks that the key
+        matches, the chain is complete (a root may be included), the certificate is valid now, is made
+        for servers and has DNS names; one from a private CA is accepted and marked `trusted: false`.
+        The chain and the key go to a Nomad Variable that Traefik renders into its file provider: it
+        serves the certificate for every host it covers within about a minute, with no restart and
+        without asking the ACME issuer for those hosts. Nothing renews it: `status` says when it is
+        `expiring` or `expired`, and the needs-you list has one item (`certificate_expiring`).
+        A certificate with exactly the names of an earlier upload replaces it (`replaced` is that
+        one's ID). At most 30 certificates. 422 `invalid_field` on `certificate` or `key` says what is
+        wrong in plain words; 409 `too_many_certificates` or `certificates_unavailable` (the message
+        says what to run: Traefik's job is older than this feature).
+      tags: [domains]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateUpload"
+      responses:
+        "201":
+          description: Uploaded.
+          headers:
+            Location:
+              description: The certificate's path.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadedCertificate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/CertificateConflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/CertificateInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/certificates/uploaded/{id}:
+    parameters:
+      - $ref: "#/components/parameters/CertificateID"
+    get:
+      operationId: getUploadedCertificate
+      summary: Read an uploaded certificate.
+      tags: [domains]
+      responses:
+        "200":
+          description: The certificate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadedCertificate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/CertificateNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: deleteUploadedCertificate
+      summary: Remove an uploaded certificate.
+      description: |
+        Its variable goes first, then its record. The hosts it covered go back to the ACME issuer
+        (or to Traefik's own certificate without one) once Traefik has picked the change up.
+      tags: [domains]
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/CertificateNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/certificates/drops:
+    post:
+      operationId: dropEarlierCertificates
+      summary: Drop the earlier certificates the uploaded ones cover.
+      description: |
+        Traefik keeps serving and renewing an ACME certificate it already holds, and one for an exact
+        name beats an uploaded wildcard, so after an upload the hosts it covers can keep presenting their
+        earlier certificate (`keptEarlier` on `listUploadedCertificates`). This asks the ingress server's
+        agent to remove from Traefik's certificate store every ACME certificate whose every name an
+        uploaded certificate covers, exactly or as a wildcard one label deeper. The agent does it at its
+        next sync (within 30 seconds) and Caravana then restarts Traefik once: a few seconds without HTTPS.
+        A certificate that also names a host no upload covers is kept (Traefik would order it again).
+
+        The answer is 202 with the drop, `requested`; read it again (`getCertificateDrop`) until it is
+        `done`, `failed` or `lost`. `dropped` says what was removed: each certificate as its names joined
+        with `+`, main name first. Neither a certificate nor a key is ever in an answer.
+
+        Refused with 409 `no_uploaded_certificates` when none is uploaded (or none has a name the agent
+        accepts), `no_agent` when the ingress server has no agent that reports holding Traefik's store
+        (run the installer on it: the message says on which server), and `certificate_drop_running` while
+        another drop is requested, running or restarting. An administrator's call.
+      tags: [domains]
+      responses:
+        "202":
+          description: The drop, `requested`.
+          headers:
+            Location:
+              schema: {type: string}
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateDrop"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/CertificateDropRefused"
+        "500":
+          $ref: "#/components/responses/Internal"
+    get:
+      operationId: listCertificateDrops
+      summary: List the drops of earlier certificates.
+      description: "The newest 20, newest first. Answers are `Cache-Control: no-store`."
+      tags: [domains]
+      responses:
+        "200":
+          description: The drops.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [drops]
+                properties:
+                  drops:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CertificateDrop"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/certificates/drops/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A drop's ID, 32 lowercase hex digits.
+        schema: {type: string}
+    get:
+      operationId: getCertificateDrop
+      summary: Read a drop of earlier certificates.
+      tags: [domains]
+      responses:
+        "200":
+          description: The drop.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateDrop"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`certificate_drop_not_found`: no drop has this ID."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/Internal"
 
@@ -7842,6 +8147,17 @@ components:
       examples:
         bella:
           value: bella-prod
+    CertificateID:
+      name: id
+      in: path
+      required: true
+      description: An uploaded certificate's ID, `crt_` and 12 lowercase hex digits.
+      schema:
+        type: string
+        pattern: "^crt_[0-9a-f]{12}$"
+      examples:
+        certificate:
+          value: crt_3f9a1c2b4d5e
     BackupDestinationName:
       name: name
       in: path
@@ -9377,8 +9693,9 @@ components:
             `deploy_failed`, `backup_failed`, `restarting`, `out_of_memory`, `schedule_failed`
             (a schedule's latest run failed), `schedule_skipping` (its last 3 slots were
             skipped), `domain_dns_elsewhere` (a domain's DNS points at another host) or
-            `domain_cert_expiring` (a domain's certificate is near its end and not renewed) or
-            `disk_nearly_full` (a filesystem of the host is 85 % full or more),
+            `domain_cert_expiring` (a domain's certificate is near its end and not renewed),
+            `certificate_expiring` (an uploaded certificate is near its end or has ended; nothing
+            renews it) or `disk_nearly_full` (a filesystem of the host is 85 % full or more),
             `os_reboot_required` (the host needs a reboot), `os_security_updates` (security
             updates are waiting; a warning) or `caravana_update_failed` (an update of Caravana was
             rolled back, failed, was refused or got lost), `server_down` (a server's node is
@@ -9460,7 +9777,14 @@ components:
         expiresAt:
           type: string
           format: date-time
-          description: "`problem.opened` of `domain_cert_expiring` and `server_certificate_expiring`: when the certificate ends."
+          description: "`problem.opened` of `domain_cert_expiring`, `certificate_expiring` and `server_certificate_expiring`: when the certificate ends."
+        certificate:
+          type: string
+          description: "`problem.opened` of `certificate_expiring` (feature 034): the uploaded certificate's ID. Such an event has no app, project or environment; `title` is \"Certificate expiring: <first name>\" or \"Certificate expired: …\"."
+        names:
+          type: array
+          items: {type: string}
+          description: "`problem.opened` of `certificate_expiring`: the DNS names the certificate covers."
         server:
           type: string
           description: "`problem.opened` of `server_down` and `server_certificate_expiring`: the server's name, and of `disk_nearly_full` when the cluster has more than one server. Such an event has no app, project or environment."
@@ -10930,13 +11254,13 @@ components:
     DomainCertificate:
       type: object
       additionalProperties: false
-      required: [status, issuer, notAfter, renewsAt]
+      required: [status, issuer, notAfter, renewsAt, fingerprint, uploaded]
       properties:
         status:
           type: string
           enum: [issued, pending, self, expiring, error, none]
           description: |
-            `issued`: a trusted certificate for the host. `pending`: Traefik's own while Let's
+            `issued`: a trusted certificate for the host (or an uploaded one, judged by its own dates). `pending`: Traefik's own while Let's
             Encrypt is asked. `self`: Traefik's own, installed without Let's Encrypt.
             `expiring`: issued and within the warning window. `error`: the handshake failed or
             the certificate isn't one to trust. `none`: not checked (the app isn't served, or
@@ -10948,7 +11272,15 @@ components:
         renewsAt:
           type: [string, "null"]
           format: date-time
-          description: When Traefik renews it, 30 days before `notAfter`; null unless issued or expiring.
+          description: When Traefik renews it, 30 days before `notAfter`; null unless issued or expiring, and null for an uploaded certificate, which nothing renews.
+        fingerprint:
+          type: string
+          description: The SHA-256 of the leaf the handshake showed, in lower-case hex; empty when none was presented.
+        uploaded:
+          oneOf:
+            - $ref: "#/components/schemas/UploadedRef"
+            - type: "null"
+          description: The uploaded certificate (`uploadCertificate`) the host presents, recognised by `fingerprint`; null for any other.
 
     DomainCheck:
       type: object
@@ -11012,17 +11344,40 @@ components:
     CertificateSettings:
       type: object
       additionalProperties: false
-      required: [issuer, contactEmail, warnBeforeDays, edgeAddress]
+      required: [issuer, issuerName, contactEmail, warnBeforeDays, edgeAddress, acme, issuerUnavailable, uploadUnavailable]
       properties:
         issuer:
           type: string
-          enum: [letsencrypt, letsencrypt-staging, none, unknown]
+          enum: [letsencrypt, letsencrypt-staging, custom, none, unknown]
           description: |
-            `none`: installed without Let's Encrypt, Traefik serves its own certificate.
-            `unknown`: the installer hasn't said (run it again).
+            `custom`: the issuer set with `putCertificateIssuer`. `none`: installed without Let's
+            Encrypt, Traefik serves its own certificate. `unknown`: the installer hasn't said (run it
+            again).
+        issuerName:
+          type: string
+          description: |
+            The issuer in words: `Let's Encrypt`, `Let's Encrypt (staging)`, the name of a preset
+            (`Google Trust Services`, `ZeroSSL`, `DigiCert`) when a custom issuer's `server` is its
+            address, else the server's host. Empty for `none` and `unknown`.
+        acme:
+          oneOf:
+            - $ref: "#/components/schemas/ACMEIssuer"
+            - type: "null"
+          description: The custom issuer; null while the installer's applies.
+        issuerUnavailable:
+          type: string
+          enum: ["", installed_without_issuer, traefik_outdated, nomad_unreachable]
+          description: |
+            Empty when the issuer can be changed, else why not: `installed_without_issuer` (made with
+            `--acme none`: run the installer with `--acme production`), `traefik_outdated` (Traefik's job
+            is older than this feature: run the installer again on the server) or `nomad_unreachable`.
+        uploadUnavailable:
+          type: string
+          enum: ["", traefik_outdated, nomad_unreachable]
+          description: Empty when certificates can be uploaded, else why not.
         contactEmail:
           type: string
-          description: The email Let's Encrypt has; empty when unknown. Read-only.
+          description: "The email the issuer has: the installer's for Let's Encrypt (read-only), the custom issuer's when there is one; empty when unknown."
         warnBeforeDays:
           type: integer
           enum: [7, 14, 30]
@@ -11052,7 +11407,7 @@ components:
     Certificate:
       type: object
       additionalProperties: false
-      required: [host, app, service, issuer, status, notAfter, renewsAt]
+      required: [host, app, service, issuer, status, notAfter, renewsAt, fingerprint, uploaded]
       properties:
         host: {type: string}
         app:
@@ -11061,12 +11416,174 @@ components:
         service: {type: string}
         issuer:
           type: string
-          description: "`Let's Encrypt`, `Traefik's own`, …"
+          description: "`Let's Encrypt`, `Traefik's own`, the custom issuer's CA, or an uploaded certificate's issuer."
         status:
           type: string
           enum: [issued, pending, self, expiring, error]
         notAfter: {type: [string, "null"], format: date-time}
         renewsAt: {type: [string, "null"], format: date-time}
+        fingerprint:
+          type: string
+          description: The SHA-256 of the leaf the handshake showed, lower-case hex; empty when none.
+        uploaded:
+          oneOf:
+            - $ref: "#/components/schemas/UploadedRef"
+            - type: "null"
+          description: The uploaded certificate the host presents; null for any other.
+
+    UploadedRef:
+      type: object
+      additionalProperties: false
+      required: [id, subject]
+      properties:
+        id:
+          type: string
+          description: The uploaded certificate's ID (`getUploadedCertificate`).
+        subject:
+          type: string
+          description: Its common name, else its first name.
+
+    ACMEIssuer:
+      type: object
+      additionalProperties: false
+      required: [server, email, eabKeyId, eabKeySet, privateCA, updatedAt]
+      description: The custom ACME issuer. The EAB HMAC key is never in it.
+      properties:
+        server:
+          type: string
+          description: The ACME directory URL.
+        email:
+          type: string
+          description: The contact email the issuer has.
+        eabKeyId:
+          type: string
+          description: The External Account Binding key ID; empty for none.
+        eabKeySet:
+          type: boolean
+          description: A key is stored, in a Nomad Variable, for `eabKeyId`.
+        privateCA:
+          type: boolean
+          description: A CA certificate is stored, for an issuer whose own HTTPS certificate comes from a private CA.
+        updatedAt:
+          type: string
+          format: date-time
+
+    CertificateIssuerRequest:
+      type: object
+      additionalProperties: false
+      required: [server, email]
+      properties:
+        server:
+          type: string
+          maxLength: 512
+          description: |
+            The ACME directory: an `https://` URL with a host, no user name, no fragment, printable
+            ASCII without spaces. Caravana reads it before saving; it must have `newNonce`,
+            `newAccount` and `newOrder`.
+          examples: ["https://acme.zerossl.com/v2/DV90"]
+        email:
+          type: string
+          description: The contact email, a plain address.
+        eabKeyId:
+          type: string
+          description: |
+            The External Account Binding key ID, 1 to 256 of letters, digits and `. _ ~ + / = -`.
+            Empty or absent means no EAB (the issuer's directory must not require it).
+        eabHmacKey:
+          type: string
+          description: |
+            The EAB HMAC key as the issuer shows it, base64url or standard base64, padding allowed,
+            at least 16 bytes. Absent keeps the stored key when `eabKeyId` is the stored one; required
+            for a new `eabKeyId`. Never returned.
+        caCertificate:
+          type: string
+          maxLength: 32768
+          description: |
+            One or more PEM certificates of the CA that signs the issuer's own HTTPS certificate, for
+            an issuer with a private CA. Traefik and the domain checks trust it. Absent keeps the
+            stored one; an empty string removes it.
+
+    CertificateUpload:
+      type: object
+      additionalProperties: false
+      required: [certificate, key]
+      properties:
+        certificate:
+          type: string
+          maxLength: 65536
+          description: "The PEM chain: the certificate and its intermediates in any order, a root optionally. It may also hold the private key."
+        key:
+          type: string
+          maxLength: 65536
+          description: The private key in PEM (PKCS#8, PKCS#1 or SEC 1), not encrypted. May be empty when `certificate` holds it. Never returned.
+
+    KeptEarlier:
+      type: object
+      additionalProperties: false
+      required: [host, alsoAsks]
+      description: |
+        A served host the certificate covers that still presents another certificate. Traefik keeps a
+        certificate it already has: run the installer again on the server to drop it. `alsoAsks` are the
+        other hosts of the host's route that the certificate doesn't cover: Traefik asks for a
+        certificate for every name of a route when one isn't covered, so upload a certificate that
+        covers all of them. Empty when the route's hosts are all covered.
+      properties:
+        host: {type: string}
+        alsoAsks:
+          type: array
+          items: {type: string}
+
+    UploadedCertificate:
+      type: object
+      additionalProperties: false
+      required: [id, names, subject, issuer, notBefore, notAfter, fingerprint, keyType, trusted, status, uploadedAt, domains, keptEarlier]
+      properties:
+        id: {type: string, pattern: "^crt_[0-9a-f]{12}$"}
+        names:
+          type: array
+          items: {type: string}
+          description: The DNS names the certificate is made for, lower case, sorted.
+        subject: {type: string}
+        issuer:
+          type: string
+          description: The issuer's organization, else its common name.
+        notBefore: {type: string, format: date-time}
+        notAfter: {type: string, format: date-time}
+        fingerprint:
+          type: string
+          description: The SHA-256 of the leaf, lower-case hex.
+        keyType:
+          type: string
+          examples: ["ECDSA P-256", "RSA 2048"]
+        trusted:
+          type: boolean
+          description: The chain ends at a root this server trusts. A certificate of a private CA is accepted and is `false`.
+        status:
+          type: string
+          enum: [valid, expiring, expired]
+          description: "`expiring` inside the warning window (`getCertificateSettings`), `expired` past `notAfter`. Nothing renews an uploaded certificate."
+        uploadedAt: {type: string, format: date-time}
+        domains:
+          type: array
+          items: {type: string}
+          description: The served domains whose last check presented this certificate.
+        keptEarlier:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeptEarlier"
+        replaced:
+          type: string
+          description: "Only in the answer of `uploadCertificate`, when the upload replaced an earlier one with the same names: its ID."
+
+    UploadedCertificateList:
+      type: object
+      additionalProperties: false
+      required: [certificates]
+      properties:
+        certificates:
+          type: array
+          items:
+            $ref: "#/components/schemas/UploadedCertificate"
 
     ScheduleList:
       type: object
@@ -13309,7 +13826,7 @@ components:
       type: string
       enum: [app, project, environment, schedule, backup, domain, token, webhook_token, registry,
         backup_destination, notification_channel, dns_zone, secret_provider, person, passkey, account,
-        server, volume, addon, git_access, console_address, settings, installation]
+        server, volume, addon, git_access, console_address, certificate, settings, installation]
       description: |
         What kind of thing was acted on. For `settings` the resource's `id` says which (`certificates`,
         `updates`, `templates`, `builds`, `cleanup`, `scans`, `previews`, `audit`, `sign-in`);
@@ -13467,6 +13984,38 @@ components:
             bytesFreed: {type: integer, minimum: 0}
             volumesRemoved: {type: integer, minimum: 0}
             error: {type: string, maxLength: 500}
+    CertificateDrop:
+      type: object
+      additionalProperties: false
+      description: |
+        One drop of the earlier certificates the uploads cover. `requested`: waiting for the ingress
+        server's agent's next sync. `running`: handed to the agent. `restarting`: the agent removed the
+        certificates (`dropped`, possibly none: its files may have been rewritten) and Traefik is being
+        restarted. `done`: Traefik runs again with the store as it is now. `failed` (`error` says why: the
+        agent refused or couldn't change the store, never picked it up, or Traefik couldn't be restarted,
+        in which case it still serves the earlier certificates) or `lost` (the agent was handed it and
+        never told how it went). Nothing of a certificate, key or account is in a drop.
+      required: [id, server, status, dropped, error, actor, requestedAt, startedAt, finishedAt]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{32}$"}
+        server: {type: string, description: "The ingress server's name."}
+        status: {type: string, enum: [requested, running, restarting, done, failed, lost]}
+        dropped:
+          type: array
+          maxItems: 100
+          description: "Each certificate removed, as its names joined with `+`, main name first. Empty until the agent says."
+          items: {type: string}
+        error: {type: string, description: "One sentence in Caravana's or the agent's words; empty when none."}
+        actor: {type: string, description: "The person's email, empty for Caravana itself."}
+        requestedAt: {type: string, format: date-time}
+        startedAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
+        finishedAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
     NodeClean:
       type: object
       additionalProperties: false
@@ -13562,6 +14111,29 @@ components:
             id: {type: string, pattern: "^[0-9a-f]{32}$"}
             state: {type: string, enum: [applied, failed, refused, running]}
             reason: {type: string, maxLength: 300, description: One printable line.}
+        traefikStore:
+          type: boolean
+          description: |
+            True when Traefik's certificate store folder is on this server (feature 056): only then is the
+            agent handed a drop of earlier certificates (`dropEarlierCertificates`). Left out when false,
+            and by an agent older than the feature.
+        certificateDrop:
+          type: object
+          additionalProperties: false
+          description: |
+            How the last drop request this agent handled went, from the agent's state. `dropped` (even with no
+            names: the agent's files may have been rewritten) is when Traefik must be restarted. Left out when
+            it handled none.
+          required: [id, state]
+          properties:
+            id: {type: string, pattern: "^[0-9a-f]{32}$"}
+            state: {type: string, enum: [running, dropped, nothing, failed, refused]}
+            dropped:
+              type: array
+              maxItems: 100
+              description: "Each certificate removed, as its lowercase host names joined with `+`."
+              items: {type: string, maxLength: 4096}
+            reason: {type: string, maxLength: 300, description: One printable line.}
         reach:
           type: array
           description: One ping over the private network per peer.
@@ -13625,6 +14197,23 @@ components:
           properties:
             id: {type: string, pattern: "^[0-9a-f]{32}$"}
             domain: {type: string, description: A lowercase host name.}
+        certificateDrop:
+          type: object
+          additionalProperties: false
+          description: |
+            A drop of the earlier certificates the uploads cover (`dropEarlierCertificates`) for the agent to
+            run: present only while one is requested or running, and only for the ingress server's agent.
+            `names` are the lowercase host names and wildcards of the uploaded certificates (1 to 1000); the
+            agent checks both members and removes only the stored ACME certificates whose every name they
+            cover. It reports the outcome in its next report.
+          required: [id, names]
+          properties:
+            id: {type: string, pattern: "^[0-9a-f]{32}$"}
+            names:
+              type: array
+              minItems: 1
+              maxItems: 1000
+              items: {type: string}
     AttentionItem:
       type: object
       additionalProperties: false
@@ -13635,7 +14224,7 @@ components:
           enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, backup_copy_failed, restore_failed, no_backup_destination,
             schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring, disk_nearly_full,
             os_reboot_required, os_security_updates, caravana_update_failed, server_down, server_certificate_expiring,
-            copies_unplaced, server_move_incomplete, scale_at_max, image_vulnerable]
+            copies_unplaced, server_move_incomplete, scale_at_max, image_vulnerable, certificate_expiring]
           description: |
             What needs a person. `schedule_failed`: a schedule's latest run that ended, not
             counting skipped slots and runs stopped on purpose, failed (an exit code other than 0,
@@ -13693,7 +14282,15 @@ components:
             service's backup to one of the destinations its policy copies to (`destination`) failed;
             `detail` is rclone's words or Caravana's. A later copy that succeeds, a policy that stops
             copying there, or the app's deletion clears it. `backup_failed` carries `destination` too,
-            where the failed backup was going. Clients should accept kinds they don't know.
+            where the failed backup was going. `certificate_expiring` (feature 034), a warning, failed
+            once it has ended: an uploaded certificate (`uploadCertificate`) ends inside the warning
+            window or has ended, and nothing renews it; `certificate` is its ID, `names` its DNS names and
+            `expiresAt` when it ends. One item per certificate, not one per domain, and a domain that
+            presents an uploaded certificate has no `domain_cert_expiring`. It is about the
+            installation, so it has no `appId`; `detail` is the sentence ("The uploaded certificate for
+            *.example.test expires in 5 days (Dec 2). Upload its replacement in Settings ›
+            Certificates."), and it goes when the certificate is replaced or removed. Clients should
+            accept kinds they don't know.
         destination:
           type: string
           description: |
@@ -13702,7 +14299,7 @@ components:
             copy was going to).
         appId:
           type: string
-          description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required`, `os_security_updates`, `caravana_update_failed`, `server_down` and `server_certificate_expiring`, which are about the installation, the host or a server.
+          description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required`, `os_security_updates`, `caravana_update_failed`, `server_down`, `server_certificate_expiring` and `certificate_expiring`, which are about the installation, the host or a server.
         project:
           type: string
           description: The project of `appId`'s app. Absent when `appId` is.
@@ -13729,7 +14326,14 @@ components:
         expiresAt:
           type: string
           format: date-time
-          description: For `domain_cert_expiring` and `server_certificate_expiring`, when the certificate ends.
+          description: For `domain_cert_expiring`, `certificate_expiring` and `server_certificate_expiring`, when the certificate ends.
+        certificate:
+          type: string
+          description: For `certificate_expiring`, the uploaded certificate's ID (`getUploadedCertificate`).
+        names:
+          type: array
+          items: {type: string}
+          description: For `certificate_expiring`, the DNS names the certificate covers.
         server:
           type: string
           description: The server's name, for `server_down`, `server_certificate_expiring` and `server_move_incomplete` (`getServer`), and for `disk_nearly_full` when the cluster has more than one server.
@@ -13764,7 +14368,7 @@ components:
         level:
           type: string
           enum: [warning, failed]
-          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %. For `caravana_update_failed`, `failed` for a run that failed and `warning` for the other states. For `server_down`, `failed`; for `server_certificate_expiring` and `server_move_incomplete`, `warning`. For `image_vulnerable`, `failed` when an advisory is critical, else `warning`.
+          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %. For `caravana_update_failed`, `failed` for a run that failed and `warning` for the other states. For `server_down`, `failed`; for `server_certificate_expiring` and `server_move_incomplete`, `warning`. For `image_vulnerable`, `failed` when an advisory is critical, else `warning`. For `certificate_expiring`, `failed` once the certificate has ended, else `warning`.
         scheduleId:
           type: string
           description: The schedule's ID (`getSchedule`), for the schedule kinds.
@@ -15394,6 +15998,42 @@ components:
         app is stopped; start it first. `preview_password` (`field` `host`): the domain is in a
         preview and uses its project's preview password; change that one with
         `putPreviewSettings`. Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    CertificateInvalid:
+      description: |
+        `invalid_field`, `field` naming it: `server`, `email`, `eabKeyId`, `eabHmacKey` or
+        `caCertificate` (`putCertificateIssuer`), `certificate` or `key` (`uploadCertificate`), with
+        what is wrong in plain words. Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    CertificateConflict:
+      description: |
+        `issuer_unavailable`: the issuer can't be changed here (Caravana was installed with `--acme
+        none`, or Traefik's job is older than this feature, or Nomad couldn't be read; the message says
+        which and what to run). `certificates_unavailable`: certificates can't be uploaded here, for the
+        same reasons but `--acme none`. `too_many_certificates`: 30 are uploaded already.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    CertificateDropRefused:
+      description: |
+        `no_uploaded_certificates`: no certificate is uploaded, or none has a name the agent accepts (a
+        lowercase host name or a wildcard one). `no_agent`: the ingress server (the first) has no agent
+        that reports holding Traefik's certificate store, reported lately and ready: the message says to
+        run the installer on that server (without a name when no managed server runs the ingress).
+        `certificate_drop_running`: a drop is requested, running or restarting; wait for it to end.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    CertificateNotFound:
+      description: "`certificate_not_found`: no uploaded certificate has this ID."
       content:
         application/json:
           schema:

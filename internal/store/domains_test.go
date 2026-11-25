@@ -18,7 +18,8 @@ func testCheck(host, appID string) DomainCheckRecord {
 		State: "live", DNSStatus: "ok",
 		DNSSeen: []string{"203.0.113.7"}, DNSExpected: []string{"203.0.113.7", "2001:db8::1"},
 		CertStatus: "issued", CertIssuer: "Let's Encrypt", CertNotAfter: &notAfter,
-		CheckedAt: time.Date(2026, 10, 24, 9, 15, 30, 123456789, time.UTC),
+		CertFingerprint: "ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12",
+		CheckedAt:       time.Date(2026, 10, 24, 9, 15, 30, 123456789, time.UTC),
 	}
 }
 
@@ -50,7 +51,7 @@ func TestDomainCheckRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.CertNotAfter != nil || len(got.DNSSeen) != 0 || len(got.DNSExpected) != 0 {
+	if got.CertNotAfter != nil || len(got.DNSSeen) != 0 || len(got.DNSExpected) != 0 || got.CertFingerprint != "" {
 		t.Errorf("bare check read back as %+v", got)
 	}
 

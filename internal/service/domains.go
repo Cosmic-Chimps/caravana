@@ -95,6 +95,8 @@ type DomainView struct {
 	// Record is set when Caravana made this host's DNS record at a provider
 	// (feature 048).
 	Record *ManagedRecord
+	// Uploaded is the uploaded certificate the host presents (feature 034); nil for any other.
+	Uploaded *UploadedRef
 }
 
 // DNSRecord is a record the owner creates where they manage a domain's DNS.
@@ -117,6 +119,8 @@ type DomainCheck struct {
 	// (feature 048): Caravana makes the record when the domain is added. ""
 	// when no zone covers it.
 	ManagedZone string
+	// Uploaded is the uploaded certificate the host presents (feature 034); nil for any other.
+	Uploaded *UploadedRef
 }
 
 // domainSettings are the edge checks' seams and settings, guarded by the
@@ -201,6 +205,8 @@ func (s *Service) edgeSettings() domainSettings {
 	if es.edgeAddress == "" {
 		es.edgeAddress = defaultEdgeAddress
 	}
+	// A custom issuer with its own CA (feature 034): the checks trust it too.
+	es.dialer = s.withIssuerCA(es.dialer)
 	return es
 }
 
@@ -463,6 +469,10 @@ func (s *Service) Domains(ctx context.Context, f DomainFilter) ([]DomainView, er
 	if err != nil {
 		return nil, fmt.Errorf("list domains: %w", err)
 	}
+	uploads, err := s.uploadsByFingerprint(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list domains: %w", err)
+	}
 	out := make([]DomainView, 0, len(targets))
 	for _, t := range targets {
 		var cached *store.DomainCheckRecord
@@ -471,6 +481,10 @@ func (s *Service) Domains(ctx context.Context, f DomainFilter) ([]DomainView, er
 		}
 		v := viewOf(t, cached)
 		v.Record = records[t.host]
+		if u, ok := uploads[v.Certificate.Fingerprint]; ok && v.Certificate.Fingerprint != "" {
+			v.Uploaded = &UploadedRef{ID: u.ID, Subject: u.Subject}
+			v.Certificate.RenewsAt = time.Time{} // nothing renews an uploaded certificate
+		}
 		out = append(out, v)
 	}
 	sortDomains(out)
@@ -543,7 +557,7 @@ func factsOf(c store.DomainCheckRecord) edge.Facts {
 	}
 	f := edge.Facts{
 		DNS:         dns,
-		Certificate: edge.Certificate{Status: c.CertStatus, Issuer: c.CertIssuer},
+		Certificate: edge.Certificate{Status: c.CertStatus, Issuer: c.CertIssuer, Fingerprint: c.CertFingerprint},
 		CheckedAt:   c.CheckedAt,
 	}
 	if c.CertNotAfter != nil {
@@ -600,6 +614,8 @@ func (s *Service) probe(ctx context.Context, es domainSettings, host string, ser
 	f := edge.Check(ctx, es.resolver, dialer, es.edgeAddress, host, expected, es.certResolver != "", warn, s.clock.Now().UTC())
 	if !served {
 		f.Certificate = edge.Certificate{Status: edge.CertNone}
+	} else {
+		s.judgeUploaded(ctx, host, &f.Certificate, warn)
 	}
 	return f
 }
@@ -628,13 +644,14 @@ func (s *Service) warnWindow(ctx context.Context) (time.Duration, error) {
 func recordOf(t domainTarget, f edge.Facts, state edge.State) store.DomainCheckRecord {
 	r := store.DomainCheckRecord{
 		Host: t.host, AppID: t.rec.App.ID, Service: t.service.Name,
-		State:       string(state),
-		DNSStatus:   f.DNS.Status,
-		DNSSeen:     addrStrings(f.DNS.Seen),
-		DNSExpected: addrStrings(f.DNS.Expected),
-		CertStatus:  f.Certificate.Status,
-		CertIssuer:  f.Certificate.Issuer,
-		CheckedAt:   f.CheckedAt,
+		State:           string(state),
+		DNSStatus:       f.DNS.Status,
+		DNSSeen:         addrStrings(f.DNS.Seen),
+		DNSExpected:     addrStrings(f.DNS.Expected),
+		CertStatus:      f.Certificate.Status,
+		CertIssuer:      f.Certificate.Issuer,
+		CertFingerprint: f.Certificate.Fingerprint,
+		CheckedAt:       f.CheckedAt,
 	}
 	if !f.Certificate.NotAfter.IsZero() {
 		r.CertNotAfter = new(f.Certificate.NotAfter.UTC())
@@ -700,6 +717,14 @@ func (s *Service) CheckDomain(ctx context.Context, host, appID string) (DomainCh
 	if err != nil {
 		return DomainCheck{}, fmt.Errorf("check %q: %w", host, err)
 	}
+	uploads, err := s.uploadsByFingerprint(ctx)
+	if err != nil {
+		return DomainCheck{}, fmt.Errorf("check %q: %w", host, err)
+	}
+	out := DomainCheck{Host: host, Records: recordsFor(host, expected), DNS: f.DNS, Certificate: f.Certificate, CheckedAt: f.CheckedAt, ManagedZone: zone.Zone}
+	if u, ok := uploads[f.Certificate.Fingerprint]; ok && f.Certificate.Fingerprint != "" {
+		out.Uploaded = &UploadedRef{ID: u.ID, Subject: u.Subject}
+	}
 	// Check now is the owner's: a POST that refreshes what the Domains page shows, and the log says so.
 	dom := audit.Resource{Kind: audit.KindDomain, ID: host, Name: host}
 	if target != nil && target.rec != nil {
@@ -707,7 +732,7 @@ func (s *Service) CheckDomain(ctx context.Context, host, appID string) (DomainCh
 		dom.Kind, dom.ID, dom.Name = audit.KindDomain, host, host
 	}
 	s.audit(ctx, audit.Entry{Action: audit.ActionChecked, Resource: dom})
-	return DomainCheck{Host: host, Records: recordsFor(host, expected), DNS: f.DNS, Certificate: f.Certificate, CheckedAt: f.CheckedAt, ManagedZone: zone.Zone}, nil
+	return out, nil
 }
 
 // saveCheck upserts a target's row from fresh facts and, when its state is new,

@@ -133,6 +133,13 @@ func TestProxyAccessLog(t *testing.T) {
 		})
 	}
 
+	// Feature 034: the job reads its static configuration from a file, which has the access log on;
+	// its only argument is --configFile.
+	nomad.SetTraefikCertificates("traefik:v3.7.13", "--configFile=/secrets/traefik.yml")
+	if got, err := d.ProxyAccessLog(ctx); err != nil || !got {
+		t.Errorf("file-configured job: ProxyAccessLog = %v, %v; want true", got, err)
+	}
+
 	nomad.Down()
 	defer nomad.Up()
 	if _, err := d.ProxyAccessLog(ctx); !errors.Is(err, ErrNomadUnavailable) {

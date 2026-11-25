@@ -31,15 +31,9 @@ const consoleHostsItem = "hosts"
 // can't change until the installer runs again (which restarts Traefik once). A host with no job named
 // traefik is ErrNoProxy.
 func (d *Deployer) ConsoleRouteSupported(ctx context.Context) (bool, error) {
-	job, _, err := d.nomad.Jobs().Info(ProxyJob, (&api.QueryOptions{}).WithContext(ctx))
+	job, err := d.proxyJob(ctx)
 	if err != nil {
-		if ctx.Err() != nil {
-			return false, ctx.Err()
-		}
-		if statusOf(err) == http.StatusNotFound {
-			return false, ErrNoProxy
-		}
-		return false, d.callError("read the traefik job", err)
+		return false, err
 	}
 	for _, g := range job.TaskGroups {
 		if g == nil {
@@ -57,6 +51,21 @@ func (d *Deployer) ConsoleRouteSupported(ctx context.Context) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// proxyJob reads Traefik's job. A host with no job named traefik is ErrNoProxy.
+func (d *Deployer) proxyJob(ctx context.Context) (*api.Job, error) {
+	job, _, err := d.nomad.Jobs().Info(ProxyJob, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if statusOf(err) == http.StatusNotFound {
+			return nil, ErrNoProxy
+		}
+		return nil, d.callError("read the traefik job", err)
+	}
+	return job, nil
 }
 
 // consoleHostRE is what a host may be: it lands in Traefik's template, inside a Host(`...`) rule, so

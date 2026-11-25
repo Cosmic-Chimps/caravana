@@ -110,7 +110,13 @@ func (n *Nomad) SetNodeScheduling(drain bool, eligibility string) {
 // the access log (feature 047). The job has no template for the console's route, as
 // one the installer made before feature 051 has none; SetTraefikConsoleRoute adds it.
 func (n *Nomad) SetTraefikJob(image string, args ...string) {
-	n.AddForeignJob(traefikJob(image, args, nil))
+	n.AddForeignJob(traefikJob(image, args, nil, nil))
+}
+
+// SetTraefikCertificates registers the job "traefik" as the installer's does since feature 034: its
+// job meta says it renders the ACME issuer and the uploaded certificates from Nomad Variables.
+func (n *Nomad) SetTraefikCertificates(image string, args ...string) {
+	n.AddForeignJob(traefikJob(image, args, nil, map[string]string{"caravana_certificates": "1"}))
 }
 
 // SetTraefikConsoleRoute registers the job "traefik" as the installer's does since feature 051:
@@ -120,10 +126,10 @@ func (n *Nomad) SetTraefikConsoleRoute(image string, args ...string) {
 	n.AddForeignJob(traefikJob(image, args, []*api.Template{{
 		DestPath:     new("local/dynamic/caravana.yml"),
 		EmbeddedTmpl: new(`{{ with nomadVar "nomad/jobs/traefik/traefik" }}{{ index . "hosts" }}{{ end }}`),
-	}}))
+	}}, nil))
 }
 
-func traefikJob(image string, args []string, templates []*api.Template) *api.Job {
+func traefikJob(image string, args []string, templates []*api.Template, meta map[string]string) *api.Job {
 	config := map[string]any{"image": image}
 	if len(args) > 0 {
 		list := make([]any, len(args))
@@ -133,7 +139,7 @@ func traefikJob(image string, args []string, templates []*api.Template) *api.Job
 		config["args"] = list
 	}
 	return &api.Job{
-		ID: new("traefik"), Name: new("traefik"),
+		ID: new("traefik"), Name: new("traefik"), Meta: meta,
 		TaskGroups: []*api.TaskGroup{{
 			Name:  new("traefik"),
 			Tasks: []*api.Task{{Name: "traefik", Driver: "docker", Config: config, Templates: templates}},

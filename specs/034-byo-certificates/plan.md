@@ -21,12 +21,12 @@ fingerprint of the leaf the handshake shows.
 ```
 internal/certs/parse.go, cover.go, directory.go (+ tests)   new: check an upload, name coverage, read an ACME directory
 internal/edge/cert.go                                       Certificate.Fingerprint
-internal/store/migrations/0027_byo_certificates.sql         new
+internal/store/migrations/0046_byo_certificates.sql         new
 internal/store/domains.go, certificates.go                  issuer columns, fingerprint, uploaded_certificates
 internal/deploy/acme.go, uploadedcerts.go, ingress.go       the two variables, the job's meta; deploytest fakes
 internal/service/certificates.go, issuer.go, uploadedcerts.go, attention…, sentenceparts.go
 internal/notify                                             event fields certificate, names
-internal/api/domains.go, certificates.go, api/openapi.yaml  0.37.0
+internal/api/domains.go, certificates.go, access.go, api/openapi.yaml  0.63.0
 internal/ui/certificates.go, certissuer.go, certupload.go, domainspage.go, domainstates.go, templates
 deploy/install/traefik.nomad.hcl, traefik-policy.hcl, install.sh, README.md
 deploy/dev/traefik.nomad.hcl, traefik-policy.hcl, install-test.sh

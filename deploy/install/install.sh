@@ -796,6 +796,36 @@ store_cluster_secrets() {
   fi
 }
 
+# drop_covered_acme_certificates: Traefik keeps serving and renewing an ACME certificate it already
+# holds, and one for an exact name beats an uploaded wildcard (feature 034, research R5). So each run
+# drops from every store file of Traefik's volume the ACME certificates whose every name is covered by
+# a certificate uploaded in Settings › Certificates, and says which. The rule is the server agent's
+# (feature 056: `caravana node drop-certificates`, the same one the console's button runs), asked first
+# with --dry-run. Traefik is stopped before anything is written when there is something to drop (it holds
+# the store in memory and would write it back); run_traefik starts it again. Nothing else in the store is
+# touched.
+drop_covered_acme_certificates() {
+  local stores=("$STATE"/traefik/acme*.json) names="" path covered
+  [ -e "${stores[0]}" ] || return 0
+  while read -r path; do
+    [ -n "$path" ] || continue
+    names+="$(nomad_cli var get -item names "$path" 2>/dev/null || true),"
+  done < <(nomad_cli var list -out json caravana/certificates/ 2>/dev/null |
+    grep -o '"Path": *"caravana/certificates/crt_[0-9a-f]*"' | grep -o 'caravana/certificates/crt_[0-9a-f]*')
+  # The agent takes host names only (an uploaded certificate may also name an address or something odd,
+  # which no ACME certificate has): keep the entries that look like one.
+  names="$(tr -s ',[:space:]' '\n' <<<"$names" | tr '[:upper:]' '[:lower:]' |
+    grep -E '^(\*\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]*[a-z0-9])?$' | paste -sd, - || true)"
+  [ -n "$names" ] || return 0
+  covered="$("$AGENT" node drop-certificates --dry-run --names "$names")" || fail "reading Traefik's certificate store failed"
+  [ -n "$covered" ] || return 0
+  nomad_cli job stop -detach traefik >/dev/null 2>&1 || true
+  timeout 60s bash -c 'while docker ps --format "{{.Image}}" | grep -q "^traefik:"; do sleep 1; done' || true
+  "$AGENT" node drop-certificates --names "$names" >/dev/null || fail "rewriting Traefik's certificate store failed"
+  echo "  dropped the earlier certificates of $covered: an uploaded certificate covers them"
+  changed+=(certificates)
+}
+
 # run_traefik [CONSOLE_DOMAIN]: run Traefik, routing CONSOLE_DOMAIN to Caravana when given.
 run_traefik() {
   local console="${1:-}" before
@@ -812,27 +842,17 @@ run_traefik() {
     fi
     echo "$acme" >"$STATE/acme"
   fi
-  # Feature 023: Team only's password hashes reach Traefik through its file provider, which
-  # watches a directory instead of one file. An existing Traefik job still has the file, so
-  # this run restarts it once.
+  # Feature 034: Traefik's static configuration is a file rendered from Nomad Variables, so the
+  # issuer can change from the console and uploaded certificates are served. A job from before
+  # has none of it (nor, if it is older still, the file provider of 023, the request numbers of
+  # 025, the access log of 047 or the console route of 051): this run restarts it once.
+  # The job is read whole before grep: under pipefail, grep -q leaving at its first match can
+  # kill the reader with SIGPIPE and fail the pipeline, which printed the note on every rerun.
   if [ "$before" != none ]; then
-    local spec
-    spec="$(nomad_cli job inspect traefik 2>/dev/null || true)"
-    grep -q 'providers.file.directory' <<<"$spec" ||
-      echo "  Traefik is restarted once for the file provider (a few seconds without HTTP)"
-    # Feature 025: Monitoring reads Traefik's request numbers (Prometheus text on its loopback
-    # entrypoint). An existing Traefik job doesn't have the two metrics arguments yet.
-    grep -q 'metrics.prometheus' <<<"$spec" ||
-      echo "  Traefik is restarted once for its request numbers (a few seconds without HTTP)"
-    # Feature 047: the Requests page reads Traefik's access log. An existing Traefik job doesn't
-    # write it yet.
-    grep -q 'accesslog' <<<"$spec" ||
-      echo "  Traefik is restarted once for its access log (a few seconds without HTTP)"
-    # Feature 051: the console's address can change from the console, because the console's route
-    # reads its domains from a Nomad Variable. An existing Traefik job doesn't name it yet.
-    grep -q 'nomad/jobs/traefik/traefik' <<<"$spec" ||
-      echo "  Traefik is restarted once for the console address (a few seconds without HTTP)"
+    grep -q 'caravana_certificates' <<<"$(nomad_cli job inspect traefik 2>/dev/null || true)" ||
+      echo "  Traefik is restarted once for your own certificates (a few seconds without HTTP)"
   fi
+  drop_covered_acme_certificates
   local out
   out="$(nomad_cli job run -detach \
     -var "console_domain=$console" \

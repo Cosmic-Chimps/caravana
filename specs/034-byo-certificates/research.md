@@ -39,6 +39,15 @@ wildcard is served; when the variable is purged, the same router gets an ACME ce
 no restart. **Decision**: the router keeps `tls.certresolver` (the translator is untouched). Dropping the
 tag, as the task first said, would need a redeploy of every covered app on upload and again on removal.
 
+**Limit (lab, observed 2026-11-24)**: the rule is per name, but the order is per router. When one name of a
+router is not covered, `resolveCertificate` asks for *every* name of the router (`ObtainRequest{Domains:
+domains}`), so a router `Host(p.pebble.test) || Host(a.byo.test)` with `*.byo.test` uploaded got one Pebble
+certificate naming both, and that exact name then beats the wildcard (R5). A bought wildcard usually names the
+apex too (`example.com, *.example.com`), so the common pair of one service is covered whole. Splitting covered
+hosts into routers of their own would need the uploads in `Translate` and a redeploy of every app on each upload
+and removal; *rejected*. Instead the host is reported (`keptEarlier`, with the reason "its route also asks for
+<other names>") and docs/certificates.md says to upload a certificate that covers every name of the service.
+
 ## R5 · A certificate Traefik already has wins over an uploaded wildcard
 
 `GetBestCertificate` sorts the store's keys (the certificate's names, sorted and joined) in reverse and
@@ -50,8 +59,8 @@ is skipped. **Decisions**: (1) an upload with exactly the names of an earlier up
 (2) Caravana reports covered hosts that still present another certificate (`keptEarlier`), from the real
 handshake; (3) the installer, which already stops Traefik to reset the store on a change of `--acme`, drops
 from every store file the ACME certificates whose every name is covered by an uploaded one. Caravana can't
-do (3) itself: the store is a host volume its policy denies, on purpose. A console action for it is a
-follow-up task.
+do (3) itself: the store is a host volume its policy denies, on purpose. The console's action for it is
+feature 056 (`specs/056-drop-earlier-certificates`): the server agent drops them and Caravana restarts Traefik.
 
 ## R6 · Certificates as content, in `secrets/`
 
