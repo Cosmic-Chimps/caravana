@@ -114,6 +114,13 @@ func TestOpenSearchScriptsAvoidNomadInterpolation(t *testing.T) {
 	}
 }
 
+// A copy of an opensearch backup to another destination applies retention to its own extension.
+func TestOpenSearchObjectExt(t *testing.T) {
+	if got := ObjectExt(app.BackupOpenSearch); got != ".opensearch.tar.gz" {
+		t.Errorf("ObjectExt(opensearch) = %q", got)
+	}
+}
+
 func TestParseOpenSearchOutput(t *testing.T) {
 	out := ParseSQLiteOutput("caravana-opensearch-snapshot indices=4\ncaravana-opensearch-restore indices=2\n" +
 		"caravana-opensearch-download files=17\ncaravana-backup key=b/x/1791.opensearch.tar.gz bytes=900\n" +

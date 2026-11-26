@@ -230,6 +230,9 @@ func (s *Service) backUpNow(ctx context.Context, appID, service, trigger string)
 	if hasSQLiteBackup(svc) {
 		return s.startSQLiteBackup(ctx, appID, service, trigger)
 	}
+	if hasOpenSearchBackup(svc) {
+		return s.startOpenSearchBackup(ctx, appID, service, trigger)
+	}
 	jobID, err := s.deployer.ForceBackup(ctx, appID, service)
 	if err != nil {
 		return store.BackupRecord{}, err
@@ -343,6 +346,9 @@ func (s *Service) restoreBackup(ctx context.Context, appID string, b store.Backu
 	}
 	if hasSQLiteBackup(svc) {
 		return s.startSQLiteRestore(ctx, appID, b, place, trigger, label)
+	}
+	if hasOpenSearchBackup(svc) {
+		return s.startOpenSearchRestore(ctx, appID, b, place, trigger, label)
 	}
 	image, err := s.runningImage(ctx, appID, b.Service)
 	if err != nil {

@@ -51,7 +51,7 @@ const (
 // BackupRecord is one backup run of one service.
 type BackupRecord struct {
 	AppID, ID, Service, JobID string
-	// Engine is "postgres", "mysql", "mongodb", "volume" or "sqlite". Empty means
+	// Engine is "postgres", "mysql", "mongodb", "volume", "sqlite" or "opensearch". Empty means
 	// "postgres" when saved.
 	Engine     string
 	Status     string
@@ -258,7 +258,7 @@ func (s *Store) GetBackup(ctx context.Context, appID, id string) (BackupRecord, 
 // RestoreRecord is one restore of one backup.
 type RestoreRecord struct {
 	ID, AppID, Service, BackupID string
-	// Engine is "postgres", "mysql", "mongodb", "volume" or "sqlite". Empty means
+	// Engine is "postgres", "mysql", "mongodb", "volume", "sqlite" or "opensearch". Empty means
 	// "postgres" when saved.
 	Engine     string
 	Status     string
