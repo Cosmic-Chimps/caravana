@@ -256,7 +256,7 @@ func TestConfigureDeployToken(t *testing.T) {
 	e := newConsoleEnv(t)
 	e.seed(t, whoamiApp())
 
-	_, page := e.get(t, "/apps/whoami/configure")
+	_, page := e.get(t, "/apps/whoami/configure/integrations")
 	for _, want := range []string{`action="/apps/whoami/deploy-token"`, "Create a deploy token for this app"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("Configure lacks %q", want)
@@ -281,7 +281,7 @@ func TestConfigureDeployToken(t *testing.T) {
 			t.Errorf("the answer lacks %q:\n%s", want, text(body))
 		}
 	}
-	if _, again := e.get(t, "/apps/whoami/configure"); strings.Contains(again, token) {
+	if _, again := e.get(t, "/apps/whoami/configure/integrations"); strings.Contains(again, token) {
 		t.Error("Configure shows the token again")
 	}
 	if strings.Contains(e.Logs.String(), token) {

@@ -83,7 +83,7 @@ func shopFormOf(t *testing.T, body string, set url.Values) url.Values {
 
 func TestConfigureOffersDeployFromCompose(t *testing.T) {
 	e, _ := shopEnv(t)
-	_, body := e.get(t, "/apps/shop/configure")
+	_, body := e.get(t, "/apps/shop/configure/source")
 	if !strings.Contains(body, `<a href="/apps/shop/compose" class="cv-btn cv-btn-secondary cv-btn-sm">Deploy from Compose</a>`) {
 		t.Errorf("Configure doesn't link to Deploy from Compose:\n%s", text(body))
 	}

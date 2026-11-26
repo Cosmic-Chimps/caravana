@@ -56,7 +56,7 @@ func (s *server) nextStepsOf(r *http.Request, sum service.AppSummary, git *gitPo
 	id := url.PathEscape(sum.App.ID)
 	return &nextSteps{
 		ID: sum.App.ID, Summary: buildSummary(*svc.Build), Branch: svc.Build.Defaults().Branch, Git: g,
-		Hook:         nextHook{Enabled: hook.Enabled, CreateAction: "/apps/" + id + "/webhook", ConfigureURL: "/apps/" + id + "/configure#webhook"},
+		Hook:         nextHook{Enabled: hook.Enabled, CreateAction: "/apps/" + id + "/webhook", ConfigureURL: sectionHref(id, sectionIntegrations) + "#webhook"},
 		DeployAction: "/apps/" + id + "/deploy", Stopped: sum.StoppedAt != nil,
 	}, nil
 }

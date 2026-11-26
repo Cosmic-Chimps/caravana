@@ -123,7 +123,7 @@ func TestExportFromTheConsole(t *testing.T) {
 		t.Errorf("not d1's jobspec:\n%s", body)
 	}
 
-	_, conf := e.get(t, "/apps/whoami/configure")
+	_, conf := e.get(t, "/apps/whoami/configure/integrations")
 	if !strings.Contains(conf, `href="/apps/whoami/jobspec"`) {
 		t.Error("Configure doesn't link the live export")
 	}

@@ -99,7 +99,7 @@ func TestConfigureShowsPublishedPorts(t *testing.T) {
 	if _, err := e.Store.InsertApp(context.Background(), a, nil); err != nil {
 		t.Fatal(err)
 	}
-	resp, body := e.get(t, "/apps/calls/configure")
+	resp, body := e.get(t, "/apps/calls/configure/services")
 	if resp.StatusCode != 200 {
 		t.Fatalf("configure = %d", resp.StatusCode)
 	}
@@ -161,8 +161,8 @@ func TestKeptFileDeployKeepsPublish(t *testing.T) {
 	}
 	e.waitDeploy(t, rec.Deployment.ID)
 
-	_, page := e.get(t, "/apps/shop/configure")
-	resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, url.Values{"compose": {"# edited\n" + keptShopFile}}))
+	_, source := e.get(t, "/apps/shop/configure/source")
+	resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, source, url.Values{"compose": {"# edited\n" + keptShopFile}}))
 	if resp.StatusCode != 303 {
 		t.Fatalf("deploy = %d:\n%s", resp.StatusCode, text(body))
 	}

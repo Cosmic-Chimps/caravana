@@ -327,15 +327,22 @@ func TestAppControlsFollowTheRole(t *testing.T) {
 		has(t, "a viewer", production, body, "Export jobspec", true) // reading stays
 	})
 	t.Run("Configure", func(t *testing.T) {
-		body := page(member, staging, "/configure")
-		has(t, "a deployer", staging, body, `action="/apps/`+staging+`/configure`, false)
-		has(t, "a deployer", staging, body, `action="/apps/`+staging+`/delete"`, false)
-		has(t, "a deployer", staging, body, `action="/apps/`+staging+`/deploy-token"`, false)
-		has(t, "a deployer", staging, body, `action="/apps/`+staging+`/webhook"`, false)
-		has(t, "a deployer", staging, text(body), "Your role here is to look", true)
-		body = page(maintainer, staging, "/configure")
-		has(t, "a maintainer", staging, body, `action="/apps/`+staging+`/configure`, true)
+		// A deployer sees no form on any section but says why; Overview has no Delete for them.
+		for _, section := range []string{"/configure", "/configure/source", "/configure/services", "/configure/integrations"} {
+			body := page(member, staging, section)
+			has(t, "a deployer", staging+section, body, `action="/apps/`+staging+`/configure`, false)
+			has(t, "a deployer", staging+section, body, `action="/apps/`+staging+`/delete"`, false)
+			has(t, "a deployer", staging+section, body, `action="/apps/`+staging+`/deploy-token"`, false)
+			has(t, "a deployer", staging+section, body, `action="/apps/`+staging+`/webhook"`, false)
+			has(t, "a deployer", staging+section, body, `aria-label="Configure"`, true) // the nav still reads
+		}
+		has(t, "a deployer", staging, text(page(member, staging, "/configure/services")), "Your role here is to look", true)
+		has(t, "a deployer", staging, text(page(member, staging, "/configure/source")), "Your role here is to look", true)
+		body := page(maintainer, staging, "/configure")
 		has(t, "a maintainer", staging, body, `action="/apps/`+staging+`/delete"`, true)
+		has(t, "a maintainer", staging, page(maintainer, staging, "/configure/source"), `action="/apps/`+staging+`/configure`, true)
+		has(t, "a maintainer", staging, page(maintainer, staging, "/configure/services"), `action="/apps/`+staging+`/configure`, true)
+		has(t, "a maintainer", staging, page(maintainer, staging, "/configure/integrations"), `action="/apps/`+staging+`/webhook"`, true)
 	})
 	t.Run("Variables, Domains and Backups", func(t *testing.T) {
 		body := page(member, staging, "/variables")

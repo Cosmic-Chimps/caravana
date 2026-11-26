@@ -142,7 +142,11 @@ func TestParseEditFormErrors(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			post := postOf(formOf(stored, "r"))
-			post.Set(inputName("web", tc.field), tc.value)
+			svc := "web"
+			if tc.field == "copies" {
+				svc = "worker" // web has a volume: it runs one copy and has no Copies input
+			}
+			post.Set(inputName(svc, tc.field), tc.value)
 			f, ok := parseEditForm(post, stored)
 			if ok {
 				t.Fatal("ok = true, want an error")
@@ -159,11 +163,11 @@ func TestParseEditFormErrors(t *testing.T) {
 					}
 				}
 			}
-			if want := inputName("web", tc.wantOn); !reflect.DeepEqual(withErrors, []string{want}) {
+			if want := inputName(svc, tc.wantOn); !reflect.DeepEqual(withErrors, []string{want}) {
 				t.Errorf("inputs with errors = %v, want [%s]", withErrors, want)
 			}
 			// The typed value is kept, untouched but for surrounding spaces.
-			if in, _ := f.field(inputName("web", tc.field)); in.Value != strings.TrimSpace(tc.value) {
+			if in, _ := f.field(inputName(svc, tc.field)); in.Value != strings.TrimSpace(tc.value) {
 				t.Errorf("kept value = %q, want what was typed (%q)", in.Value, tc.value)
 			}
 		})
@@ -186,7 +190,7 @@ func TestParseEditFormValues(t *testing.T) {
 	stored := richApp()
 	post := postOf(formOf(stored, "r"))
 	post.Set(inputName("web", "image"), "  ghcr.io/acme/shop:2  ")
-	post.Set(inputName("web", "copies"), "3")
+	post.Set(inputName("worker", "copies"), "3")
 	post.Set(inputName("web", "healthInterval"), "30")
 	post.Set(inputName("web", "healthTimeout"), "")
 	post.Set(inputName("web", "cpu"), "")
@@ -197,7 +201,7 @@ func TestParseEditFormValues(t *testing.T) {
 	web, _ := f.service("web")
 	want := serviceEdit{
 		Image:          "ghcr.io/acme/shop:2",
-		Replicas:       new(3),
+		Replicas:       new(1), // web has a volume: one copy, and the post's count is ignored
 		HealthPath:     "/healthz",
 		HealthInterval: 30 * time.Second,
 		DomainPort:     "http", // richApp's web has several ports and a domain on http
@@ -206,6 +210,9 @@ func TestParseEditFormValues(t *testing.T) {
 	}
 	if !reflect.DeepEqual(web.Edit, want) {
 		t.Errorf("Edit = %+v\nwant   %+v", web.Edit, want)
+	}
+	if worker, _ := f.service("worker"); worker.Edit.Replicas == nil || *worker.Edit.Replicas != 3 {
+		t.Errorf("worker copies = %v, want 3", worker.Edit.Replicas)
 	}
 }
 

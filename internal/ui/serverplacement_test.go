@@ -470,7 +470,7 @@ func TestAttentionRowsOfPlacementKinds(t *testing.T) {
 	s := newConsoleEnv(t).Server
 	now := time.Now()
 	row := s.attentionRow(now, service.AttentionItem{Kind: service.AttentionCopiesUnplaced, AppID: "blog", Service: "web", Queued: 2, When: now}, places{}, nil)
-	if row.Action != "Open placement" || row.Href != "/apps/blog/configure#placement-web" || row.Mark != "failed" {
+	if row.Action != "Open placement" || row.Href != "/apps/blog/configure/services#placement-web" || row.Mark != "failed" {
 		t.Errorf("copies_unplaced row = %+v", row)
 	}
 	if got := headlineWords(service.AttentionItem{Kind: service.AttentionCopiesUnplaced}); strings.Contains(got, "needs you (") {

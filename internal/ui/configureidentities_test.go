@@ -21,7 +21,7 @@ func TestConfigureShowsIdentities(t *testing.T) {
 	}
 	e.deploy(t, a)
 
-	_, body := e.get(t, "/apps/duo/configure")
+	_, body := e.get(t, "/apps/duo/configure/services")
 	got := text(body)
 	for _, want := range []string{
 		"Identities",
@@ -57,7 +57,7 @@ func TestConfigureShowsIdentities(t *testing.T) {
 // An app edited through its Compose file shows them in the service's panel.
 func TestConfigureKeptFileShowsIdentities(t *testing.T) {
 	e, _ := deployShop(t, identityShopRequest())
-	_, body := e.get(t, "/apps/shop/configure")
+	_, body := e.get(t, "/apps/shop/configure/services")
 	got := text(body)
 	for _, want := range []string{
 		"Identity bella Audience bella-spiffe/env-1 Lasts 1 hour. Read from /secrets/nomad_bella.jwt. For Bella Baxter.",

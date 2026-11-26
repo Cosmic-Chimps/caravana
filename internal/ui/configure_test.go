@@ -57,126 +57,177 @@ var webhookURLPattern = regexp.MustCompile(`https?://[^\s<"]+/v1/webhooks/shop\?
 
 func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 	e := configureEnv(t)
-	resp, body := e.get(t, "/apps/shop/configure")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /apps/shop/configure = %d:\n%s", resp.StatusCode, body)
-	}
-
-	// The tab is in the header, marked as the current one, and the breadcrumbs end here.
-	for _, want := range []string{
-		`<a href="/apps/shop/configure" class="cv-tab" id="tab-configure" aria-current="page">Configure</a>`,
-		`hx-get="/parts/apps/shop/header?tab=configure"`,
-		`cv-crumb-current">production</span>`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("the tab lacks %q:\n%s", want, body)
-		}
-	}
-
-	// One form per service, each with its own revision: only that service's inputs are in it.
 	rec, err := e.Store.GetApp(context.Background(), "shop")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var web, worker plainForm
-	for _, f := range formsIn(body) {
-		if f.Action != "/apps/shop/configure" {
-			continue
+	// formsOf finds a service's form among the page's: the one that carries its marker.
+	formOfService := func(body, svc string) plainForm {
+		t.Helper()
+		for _, f := range formsIn(body) {
+			if f.Action == "/apps/shop/configure" && f.Values.Has("svc."+svc+".form") {
+				return f
+			}
 		}
-		if f.Values.Has("svc.web.image") {
-			web = f
-		}
-		if f.Values.Has("svc.worker.image") {
-			worker = f
-		}
-	}
-	for name, want := range map[string]string{
-		"revision":               rec.Revision,
-		"svc.web.image":          "ghcr.io/example/shop:2.1",
-		"svc.web.port":           "8080",
-		"svc.web.copies":         "2",
-		"svc.web.healthPath":     "/healthz",
-		"svc.web.healthInterval": "15",
-		"svc.web.healthTimeout":  "3",
-		"svc.web.cpu":            "250",
-		"svc.web.memory":         "256",
-		"svc.web.memoryMax":      "1024",
-	} {
-		if got := web.Values.Get(name); got != want {
-			t.Errorf("web form: input %s = %q, want %q", name, got, want)
-		}
-	}
-	for name, want := range map[string]string{"revision": rec.Revision, "svc.worker.image": "ghcr.io/example/shop-worker:2.1", "svc.worker.copies": "", "svc.worker.memory": ""} {
-		if got := worker.Values.Get(name); got != want {
-			t.Errorf("worker form: input %s = %q, want %q", name, got, want)
-		}
-	}
-	if web.Values.Has("svc.worker.image") || worker.Values.Has("svc.web.image") {
-		t.Error("a service's form holds another service's inputs")
-	}
-	// The environment and the domains left Configure: they are on their own pages. A worker has
-	// no port or health check to edit.
-	for _, name := range []string{"svc.web.env", "svc.web.domains", "svc.worker.env", "svc.worker.port", "svc.worker.healthPath"} {
-		if web.Values.Has(name) || worker.Values.Has(name) {
-			t.Errorf("Configure has an input %s", name)
-		}
-	}
-	for _, secretish := range []string{"debug-value-x1", "s3cr3t-value-9f2"} {
-		if strings.Contains(body, secretish) {
-			t.Errorf("Configure draws the value %q of an environment variable", secretish)
-		}
+		t.Fatalf("no form for service %s in:\n%s", svc, body)
+		return plainForm{}
 	}
 
-	// The panels of the contract, with its words.
-	got := text(body)
-	for _, want := range []string{"Copies & size", "Deploy", "Copies", "CPU MHz", "Memory MB", "Ceiling MB", "Image", "Container port",
-		"Health check GET", "Every s", "Timeout s", "Empty checks the TCP port.",
-		"New copies must pass this check before they take traffic; if they don't, the deploy is reverted.",
-		"Also set", "Entrypoint /entry.sh --strict", "DNS servers 1.1.1.1 10.0.0.2", "DNS search domains corp.example.com", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
-		"Domains shop.example.com → web :8080", "Manage domains", "Add domain",
-		"Variables & secrets", "2 variables · 0 secrets. Values of secrets are never shown here.", "Manage variables and secrets",
-		"Save web and deploy", "Save worker and deploy"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("the tab lacks %q:\n%s", want, got)
+	t.Run("the tab is current, the breadcrumbs end here", func(t *testing.T) {
+		resp, body := e.get(t, "/apps/shop/configure")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /apps/shop/configure = %d:\n%s", resp.StatusCode, body)
 		}
-	}
-	for _, want := range []string{`href="/apps/shop/domains"`, `href="/apps/shop/domains#add"`, `href="/apps/shop/variables"`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("the tab lacks the link %s", want)
+		for _, want := range []string{
+			`<a href="/apps/shop/configure" class="cv-tab" id="tab-configure" aria-current="page">Configure</a>`,
+			`hx-get="/parts/apps/shop/header?tab=configure"`,
+			`cv-crumb-current">production</span>`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("the tab lacks %q:\n%s", want, body)
+			}
 		}
-	}
-	// The handoff's switches are not drawn: neither Auto-revert nor Canary first is a choice here.
-	for _, gone := range []string{"Auto-revert", "Canary", `type="checkbox"`, "Peak 7 d", "Display name", "Needs a container registry"} {
-		if strings.Contains(body, gone) {
-			t.Errorf("the tab draws %q", gone)
+	})
+
+	t.Run("Source: one form per service with its image and port", func(t *testing.T) {
+		_, body := e.get(t, "/apps/shop/configure/source")
+		web, worker := formOfService(body, "web"), formOfService(body, "worker")
+		for name, want := range map[string]string{
+			"revision":      rec.Revision,
+			"section":       "source",
+			"svc.web.image": "ghcr.io/example/shop:2.1",
+			"svc.web.port":  "8080",
+		} {
+			if got := web.Values.Get(name); got != want {
+				t.Errorf("web form: input %s = %q, want %q", name, got, want)
+			}
 		}
-	}
-	// Several services: a heading each, in order, the grid once per service.
-	webAt, workerAt := strings.Index(body, `id="svc-web-title"`), strings.Index(body, `id="svc-worker-title"`)
-	if webAt < 0 || workerAt < webAt {
-		t.Errorf("service headings: web at %d, worker at %d", webAt, workerAt)
-	}
-	// With several services each button names its service, in a row directly under its grid.
-	if n := strings.Count(body, `and deploy</button></div>`); n != 2 || strings.Contains(body, "Save and deploy") {
-		t.Errorf("%d per-service save buttons, want one per service, each naming its service", n)
-	}
-	// Domains and Secrets come once, after the last service.
-	if n := strings.Count(body, `id="domains-title"`); n != 1 || strings.Index(body, `id="domains-title"`) < workerAt {
-		t.Errorf("the Domains panel isn't once, after the last service")
-	}
-	// The memory input has the anchor the needs-you list links to.
-	if !strings.Contains(body, `id="svc-web-memory"`) {
-		t.Error("the memory input has no id svc-web-memory")
-	}
-	// The panels after the grid, in their order.
-	last := -1
-	for _, id := range []string{`id="compose-deploy-title"`, `id="webhook-title"`, `id="deploy-token-title"`, `id="export-title"`, `id="delete-title"`} {
-		at := strings.Index(body, id)
-		if at < 0 || at < last {
-			t.Errorf("%s is at %d, after %d?", id, at, last)
+		for name, want := range map[string]string{"revision": rec.Revision, "svc.worker.image": "ghcr.io/example/shop-worker:2.1"} {
+			if got := worker.Values.Get(name); got != want {
+				t.Errorf("worker form: input %s = %q, want %q", name, got, want)
+			}
 		}
-		last = at
-	}
+		if web.Values.Has("svc.worker.image") || worker.Values.Has("svc.web.image") {
+			t.Error("a service's form holds another service's inputs")
+		}
+		// Copies, size and health are the Services page's; the environment and domains have their own pages.
+		for _, name := range []string{"svc.web.copies", "svc.web.cpu", "svc.web.memory", "svc.web.healthPath", "svc.web.env", "svc.web.domains", "svc.worker.env", "svc.worker.port"} {
+			if web.Values.Has(name) || worker.Values.Has(name) {
+				t.Errorf("Source has an input %s", name)
+			}
+		}
+		got := text(body)
+		for _, want := range []string{"Images", "Image", "Container port", "Save and deploy web", "Save and deploy worker", "Deploy from Compose", "Replace the app with a Compose file."} {
+			if !strings.Contains(got, want) {
+				t.Errorf("Source lacks %q:\n%s", want, got)
+			}
+		}
+		if webAt, workerAt := strings.Index(body, `id="svc-web-title"`), strings.Index(body, `id="svc-worker-title"`); webAt < 0 || workerAt < webAt {
+			t.Errorf("service headings: web at %d, worker at %d", webAt, workerAt)
+		}
+		if n := strings.Count(body, `Save and deploy`); n != 2 {
+			t.Errorf("%d save buttons, want one per service", n)
+		}
+	})
+
+	t.Run("Services: copies, size and health check, with what the form keeps", func(t *testing.T) {
+		_, body := e.get(t, "/apps/shop/configure/services")
+		web, worker := formOfService(body, "web"), formOfService(body, "worker")
+		for name, want := range map[string]string{
+			"revision":               rec.Revision,
+			"section":                "services",
+			"svc.web.copies":         "2",
+			"svc.web.healthPath":     "/healthz",
+			"svc.web.healthInterval": "15",
+			"svc.web.healthTimeout":  "3",
+			"svc.web.cpu":            "250",
+			"svc.web.memory":         "256",
+			"svc.web.memoryMax":      "1024",
+		} {
+			if got := web.Values.Get(name); got != want {
+				t.Errorf("web form: input %s = %q, want %q", name, got, want)
+			}
+		}
+		for name, want := range map[string]string{"revision": rec.Revision, "svc.worker.copies": "", "svc.worker.memory": ""} {
+			if got := worker.Values.Get(name); got != want {
+				t.Errorf("worker form: input %s = %q, want %q", name, got, want)
+			}
+		}
+		// Neither the image nor the port is here; a worker has no port or health check to edit.
+		for _, name := range []string{"svc.web.image", "svc.web.port", "svc.web.env", "svc.web.domains", "svc.worker.image", "svc.worker.port", "svc.worker.healthPath"} {
+			if web.Values.Has(name) || worker.Values.Has(name) {
+				t.Errorf("Services has an input %s", name)
+			}
+		}
+		got := text(body)
+		for _, want := range []string{"Copies & size", "Copies", "CPU MHz", "Memory MB", "Ceiling MB",
+			"Health check GET", "Every s", "Timeout s", "Empty checks the TCP port.",
+			"New copies must pass this check before they take traffic; if they don't, the deploy is reverted.",
+			"Also set", "Entrypoint /entry.sh --strict", "DNS servers 1.1.1.1 10.0.0.2", "DNS search domains corp.example.com", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
+			"Placement", "Scaling", "Save and deploy web", "Save and deploy worker"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("Services lacks %q:\n%s", want, got)
+			}
+		}
+		if webAt, workerAt := strings.Index(body, `id="svc-web-title"`), strings.Index(body, `id="svc-worker-title"`); webAt < 0 || workerAt < webAt {
+			t.Errorf("service headings: web at %d, worker at %d", webAt, workerAt)
+		}
+		// The memory input has the anchor the needs-you list links to.
+		if !strings.Contains(body, `id="svc-web-memory"`) {
+			t.Error("the memory input has no id svc-web-memory")
+		}
+	})
+
+	t.Run("Overview: the panels, the links and no value of a variable", func(t *testing.T) {
+		_, body := e.get(t, "/apps/shop/configure")
+		for _, secretish := range []string{"debug-value-x1", "s3cr3t-value-9f2"} {
+			if strings.Contains(body, secretish) {
+				t.Errorf("Overview draws the value %q of an environment variable", secretish)
+			}
+		}
+		got := text(sectionBody(t, body))
+		for _, want := range []string{"Domains shop.example.com → web :8080", "Manage domains", "Add domain",
+			"Variables & secrets 2 variables · 0 secrets", "Values of secrets are never shown.", "Manage variables and secrets"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("Overview lacks %q:\n%s", want, got)
+			}
+		}
+		for _, want := range []string{`href="/apps/shop/domains"`, `href="/apps/shop/domains#add"`, `href="/apps/shop/variables"`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("Overview lacks the link %s", want)
+			}
+		}
+		// The handoff's switches are not drawn: neither Auto-revert nor Canary first is a choice here.
+		for _, gone := range []string{"Auto-revert", "Canary", `type="checkbox"`, "Peak 7 d", "Display name", "Needs a container registry"} {
+			if strings.Contains(body, gone) {
+				t.Errorf("the tab draws %q", gone)
+			}
+		}
+		// Domains once, the integrations summary and Delete last.
+		if n := strings.Count(body, `id="domains-title"`); n != 1 {
+			t.Errorf("the Domains panel is drawn %d times", n)
+		}
+		last := -1
+		for _, id := range []string{`id="domains-title"`, `id="integrations-title"`, `id="delete-title"`} {
+			at := strings.Index(body, id)
+			if at < 0 || at < last {
+				t.Errorf("%s is at %d, after %d?", id, at, last)
+			}
+			last = at
+		}
+	})
+
+	t.Run("Integrations: the webhook, the deploy token and the export, in order", func(t *testing.T) {
+		_, body := e.get(t, "/apps/shop/configure/integrations")
+		last := -1
+		for _, id := range []string{`id="webhook-title"`, `id="deploy-token-title"`, `id="export-title"`} {
+			at := strings.Index(body, id)
+			if at < 0 || at < last {
+				t.Errorf("%s is at %d, after %d?", id, at, last)
+			}
+			last = at
+		}
+	})
 }
 
 // With one service the service row isn't drawn (the handoff), and the panel shows no "→ web" for a domain.
@@ -201,7 +252,7 @@ func TestConfigureNotesComposeApps(t *testing.T) {
 	a := shopApp()
 	a.Source.Kind = app.SourceCompose
 	e.seed(t, a)
-	_, body := e.get(t, "/apps/shop/configure")
+	_, body := e.get(t, "/apps/shop/configure/source")
 	if got := text(body); !strings.Contains(got, "Made from a Compose file. Deploying a file again replaces these edits.") {
 		t.Errorf("the note is missing:\n%s", got)
 	}
@@ -230,9 +281,9 @@ func keptSentinelEnv(t *testing.T) (*consoleEnv, string) {
 // form first, filled from the file, and the definition as facts, not inputs.
 func TestConfigureKeptFile(t *testing.T) {
 	e, revision := keptSentinelEnv(t)
-	resp, body := e.get(t, "/apps/shop/configure")
+	resp, body := e.get(t, "/apps/shop/configure/source")
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /apps/shop/configure = %d:\n%s", resp.StatusCode, text(body))
+		t.Fatalf("GET /apps/shop/configure/source = %d:\n%s", resp.StatusCode, text(body))
 	}
 
 	// The file as it was typed, escaped, in the textarea of the Compose form.
@@ -267,26 +318,37 @@ func TestConfigureKeptFile(t *testing.T) {
 		}
 	}
 
-	// The definition is read-only: facts, no inputs, no save.
+	// The definition is read-only: facts on Services, no inputs, no save anywhere.
 	got := text(body)
-	for _, want := range []string{"This app is edited through its Compose file.", "Image postgres:17", "Manage variables and secrets"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("the page lacks %q:\n%s", want, got)
-		}
+	if !strings.Contains(got, "This app is edited through its Compose file.") {
+		t.Errorf("Source lacks the note:\n%s", got)
 	}
 	for _, gone := range []string{`name="svc.web.image"`, `name="svc.web.env"`, `class="cv-svcform"`, "Save and deploy", "Made from a Compose file", "Deploy from Compose"} {
-		if strings.Contains(body, gone) {
-			t.Errorf("the page still has %q", gone)
+		if strings.Contains(sectionBody(t, body), gone) && gone != "Save and deploy" {
+			t.Errorf("Source still has %q", gone)
 		}
 	}
-	// The sections below are as before, and no value is anywhere.
-	for _, want := range []string{"Secrets", "Webhook", "Export", "Delete app"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("the page lacks the %s section", want)
+	_, services := e.get(t, "/apps/shop/configure/services")
+	if words := text(services); !strings.Contains(words, "Image postgres:17") || strings.Contains(services, `class="cv-svcform"`) || strings.Contains(words, "Save and deploy") {
+		t.Errorf("Services of a kept-file app should be read-only facts:\n%s", words)
+	}
+	_, overview := e.get(t, "/apps/shop/configure")
+	// The sections around are as before, and no value is anywhere.
+	for _, want := range []string{"Manage variables and secrets", "Integrations", "Delete app"} {
+		if !strings.Contains(text(overview), want) {
+			t.Errorf("Overview lacks %q", want)
 		}
 	}
-	if strings.Contains(body, sentinel015) {
-		t.Error("a secret value is on the Configure page")
+	_, integrations := e.get(t, "/apps/shop/configure/integrations")
+	for _, want := range []string{"Webhook", "Export"} {
+		if !strings.Contains(text(integrations), want) {
+			t.Errorf("Integrations lacks the %s section", want)
+		}
+	}
+	for _, page := range []string{body, services, overview, integrations} {
+		if strings.Contains(page, sentinel015) {
+			t.Error("a secret value is on a Configure page")
+		}
 	}
 }
 
@@ -294,7 +356,7 @@ func TestConfigureKeptFile(t *testing.T) {
 // form, no read-only line, no "wasn't kept" notice.
 func TestConfigureImageAppIsAsBefore(t *testing.T) {
 	e := configureEnv(t)
-	_, body := e.get(t, "/apps/shop/configure")
+	_, body := e.get(t, "/apps/shop/configure/source")
 	for _, gone := range []string{`id="compose-form"`, "This app is edited through its Compose file.", "wasn't kept"} {
 		if strings.Contains(body, gone) {
 			t.Errorf("the page has %q", gone)
@@ -312,9 +374,9 @@ func TestConfigureImageAppIsAsBefore(t *testing.T) {
 // the per-field form still editable below.
 func TestConfigureNotKeptFile(t *testing.T) {
 	e, revision := shopEnv(t)
-	resp, body := e.get(t, "/apps/shop/configure")
+	resp, body := e.get(t, "/apps/shop/configure/source")
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /apps/shop/configure = %d:\n%s", resp.StatusCode, text(body))
+		t.Fatalf("GET /apps/shop/configure/source = %d:\n%s", resp.StatusCode, text(body))
 	}
 	got := text(body)
 	if !strings.Contains(got, "This app's Compose file wasn't kept. Paste it once to edit it here from now on.") {
@@ -373,7 +435,7 @@ func TestConfigureAfterADefinitionDeploy(t *testing.T) {
 	}
 	e.waitDeploy(t, rec.Deployment.ID)
 
-	_, body := e.get(t, "/apps/shop/configure")
+	_, body := e.get(t, "/apps/shop/configure/source")
 	got := text(body)
 	if !strings.Contains(got, "This app's Compose file wasn't kept. Paste it once to edit it here from now on.") {
 		t.Errorf("Configure lacks the notice after the drop:\n%s", got)
@@ -405,7 +467,7 @@ func TestConfigureAfterADefinitionDeploy(t *testing.T) {
 // the app keeps it: Configure then shows the file and the read-only definition.
 func TestConfigureNotKeptFilePasteOnce(t *testing.T) {
 	e, _ := shopEnv(t)
-	_, page := e.get(t, "/apps/shop/configure")
+	_, page := e.get(t, "/apps/shop/configure/source")
 	const pasted = "# pasted once\n" + shopCompose
 
 	resp, body := e.postForm(t, "/apps/shop/compose/preview", shopFormOf(t, page, url.Values{"compose": {pasted}}))
@@ -418,7 +480,7 @@ func TestConfigureNotKeptFilePasteOnce(t *testing.T) {
 	}
 	e.waitDeploy(t, e.deployments(t, "shop")[0].Deployment.ID)
 
-	_, body = e.get(t, "/apps/shop/configure")
+	_, body = e.get(t, "/apps/shop/configure/source")
 	if got := formWith(t, body, "/apps/shop/compose/preview").Values.Get("compose"); got != pasted {
 		t.Errorf("Configure shows %q, want the pasted file", got)
 	}
@@ -436,8 +498,9 @@ func TestConfigureShowsVolumes(t *testing.T) {
 	a.Source.Kind = app.SourceCompose
 	a.Services[1].Volumes = []app.Volume{{Name: "db-data", Path: "/var/lib/postgresql/data"}, {Name: "seed", Path: "/seed", ReadOnly: true}}
 	e.seed(t, a)
-	_, body := e.get(t, "/apps/shop/configure")
-	got := text(body)
+	_, body := e.get(t, "/apps/shop/configure/services")
+	_, overview := e.get(t, "/apps/shop/configure")
+	got := text(body) + " " + text(overview)
 	for _, want := range []string{
 		"Also set Volumes /var/lib/postgresql/data → db-data /seed → seed (read-only)",
 		"Its volumes db-data and seed and the data in them are erased.",
@@ -454,7 +517,7 @@ func TestConfigureWebhook(t *testing.T) {
 	post := func(path string) (*http.Response, string) { return e.postForm(t, path, nil) }
 
 	t.Run("no token: a way to create one, and nothing to replace or revoke", func(t *testing.T) {
-		_, body := e.get(t, "/apps/shop/configure")
+		_, body := e.get(t, "/apps/shop/configure/integrations")
 		got := text(body)
 		if !strings.Contains(got, "No webhook token.") || !strings.Contains(got, "Create token") {
 			t.Errorf("the webhook section lacks the empty state:\n%s", got)
@@ -500,7 +563,7 @@ func TestConfigureWebhook(t *testing.T) {
 	})
 
 	t.Run("a reload doesn't show it again, and replace and revoke wait behind confirmations", func(t *testing.T) {
-		_, body := e.get(t, "/apps/shop/configure")
+		_, body := e.get(t, "/apps/shop/configure/integrations")
 		if strings.Contains(body, first) || strings.Contains(body, "cvwh_") || strings.Contains(body, `id="webhook-url"`) {
 			t.Errorf("the token is shown again:\n%s", body)
 		}
@@ -542,15 +605,15 @@ func TestConfigureWebhook(t *testing.T) {
 		}
 	})
 
-	t.Run("revoke: back to Configure, the token refused", func(t *testing.T) {
+	t.Run("revoke: back to Integrations, the token refused", func(t *testing.T) {
 		resp, _ := post("/apps/shop/webhook/revoke")
-		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/shop/configure" {
-			t.Fatalf("revoke = %d to %q, want 303 to /apps/shop/configure", resp.StatusCode, location(t, resp))
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/shop/configure/integrations" {
+			t.Fatalf("revoke = %d to %q, want 303 to /apps/shop/configure/integrations", resp.StatusCode, location(t, resp))
 		}
 		if st, err := e.Svc.WebhookStatus(ctx, "shop"); err != nil || st.Enabled {
 			t.Errorf("webhook status = %+v, %v; want none", st, err)
 		}
-		_, body := e.get(t, "/apps/shop/configure")
+		_, body := e.get(t, "/apps/shop/configure/integrations")
 		if !strings.Contains(text(body), "No webhook token.") {
 			t.Errorf("the page still shows a token:\n%s", text(body))
 		}
@@ -585,7 +648,7 @@ func TestConfigureDelete(t *testing.T) {
 	ctx := context.Background()
 	const confirmWrong = "Type shop to confirm."
 
-	t.Run("the section sits last, behind a confirmation, and says what goes", func(t *testing.T) {
+	t.Run("the section sits last on Overview, behind a confirmation, and says what goes", func(t *testing.T) {
 		e := configureEnv(t)
 		_, body := e.get(t, "/apps/shop/configure")
 		got := text(body)
@@ -616,11 +679,11 @@ func TestConfigureDelete(t *testing.T) {
 		if m := regexp.MustCompile(`<button[^>]*>Delete shop</button>`).FindString(body); m == "" || strings.Contains(m, "disabled") {
 			t.Errorf("the delete button = %q, want it present and not disabled", m)
 		}
-		// It is the last thing on the page, after the webhook, inside a <details>.
+		// It is the last thing on the page, after the integrations panel, inside a <details>.
 		del := strings.Index(body, `action="/apps/shop/delete"`)
-		hook := strings.Index(body, `action="/apps/shop/webhook"`)
-		if hook < 0 || del < hook {
-			t.Errorf("delete form at %d, webhook form at %d: delete must come last", del, hook)
+		integrations := strings.Index(body, `id="integrations-title"`)
+		if integrations < 0 || del < integrations {
+			t.Errorf("delete form at %d, integrations panel at %d: delete must come last", del, integrations)
 		}
 		if open, closed := strings.LastIndex(body[:del], "<details"), strings.LastIndex(body[:del], "</details>"); open < 0 || open < closed {
 			t.Error("the delete form isn't inside a <details>")

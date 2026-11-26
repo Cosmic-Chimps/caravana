@@ -93,7 +93,7 @@ func TestParsePreferAndPlacement(t *testing.T) {
 
 func TestConfigureShowsPlacementPerService(t *testing.T) {
 	e := placementEnv(t)
-	_, body := e.get(t, "/apps/duo/configure")
+	_, body := e.get(t, "/apps/duo/configure/services")
 	words := text(body)
 	if n := strings.Count(words, "Any server that accepts work."); n != 2 {
 		t.Errorf("%d placement panels say any server, want 2 (web and worker):\n%s", n, words)
@@ -118,7 +118,7 @@ func TestConfigureShowsPlacementPerService(t *testing.T) {
 func TestSavePlacementDeploysTheRules(t *testing.T) {
 	e := placementEnv(t)
 	before := len(e.deployments(t, "duo"))
-	_, page := e.get(t, "/apps/duo/configure")
+	_, page := e.get(t, "/apps/duo/configure/services")
 	resp, body := e.submitPlacement(t, page, "web", url.Values{"require": {"ssd"}, "prefer": {"region=eu 80"}, "avoid": {"fsn-2"}})
 	recs := e.deployments(t, "duo")
 	if resp.StatusCode != http.StatusSeeOther || len(recs) != before+1 || location(t, resp) != "/apps/duo/deployments#deployment-"+recs[0].Deployment.ID {
@@ -137,7 +137,7 @@ func TestSavePlacementDeploysTheRules(t *testing.T) {
 		t.Errorf("the save changed more than the placement: %+v", stored.Services[0])
 	}
 	// The page says the rules, and the form holds them.
-	_, page = e.get(t, "/apps/duo/configure")
+	_, page = e.get(t, "/apps/duo/configure/services")
 	words := text(page)
 	for _, want := range []string{"Only on servers with ssd=true", "Prefers region=eu (weight 80)", "Never on fsn-2"} {
 		if !strings.Contains(words, want) {
@@ -178,7 +178,7 @@ func TestSavePlacementRefusalsAreDrawnAtTheField(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			e := placementEnv(t)
 			before, deployments := e.storedApp(t, "duo"), len(e.deployments(t, "duo"))
-			_, page := e.get(t, "/apps/duo/configure")
+			_, page := e.get(t, "/apps/duo/configure/services")
 			resp, body := e.submitPlacement(t, page, "web", c.set)
 			if resp.StatusCode != http.StatusUnprocessableEntity {
 				t.Fatalf("POST = %d, want 422:\n%s", resp.StatusCode, text(body))
@@ -209,7 +209,7 @@ func TestSavePlacementRefusalsAreDrawnAtTheField(t *testing.T) {
 func TestSavePlacementImpossibleIsDrawnAtTheRule(t *testing.T) {
 	e := placementEnv(t)
 	e.Nomad.SetPlanFailure("web", "${meta.caravana.label.gpu} = true", 3)
-	_, page := e.get(t, "/apps/duo/configure")
+	_, page := e.get(t, "/apps/duo/configure/services")
 	resp, body := e.submitPlacement(t, page, "web", url.Values{"require": {"gpu"}})
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("POST = %d, want 409:\n%s", resp.StatusCode, text(body))
@@ -232,7 +232,7 @@ func TestSavePlacementImpossibleIsDrawnAtTheRule(t *testing.T) {
 func TestSavePlacementStaleRevisionAndFileApps(t *testing.T) {
 	e := placementEnv(t)
 	before := e.storedApp(t, "duo")
-	_, page := e.get(t, "/apps/duo/configure")
+	_, page := e.get(t, "/apps/duo/configure/services")
 	f := formWith(t, page, "/apps/duo/services/web/placement")
 	resp, body := e.submitPlacement(t, page, "web", url.Values{"revision": {"0000000000000000"}, "require": {"ssd"}})
 	if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), changedSincePage) || !reflect.DeepEqual(e.storedApp(t, "duo"), before) {
@@ -256,7 +256,7 @@ func TestPlacementKeepsAnAvoidedNameThatIsNoServer(t *testing.T) {
 	a := e.storedApp(t, "duo")
 	a.Services[0].Placement = &app.Placement{Avoid: []string{"old-box"}}
 	e.deploy(t, a)
-	_, page := e.get(t, "/apps/duo/configure")
+	_, page := e.get(t, "/apps/duo/configure/services")
 	if !strings.Contains(text(page), "old-box (not a server any more)") {
 		t.Errorf("the gone name isn't listed:\n%s", text(page))
 	}
@@ -283,7 +283,7 @@ func TestKeptFileAppPlacementIsReadOnly(t *testing.T) {
 	req.Services["web"] = ov
 	e, revision := deployShop(t, req)
 
-	_, page := e.get(t, "/apps/shop/configure")
+	_, page := e.get(t, "/apps/shop/configure/services")
 	words := text(page)
 	for _, want := range []string{"Only on servers with ssd=true", "Prefers region=eu (weight 80)", "Never on fsn-2", "Set in the Compose overlay."} {
 		if !strings.Contains(words, want) {
@@ -299,7 +299,8 @@ func TestKeptFileAppPlacementIsReadOnly(t *testing.T) {
 	}
 
 	// The Compose form's deploy keeps them, on the app and in the kept overlay.
-	resp, body = e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, url.Values{"compose": {"# edited\n" + keptShopFile}}))
+	_, source := e.get(t, "/apps/shop/configure/source")
+	resp, body = e.postForm(t, "/apps/shop/compose", shopFormOf(t, source, url.Values{"compose": {"# edited\n" + keptShopFile}}))
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("deploy = %d:\n%s", resp.StatusCode, text(body))
 	}
@@ -393,7 +394,7 @@ func TestStoppedAppPlacementFormHasNoSubmit(t *testing.T) {
 	if resp, body := e.postAction(t, "/apps/duo/stop"); resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("stop = %d:\n%s", resp.StatusCode, text(body))
 	}
-	_, page := e.get(t, "/apps/duo/configure")
+	_, page := e.get(t, "/apps/duo/configure/services")
 	if n := strings.Count(page, `cv-plfields" disabled>`); n != 2 || strings.Contains(page, "Save placement") {
 		t.Errorf("%d disabled placement forms, and a submit: %v", n, strings.Contains(page, "Save placement"))
 	}

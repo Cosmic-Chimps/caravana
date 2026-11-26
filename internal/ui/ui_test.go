@@ -1260,7 +1260,7 @@ func TestConsoleFormsWorkWithoutJavaScript(t *testing.T) {
 	})
 
 	t.Run("Configure", func(t *testing.T) {
-		_, page := e.get(t, "/apps/plain/configure")
+		_, page := e.get(t, "/apps/plain/configure/services")
 		f := formWith(t, page, "/apps/plain/configure")
 		if f.HTMX || f.Values.Get("revision") == "" {
 			t.Errorf("the Configure form is a plain post with a revision: htmx %v, revision %q", f.HTMX, f.Values.Get("revision"))
@@ -1321,18 +1321,18 @@ func TestConsoleFormsWorkWithoutJavaScript(t *testing.T) {
 	})
 
 	t.Run("Webhook", func(t *testing.T) {
-		_, page := e.get(t, "/apps/plain/configure")
+		_, page := e.get(t, "/apps/plain/configure/integrations")
 		resp, body := e.submit(t, formWith(t, page, "/apps/plain/webhook"), nil)
 		if resp.StatusCode != http.StatusOK || !regexp.MustCompile(`cvwh_[A-Za-z0-9_-]+`).MatchString(body) {
 			t.Fatalf("POST webhook = %d, want 200 with the token shown once:\n%s", resp.StatusCode, body)
 		}
-		_, page = e.get(t, "/apps/plain/configure")
+		_, page = e.get(t, "/apps/plain/configure/integrations")
 		if regexp.MustCompile(`cvwh_`).MatchString(page) {
 			t.Error("the token is shown again on a later visit")
 		}
 		resp, body = e.submit(t, formWith(t, page, "/apps/plain/webhook/revoke"), nil)
-		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/plain/configure" {
-			t.Fatalf("POST revoke = %d to %q, want 303 to the Configure tab:\n%s", resp.StatusCode, location(t, resp), body)
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/plain/configure/integrations" {
+			t.Fatalf("POST revoke = %d to %q, want 303 to Integrations:\n%s", resp.StatusCode, location(t, resp), body)
 		}
 	})
 

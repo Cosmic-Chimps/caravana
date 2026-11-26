@@ -98,7 +98,7 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 		}
 	case service.AttentionOutOfMemory:
 		row.Action = "Raise memory"
-		row.Href = appHref + "/configure#" + inputID(it.Service, "memory")
+		row.Href = sectionHref(url.PathEscape(it.AppID), sectionServices) + "#" + inputID(it.Service, "memory")
 	case service.AttentionRestarting:
 		row.Mark = "warning"
 		row.Action, row.Href = "View logs", appHref+logsQuery(it)
@@ -152,11 +152,11 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 		row.Action, row.Href = "Open server", serverHref(it.Server)
 	case service.AttentionCopiesUnplaced:
 		// Copies Nomad can't place: the rules that cause it are on the service's Configure panel.
-		row.Action, row.Href = "Open placement", appHref+"/configure#placement-"+url.PathEscape(it.Service)
+		row.Action, row.Href = "Open placement", sectionHref(url.PathEscape(it.AppID), sectionServices)+"#placement-"+url.PathEscape(it.Service)
 	case service.AttentionScaleAtMax:
 		// A service at its maximum and still over its target: raise it on the service's Scaling panel.
 		row.Mark = "warning"
-		row.Action, row.Href = "Open scaling", appHref+"/configure#scale-"+url.PathEscape(it.Service)
+		row.Action, row.Href = "Open scaling", sectionHref(url.PathEscape(it.AppID), sectionServices)+"#scale-"+url.PathEscape(it.Service)
 	case service.AttentionServerMoveIncomplete:
 		row.Mark = "warning"
 		row.Action, row.Href = "Open server", serverHref(it.Server)

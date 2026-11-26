@@ -111,7 +111,9 @@ type appPage struct {
 	Actions     *actionsRegion
 	Deployments *deploymentsTab
 	Configure   *configureTab
-	Compose     *composeView // Deploy from Compose, under the Configure tab
+	// Cfg is the nav of Configure's sections, drawn beside the pages of Configure (feature 059); nil elsewhere.
+	Cfg     *configNav
+	Compose *composeView // Deploy from Compose, under the Configure tab
 	// LogsTab is the Logs page filtered to the app (feature 024), drawn with logs.html's template.
 	LogsTab *logsView
 	// RequestsTab is the Requests page filtered to the app (feature 047), drawn with requests.html's template.
@@ -570,8 +572,8 @@ func (s *server) firstDeployOf(r *http.Request, rec store.AppRecord) *firstDeplo
 	f := &firstDeploy{
 		Defined:       rec.App.Defined(),
 		DeployAction:  "/apps/" + id + "/deploy",
-		ConfigureHref: "/apps/" + id + "/configure",
-		WebhookHref:   "/apps/" + id + "/configure#webhook",
+		ConfigureHref: sectionHref(id, sectionSource),
+		WebhookHref:   sectionHref(id, sectionIntegrations) + "#webhook",
 		ComposeHref:   "/apps/" + id + "/compose",
 		Caps:          s.capsFor(r.Context(), id),
 	}
@@ -965,7 +967,7 @@ func (s *server) historyEntry(ctx context.Context, now time.Time, rec store.Depl
 // holding its image.
 func deployFormOf(a app.App) deployForm {
 	f := deployForm{Action: "/apps/" + a.ID + "/deploy",
-		ConfigureHref: "/apps/" + a.ID + "/configure", ComposeHref: "/apps/" + a.ID + "/compose"}
+		ConfigureHref: sectionHref(a.ID, sectionSource), ComposeHref: "/apps/" + a.ID + "/compose"}
 	for _, svc := range a.Services {
 		label := "Image"
 		if len(a.Services) > 1 {
@@ -1235,6 +1237,9 @@ func refuseDeploy(form *deployForm, err error) (status int, notice sentence, ok 
 // webhook URL just made (shown once), the refusals of a delete, and the form
 // when a refused save draws it again.
 type configureExtras struct {
+	// Section is the section to draw: sectionOverview (the default), sectionSource, sectionServices or
+	// sectionIntegrations. A refused post draws the section that holds its form.
+	Section    string
 	WebhookURL string
 	// DeployToken is the deploy token just made (shown once); nil otherwise.
 	DeployToken  *deployTokenView
@@ -1262,11 +1267,13 @@ type configureExtras struct {
 	Git   *gitPost
 }
 
-// configurePage draws the Configure tab with the given status. An unknown app
-// is the not-found page. Everything on it comes from the service: the stored
-// app, its webhook status and its deployments; nothing the Nomad job holds.
+// configurePage draws one section of the Configure tab with the given status
+// (extra.Section; Overview when it is empty). An unknown app is the not-found
+// page. Everything on it comes from the service: the stored app, its webhook
+// status and its deployments; nothing the Nomad job holds.
 func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status int, id string, extra configureExtras) {
 	ctx := r.Context()
+	section := cmp.Or(extra.Section, sectionOverview)
 	sum, err := s.svc.AppSummary(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		s.appNotFound(w, r, id)
@@ -1286,22 +1293,6 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		s.serverError(w, r, "list deployments", err)
 		return
 	}
-	schedules, err := s.svc.ListSchedules(ctx, service.ScheduleFilter{App: id})
-	if err != nil {
-		s.serverError(w, r, "list schedules", err)
-		return
-	}
-	newestRuns := map[string]service.ScheduleRun{}
-	for _, sc := range schedules {
-		runs, err := s.svc.ListScheduleRuns(ctx, sc.ID, 1)
-		if err != nil {
-			s.serverError(w, r, "list schedule runs", err)
-			return
-		}
-		if len(runs) > 0 {
-			newestRuns[sc.ID] = runs[0]
-		}
-	}
 	head, err := s.shellPage(r, id+" configure", navProjects, s.appCrumbs(r.Context(), id)...)
 	if err != nil {
 		s.serverError(w, r, "read admin", err)
@@ -1312,26 +1303,31 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 	form := formOf(sum.App, sum.Revision)
 	if extra.Form != nil {
 		form = *extra.Form
+		form.moveHiddenErrors(section)
 	}
 	tab := &configureTab{
-		ID:           id,
-		TemplateFact: s.templateFactOf(r, sum.AppRecord),
-		Compose:      sum.App.Source.Kind == app.SourceCompose,
-		Notice:       extra.Notice,
-		Copied:       copiedNotice(r, sum),
-		Stopped:      sum.StoppedAt != nil,
-		Edit:         editViewOf(sum.App, form, extra.Stale, s.publishHost(ctx, sum.App)),
+		ID:      id,
+		Section: section,
+		Defined: sum.App.Defined(),
+		Compose: sum.App.Source.Kind == app.SourceCompose,
+		Notice:  extra.Notice,
+		Copied:  copiedNotice(r, sum),
+		Stopped: sum.StoppedAt != nil,
+		Edit:    editViewOf(sum.App, form, extra.Stale, s.publishHost(ctx, sum.App)),
 		Domains: domainsPanel{Rows: domainRowsOf(sum.App), Many: len(sum.App.Services) > 1, CanAdd: sum.StoppedAt == nil,
 			ManageHref: "/apps/" + id + "/domains", AddHref: "/apps/" + id + "/domains#add"},
-		Secrets:   secretsPanelOf(sum.App),
-		Schedules: schedulesPanelOf(id, schedules, newestRuns),
-		Webhook:   webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL, Never: len(deployments) == 0},
-		Deploy:    deployTokenSection{Token: extra.DeployToken, Scope: sum.Place, URL: s.consoleURL(r)},
-		Export:    exportOf(id, deployments),
+		Secrets: secretsPanelOf(sum.App),
+		Webhook: webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL, Never: len(deployments) == 0},
+		Deploy:  deployTokenSection{Token: extra.DeployToken, Scope: sum.Place, URL: s.consoleURL(r)},
+		Export:  exportOf(id, deployments),
 		Delete: deleteView{ID: id, Goes: whatGoes(sum.App, sum, len(deployments), hook.Enabled),
 			Error: extra.DeleteError, Notice: extra.DeleteNotice},
 	}
 	tab.Secrets.Href = "/apps/" + id + "/variables"
+	if hook.Enabled {
+		tab.Webhook.Created = whenOf(s.now(), &hook.CreatedAt, "")
+		tab.Webhook.Call = "curl -X POST " + s.consoleURL(r) + "/v1/webhooks/" + id + ` -H "Authorization: Bearer $CARAVANA_WEBHOOK_TOKEN"`
+	}
 	s.addRegistryPrereqs(ctx, tab, sum)
 	if sum.Compose != nil {
 		// The file is the app's source of truth: its form comes first, and the
@@ -1360,9 +1356,6 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 			tab.Edit.Panels = servicePanels(sum.App, s.publishHost(ctx, sum.App))
 		}
 	}
-	if !tab.CanMaintain {
-		tab.Schedules.NewHref = ""
-	}
 	s.addPlacement(r, tab, sum, extra.Placement) // after the read-only panels exist
 	addScale(tab, sum, extra.Scale)
 	if err := s.addBuild(r, tab, sum, extra.Build, extra.Git); err != nil {
@@ -1377,15 +1370,59 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		}
 		tab.Define = &defineView{Action: "/apps/" + id + "/define", Revision: sum.Revision, Form: form}
 	}
-	if hook.Enabled {
-		tab.Webhook.Created = whenOf(s.now(), &hook.CreatedAt, "")
+	if section == sectionOverview {
+		if err := s.addOverview(r, tab, sum); err != nil {
+			s.serverError(w, r, "read the Overview", err)
+			return
+		}
 	}
-	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "configure"), Configure: tab})
+	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "configure"), Configure: tab, Cfg: configNavOf(sum.App, section)})
 }
 
-// showConfigure answers GET /apps/{id}/configure.
+// addOverview gives the tab what only Overview draws: the summaries, the schedules and the backups.
+func (s *server) addOverview(r *http.Request, tab *configureTab, sum service.AppSummary) error {
+	ctx, id := r.Context(), sum.App.ID
+	schedules, err := s.svc.ListSchedules(ctx, service.ScheduleFilter{App: id})
+	if err != nil {
+		return fmt.Errorf("list schedules: %w", err)
+	}
+	newestRuns := map[string]service.ScheduleRun{}
+	for _, sc := range schedules {
+		runs, err := s.svc.ListScheduleRuns(ctx, sc.ID, 1)
+		if err != nil {
+			return fmt.Errorf("list schedule runs: %w", err)
+		}
+		if len(runs) > 0 {
+			newestRuns[sc.ID] = runs[0]
+		}
+	}
+	tab.Schedules = schedulesPanelOf(id, schedules, newestRuns)
+	if !tab.CanMaintain {
+		tab.Schedules.NewHref = ""
+	}
+	var backups []store.BackupRecord
+	if slices.ContainsFunc(sum.App.Services, func(svc app.Service) bool { return svc.Backup != nil }) {
+		// The last backup is a nicety: an app whose backups can't be read draws the line without it.
+		if backups, _, err = s.svc.ListBackups(ctx, id); err != nil {
+			s.log.Warn("read backups for the Overview", "app", id, "error", err)
+			backups = nil
+		}
+	}
+	v := s.overviewOf(r, sum, s.templateFactOf(r, sum.AppRecord), backups)
+	tab.Overview = &v
+	return nil
+}
+
+// showConfigure answers GET /apps/{id}/configure: the Overview.
 func (s *server) showConfigure(w http.ResponseWriter, r *http.Request, session string) {
 	s.configurePage(w, r, http.StatusOK, r.PathValue("id"), configureExtras{})
+}
+
+// showConfigureSection answers GET /apps/{id}/configure/{source,services,integrations}.
+func (s *server) showConfigureSection(section string) func(http.ResponseWriter, *http.Request, string) {
+	return func(w http.ResponseWriter, r *http.Request, session string) {
+		s.configurePage(w, r, http.StatusOK, r.PathValue("id"), configureExtras{Section: section})
+	}
 }
 
 // createWebhook answers POST /apps/{id}/webhook: it makes the app's webhook
@@ -1401,7 +1438,7 @@ func (s *server) createWebhook(w http.ResponseWriter, r *http.Request, session s
 	case err != nil:
 		s.serverError(w, r, "create webhook token", err)
 	default:
-		s.configurePage(w, r, http.StatusOK, id, configureExtras{WebhookURL: s.origin(r) + tok.Path})
+		s.configurePage(w, r, http.StatusOK, id, configureExtras{Section: sectionIntegrations, WebhookURL: s.origin(r) + tok.Path})
 	}
 }
 
@@ -1426,6 +1463,7 @@ func (s *server) createDeployToken(w http.ResponseWriter, r *http.Request, sessi
 		return
 	}
 	s.configurePage(w, r, http.StatusOK, id, configureExtras{
+		Section:     sectionIntegrations,
 		DeployToken: &deployTokenView{Name: created.Info.Name, Value: created.Token}})
 }
 
@@ -1439,7 +1477,7 @@ func (s *server) revokeWebhook(w http.ResponseWriter, r *http.Request, session s
 	case err != nil:
 		s.serverError(w, r, "revoke webhook token", err)
 	default:
-		http.Redirect(w, r, "/apps/"+id+"/configure", http.StatusSeeOther)
+		http.Redirect(w, r, sectionHref(id, sectionIntegrations), http.StatusSeeOther)
 	}
 }
 

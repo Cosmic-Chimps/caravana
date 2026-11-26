@@ -33,12 +33,23 @@ func (e *consoleEnv) deploy(t *testing.T, a app.App) store.DeploymentRecord {
 	return rec
 }
 
-// configureForm is the Configure form of the app as its page draws it.
+// configureForm is the Services form of the app (the first service's) as its page draws it.
 func (e *consoleEnv) configureForm(t *testing.T, id string) plainForm {
 	t.Helper()
-	resp, body := e.get(t, "/apps/"+id+"/configure")
+	return e.sectionForm(t, id, "services")
+}
+
+// sourceForm is the Source form of the app (the first service's) as its page draws it.
+func (e *consoleEnv) sourceForm(t *testing.T, id string) plainForm {
+	t.Helper()
+	return e.sectionForm(t, id, "source")
+}
+
+func (e *consoleEnv) sectionForm(t *testing.T, id, section string) plainForm {
+	t.Helper()
+	resp, body := e.get(t, "/apps/"+id+"/configure/"+section)
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /apps/%s/configure = %d:\n%s", id, resp.StatusCode, body)
+		t.Fatalf("GET /apps/%s/configure/%s = %d:\n%s", id, section, resp.StatusCode, body)
 	}
 	return formWith(t, body, "/apps/"+id+"/configure")
 }
@@ -233,7 +244,7 @@ func TestSaveConfigure(t *testing.T) {
 
 	t.Run("an image that doesn't exist: the message is at the image, the change is saved", func(t *testing.T) {
 		e := editEnv(t)
-		resp, body := e.submit(t, e.configureForm(t, "duo"), url.Values{"svc.web.image": {"traefik/whoami:nope"}})
+		resp, body := e.submit(t, e.sourceForm(t, "duo"), url.Values{"svc.web.image": {"traefik/whoami:nope"}})
 		if resp.StatusCode != http.StatusUnprocessableEntity {
 			t.Fatalf("POST = %d, want 422:\n%s", resp.StatusCode, text(body))
 		}
@@ -266,14 +277,14 @@ func TestSaveConfigure(t *testing.T) {
 
 	t.Run("each service has its own form: saving one leaves the other as stored", func(t *testing.T) {
 		e := editEnv(t)
-		_, page := e.get(t, "/apps/duo/configure")
+		_, page := e.get(t, "/apps/duo/configure/services")
 		var forms []plainForm
 		for _, f := range formsIn(page) {
 			if f.Action == "/apps/duo/configure" {
 				forms = append(forms, f)
 			}
 		}
-		if len(forms) != 2 || forms[0].HTMX || forms[1].HTMX || !forms[0].Values.Has("svc.web.image") || !forms[1].Values.Has("svc.worker.image") {
+		if len(forms) != 2 || forms[0].HTMX || forms[1].HTMX || !forms[0].Values.Has("svc.web.form") || !forms[1].Values.Has("svc.worker.form") {
 			t.Fatalf("forms = %+v, want two plain forms, web's and worker's", forms)
 		}
 		before := e.storedApp(t, "duo")

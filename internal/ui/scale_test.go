@@ -74,7 +74,7 @@ func TestScaleRuleSentences(t *testing.T) {
 
 func TestConfigureShowsScalingPerService(t *testing.T) {
 	e := scaleEnv(t)
-	_, body := e.get(t, "/apps/duo/configure")
+	_, body := e.get(t, "/apps/duo/configure/services")
 	words := text(body)
 	for _, want := range []string{"Runs 2 copies.", "Runs 1 copy.", "Scale on its own…"} {
 		if !strings.Contains(words, want) {
@@ -105,7 +105,7 @@ func TestConfigureShowsScalingPerService(t *testing.T) {
 func TestSaveScaleDeploysTheRule(t *testing.T) {
 	e := scaleEnv(t)
 	before := len(e.deployments(t, "duo"))
-	_, page := e.get(t, "/apps/duo/configure")
+	_, page := e.get(t, "/apps/duo/configure/services")
 	resp, body := e.submitScale(t, page, "web", nil)
 	recs := e.deployments(t, "duo")
 	if resp.StatusCode != http.StatusSeeOther || len(recs) != before+1 || location(t, resp) != "/apps/duo/deployments#deployment-"+recs[0].Deployment.ID {
@@ -121,7 +121,7 @@ func TestSaveScaleDeploysTheRule(t *testing.T) {
 		t.Errorf("worker changed: %+v", stored.Services[1])
 	}
 	// The page says the rule, opens the form with it, and offers Stop scaling.
-	_, page = e.get(t, "/apps/duo/configure")
+	_, page = e.get(t, "/apps/duo/configure/services")
 	if want := "Runs 1 to 3 copies, keeping each near 50 requests a second; waits 5 minutes between steps."; !strings.Contains(text(page), want) {
 		t.Errorf("Configure lacks %q:\n%s", want, text(page))
 	}
@@ -161,7 +161,7 @@ func TestSaveScaleRefusalsAreDrawnAtTheField(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			e := scaleEnv(t)
 			before, deployments := e.storedApp(t, "duo"), len(e.deployments(t, "duo"))
-			_, page := e.get(t, "/apps/duo/configure")
+			_, page := e.get(t, "/apps/duo/configure/services")
 			resp, body := e.submitScale(t, page, c.svc, c.set)
 			if resp.StatusCode != http.StatusUnprocessableEntity {
 				t.Fatalf("POST = %d, want 422:\n%s", resp.StatusCode, text(body))
@@ -185,7 +185,7 @@ func TestSaveScaleRefusalsAreDrawnAtTheField(t *testing.T) {
 	}
 	// What was typed comes back in the form.
 	e := scaleEnv(t)
-	_, page := e.get(t, "/apps/duo/configure")
+	_, page := e.get(t, "/apps/duo/configure/services")
 	_, body := e.submitScale(t, page, "web", url.Values{scaleKey("web", "min"): {"3"}, scaleKey("web", "max"): {"2"}, scaleKey("web", "start"): {""}})
 	if !strings.Contains(body, `name="svc.web.scale-min" value="3"`) || !strings.Contains(body, `name="svc.web.scale-max" value="2"`) {
 		t.Errorf("what was typed was lost:\n%s", body)
@@ -201,7 +201,7 @@ func TestStopScalingKeepsTheCountItHasNow(t *testing.T) {
 	if err := e.Store.SetServiceCount(context.Background(), "duo", "web", 3); err != nil {
 		t.Fatal(err)
 	}
-	_, page := e.get(t, "/apps/duo/configure")
+	_, page := e.get(t, "/apps/duo/configure/services")
 	revision := e.revisionOf(t, "duo")
 	before := len(e.deployments(t, "duo"))
 	resp, body := e.postForm(t, "/apps/duo/services/web/scale", url.Values{"revision": {revision}, "action": {"stop"}})
@@ -227,7 +227,7 @@ func TestStopScalingKeepsTheCountItHasNow(t *testing.T) {
 func TestSaveScaleStaleRevisionAndUnknowns(t *testing.T) {
 	e := scaleEnv(t)
 	before := e.storedApp(t, "duo")
-	_, page := e.get(t, "/apps/duo/configure")
+	_, page := e.get(t, "/apps/duo/configure/services")
 	resp, body := e.submitScale(t, page, "web", url.Values{"revision": {"0000000000000000"}})
 	if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), changedSincePage) || !reflect.DeepEqual(e.storedApp(t, "duo"), before) {
 		t.Errorf("stale = %d:\n%s", resp.StatusCode, text(body))
@@ -250,7 +250,7 @@ func TestScalingBlockedByVolumesAndPublishedPorts(t *testing.T) {
 	a := duoApp()
 	a.Services[1].Volumes = []app.Volume{{Name: "data", Path: "/data"}}
 	e.deploy(t, a)
-	_, body := e.get(t, "/apps/duo/configure")
+	_, body := e.get(t, "/apps/duo/configure/services")
 	if !strings.Contains(text(body), "A service with volumes runs one copy, so it can't scale.") || strings.Contains(body, "/services/worker/scale") {
 		t.Errorf("worker's panel:\n%s", text(body))
 	}
@@ -286,7 +286,7 @@ func TestPerServiceFormLeavesTheCountToScaling(t *testing.T) {
 	a := e.storedApp(t, "duo")
 	a.Services[0].Scale = webScale
 	e.deploy(t, a)
-	_, page := e.get(t, "/apps/duo/configure")
+	_, page := e.get(t, "/apps/duo/configure/services")
 	if !strings.Contains(text(page), "Copies Set by scaling, 1–3") || strings.Contains(page, `name="svc.web.copies"`) || !strings.Contains(page, `name="svc.worker.copies"`) {
 		t.Errorf("web's Copies input isn't replaced by the words:\n%s", text(page))
 	}
@@ -302,7 +302,7 @@ func TestKeptFileAppScalingIsReadOnly(t *testing.T) {
 	req.Services["web"] = ov
 	e, revision := deployShop(t, req)
 
-	_, page := e.get(t, "/apps/shop/configure")
+	_, page := e.get(t, "/apps/shop/configure/services")
 	words := text(page)
 	for _, want := range []string{"Runs 1 to 3 copies, keeping each copy's CPU near 70 % of its reservation", "Set it in the Compose overlay."} {
 		if !strings.Contains(words, want) {
@@ -317,7 +317,8 @@ func TestKeptFileAppScalingIsReadOnly(t *testing.T) {
 		t.Errorf("a hand-made post = %d:\n%s", resp.StatusCode, text(body))
 	}
 
-	resp, body = e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, url.Values{"compose": {"# edited\n" + keptShopFile}}))
+	_, source := e.get(t, "/apps/shop/configure/source")
+	resp, body = e.postForm(t, "/apps/shop/compose", shopFormOf(t, source, url.Values{"compose": {"# edited\n" + keptShopFile}}))
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("deploy = %d:\n%s", resp.StatusCode, text(body))
 	}
@@ -362,7 +363,7 @@ func TestStoppedAppScalingFormHasNoSubmit(t *testing.T) {
 	if resp, body := e.postAction(t, "/apps/duo/stop"); resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("stop = %d:\n%s", resp.StatusCode, text(body))
 	}
-	_, page := e.get(t, "/apps/duo/configure")
+	_, page := e.get(t, "/apps/duo/configure/services")
 	if n := strings.Count(page, `cv-scfields" disabled>`); n != 2 || strings.Contains(page, "Save scaling") {
 		t.Errorf("%d disabled forms and a Save scaling: %v", n, strings.Contains(page, "Save scaling"))
 	}

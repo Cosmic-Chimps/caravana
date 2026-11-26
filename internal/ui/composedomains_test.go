@@ -28,7 +28,7 @@ func optionedShopRequest() compose.Request {
 
 func TestKeptFileDeployKeepsDomainOptions(t *testing.T) {
 	e, _ := deployShop(t, optionedShopRequest())
-	_, page := e.get(t, "/apps/shop/configure")
+	_, page := e.get(t, "/apps/shop/configure/source")
 	if strings.Contains(page, `name="svc.web.domains"`) {
 		t.Fatal("the Compose form of an existing app has a Domains input")
 	}
@@ -88,7 +88,8 @@ func TestNotKeptFileDeployKeepsDomainOptions(t *testing.T) {
 func TestConfigureKeptFileListsDomainsOnce(t *testing.T) {
 	const note = "Domains aren't set here: a deploy from this form keeps them as they are. Add and change them on the Domains page."
 	e, _ := keptSentinelEnv(t)
-	_, body := e.get(t, "/apps/shop/configure")
+	// The Compose form is on Source, the Domains panel on Overview and the read-only definition on Services.
+	_, body := e.get(t, "/apps/shop/configure/source")
 	got := text(body)
 	if !strings.Contains(got, note) || !strings.Contains(body, `<a href="/apps/shop/domains">Domains page</a>`) {
 		t.Errorf("the form lacks the note:\n%s", got)
@@ -101,16 +102,17 @@ func TestConfigureKeptFileListsDomainsOnce(t *testing.T) {
 	}
 	// The host is in the Domains panel once; the compose form and the read-only definition don't
 	// repeat it (the page header's link and the Delete section's sentence are other things).
-	panel := body[strings.Index(body, `aria-labelledby="domains-title"`):]
+	_, overview := e.get(t, "/apps/shop/configure")
+	panel := overview[strings.Index(overview, `aria-labelledby="domains-title"`):]
 	panel = panel[:strings.Index(panel, "</section>")]
 	if strings.Count(panel, "shop.example.com") != 1 || !strings.Contains(text(panel), "Add domain") {
 		t.Errorf("the Domains panel lacks the host once, or Add domain:\n%s", text(panel))
 	}
 	form := body[strings.Index(body, `<form id="compose-form"`):]
 	form = form[:strings.Index(form, "</form>")]
-	definition := got[strings.Index(got, "Definition"):strings.Index(got, "Variables & secrets")]
-	if strings.Contains(form, "shop.example.com") || strings.Count(definition, "shop.example.com") != 1 {
-		t.Errorf("the compose form or the definition lists the domain again:\n%s", definition)
+	_, servicesBody := e.get(t, "/apps/shop/configure/services")
+	if strings.Contains(form, "shop.example.com") || strings.Contains(text(sectionBody(t, servicesBody)), "shop.example.com") {
+		t.Errorf("the compose form or the services page lists the domain again:\n%s", text(sectionBody(t, servicesBody)))
 	}
 
 	// The stopped app has no Add domain link; its panel still lists the host.
@@ -179,7 +181,7 @@ func TestComposeChangesNamesDomainsOfRemovedService(t *testing.T) {
 // and a kept domain whose port the file removed is refused in the list.
 func TestComposeFormDomainsAgainstTheFile(t *testing.T) {
 	e, _ := deployShop(t, optionedShopRequest())
-	_, page := e.get(t, "/apps/shop/configure")
+	_, page := e.get(t, "/apps/shop/configure/source")
 	noWeb := "services:\n  worker:\n    image: traefik/whoami:latest\n  db:\n    image: postgres:17\n    expose: [\"5432\"]\n    volumes:\n      - data:/var/lib/postgresql/data\nvolumes:\n  data:\n"
 	resp, body := e.postForm(t, "/apps/shop/compose/preview", shopFormOf(t, page, url.Values{"compose": {noWeb}}))
 	if resp.StatusCode != http.StatusOK || !strings.Contains(text(body), "Removes service web: its copies stop and example.com stops answering.") {
@@ -192,7 +194,7 @@ func TestComposeFormDomainsAgainstTheFile(t *testing.T) {
 	ov.Domains[0].Port = 80
 	req.Services["web"] = ov
 	e2, _ := deployShop(t, req)
-	_, page = e2.get(t, "/apps/shop/configure")
+	_, page = e2.get(t, "/apps/shop/configure/source")
 	moved := strings.Replace(keptShopFile, `expose: ["80"]`, `expose: ["81"]`, 1)
 	resp, body = e2.postForm(t, "/apps/shop/compose/preview", shopFormOf(t, page, url.Values{"compose": {moved}}))
 	got := text(body)
@@ -205,7 +207,7 @@ func TestComposeFormDomainsAgainstTheFile(t *testing.T) {
 // even when it doesn't parse, and the app's domains are kept.
 func TestStaleDomainsTextIsIgnored(t *testing.T) {
 	e, _ := deployShop(t, optionedShopRequest())
-	_, page := e.get(t, "/apps/shop/configure")
+	_, page := e.get(t, "/apps/shop/configure/source")
 	resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, url.Values{
 		"compose": {"# edited\n" + keptShopFile}, "svc.web.domains": {"bad domain:xx"}}))
 	if resp.StatusCode != http.StatusSeeOther {

@@ -230,11 +230,11 @@ func (s *server) saveBuild(w http.ResponseWriter, r *http.Request, session strin
 	}
 	i, found := serviceNamed(rec.App, name)
 	if !found {
-		s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Notice: sentence{plain("This app has no service "), mono(name), plain(".")}})
+		s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Section: sectionSource, Notice: sentence{plain("This app has no service "), mono(name), plain(".")}})
 		return
 	}
 	if rec.App.Services[i].Build == nil {
-		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Notice: sentence{mono(name), plain(" isn't built from a Git repository, so it has no build source to save.")}})
+		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Section: sectionSource, Notice: sentence{mono(name), plain(" isn't built from a Git repository, so it has no build source to save.")}})
 		return
 	}
 
@@ -275,5 +275,5 @@ func (s *server) saveBuild(w http.ResponseWriter, r *http.Request, session strin
 		}
 		post.Notice = notice
 	}
-	s.configurePage(w, r, status, id, configureExtras{Build: &post})
+	s.configurePage(w, r, status, id, configureExtras{Section: sectionSource, Build: &post})
 }

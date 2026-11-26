@@ -28,7 +28,7 @@ func keptShopRequestFromFile() compose.Request {
 // say neither.
 func TestConfigureKeptFileLegend(t *testing.T) {
 	e, _ := keptSentinelEnv(t)
-	_, body := e.get(t, "/apps/shop/configure")
+	_, body := e.get(t, "/apps/shop/configure/source")
 	got := text(body)
 	if !strings.Contains(got, keptLegendFirst) {
 		t.Errorf("the legend is missing:\n%s", got)
@@ -44,7 +44,7 @@ func TestConfigureKeptFileLegend(t *testing.T) {
 		t.Fatalf("DeployCompose: %v", err)
 	}
 	e.waitDeploy(t, rec.Deployment.ID)
-	_, body = e.get(t, "/apps/shop/configure")
+	_, body = e.get(t, "/apps/shop/configure/source")
 	if got := text(body); !strings.Contains(got, keptLegendFirst) || !strings.Contains(got, keptLegendCI) {
 		t.Errorf("the legend lacks the CI sentence:\n%s", got)
 	}
@@ -56,7 +56,7 @@ func TestConfigureKeptFileLegend(t *testing.T) {
 		t.Fatalf("DeployCompose: %v", err)
 	}
 	e.waitDeploy(t, rec.Deployment.ID)
-	_, body = e.get(t, "/apps/shop/configure")
+	_, body = e.get(t, "/apps/shop/configure/source")
 	if got := text(body); strings.Contains(got, "came from CI") {
 		t.Errorf("the CI sentence is drawn with no repository:\n%s", got)
 	}
@@ -75,7 +75,7 @@ func TestConfigureKeptFileLegend(t *testing.T) {
 // a value input, each with a label for screen readers. No password input has a value.
 func TestComposeFormSecretRows(t *testing.T) {
 	e, _ := keptSentinelEnv(t)
-	_, body := e.get(t, "/apps/shop/configure")
+	_, body := e.get(t, "/apps/shop/configure/source")
 	if n := strings.Count(body, "Leave a value empty to keep it."); n != 2 {
 		t.Errorf("the keep hint is drawn %d times, want once for each of the 2 services with secrets", n)
 	}
@@ -114,7 +114,7 @@ func TestComposeFormSecretRows(t *testing.T) {
 // A stored secret keeps its value when left empty, so only a secret that does not exist yet asks for one.
 func TestComposeFormStoredSecretAsksForNothing(t *testing.T) {
 	e, _ := keptSentinelEnv(t)
-	_, body := e.get(t, "/apps/shop/configure")
+	_, body := e.get(t, "/apps/shop/configure/source")
 	// Every existing secret keeps its value when left empty, so no row asks for one.
 	if strings.Contains(body, "Type its value.") {
 		t.Error("a stored secret asks for its value")

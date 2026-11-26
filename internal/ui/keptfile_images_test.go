@@ -25,7 +25,7 @@ func TestDeployFormImageKeepsComposeFile(t *testing.T) {
 	recs := e.deployments(t, "shop")
 	e.waitDeploy(t, recs[0].Deployment.ID)
 
-	_, page := e.get(t, "/apps/shop/configure")
+	_, page := e.get(t, "/apps/shop/configure/source")
 	got := text(page)
 	if strings.Contains(got, "Paste it once") || strings.Contains(got, "wasn't kept") {
 		t.Errorf("Configure asks for the file after an images-only deploy:\n%s", got)

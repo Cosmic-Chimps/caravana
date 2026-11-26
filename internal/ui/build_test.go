@@ -325,9 +325,9 @@ func TestCreateThenNextStepsWithDeployKey(t *testing.T) {
 	if after := e.Nomad.Variable(deploy.GitAccessPath("shop", "shop"))[deploy.GitAccessPublicKey]; after == before || after == "" {
 		t.Errorf("the key wasn't replaced: %q → %q", before, after)
 	}
-	_, page = e.get(t, "/apps/shop/configure")
+	_, page = e.get(t, "/apps/shop/configure/source")
 	resp, _ = e.submit(t, formWith(t, page, "/apps/shop/services/shop/git-access/remove"), nil)
-	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/shop/configure#git-access" {
+	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/shop/configure/source#git-access" {
 		t.Errorf("remove = %d to %q, want 303 to Configure's Git access", resp.StatusCode, location(t, resp))
 	}
 	if e.Nomad.Variable(deploy.GitAccessPath("shop", "shop")) != nil {
@@ -386,7 +386,7 @@ func TestGitTokenIsNeverDrawn(t *testing.T) {
 func TestConfigureBuildPanel(t *testing.T) {
 	e := buildEnv(t, nil)
 	e.seedBuilt(t, uiShopRepo, "")
-	_, page := e.get(t, "/apps/shop/configure")
+	_, page := e.get(t, "/apps/shop/configure/source")
 	words := text(page)
 	for _, want := range []string{"Build", "Builds the newest commit of main from " + uiShopRepo + ", reading it without credentials.",
 		"Repository", "Branch", "Folder", "Dockerfile", "How it is read", "Public", "Deploy key", "Token", "SSH host key",
@@ -431,7 +431,7 @@ func TestConfigureBuildPanel(t *testing.T) {
 	t.Run("a token the build needs and doesn't have is refused at How it is read", func(t *testing.T) {
 		e2 := buildEnv(t, nil)
 		e2.seedBuilt(t, "https://git.example.com/acme/web.git", "")
-		_, p := e2.get(t, "/apps/shop/configure")
+		_, p := e2.get(t, "/apps/shop/configure/source")
 		resp, body := e2.submit(t, formWith(t, p, "/apps/shop/services/web/build"), url.Values{"svc.web.build-access": {"token"}})
 		if resp.StatusCode != http.StatusConflict || !regexpHas(body, `(?s)id="svc-web-build-access-error"[^>]*>.*?make the deploy key or add the token it needs`) {
 			t.Errorf("POST = %d:\n%s", resp.StatusCode, text(body))
@@ -441,12 +441,12 @@ func TestConfigureBuildPanel(t *testing.T) {
 	t.Run("an SSH host nobody knows needs its key", func(t *testing.T) {
 		e2 := buildEnv(t, nil)
 		e2.seedBuilt(t, "git@git.example.com:acme/web.git", app.BuildAccessDeployKey)
-		_, p := e2.get(t, "/apps/shop/configure")
+		_, p := e2.get(t, "/apps/shop/configure/source")
 		resp, _ := e2.submit(t, formWith(t, p, "/apps/shop/services/web/git-access/deploy-key"), nil)
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("make key = %d", resp.StatusCode)
 		}
-		_, p = e2.get(t, "/apps/shop/configure")
+		_, p = e2.get(t, "/apps/shop/configure/source")
 		resp, body := e2.submit(t, formWith(t, p, "/apps/shop/services/web/build"), url.Values{"svc.web.build-access": {"deploy-key"}})
 		if resp.StatusCode != http.StatusUnprocessableEntity || !regexpHas(body, `(?s)caravana doesn&#39;t know this SSH host&#39;s key`) {
 			t.Errorf("POST = %d:\n%s", resp.StatusCode, text(body))

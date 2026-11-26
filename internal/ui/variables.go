@@ -285,7 +285,7 @@ func (s *server) variablesPage(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	// The Configure tab stays current: this is one of its pages.
-	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "configure"), VariablesTab: s.gatedVariables(ctx, variablesTabOf(sum, extra))})
+	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "configure"), VariablesTab: s.gatedVariables(ctx, variablesTabOf(sum, extra)), Cfg: configNavOf(sum.App, sectionVariables)})
 }
 
 // showVariables answers GET /apps/{id}/variables.

@@ -533,7 +533,7 @@ func TestComposeDeployFormKeptFile(t *testing.T) {
 // and not the one the app has.
 func TestComposeDeployRefusedKeptFileEchoesNoSecret(t *testing.T) {
 	e, _ := keptSentinelEnv(t)
-	_, page := e.get(t, "/apps/shop/configure")
+	_, page := e.get(t, "/apps/shop/configure/source")
 	typed := shopFormOf(t, page, url.Values{
 		"svc.web.secret.API_KEY":   {sentinel015 + "-typed"},
 		"svc.web.newSecret.0":      {"TOKEN"},
@@ -562,7 +562,7 @@ func TestComposeDeployRefusedKeptFileEchoesNoSecret(t *testing.T) {
 // service's domain stays as it was.
 func TestConfigureKeptFileDeployWithoutPreview(t *testing.T) {
 	e, _ := keptSentinelEnv(t)
-	_, page := e.get(t, "/apps/shop/configure")
+	_, page := e.get(t, "/apps/shop/configure/source")
 	resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, url.Values{"svc.web.healthPath": {"/edited"}}))
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("deploy = %d:\n%s", resp.StatusCode, text(body))
@@ -589,7 +589,7 @@ func TestConfigureKeptFileDeployWithoutPreview(t *testing.T) {
 // is kept; a second tab that still holds the old file is refused as stale.
 func TestConfigureKeptFileEditFlow(t *testing.T) {
 	e, _ := keptSentinelEnv(t)
-	_, page := e.get(t, "/apps/shop/configure")
+	_, page := e.get(t, "/apps/shop/configure/source")
 	const edited = "# shop stack, edited\n" + shopCompose
 	first := shopFormOf(t, page, url.Values{"compose": {edited}})
 	secondTab := shopFormOf(t, page, url.Values{"compose": {"# a second tab\n" + shopCompose}})
@@ -612,7 +612,7 @@ func TestConfigureKeptFileEditFlow(t *testing.T) {
 	if recs[0].Compose == nil || recs[0].Compose.Compose != edited {
 		t.Errorf("the deployment's file = %+v, want the edited one", recs[0].Compose)
 	}
-	_, body = e.get(t, "/apps/shop/configure")
+	_, body = e.get(t, "/apps/shop/configure/source")
 	if got := formWith(t, body, "/apps/shop/compose/preview").Values.Get("compose"); got != edited {
 		t.Errorf("Configure shows %q, want the edited file", got)
 	}

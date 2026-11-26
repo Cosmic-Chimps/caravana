@@ -61,7 +61,7 @@ func TestCreateWithoutDeployingFromTheConsole(t *testing.T) {
 				t.Errorf("the page lacks %q: %s", want, got)
 			}
 		}
-		for _, want := range []string{`action="/apps/whoami/deploy"`, `href="/apps/whoami/configure#webhook"`} {
+		for _, want := range []string{`action="/apps/whoami/deploy"`, `href="/apps/whoami/configure/integrations#webhook"`} {
 			if !strings.Contains(page, want) {
 				t.Errorf("the page lacks %q:\n%s", want, page)
 			}
@@ -227,29 +227,33 @@ func TestConfigureDefinesAnAppWithNoDefinition(t *testing.T) {
 
 	t.Run("the tab holds the Define form, not the editor", func(t *testing.T) {
 		e, revision := setup(t)
-		resp, body := e.get(t, "/apps/shop/configure")
+		resp, body := e.get(t, "/apps/shop/configure/source")
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("GET = %d:\n%s", resp.StatusCode, body)
 		}
 		for _, want := range []string{
 			`action="/apps/shop/define"`, `name="revision" value="` + revision + `"`, `name="image"`, `name="port"`, `name="domain"`, `name="healthPath"`,
-			"Define and deploy", `id="webhook"`,
+			"Define and deploy",
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("the tab lacks %q:\n%s", want, body)
 			}
 		}
 		got := text(body)
-		for _, want := range []string{"Define the app", "Deploy from Compose", "refused until the app has a definition"} {
+		for _, want := range []string{"Define the app", "Deploy from Compose"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("the tab lacks %q: %s", want, got)
 			}
 		}
+		if _, integrations := e.get(t, "/apps/shop/configure/integrations"); !strings.Contains(integrations, `id="webhook"`) || !strings.Contains(text(integrations), "refused until the app has a definition") {
+			t.Errorf("Integrations lacks the webhook and its note: %s", text(integrations))
+		}
+		_, overview := e.get(t, "/apps/shop/configure")
 		if strings.Contains(body, `action="/apps/shop/variables"`) || strings.Contains(body, `id="secrets-title"`) || strings.Contains(body, `action="/apps/shop/configure"`) {
 			t.Error("the tab offers the secret or the per-service edit form for an app with no services")
 		}
-		if !strings.Contains(got, "It was never deployed, so nothing is running.") {
-			t.Errorf("the delete section talks of stopping copies: %s", got)
+		if !strings.Contains(text(overview), "It was never deployed, so nothing is running.") {
+			t.Errorf("the delete section talks of stopping copies: %s", text(overview))
 		}
 	})
 
@@ -341,7 +345,7 @@ func TestDeploymentsTabOfAnAppWithNoDefinition(t *testing.T) {
 func TestWebhookNoteOfANeverDeployedApp(t *testing.T) {
 	e := newConsoleEnv(t)
 	e.seed(t, whoamiApp())
-	_, body := e.get(t, "/apps/whoami/configure")
+	_, body := e.get(t, "/apps/whoami/configure/integrations")
 	if got := text(body); !strings.Contains(got, "The app was never deployed: the webhook's first call deploys it as stored.") {
 		t.Errorf("the webhook section doesn't say the first call deploys: %s", got)
 	}

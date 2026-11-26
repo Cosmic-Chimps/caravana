@@ -96,7 +96,7 @@ func (s *server) gitAccessViewOf(ctx context.Context, appID string, svc app.Serv
 // gitBack is where a Git access post goes when it worked.
 func gitBack(id, from string) string {
 	if from == gitFromConfigure {
-		return "/apps/" + url.PathEscape(id) + "/configure#git-access"
+		return sectionHref(url.PathEscape(id), sectionSource) + "#git-access"
 	}
 	return "/apps/" + url.PathEscape(id) + "#next-steps"
 }
@@ -104,7 +104,7 @@ func gitBack(id, from string) string {
 // gitRedraw draws the page a refused Git access post came from, with the draft.
 func (s *server) gitRedraw(w http.ResponseWriter, r *http.Request, status int, id, from string, draft gitPost) {
 	if from == gitFromConfigure {
-		s.configurePage(w, r, status, id, configureExtras{Git: &draft})
+		s.configurePage(w, r, status, id, configureExtras{Section: sectionSource, Git: &draft})
 		return
 	}
 	s.runningPage(w, r, status, id, runningExtras{Git: &draft})

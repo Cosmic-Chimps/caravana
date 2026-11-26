@@ -315,11 +315,11 @@ func (s *server) saveScale(w http.ResponseWriter, r *http.Request, session strin
 	}
 	i, found := serviceNamed(sum.App, name)
 	if !found {
-		s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Notice: sentence{plain("This app has no service "), mono(name), plain(".")}})
+		s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Section: sectionServices, Notice: sentence{plain("This app has no service "), mono(name), plain(".")}})
 		return
 	}
 	if sum.Compose != nil {
-		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Notice: sentence{plain("This app keeps its Compose file, so its scaling is set in the file's overlay. Change it in the file above and deploy it.")}})
+		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Section: sectionServices, Notice: sentence{plain("This app keeps its Compose file, so its scaling is set in the file's overlay. Change it in the file above and deploy it.")}})
 		return
 	}
 
@@ -329,7 +329,7 @@ func (s *server) saveScale(w http.ResponseWriter, r *http.Request, session strin
 		Value: typed("value"), Cooldown: typed("cooldown"), Start: typed("start")}
 	if r.PostForm.Get("action") == "stop" {
 		if sum.App.Services[i].Scale == nil {
-			s.configurePage(w, r, http.StatusConflict, id, configureExtras{Notice: sentence{mono(name), plain(" doesn't scale on its own.")}})
+			s.configurePage(w, r, http.StatusConflict, id, configureExtras{Section: sectionServices, Notice: sentence{mono(name), plain(" doesn't scale on its own.")}})
 			return
 		}
 		n := copiesNow(sum, sum.App.Services[i])
@@ -337,7 +337,7 @@ func (s *server) saveScale(w http.ResponseWriter, r *http.Request, session strin
 	} else {
 		sc, start, ok := post.scale()
 		if !ok {
-			s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Scale: &post})
+			s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Section: sectionServices, Scale: &post})
 			return
 		}
 		edited = withScale(sum.App, i, sc, start)
@@ -369,8 +369,8 @@ func (s *server) saveScale(w http.ResponseWriter, r *http.Request, session strin
 		if len(post.Notice) == 0 {
 			post.Notice = plainS("Couldn't stop scaling.")
 		}
-		s.configurePage(w, r, status, id, configureExtras{Notice: post.Notice})
+		s.configurePage(w, r, status, id, configureExtras{Section: sectionServices, Notice: post.Notice})
 		return
 	}
-	s.configurePage(w, r, status, id, configureExtras{Scale: &post})
+	s.configurePage(w, r, status, id, configureExtras{Section: sectionServices, Scale: &post})
 }

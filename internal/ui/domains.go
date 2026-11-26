@@ -146,7 +146,7 @@ func (s *server) domainsPageWith(w http.ResponseWriter, r *http.Request, status 
 			tab.Add = nil
 		}
 	}
-	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "configure"), DomainsTab: tab})
+	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "configure"), DomainsTab: tab, Cfg: configNavOf(sum.App, sectionDomains)})
 }
 
 // showDomains answers GET /apps/{id}/domains.

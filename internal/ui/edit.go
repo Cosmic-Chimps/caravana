@@ -51,6 +51,9 @@ type editService struct {
 	// "1–3", for the words in its place.
 	Scaled      bool
 	ScaleBounds string
+	// OneCopy says the service runs one copy because it has a volume or a published port: Copies is
+	// read-only on the Services page, and a post that doesn't carry it keeps the stored count.
+	OneCopy bool
 
 	Image, Port, Copies                       formField
 	DomainPort                                formField
@@ -185,6 +188,7 @@ func newEditService(svc app.Service) editService {
 		// A port is per service: with several, and a domain to send there, the owner picks which.
 		ShowDomainPort: len(svc.Ports) > 1 && len(svc.Domains) > 0,
 		Ports:          svc.Ports,
+		OneCopy:        len(svc.Volumes) > 0 || svc.Publishes(),
 	}
 	if sc := svc.Scale; sc != nil {
 		s.Scaled, s.ScaleBounds = true, fmt.Sprintf("%d–%d", sc.Min, sc.Max)
@@ -331,17 +335,26 @@ func secondsText(d time.Duration) string {
 	return strconv.FormatFloat(d.Seconds(), 'f', -1, 64)
 }
 
+// formMarker is the hidden input every service form carries: its presence says the post is about this
+// service. A form drawn before the Configure page was split has no marker and says the same with the
+// service's image, which it always posted.
+func formMarker(service string) string { return inputName(service, "form") }
+
 // parseEditForm reads the posted form for the stored app's services. It
 // always returns the form with every value as typed; ok is false when some
 // input has an error, which sits on that input. A service the post says
-// nothing about (its image input is absent: another service's form, or a form
-// drawn before the service was added) is taken as stored, never as emptied.
+// nothing about (it has neither its form marker nor its image input: another
+// service's form, or a form drawn before the service was added) is taken as
+// stored, never as emptied. Within a service each input is read only when the
+// post has it: the Source form posts the image and the ports, the Services form
+// the copies, size and health check, and neither may reset what the other owns
+// (feature 059, D2).
 func parseEditForm(post url.Values, stored app.App) (editForm, bool) {
 	f := formOf(stored, strings.TrimSpace(post.Get("revision")))
 	ok := true
 	for i, svc := range stored.Services {
 		s := &f.Services[i]
-		if !post.Has(inputName(svc.Name, "image")) {
+		if !post.Has(formMarker(svc.Name)) && !post.Has(inputName(svc.Name, "image")) {
 			continue
 		}
 		if !s.parse(post) {
@@ -352,12 +365,15 @@ func parseEditForm(post url.Values, stored app.App) (editForm, bool) {
 }
 
 // parse reads one service's inputs from the post, setting Edit and any
-// errors, and reports whether every input was good.
+// errors, and reports whether every input was good. Edit starts as the stored
+// values (formOf made it), so an input the post doesn't have keeps its stored
+// value.
 func (s *editService) parse(post url.Values) bool {
 	ok := true
 	refuse := func(field *formField, text string) {
 		field.Error, ok = sentence{plain(text)}, false
 	}
+	has := func(name string) bool { return post.Has(inputName(s.Name, name)) }
 	text := func(name string) string { return strings.TrimSpace(post.Get(inputName(s.Name, name))) }
 	// whole parses an optional whole number from min up; empty is zero.
 	whole := func(field *formField, min int, what string) int {
@@ -386,16 +402,16 @@ func (s *editService) parse(post url.Values) bool {
 	}
 
 	e := &s.Edit
-	stored := e.Replicas // formOf filled the edit from the stored service
-	*e = serviceEdit{}
 
-	s.Image.Value = text("image")
-	if s.Image.Value == "" {
-		refuse(&s.Image, "Enter an image.")
+	if has("image") {
+		s.Image.Value = text("image")
+		if s.Image.Value == "" {
+			refuse(&s.Image, "Enter an image.")
+		}
+		e.Image = s.Image.Value
 	}
-	e.Image = s.Image.Value
 
-	if s.ShowPort {
+	if s.ShowPort && has("port") {
 		s.Port.Value = text("port")
 		if n, err := strconv.Atoi(s.Port.Value); err != nil || n < 1 || n > 65535 {
 			refuse(&s.Port, "Enter a number from 1 to 65535.")
@@ -405,7 +421,7 @@ func (s *editService) parse(post url.Values) bool {
 	}
 
 	// "Domains go to": a form drawn before the service had several ports doesn't have it, and keeps what is stored.
-	if s.ShowDomainPort && post.Has(inputName(s.Name, "domainPort")) {
+	if s.ShowDomainPort && has("domainPort") {
 		s.DomainPort.Value = text("domainPort")
 		if !slices.ContainsFunc(s.Ports, func(p app.Port) bool { return p.Name == s.DomainPort.Value }) {
 			refuse(&s.DomainPort, "Choose one of the service's ports.")
@@ -413,27 +429,44 @@ func (s *editService) parse(post url.Values) bool {
 		e.DomainPort = s.DomainPort.Value
 	}
 
-	if s.Scaled {
-		e.Replicas = stored // the Scaling panel owns the count
-	} else {
+	// A scaled service's count is the Scaling panel's, and a service with a volume or a published port runs
+	// one copy: neither has a Copies input, and a save keeps the stored replicas.
+	if !s.Scaled && !s.OneCopy && has("copies") {
 		s.Copies.Value = text("copies")
+		e.Replicas = nil
 		if n := whole(&s.Copies, 1, "Enter a whole number, 1 or more."); n > 0 {
 			e.Replicas = &n
 		}
 	}
 
 	if s.ShowHealth {
-		s.HealthPath.Value = text("healthPath")
-		e.HealthPath = s.HealthPath.Value
-		s.HealthInterval.Value, s.HealthTimeout.Value = text("healthInterval"), text("healthTimeout")
-		e.HealthInterval, e.HealthTimeout = seconds(&s.HealthInterval), seconds(&s.HealthTimeout)
+		if has("healthPath") {
+			s.HealthPath.Value = text("healthPath")
+			e.HealthPath = s.HealthPath.Value
+		}
+		if has("healthInterval") {
+			s.HealthInterval.Value = text("healthInterval")
+			e.HealthInterval = seconds(&s.HealthInterval)
+		}
+		if has("healthTimeout") {
+			s.HealthTimeout.Value = text("healthTimeout")
+			e.HealthTimeout = seconds(&s.HealthTimeout)
+		}
 	}
 
-	s.CPU.Value, s.Memory.Value, s.MemoryMax.Value = text("cpu"), text("memory"), text("memoryMax")
 	const notNumber = "Enter a whole number, or leave it empty for the default."
-	e.CPUMHz = whole(&s.CPU, 0, notNumber)
-	e.MemoryMB = whole(&s.Memory, 0, notNumber)
-	e.MemoryMaxMB = whole(&s.MemoryMax, 0, notNumber)
+	if has("cpu") {
+		s.CPU.Value = text("cpu")
+		e.CPUMHz = whole(&s.CPU, 0, notNumber)
+	}
+	if has("memory") {
+		s.Memory.Value = text("memory")
+		e.MemoryMB = whole(&s.Memory, 0, notNumber)
+	}
+	if has("memoryMax") {
+		s.MemoryMax.Value = text("memoryMax")
+		e.MemoryMaxMB = whole(&s.MemoryMax, 0, notNumber)
+	}
 	return ok
 }
 

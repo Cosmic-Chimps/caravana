@@ -292,18 +292,18 @@ func (s *server) savePlacement(w http.ResponseWriter, r *http.Request, session s
 	}
 	i, found := serviceNamed(rec.App, name)
 	if !found {
-		s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Notice: sentence{plain("This app has no service "), mono(name), plain(".")}})
+		s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Section: sectionServices, Notice: sentence{plain("This app has no service "), mono(name), plain(".")}})
 		return
 	}
 	if rec.Compose != nil {
-		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Notice: sentence{plain("This app keeps its Compose file, so its placement is set in the file's overlay. Change it in the file above and deploy it.")}})
+		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Section: sectionServices, Notice: sentence{plain("This app keeps its Compose file, so its placement is set in the file's overlay. Change it in the file above and deploy it.")}})
 		return
 	}
 
 	post := placementPost{Service: name, Require: r.PostForm.Get("require"), Prefer: r.PostForm.Get("prefer"), Avoid: r.PostForm["avoid"]}
 	p, ok := post.placement()
 	if !ok {
-		s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Placement: &post})
+		s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Section: sectionServices, Placement: &post})
 		return
 	}
 	edited := withPlacement(rec.App, i, p)
@@ -341,5 +341,5 @@ func (s *server) savePlacement(w http.ResponseWriter, r *http.Request, session s
 		}
 		post.Notice = notice
 	}
-	s.configurePage(w, r, status, id, configureExtras{Placement: &post})
+	s.configurePage(w, r, status, id, configureExtras{Section: sectionServices, Placement: &post})
 }

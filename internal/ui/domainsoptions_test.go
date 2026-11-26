@@ -472,7 +472,7 @@ func TestConfigureDomainsGoTo(t *testing.T) {
 	a.Services[0].Domains[1].Path = "/b"
 	e.deploy(t, a)
 
-	body := e.pageOf(t, "/apps/ports/configure")
+	body := e.pageOf(t, "/apps/ports/configure/source")
 	if got := text(body); !strings.Contains(got, "Domains go to") || !strings.Contains(got, "Every domain of this service goes to this port.") {
 		t.Errorf("Configure lacks Domains go to:\n%s", got)
 	}
@@ -485,7 +485,7 @@ func TestConfigureDomainsGoTo(t *testing.T) {
 	}
 
 	n := e.deployCount(t, "ports")
-	resp, out := e.submit(t, e.configureForm(t, "ports"), url.Values{"svc.web.domainPort": {"admin"}})
+	resp, out := e.submit(t, e.sourceForm(t, "ports"), url.Values{"svc.web.domainPort": {"admin"}})
 	if resp.StatusCode != http.StatusSeeOther || e.deployCount(t, "ports") != n+1 {
 		t.Fatalf("save = %d:\n%s", resp.StatusCode, text(out))
 	}
@@ -497,7 +497,7 @@ func TestConfigureDomainsGoTo(t *testing.T) {
 	if d := e.storedApp(t, "ports").Services[0].Domains[1]; d.Path != "/b" {
 		t.Errorf("the domain's path = %q: saving the port changed another option", d.Path)
 	}
-	if got := text(e.pageOf(t, "/apps/ports/configure")); !strings.Contains(got, "admin · :9000") {
+	if got := text(e.pageOf(t, "/apps/ports/configure/source")); !strings.Contains(got, "admin · :9000") {
 		t.Errorf("the select doesn't show admin after the save:\n%s", got)
 	}
 	// The Domains page shows where they go.
@@ -507,12 +507,12 @@ func TestConfigureDomainsGoTo(t *testing.T) {
 
 	// A port the service doesn't have is refused under the select, and nothing is deployed.
 	n = e.deployCount(t, "ports")
-	resp, out = e.submit(t, e.configureForm(t, "ports"), url.Values{"svc.web.domainPort": {"nope"}})
+	resp, out = e.submit(t, e.sourceForm(t, "ports"), url.Values{"svc.web.domainPort": {"nope"}})
 	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(text(out), "Choose one of the service's ports.") || !strings.Contains(out, `aria-invalid="true"`) || e.deployCount(t, "ports") != n {
 		t.Errorf("an unknown port = %d:\n%s", resp.StatusCode, text(out))
 	}
 	// A post without the field (a form drawn before) keeps the stored port.
-	f := e.configureForm(t, "ports")
+	f := e.sourceForm(t, "ports")
 	delete(f.Values, "svc.web.domainPort")
 	if resp, _ = e.submit(t, f, url.Values{"svc.web.memory": {"200"}}); resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("a post without the select = %d", resp.StatusCode)
@@ -523,7 +523,7 @@ func TestConfigureDomainsGoTo(t *testing.T) {
 
 	// One port, or no domain: no select.
 	e.deploy(t, whoamiApp())
-	if strings.Contains(e.pageOf(t, "/apps/whoami/configure"), "Domains go to") {
+	if strings.Contains(e.pageOf(t, "/apps/whoami/configure/source"), "Domains go to") {
 		t.Error("a one-port service offers Domains go to")
 	}
 }

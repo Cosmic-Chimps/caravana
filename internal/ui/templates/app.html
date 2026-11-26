@@ -71,6 +71,7 @@
 {{with .Actions}}{{template "actions-section" .}}{{end}}
 {{with .Deployments}}{{template "deployments" .}}{{end}}
 {{with .BuildLog}}{{template "build-log" .}}{{end}}
+{{if .Cfg}}<div class="cv-cfg">{{template "configure-nav" .Cfg}}<div class="cv-cfg-body">{{end}}
 {{with .Configure}}{{template "configure" .}}{{end}}
 {{with .Compose}}{{template "compose-deploy" .}}{{end}}
 {{with .LogsTab}}<div class="cv-applogs">{{template "logs-page" .}}</div>{{end}}
@@ -78,6 +79,7 @@
 {{with .Backups}}{{template "backups" .}}{{end}}
 {{with .VariablesTab}}{{template "variables" .}}{{end}}
 {{with .DomainsTab}}{{template "domains" .}}{{end}}
+{{if .Cfg}}</div></div>{{end}}
 {{end}}
 {{end}}
 
@@ -1034,60 +1036,131 @@
 {{end}}
 {{end}}
 
-{{/* The Configure tab (feature 021): per service the grid of Copies & size and Deploy, as one form
-     (a save is a deploy); per app the Domains and Secrets panels, with the links to their pages; then
-     the webhook, the deploy token, the export and, last and apart, Delete app. Everything is a plain
-     form post; the confirmations are <details>, so they work without script. Takes a configureTab. */}}
-{{define "configure"}}
-{{/* An app that keeps its Compose file edits it here first (feature 015): the same form as
-     Deploy from Compose, filled from the file. The definition below is then read-only. The
-     heading says "Edit", not "Compose file": the form's own field is labelled that already. */}}
-{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>
-{{else}}{{if .Stopped}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>The app is stopped: start it first.</span></div>{{end}}{{end}}
-{{with .Copied}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
-{{with .TemplateFact}}<p class="cv-note cv-tplfact">{{template "sentence" .}}</p>{{end}}
-{{with .ComposeForm}}
-<section aria-labelledby="compose-edit-title" class="flex flex-col gap-2">
-  <h2 id="compose-edit-title" class="cv-label">Edit</h2>
-  {{if .Kept}}<p class="cv-note">This app was deployed from a Compose file, so Caravana keeps the file and you edit the app through it: the file, then each service's health check, secrets and backup. An app deployed from an image is edited field by field instead.{{with .FromCI}} Its last deploy came from CI ({{.}}). A deploy from CI can replace changes made here, so make lasting changes in the source.{{end}}</p>{{end}}
-  {{if .NotKept}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>This app's Compose file wasn't kept. Paste it once to edit it here from now on.</span></div>{{end}}
-  {{template "compose-form" .}}
-</section>
-{{end}}
-{{with .Define}}
-<section aria-labelledby="define-title" class="flex flex-col gap-2">
-  <h2 id="define-title" class="cv-label">Define the app</h2>
-  {{template "define-form" .}}
-  <p class="text-sm text-fg-3">Saving deploys the app. <a href="/apps/{{$.ID}}/compose" class="cv-btn cv-btn-secondary cv-btn-sm">Deploy from Compose</a> Define it with a Compose file instead.</p>
-</section>
+{{/* configure-nav: the nav of Configure's sections (feature 059), drawn beside Overview, Source, Services,
+     Integrations, Variables & secrets and Domains. Settings' nav items with the in-page modifier. Takes a
+     configNav. */}}
+{{define "configure-nav"}}
+<nav aria-label="Configure" class="cv-snav cv-snav-inpage">
+  {{range .Items}}<a href="{{.Href}}" class="cv-snav-item" id="cfg-nav-{{.Key}}"{{if .Current}} aria-current="page"{{end}}><span class="cv-snav-text">{{.Label}}</span>{{with .Count}}<span class="cv-snav-count">{{.}}</span>{{end}}</a>
+  {{end}}
+</nav>
 {{end}}
 
-{{if .Edit.ReadOnly}}
-<section aria-labelledby="definition-title" class="flex flex-col gap-2">
-  <h2 id="definition-title" class="cv-label">Definition</h2>
-  <p class="text-sm text-fg-3">{{if .NoConfigure}}Your role here is to look: changing how this app is set up is for people who maintain it.{{else}}This app is edited through its Compose file.{{end}}</p>
-  {{range .Edit.Panels}}
-  <div class="cv-panel cv-def">
-    <h3 class="cv-data text-fg-1">{{.Title}}</h3>
-    <dl class="cv-def-rows">
-      {{range .Rows}}
-      <div class="cv-def-row">
-        <dt class="cv-label">{{.Label}}</dt>
-        <dd>
-          <ul class="cv-def-values">{{range .Values}}
-            <li class="cv-data text-fg-1">{{.}}</li>{{end}}
-          </ul>
-        </dd>
-      </div>
+{{/* The Configure tab (features 021 and 059): one section of it per page. Overview reads what the app is made
+     of; Source holds the image forms, the Compose file, the build and the define form; Services the copies, size
+     and health check of each service with its placement and scaling; Integrations the webhook, the deploy token
+     and the export. Everything is a plain form post; the confirmations are <details>, so they work without
+     script. Takes a configureTab. */}}
+{{define "configure"}}
+{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>
+{{else}}{{if and .Stopped (not .Edit.Form.Notice)}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>The app is stopped: start it first.</span></div>{{end}}{{end}}
+{{with .Copied}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{if eq .Section "source"}}{{template "cfg-source" .}}
+{{else if eq .Section "services"}}{{template "cfg-services" .}}
+{{else if eq .Section "integrations"}}{{template "cfg-integrations" .}}
+{{else}}{{template "cfg-overview" .}}{{end}}
+{{end}}
+
+{{/* cfg-overview: the read-only summary (contract §2). */}}
+{{define "cfg-overview"}}
+<p class="cv-note cv-cfg-intro">What this app is made of. Each part is changed on its own page, and every change is a deploy.</p>
+{{with .Overview}}
+<div class="cv-cfg-grid">
+  <section class="cv-panel cv-cfg-panel" aria-labelledby="ov-source-title">
+    <h2 id="ov-source-title" class="cv-label">Source</h2>
+    <p class="cv-cfg-strong">{{template "sentence" .Source.Strong}}</p>
+    <p class="cv-note">{{.Source.Line}}</p>
+    <div class="cv-btnrow"><a href="{{.SourceHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Source.Button}}</a></div>
+  </section>
+  {{if $.Defined}}
+  <section class="cv-panel cv-cfg-panel" aria-labelledby="secrets-title">
+    <h2 id="secrets-title" class="cv-label">Variables &amp; secrets</h2>
+    <p class="cv-cfg-strong">{{$.Secrets.Headline}}</p>
+    {{range $.Secrets.Lines}}
+    <p class="cv-secnames">{{if $.Secrets.Many}}<span class="cv-secsvc">{{.Service}}</span> {{end}}{{range $i, $name := .Names}}{{if $i}} · {{end}}{{$name}}{{end}}</p>
+    {{end}}
+    <p class="cv-note">Values of secrets are never shown.</p>
+    <div class="cv-btnrow"><a href="{{$.Secrets.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage variables and secrets</a></div>
+  </section>
+  <section class="cv-panel cv-cfg-panel cv-cfg-wide" aria-labelledby="services-title">
+    <h2 id="services-title" class="cv-label">Services</h2>
+    <ul class="cv-ovsvcs">
+      {{range .Services}}
+      <li class="cv-ovsvc"><span class="cv-ovsvc-name">{{.Name}}</span> <span>{{.Image}}</span> <span>{{.Copies}} · {{.Size}}</span> <span>{{.Check}}{{with .Volumes}} · {{.}}{{end}}</span></li>
       {{end}}
-    </dl>
-    {{if .Identities}}{{template "identities" .Identities}}{{end}}
-    {{with .Placement}}<div id="{{.AnchorID}}">{{template "placement" .}}</div>{{end}}
-    {{with .Scale}}<div id="{{.AnchorID}}">{{template "scale" .}}</div>{{end}}
-  </div>
+    </ul>
+    <div class="cv-btnrow"><a href="{{.ServicesHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Change copies, size and checks</a></div>
+  </section>
+  <section class="cv-panel cv-cfg-panel" aria-labelledby="domains-title">
+    <h2 id="domains-title" class="cv-label">Domains</h2>
+    {{range $.Domains.Rows}}
+    <div class="cv-domrow"><span class="cv-domhost">{{.Host}}</span> {{if $.Domains.Many}}<span class="cv-domto">→ {{.Service}} :{{.Port}}</span>{{end}}</div>
+    {{else}}
+    <p class="cv-note">No domains. Copies are reachable only inside the app.</p>
+    {{end}}
+    <div class="cv-btnrow">
+      <a href="{{$.Domains.ManageHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage domains</a>
+      {{if $.Domains.CanAdd}}<a href="{{$.Domains.AddHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}Add domain</a>{{end}}
+    </div>
+  </section>
+  <section class="cv-panel cv-cfg-panel" aria-labelledby="backups-title">
+    <h2 id="backups-title" class="cv-label">Backups</h2>
+    {{range .Backups}}
+    <p class="cv-ovbackup"><span><span class="cv-ovbackup-name">{{.Service}}</span> · {{.Words}}</span>{{with .Where}}<span class="cv-note">{{.}}</span>{{end}}{{if .HasLast}}<span class="cv-note">Last backup {{template "time" .Last}}.</span>{{end}}</p>
+    {{else}}
+    <p class="cv-note">No backups.</p>
+    {{end}}
+    <div class="cv-btnrow"><a href="{{.BackupsHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Open the Backups tab</a></div>
+  </section>
+  <section class="cv-panel cv-cfg-panel" aria-labelledby="schedules-title">
+    <h2 id="schedules-title" class="cv-label">Schedules</h2>
+    {{range $.Schedules.Lines}}
+    <p class="cv-schedline"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span><span class="cv-schedline-name">{{.Name}}</span> <span class="cv-schedline-words">· {{.Words}}</span></span></p>
+    {{else}}
+    <p class="cv-note">No schedules.</p>
+    {{end}}
+    {{with $.Schedules.Note}}<p class="cv-note cv-schednote"><a href="{{$.Schedules.ManageHref}}">{{.}}</a></p>{{end}}
+    <div class="cv-btnrow">
+      <a href="{{$.Schedules.ManageHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage schedules</a>
+      {{with $.Schedules.NewHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}New schedule</a>{{end}}
+    </div>
+  </section>
   {{end}}
-</section>
-{{else if not .Define}}
+  <section class="cv-panel cv-cfg-panel" aria-labelledby="integrations-title">
+    <h2 id="integrations-title" class="cv-label">Integrations</h2>
+    {{if $.CanMaintain}}
+    {{if $.Webhook.Enabled}}<p class="text-base text-fg-1">Webhook token made {{template "time" $.Webhook.Created}}.</p>
+    {{else}}<p class="text-base text-fg-1">No webhook token.</p>{{end}}
+    {{end}}
+    <p class="cv-note">Export the app as a plain Nomad job.</p>
+    <div class="cv-btnrow"><a href="{{.IntegrationsHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Open integrations</a></div>
+  </section>
+  {{if not $.NoConfigure}}
+  <section aria-labelledby="delete-title" class="cv-panel cv-cfg-panel cv-cfg-wide">
+    <h2 id="delete-title" class="cv-label">Delete app</h2>
+    <details class="cv-confirm"{{if $.Delete.Open}} open{{end}}>
+      <summary class="cv-btn cv-btn-danger cv-btn-sm">Delete app…</summary>
+      {{with $.Delete}}
+      <form method="post" action="/apps/{{.ID}}/delete" class="cv-confirm-body">
+        {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+        <p>{{template "sentence" .Goes}}</p>
+        <label class="cv-fld" for="delete-confirm">
+          <span class="cv-label">Type <span class="cv-inline-mono">{{.ID}}</span> to confirm</span>
+          <input class="cv-field cv-field-mono" id="delete-confirm" type="text" name="confirm" data-confirm-name="{{.ID}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="delete-confirm-error"{{end}}>
+          {{with .Error}}<span id="delete-confirm-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+        </label>
+        <div><button type="submit" class="cv-btn cv-btn-danger">Delete {{.ID}}</button></div>
+      </form>
+      {{end}}
+    </details>
+  </section>
+  {{end}}
+</div>
+{{end}}
+{{end}}
+
+{{/* cfg-stale: the panel of a save refused because the app changed since the form was drawn. */}}
+{{define "cfg-stale"}}
 {{with .Edit.Stale}}
 <div role="alert" class="cv-panel cv-stale">
   <p class="cv-stale-title"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>This app changed since you opened the form.</span></p>
@@ -1103,124 +1176,74 @@
 </div>
 {{end}}
 {{with .Edit.Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
-{{range .Edit.Services}}
-<section id="service-{{.Name}}" class="cv-svc cv-gridbox"{{if $.Edit.Many}} aria-labelledby="svc-{{.Name}}-title"{{else}} aria-label="Settings"{{end}}>
-  {{if $.Edit.Many}}<h2 id="svc-{{.Name}}-title" class="cv-svc-title">{{.Name}}</h2>{{else}}<h2 class="sr-only">Settings</h2>{{end}}
-  <form method="post" action="{{$.Edit.Action}}#service-{{.Name}}" class="cv-svcform">
-    <input type="hidden" name="revision" value="{{$.Edit.Form.Revision}}">
-    <fieldset class="cv-fieldset"{{if $.Stopped}} disabled{{end}}>
-      <div class="cv-grid2">
-        <div class="cv-panel cv-gpanel">
-          <h3 class="cv-label">Copies &amp; size</h3>
-          <div class="cv-fields4">
-            {{if .Scaled}}<div class="cv-fld"><span class="cv-label">Copies</span>
-              <span class="cv-data text-fg-1">Set by scaling, {{.ScaleBounds}}</span></div>{{else}}{{template "field" (.F "copies")}}{{end}}
-            {{template "field" (.F "cpu")}}
-            {{template "field" (.F "memory")}}
-            {{template "field" (.F "memoryMax")}}
-          </div>
-          {{with .Prereq}}
-          <div class="cv-prereq">
-            <p class="cv-prereq-title"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>Needs a container registry</span></p>
-            <p class="cv-prereq-reason">{{template "sentence" .Reason}}</p>
-            <div><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Add credentials in Settings</a></div>
-          </div>
-          {{end}}
-        </div>
-        <div class="cv-col">
-          <div class="cv-panel cv-gpanel">
-            <h3 class="cv-label">Deploy</h3>
-            {{template "field" (.F "image")}}
-            {{if .ShowPort}}<div class="cv-field-narrow">{{template "field" (.F "port")}}</div>{{end}}
-            {{if .ShowDomainPort}}
-            <div class="cv-fld cv-field-narrow">
-              <label class="cv-fld" for="{{.DomainPort.ID}}">
-                <span class="cv-label">Domains go to</span>
-                <select class="cv-field cv-select" id="{{.DomainPort.ID}}" name="{{(.F "domainPort").InputName}}"{{if .DomainPort.Error}} aria-invalid="true" aria-describedby="{{.DomainPort.ID}}-hint {{.DomainPort.ID}}-error"{{else}} aria-describedby="{{.DomainPort.ID}}-hint"{{end}}>
-                  {{range .DomainPortOptions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
-                </select>
-                <span class="cv-data-muted cv-hint" id="{{.DomainPort.ID}}-hint">Every domain of this service goes to this port.</span>
-                {{template "field-error" .DomainPort}}
-              </label>
-            </div>
-            {{end}}
-            {{if .ShowHealth}}
-            <div class="cv-fields3">
-              {{template "field" (.F "healthPath")}}
-              {{template "field" (.F "healthInterval")}}
-              {{template "field" (.F "healthTimeout")}}
-            </div>
-            <p class="cv-note">New copies must pass this check before they take traffic; if they don't, the deploy is reverted.</p>
-            {{end}}
-          </div>
-          {{with .Also}}
-          <div class="cv-panel cv-gpanel cv-gpanel-tight">
-            <h3 class="cv-label">Also set</h3>
-            <dl class="cv-also">
-              {{range .}}
-              <div class="cv-also-row">
-                <dt class="cv-label">{{.Label}}</dt>
-                <dd>{{range .Values}}<span class="cv-also-val">{{.}}</span> {{end}}</dd>
-              </div>
-              {{end}}
-            </dl>
-            <p class="cv-note">Edited through the API or a Compose file.</p>
-          </div>
-          {{end}}
-          {{with .Identities}}
-          <div class="cv-panel cv-gpanel cv-gpanel-tight">
-            {{template "identities" .}}
-          </div>
-          {{end}}
-        </div>
-      </div>
-    </fieldset>
-    {{if not $.Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save {{if $.Edit.Many}}{{.Name}} {{end}}and deploy</button></div>{{end}}
-  </form>
-  <div id="{{.Placement.AnchorID}}" class="cv-panel cv-gpanel cv-gpanel-tight cv-plpanel">{{template "placement" .Placement}}</div>
-  <div id="{{.Scale.AnchorID}}" class="cv-panel cv-gpanel cv-gpanel-tight cv-plpanel">{{template "scale" .Scale}}</div>
-  {{with .Build}}<div id="{{.AnchorID}}" class="cv-panel cv-gpanel cv-gpanel-tight cv-plpanel">{{template "build-panel" .}}</div>{{end}}
-</section>
-{{end}}
 {{end}}
 
-{{if not .Define}}
-<div class="cv-gridbox"><div class="cv-grid2">
-  <section class="cv-panel cv-gpanel cv-gpanel-tight" aria-labelledby="domains-title">
-    <h2 id="domains-title" class="cv-label">Domains</h2>
-    {{range .Domains.Rows}}
-    <div class="cv-domrow"><span class="cv-domhost">{{.Host}}</span> {{if $.Domains.Many}}<span class="cv-domto">→ {{.Service}} :{{.Port}}</span>{{end}}</div>
-    {{else}}
-    <p class="cv-note">No domains. Copies are reachable only inside the app.</p>
-    {{end}}
-    <div class="cv-btnrow">
-      <a href="{{.Domains.ManageHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage domains</a>
-      {{if .Domains.CanAdd}}<a href="{{.Domains.AddHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}Add domain</a>{{end}}
-    </div>
-  </section>
-  <section class="cv-panel cv-gpanel cv-gpanel-tight" aria-labelledby="secrets-title">
-    <h2 id="secrets-title" class="cv-label">Variables &amp; secrets</h2>
-    {{range .Secrets.Lines}}
-    <p class="cv-secnames">{{if $.Secrets.Many}}<span class="cv-secsvc">{{.Service}}</span> {{end}}{{range $i, $name := .Names}}{{if $i}} · {{end}}{{$name}}{{end}}</p>
-    {{end}}
-    <p class="cv-note">{{.Secrets.Summary}}</p>
-    <div class="cv-btnrow"><a href="{{.Secrets.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage variables and secrets</a></div>
-  </section>
-  <section class="cv-panel cv-gpanel cv-gpanel-tight" aria-labelledby="schedules-title">
-    <h2 id="schedules-title" class="cv-label">Schedules</h2>
-    {{range .Schedules.Lines}}
-    <p class="cv-schedline"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span><span class="cv-schedline-name">{{.Name}}</span> <span class="cv-schedline-words">· {{.Words}}</span></span></p>
-    {{else}}
-    <p class="cv-note">No schedules.</p>
-    {{end}}
-    {{with .Schedules.Note}}<p class="cv-note cv-schednote"><a href="{{$.Schedules.ManageHref}}">{{.}}</a></p>{{end}}
-    <div class="cv-btnrow">
-      <a href="{{.Schedules.ManageHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage schedules</a>
-      {{with .Schedules.NewHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}New schedule</a>{{end}}
-    </div>
-  </section>
-</div></div>
+{{/* cfg-source: Compose file, images, build or the define form (contract §3). */}}
+{{define "cfg-source"}}
+<section aria-labelledby="source-title" class="flex flex-col gap-2">
+  <h2 id="source-title" class="cv-label">{{.SourceLabel}}</h2>
+  <p class="cv-note cv-cfg-intro">{{.SourceIntro}}</p>
+</section>
+{{with .Define}}
+<section aria-labelledby="define-title" class="flex flex-col gap-2">
+  <h3 id="define-title" class="sr-only">Define the app</h3>
+  {{template "define-form" .}}
+  <p class="text-sm text-fg-3">Saving deploys the app. <a href="/apps/{{$.ID}}/compose" class="cv-btn cv-btn-secondary cv-btn-sm">Deploy from Compose</a> Define it with a Compose file instead.</p>
+</section>
 {{end}}
+{{with .ComposeForm}}
+<section aria-labelledby="compose-edit-title" class="flex flex-col gap-2">
+  <h3 id="compose-edit-title" class="sr-only">Edit the Compose file</h3>
+  {{if .Kept}}<p class="cv-note">This app was deployed from a Compose file, so Caravana keeps the file and you edit the app through it: the file, then each service's health check, secrets and backup. An app deployed from an image is edited field by field instead.{{with .FromCI}} Its last deploy came from CI ({{.}}). A deploy from CI can replace changes made here, so make lasting changes in the source.{{end}}</p>{{end}}
+  {{if .NotKept}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>This app's Compose file wasn't kept. Paste it once to edit it here from now on.</span></div>{{end}}
+  {{template "compose-form" .}}
+</section>
+{{end}}
+{{if and (not .Define) (not .Edit.ReadOnly)}}
+{{template "cfg-stale" .}}
+{{range .Edit.Services}}{{if not .Build}}
+<section id="service-{{.Name}}" class="cv-panel cv-svcpanel"{{if $.Edit.Many}} aria-labelledby="svc-{{.Name}}-title"{{else}} aria-label="Image"{{end}}>
+  {{if $.Edit.Many}}<div class="cv-svchead"><h3 id="svc-{{.Name}}-title" class="cv-svc-title">{{.Name}}</h3></div>{{end}}
+  <form method="post" action="{{$.Edit.Action}}#service-{{.Name}}" class="cv-svcform">
+    <input type="hidden" name="revision" value="{{$.Edit.Form.Revision}}">
+    <input type="hidden" name="section" value="source">
+    <input type="hidden" name="svc.{{.Name}}.form" value="1">
+    <fieldset class="cv-fieldset cv-formcol"{{if $.Stopped}} disabled{{end}}>
+      {{template "field" (.F "image")}}
+      {{if .ShowPort}}<div class="cv-field-narrow">{{template "field" (.F "port")}}</div>{{end}}
+      {{if .ShowDomainPort}}
+      <div class="cv-fld cv-field-narrow">
+        <label class="cv-fld" for="{{.DomainPort.ID}}">
+          <span class="cv-label">Domains go to</span>
+          <select class="cv-field cv-select" id="{{.DomainPort.ID}}" name="{{(.F "domainPort").InputName}}"{{if .DomainPort.Error}} aria-invalid="true" aria-describedby="{{.DomainPort.ID}}-hint {{.DomainPort.ID}}-error"{{else}} aria-describedby="{{.DomainPort.ID}}-hint"{{end}}>
+            {{range .DomainPortOptions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+          </select>
+          <span class="cv-data-muted cv-hint" id="{{.DomainPort.ID}}-hint">Every domain of this service goes to this port.</span>
+          {{template "field-error" .DomainPort}}
+        </label>
+      </div>
+      {{end}}
+    </fieldset>
+    {{with .Prereq}}
+    <div class="cv-prereq">
+      <p class="cv-prereq-title"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>Needs a container registry</span></p>
+      <p class="cv-prereq-reason">{{template "sentence" .Reason}}</p>
+      <div><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Add credentials in Settings</a></div>
+    </div>
+    {{end}}
+    {{if not $.Stopped}}<div class="cv-cfg-foot"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy{{if $.Edit.Many}} {{.Name}}{{end}}</button>{{with .LeftAlone}}<span class="cv-note">{{.}}</span>{{end}}</div>{{end}}
+  </form>
+</section>
+{{end}}{{end}}
+{{else if and .NoConfigure (not .Define)}}
+<div class="cv-panel cv-cfg-panel">
+  {{range .Edit.Panels}}<p class="cv-data text-fg-1"><span class="cv-inline-mono">{{.Title}}</span> {{range .Rows}}{{if eq .Label "Image"}}{{range .Values}}<span class="cv-inline-mono">{{.}}</span>{{end}}{{end}}{{end}}</p>
+  {{end}}
+</div>
+{{end}}
+{{range .Edit.Services}}{{with .Build}}
+<section id="{{.AnchorID}}" class="cv-panel cv-svcpanel" aria-label="Build of {{.Service}}">{{template "build-panel" .}}</section>
+{{end}}{{end}}
 
 {{if and (not .Edit.ReadOnly) (not .Define)}}
 <section aria-labelledby="compose-deploy-title" class="cv-panel cv-gpanel">
@@ -1230,10 +1253,113 @@
   <div><a href="/apps/{{.ID}}/compose" class="cv-btn cv-btn-secondary cv-btn-sm">Deploy from Compose</a></div>
 </section>
 {{end}}
+{{end}}
 
+{{/* cfg-services: copies, size and health check of each service, with its placement and scaling (contract §4). */}}
+{{define "cfg-services"}}
+<section aria-labelledby="services-title" class="flex flex-col gap-2">
+  <h2 id="services-title" class="cv-label">Services</h2>
+  <p class="cv-note cv-cfg-intro">Copies, size and health check of each service. Each service is saved on its own, and saving is a deploy.{{if .Edit.ReadOnly}}{{if not .NoConfigure}} For this app they are set in its Compose file, which is changed on Source.{{end}}{{end}}</p>
+  {{if .NoConfigure}}<p class="cv-note cv-cfg-intro">Your role here is to look: changing how this app is set up is for people who maintain it.</p>{{end}}
+</section>
+{{if not .Defined}}
+<p class="cv-note">This app has no services yet. <a href="/apps/{{.ID}}/configure/source">Define it on Source.</a></p>
+{{else if .Edit.ReadOnly}}
+{{range .Edit.Panels}}
+<div class="cv-panel cv-def">
+  <h3 class="cv-data text-fg-1">{{.Title}}</h3>
+  <dl class="cv-def-rows">
+    {{range .Rows}}
+    <div class="cv-def-row">
+      <dt class="cv-label">{{.Label}}</dt>
+      <dd>
+        <ul class="cv-def-values">{{range .Values}}
+          <li class="cv-data text-fg-1">{{.}}</li>{{end}}
+        </ul>
+      </dd>
+    </div>
+    {{end}}
+  </dl>
+  {{if .Identities}}{{template "identities" .Identities}}{{end}}
+  {{with .Placement}}<div id="{{.AnchorID}}">{{template "placement" .}}</div>{{end}}
+  {{with .Scale}}<div id="{{.AnchorID}}">{{template "scale" .}}</div>{{end}}
+</div>
+{{end}}
+{{else}}
+{{template "cfg-stale" .}}
+{{range .Edit.Services}}
+<section id="service-{{.Name}}" class="cv-panel cv-svcpanel" aria-labelledby="svc-{{.Name}}-title">
+  <div class="cv-svchead">
+    <h3 id="svc-{{.Name}}-title" class="cv-svc-title">{{.Name}}</h3>
+    <span class="cv-svchead-sub">{{.Edit.Image}}{{with .VolumeText}} · {{.}}{{end}}</span>
+  </div>
+  <form id="svcform-{{.Name}}" method="post" action="{{$.Edit.Action}}#service-{{.Name}}" class="cv-svcform">
+    <input type="hidden" name="revision" value="{{$.Edit.Form.Revision}}">
+    <input type="hidden" name="section" value="services">
+    <input type="hidden" name="svc.{{.Name}}.form" value="1">
+    <fieldset class="cv-fieldset"{{if $.Stopped}} disabled{{end}}>
+      <div class="cv-cfg-groups">
+        <div class="cv-cfg-group">
+          <h4 class="cv-label">Copies &amp; size</h4>
+          <div class="cv-fields4">
+            {{if .Scaled}}<div class="cv-fld"><span class="cv-label">Copies</span>
+              <span class="cv-data text-fg-1">Set by scaling, {{.ScaleBounds}}</span></div>
+            {{else if .OneCopy}}<div class="cv-fld"><span class="cv-label">Copies</span>
+              <span class="cv-data text-fg-1">1</span></div>
+            {{else}}{{template "field" (.F "copies")}}{{end}}
+            {{template "field" (.F "cpu")}}
+            {{template "field" (.F "memory")}}
+            {{template "field" (.F "memoryMax")}}
+          </div>
+          {{if and .OneCopy (not .Scaled)}}<p class="cv-note">A service with a volume or a published port runs one copy.</p>{{end}}
+        </div>
+        {{if .ShowHealth}}
+        <div class="cv-cfg-group">
+          <h4 class="cv-label">Health check</h4>
+          <div class="cv-fields3">
+            {{template "field" (.F "healthPath")}}
+            {{template "field" (.F "healthInterval")}}
+            {{template "field" (.F "healthTimeout")}}
+          </div>
+          <p class="cv-note">New copies must pass this check before they take traffic; if they don't, the deploy is reverted.</p>
+        </div>
+        {{end}}
+      </div>
+    </fieldset>
+  </form>
+  <div id="{{.Placement.AnchorID}}" class="cv-cfg-block">{{template "placement" .Placement}}</div>
+  <div id="{{.Scale.AnchorID}}" class="cv-cfg-block">{{template "scale" .Scale}}</div>
+  {{with .Also}}
+  <div class="cv-cfg-block">
+    <h4 class="cv-label">Also set</h4>
+    <dl class="cv-also">
+      {{range .}}
+      <div class="cv-also-row">
+        <dt class="cv-label">{{.Label}}</dt>
+        <dd>{{range .Values}}<span class="cv-also-val">{{.}}</span> {{end}}</dd>
+      </div>
+      {{end}}
+    </dl>
+    <p class="cv-note">Edited through the API or a Compose file.</p>
+  </div>
+  {{end}}
+  {{with .Identities}}<div class="cv-cfg-block">{{template "identities" .}}</div>{{end}}
+  {{with .BackupLine}}<div class="cv-cfg-block"><h4 class="cv-label">Backups</h4><p class="text-base text-fg-1">{{.}}</p><p class="cv-note"><a href="/apps/{{$.ID}}/backups">Changed on the Backups tab.</a></p></div>{{end}}
+  {{if not $.Stopped}}<div class="cv-cfg-foot"><button type="submit" form="svcform-{{.Name}}" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy{{if $.Edit.Many}} {{.Name}}{{end}}</button>{{with .LeftAlone}}<span class="cv-note">{{.}}</span>{{end}}</div>{{end}}
+</section>
+{{end}}
+{{end}}
+{{end}}
+
+{{/* cfg-integrations: the webhook, the deploy token and the export (contract §5). */}}
+{{define "cfg-integrations"}}
+<section aria-labelledby="integrations-title" class="flex flex-col gap-2">
+  <h2 id="integrations-title" class="cv-label">Integrations</h2>
+  <p class="cv-note cv-cfg-intro">How other tools deploy and read this app. Tokens are shown once, when they are made.</p>
+</section>
 {{if .CanMaintain}}
 <section id="webhook" aria-labelledby="webhook-title" class="cv-panel cv-gpanel">
-  <h2 id="webhook-title" class="cv-label">Webhook</h2>
+  <h3 id="webhook-title" class="cv-label">Webhook</h3>
   {{with .Webhook.URL}}
   <div class="flex flex-col gap-3" role="status">
     <p class="text-base text-fg-1">Copy it now. It won't be shown again.</p>
@@ -1244,6 +1370,7 @@
   {{if .Webhook.Enabled}}
   <p class="text-base text-fg-1">Token created {{template "time" .Webhook.Created}}.</p>
   <p class="text-sm text-fg-3">A registry or CI posts to the webhook address to redeploy this app when its image has changed.</p>
+  <code class="cv-cmd" id="webhook-call">{{.Webhook.Call}}</code>
   <div class="cv-actions">
     <details class="cv-confirm">
       <summary class="cv-btn cv-btn-secondary cv-btn-sm">Replace token</summary>
@@ -1265,12 +1392,12 @@
   <p class="text-sm text-fg-3">With a token, a registry or CI can redeploy this app by posting to its webhook address.</p>
   <form method="post" action="/apps/{{.ID}}/webhook"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Create token</button></form>
   {{end}}
-  {{if .Define}}<p class="text-sm text-fg-3">The webhook deploys what is stored and never picks an image, so it is refused until the app has a definition.</p>
+  {{if not .Defined}}<p class="text-sm text-fg-3">The webhook deploys what is stored and never picks an image, so it is refused until the app has a definition.</p>
   {{else if .Webhook.Never}}<p class="text-sm text-fg-3">The app was never deployed: the webhook's first call deploys it as stored.</p>{{end}}
 </section>
 
 <section id="deploy-token" aria-labelledby="deploy-token-title" class="cv-panel cv-gpanel">
-  <h2 id="deploy-token-title" class="cv-label">Deploy token</h2>
+  <h3 id="deploy-token-title" class="cv-label">Deploy token</h3>
   {{with .Deploy.Token}}
   <div class="flex flex-col gap-3" role="status">
     <p class="text-base text-fg-1">Token <span class="font-mono">{{.Name}}</span> is ready. Copy it now. It won't be shown again.</p>
@@ -1282,35 +1409,16 @@
   <p class="text-sm text-fg-3">A token for CI. It can deploy <span class="cv-inline-mono">{{.Deploy.Scope.Name}}</span> in any environment of project <span class="cv-inline-mono">{{.Deploy.Scope.Project}}</span>, read its deployments and promote it, and nothing else: not other apps, not settings, not tokens.</p>
   <form method="post" action="/apps/{{.ID}}/deploy-token"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Create a deploy token for this app</button></form>
 </section>
+{{else}}
+<p class="cv-note">Your role here is to look: making tokens for this app is for people who maintain it.</p>
 {{end}}
 
 <section aria-labelledby="export-title" class="cv-panel cv-gpanel">
-  <h2 id="export-title" class="cv-label">Export</h2>
-  <p class="text-sm text-fg-3">The live version as a plain Nomad jobspec. <span class="cv-inline-mono">nomad job run</span> runs it without caravana. It names the secrets it needs but never holds their values.</p>
+  <h3 id="export-title" class="cv-label">Export</h3>
+  <p class="text-sm text-fg-3">The app as a plain Nomad job, as deployed in its live version. <span class="cv-inline-mono">nomad job run</span> runs it without Caravana. It names the secrets it needs but never holds their values.</p>
   {{with .Export.Href}}<div><a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm" download>Export jobspec</a></div>{{end}}
   {{with .Export.Note}}<p class="text-base text-fg-1">{{.}}</p>{{end}}
 </section>
-
-{{if not .NoConfigure}}
-<section aria-labelledby="delete-title" class="cv-panel cv-gpanel cv-danger-panel">
-  <h2 id="delete-title" class="cv-label">Delete app</h2>
-  <details class="cv-confirm"{{if .Delete.Open}} open{{end}}>
-    <summary class="cv-btn cv-btn-danger cv-btn-sm">Delete app…</summary>
-    {{with .Delete}}
-    <form method="post" action="/apps/{{.ID}}/delete" class="cv-confirm-body">
-      {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
-      <p>{{template "sentence" .Goes}}</p>
-      <label class="cv-fld" for="delete-confirm">
-        <span class="cv-label">Type <span class="cv-inline-mono">{{.ID}}</span> to confirm</span>
-        <input class="cv-field cv-field-mono" id="delete-confirm" type="text" name="confirm" data-confirm-name="{{.ID}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="delete-confirm-error"{{end}}>
-        {{with .Error}}<span id="delete-confirm-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
-      </label>
-      <div><button type="submit" class="cv-btn cv-btn-danger">Delete {{.ID}}</button></div>
-    </form>
-    {{end}}
-  </details>
-</section>
-{{end}}
 {{end}}
 
 {{/* The Variables & secrets page (feature 021): the table of names, the form that sets one, and the
@@ -1324,7 +1432,7 @@
 <section aria-labelledby="vars-title" class="cv-pgsec">
   <div class="cv-pghead"><div class="cv-pghead-text">
     <h2 id="vars-title" class="cv-pgtitle">Variables &amp; secrets</h2>
-    <p class="cv-pgsub">Define the app first. <a href="/apps/{{.ID}}/configure">Configure</a> has the form for it.</p>
+    <p class="cv-pgsub">Define the app first. <a href="/apps/{{.ID}}/configure/source">Source</a> has the form for it.</p>
   </div></div>
 </section>
 {{else}}
@@ -1338,7 +1446,7 @@
     {{if .CanEdit}}<a href="#env-editor" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "file-text" 14}}Edit as .env</a>{{end}}
     {{if .CanSet}}<a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add {{if .Kept}}secret{{else}}variable{{end}}</a>{{end}}
   </div>
-  {{if .Kept}}<p class="cv-note">{{"This app is edited through its Compose file."}} Its variables are read-only here; change the file in <a href="/apps/{{.ID}}/configure">Configure</a>. Secrets can still be set and removed.</p>{{end}}
+  {{if .Kept}}<p class="cv-note">{{"This app is edited through its Compose file."}} Its variables are read-only here; change the file on <a href="/apps/{{.ID}}/configure/source">Source</a>. Secrets can still be set and removed.</p>{{end}}
 </section>
 
 <div class="cv-panel cv-vars{{if .Many}} cv-vars-many{{end}}" role="table" aria-label="Variables and secrets">
@@ -1515,7 +1623,7 @@
 <section aria-labelledby="domains-page-title" class="cv-pgsec">
   <div class="cv-pghead"><div class="cv-pghead-text">
     <h2 id="domains-page-title" class="cv-pgtitle">Domains</h2>
-    <p class="cv-pgsub">Define the app first. <a href="/apps/{{.ID}}/configure">Configure</a> has the form for it.</p>
+    <p class="cv-pgsub">Define the app first. <a href="/apps/{{.ID}}/configure/source">Source</a> has the form for it.</p>
   </div></div>
 </section>
 {{else}}

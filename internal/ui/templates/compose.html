@@ -187,7 +187,7 @@
 {{define "compose-deploy"}}
 <section aria-labelledby="compose-title" class="flex flex-col gap-3">
   <h2 id="compose-title" class="cv-label">Deploy from Compose</h2>
-  <p class="text-sm text-fg-3">The file replaces the app's definition, as a Compose deploy through the API does: a service it doesn't have is removed, and what you changed on Configure is replaced. Health checks and secret names start from the app's, and its domains are kept as they are. <a href="/apps/{{.AppID}}/configure">Back to Configure</a></p>
+  <p class="text-sm text-fg-3">The file replaces the app's definition, as a Compose deploy through the API does: a service it doesn't have is removed, and what you changed on Configure is replaced. Health checks and secret names start from the app's, and its domains are kept as they are. <a href="/apps/{{.AppID}}/configure/source">Back to Configure</a></p>
   {{template "compose-form" .}}
 </section>
 {{end}}

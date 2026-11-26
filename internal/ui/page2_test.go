@@ -104,7 +104,8 @@ func TestPage2Shapes(t *testing.T) {
 			"whoami :80 · production", `aria-label="Open https://whoami.example.com"`, `target="_blank" rel="noopener"`, "Add a domain", "Point it at caravana", "Add domain and deploy", "All domains", "Sends traffic to whoami :80, set in Configure",
 			"The root of a domain needs an A record. A subdomain can use one too."},
 			[]string{`id="domain-service"`})
-		check(t, e, "whoami", "/configure", []string{"Copies & size", "Deploy"}, []string{`id="svc-web-title"`})
+		check(t, e, "whoami", "/configure/services", []string{"Copies & size", "Save and deploy"}, nil)
+		check(t, e, "whoami", "/configure/source", []string{"Image", "Save and deploy"}, []string{`id="svc-web-title"`})
 	})
 
 	t.Run("two services", func(t *testing.T) {
@@ -115,12 +116,14 @@ func TestPage2Shapes(t *testing.T) {
 			t.Errorf("rows aren't secrets first, then variables by name: TOKEN %d, LOG_LEVEL %d, MODE %d", at("TOKEN"), at("LOG_LEVEL"), at("MODE"))
 		}
 		check(t, e, "duet", "/domains", []string{"2 domains", "Sends traffic to", "web · :80", "api · :8080", "api.duet.example.com", "web.duet.example.com"}, nil)
-		check(t, e, "duet", "/configure", []string{`id="svc-web-title"`, `id="svc-api-title"`, "api.duet.example.com → api :8080"}, nil)
+		check(t, e, "duet", "/configure/services", []string{`id="svc-web-title"`, `id="svc-api-title"`}, nil)
+		check(t, e, "duet", "/configure/source", []string{`id="svc-web-title"`, `id="svc-api-title"`}, nil)
+		check(t, e, "duet", "/configure", []string{"api.duet.example.com → api :8080"}, nil)
 	})
 
 	t.Run("a kept Compose file", func(t *testing.T) {
 		e, _ := keptShopEnv(t)
-		vars := check(t, e, "shop", "/variables", []string{"This app is edited through its Compose file.", `href="/apps/shop/configure"`, "Add secret", "The value is set as a secret and never shown again."},
+		vars := check(t, e, "shop", "/variables", []string{"This app is edited through its Compose file.", `href="/apps/shop/configure/source"`, "Add secret", "The value is set as a secret and never shown again."},
 			[]string{"Edit as .env", `id="env-editor"`, "Keep as a secret", "Add variable"})
 		if !strings.Contains(vars, `<input type="hidden" name="secret" value="1">`) {
 			t.Error("the kept-file Add form doesn't set a secret")
@@ -133,8 +136,8 @@ func TestPage2Shapes(t *testing.T) {
 	t.Run("no definition yet", func(t *testing.T) {
 		e := newConsoleEnv(t)
 		e.seed(t, app.App{ID: "empty", Source: app.Source{Kind: app.SourceImage}})
-		check(t, e, "empty", "/variables", []string{"Define the app first.", `href="/apps/empty/configure"`}, []string{"Add or change", "Set and deploy"})
-		check(t, e, "empty", "/domains", []string{"Define the app first.", `href="/apps/empty/configure"`}, []string{"Add a domain", "Add domain and deploy"})
+		check(t, e, "empty", "/variables", []string{"Define the app first.", `href="/apps/empty/configure/source"`}, []string{"Add or change", "Set and deploy"})
+		check(t, e, "empty", "/domains", []string{"Define the app first.", `href="/apps/empty/configure/source"`}, []string{"Add a domain", "Add domain and deploy"})
 		check(t, e, "empty", "/backups", []string{"Nothing to back up."}, []string{"Back up daily"})
 	})
 
@@ -926,7 +929,7 @@ func TestRegistryPrereq(t *testing.T) {
 	e.seed(t, a,
 		seedDeploy{ID: "s1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1},
 		seedDeploy{ID: "s2", Trigger: app.TriggerConsole, Status: store.StatusFailed, Error: missing})
-	body := e.pageOf(t, "/apps/shop/configure")
+	body := e.pageOf(t, "/apps/shop/configure/source")
 	got := text(body)
 	if !strings.Contains(got, "Needs a container registry") || !strings.Contains(got, "add credentials for ghcr.io and deploy again") ||
 		!strings.Contains(body, `<a href="/settings/registries" class="cv-btn cv-btn-secondary cv-btn-sm">Add credentials in Settings</a>`) {
@@ -934,7 +937,7 @@ func TestRegistryPrereq(t *testing.T) {
 	}
 	// A healthy newest deployment shows none.
 	e.seed(t, a, seedDeploy{ID: "s3", Trigger: app.TriggerConsole, Status: store.StatusHealthy, Version: 3})
-	if got := text(e.pageOf(t, "/apps/shop/configure")); strings.Contains(got, "Needs a container registry") {
+	if got := text(e.pageOf(t, "/apps/shop/configure/source")); strings.Contains(got, "Needs a container registry") {
 		t.Error("the notice shows after a healthy deploy")
 	}
 }
@@ -1041,7 +1044,7 @@ func TestStoppedConfigureSaysItOnce(t *testing.T) {
 	if resp, body := e.postAction(t, "/apps/duet/stop"); resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("stop = %d:\n%s", resp.StatusCode, text(body))
 	}
-	body := e.pageOf(t, "/apps/duet/configure")
+	body := e.pageOf(t, "/apps/duet/configure/services")
 	if n := strings.Count(body, "The app is stopped: start it first."); n != 1 {
 		t.Errorf("the sentence is drawn %d times, want once", n)
 	}
@@ -1143,10 +1146,10 @@ func TestDomainsEmptyHasNoHead(t *testing.T) {
 // names the service's section, and the first field in error is autofocused.
 func TestConfigureRefusalScrollsToTheService(t *testing.T) {
 	e := duetEnv(t)
-	_, page := e.get(t, "/apps/duet/configure")
+	_, page := e.get(t, "/apps/duet/configure/services")
 	var api plainForm
 	for _, f := range formsIn(page) {
-		if f.Action == "/apps/duet/configure" && f.Values.Has("svc.api.image") {
+		if f.Action == "/apps/duet/configure" && f.Values.Has("svc.api.form") {
 			api = f
 		}
 	}
@@ -1406,7 +1409,7 @@ func TestKeepAsASecretIsTheDefault(t *testing.T) {
 func TestCritiqueRulings(t *testing.T) {
 	e := duetEnv(t)
 	got := text(e.pageOf(t, "/apps/duet/configure"))
-	if !strings.Contains(got, "Variables & secrets") || !strings.Contains(got, "2 variables · 1 secret. Values of secrets are never shown here.") || !strings.Contains(got, "Add domain") {
+	if !strings.Contains(got, "Variables & secrets") || !strings.Contains(got, "2 variables · 1 secret") || !strings.Contains(got, "Values of secrets are never shown.") || !strings.Contains(got, "Add domain") {
 		t.Errorf("Configure's panel:\n%s", got)
 	}
 	// aria-labels on every Remove control.
@@ -1431,7 +1434,7 @@ func TestCritiqueRulings(t *testing.T) {
 		t.Error("the note is on a page nothing was refused on")
 	}
 	// Hints are not inside labels, and name themselves in aria-describedby.
-	conf := e.pageOf(t, "/apps/duet/configure")
+	conf := e.pageOf(t, "/apps/duet/configure/services")
 	if !strings.Contains(conf, `aria-describedby="svc-web-healthPath-hint"`) || !strings.Contains(conf, `<span class="cv-hint" id="svc-web-healthPath-hint">Empty checks the TCP port.</span>`) {
 		t.Error("the health check's hint isn't described by id")
 	}
@@ -1458,13 +1461,15 @@ func TestCritiqueRulings(t *testing.T) {
 	}
 }
 
-// One-service Configure has no skipped heading level: an h2 stands before the panels' h3.
+// Every section of a one-service Configure has no skipped heading level: an h2 stands before the panels' h3.
 func TestOneServiceConfigureHeadings(t *testing.T) {
 	e := newConsoleEnv(t)
 	e.seed(t, whoamiApp(), seedDeploy{ID: "w1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
-	body := e.pageOf(t, "/apps/whoami/configure")
-	first3, first2 := strings.Index(body, "<h3"), strings.Index(body, `<h2 class="sr-only">Settings</h2>`)
-	if first2 < 0 || first3 < first2 {
-		t.Errorf("the first h3 is at %d, the h2 before it at %d", first3, first2)
+	for _, section := range []string{"", "/source", "/services", "/integrations"} {
+		body := sectionBody(t, e.pageOf(t, "/apps/whoami/configure"+section))
+		first3, first2 := strings.Index(body, "<h3"), strings.Index(body, "<h2")
+		if first2 < 0 || (first3 >= 0 && first3 < first2) {
+			t.Errorf("/configure%s: the first h3 is at %d, the h2 before it at %d", section, first3, first2)
+		}
 	}
 }

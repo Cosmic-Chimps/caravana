@@ -250,7 +250,7 @@
   <h2 id="add-title" class="cv-dmadd-title">Add a domain</h2>
   {{if not .FixedApp}}{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}{{end}}
   {{if .NoTargets}}
-  <p class="cv-note">No service has a port yet, so there is nothing for a domain to go to. Give a service a port in {{if .FixedApp}}<a href="/apps/{{.FixedApp}}/configure">Configure</a>{{else}}its app's Configure{{end}} first.</p>
+  <p class="cv-note">No service has a port yet, so there is nothing for a domain to go to. Give a service a port in {{if .FixedApp}}<a href="/apps/{{.FixedApp}}/configure/source">Source</a>{{else}}its app's Configure{{end}} first.</p>
   {{else}}
   <form method="post" action="{{.Action}}" class="cv-formcol cv-formcol-wide" autocomplete="off">
     {{if .FixedApp}}<input type="hidden" name="revision" value="{{.Revision}}">{{else}}{{range .Revisions}}<input type="hidden" name="revision-{{.App}}" value="{{.Revision}}">{{end}}{{end}}

@@ -114,7 +114,12 @@ var consoleParity = map[string]parity{
 	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments", "getTemplate", "getAppScan", "getDeploymentScan"}},
 	// A failed deploy on an image also reads the registries, to say whether to add or fix credentials.
 	// A built service's Build panel (feature 050) also reads its Git access.
-	"GET /apps/{id}/configure": {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules", "listRegistries", "getTemplate", "getGitAccess"}},
+	// Feature 059 split it into sections: Overview adds the schedules and the backups lines (listBackups, and
+	// listBackupDestinations for where they go); Source, Services and Integrations read what their forms hold.
+	"GET /apps/{id}/configure":              {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules", "listRegistries", "getTemplate", "getGitAccess", "listBackups", "listBackupDestinations"}},
+	"GET /apps/{id}/configure/source":       {ops: []string{"getApp", "getWebhook", "getCompose", "listRegistries", "getTemplate", "getGitAccess"}},
+	"GET /apps/{id}/configure/services":     {ops: []string{"getApp", "getWebhook", "getCompose", "listRegistries", "getTemplate", "getGitAccess"}},
+	"GET /apps/{id}/configure/integrations": {ops: []string{"getApp", "getWebhook", "getCompose", "listRegistries", "getTemplate", "getGitAccess"}},
 	// The Logs tab (feature 024) is the Logs page filtered to the app: listLogs with ?app= (and the lines around one,
 	// getLogsAround), the app's services for the rail (listApps), and the app for its header (getApp).
 	"GET /apps/{id}/logs": {ops: []string{"getApp", "listLogs", "getLogsAround", "listApps"}},

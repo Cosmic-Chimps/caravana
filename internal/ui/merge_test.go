@@ -40,8 +40,8 @@ func TestApplyEditOneField(t *testing.T) {
 	}{
 		{"image", "web.image", "ghcr.io/acme/shop:2", func(a *app.App) { a.Services[0].Image = "ghcr.io/acme/shop:2" }},
 		{"port", "db.port", "5433", func(a *app.App) { a.Services[1].Ports[0].ContainerPort = 5433 }},
-		{"copies", "web.copies", "4", func(a *app.App) { a.Services[0].Replicas = new(4) }},
-		{"copies default", "web.copies", "", func(a *app.App) { a.Services[0].Replicas = nil }},
+		{"copies", "worker.copies", "4", func(a *app.App) { a.Services[2].Replicas = new(4) }},
+		{"copies default", "worker.copies", "", func(a *app.App) { a.Services[2].Replicas = nil }},
 		{"health path", "web.healthPath", "/up", func(a *app.App) { a.Services[0].Health.Path = "/up" }},
 		{"health TCP", "web.healthPath", "", func(a *app.App) { a.Services[0].Health.Path = "" }},
 		{"health interval", "web.healthInterval", "20", func(a *app.App) { a.Services[0].Health.Interval = 20 * time.Second }},

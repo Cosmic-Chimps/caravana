@@ -40,7 +40,7 @@ func webService(t *testing.T, a app.App) app.Service {
 
 func TestKeptFileDeployKeepsIdentities(t *testing.T) {
 	e, _ := deployShop(t, identityShopRequest())
-	_, page := e.get(t, "/apps/shop/configure")
+	_, page := e.get(t, "/apps/shop/configure/source")
 	resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, url.Values{"compose": {"# edited\n" + keptShopFile}}))
 	if resp.StatusCode != 303 {
 		t.Fatalf("deploy = %d:\n%s", resp.StatusCode, text(body))

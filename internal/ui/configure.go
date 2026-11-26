@@ -81,6 +81,8 @@ type webhookView struct {
 	Enabled bool
 	Created when
 	URL     string
+	// Call is the curl line that calls the webhook, without the token: drawn once a token exists.
+	Call string
 }
 
 // deployTokenView is a deploy token just made, shown once.
@@ -115,10 +117,13 @@ func (d deleteView) Open() bool { return len(d.Error) > 0 || len(d.Notice) > 0 }
 // panels, then the panels the console needs besides.
 type configureTab struct {
 	ID string
-	// TemplateFact is "Template · Hollo 0.9.25-1" for an app installed from a template
-	// (feature 035); empty otherwise.
-	TemplateFact sentence
-	Compose      bool // the app was made from a Compose file: a note says a file replaces edits
+	// Section is the section this page draws: overview, source, services or integrations (feature 059).
+	Section string
+	// Defined says the app has services; the Overview draws less without them.
+	Defined bool
+	// Overview holds the summaries of the Overview section; nil on the others.
+	Overview *overviewView
+	Compose  bool // the app was made from a Compose file: a note says a file replaces edits
 	// ComposeForm is the Compose form drawn first when the app keeps its file
 	// (feature 015); the definition is then read-only (Edit.ReadOnly).
 	ComposeForm *composeView
@@ -265,6 +270,11 @@ func (p secretsPanel) Summary() string {
 	return plural(p.Variables, "variable") + " · " + plural(p.Count, "secret") + ". Values of secrets are never shown here."
 }
 
+// Headline is "2 variables · 1 secret", the Overview's strong line.
+func (p secretsPanel) Headline() string {
+	return plural(p.Variables, "variable") + " · " + plural(p.Count, "secret")
+}
+
 // secretsPanelOf lays out the stored app's secret names for the panel.
 func secretsPanelOf(a app.App) secretsPanel {
 	p := secretsPanel{Many: len(a.Services) > 1}
@@ -324,6 +334,10 @@ type editServiceView struct {
 	// Build is the Build panel of a service built from a Git repository, with its Git access
 	// (feature 050); nil for any other.
 	Build *buildPanel
+	// VolumeText is "volume uploads → /uploads", the head of the service's panel on Services; empty
+	// without volumes. BackupLine is the service's backup policy in a sentence, read-only there; empty
+	// without one. LeftAlone says which other services a save of this one leaves as they are.
+	VolumeText, BackupLine, LeftAlone string
 }
 
 // registryPrereq is the grid's "Needs a container registry" notice (the
@@ -353,13 +367,57 @@ func editViewOf(stored app.App, form editForm, stale *staleView, host string) ed
 		sv := editServiceView{editService: s}
 		for _, svc := range stored.Services {
 			if svc.Name == s.Name {
-				sv.Also = alsoSet(svc, s, host)
+				// The backup has its own line on the Services page.
+				sv.Also = slices.DeleteFunc(alsoSet(svc, s, host), func(r defRow) bool { return r.Label == "Backup" })
 				sv.Identities = identitiesOf(svc)
+				sv.VolumeText = volumeText(svc)
+				sv.BackupLine = backupLine(svc)
+				sv.LeftAlone = leftAlone(stored, svc.Name)
 			}
 		}
 		v.Services = append(v.Services, sv)
 	}
 	return v
+}
+
+// volumeText is the service's volumes as the head of its panel says them: "volume uploads → /uploads".
+func volumeText(svc app.Service) string {
+	parts := make([]string, len(svc.Volumes))
+	for i, v := range svc.Volumes {
+		parts[i] = "volume " + v.Name + " → " + v.Path
+	}
+	return strings.Join(parts, ", ")
+}
+
+// backupLine is the service's backup policy in a sentence ("Every day at 03:00 UTC, keeping 14."), "" when it has none.
+func backupLine(svc app.Service) string {
+	b := svc.Backup
+	if b == nil {
+		return ""
+	}
+	words := scheduleText(b.ScheduleOrDefault())
+	if b.Automatic() {
+		words += ", keeping " + strconv.Itoa(b.KeepOrDefault())
+	}
+	return strings.ToUpper(words[:1]) + words[1:] + "."
+}
+
+// leftAlone says which other services a save of the named one leaves as they are ("worker is left as it
+// is."); "" when the app has no other.
+func leftAlone(a app.App, name string) string {
+	var others []string
+	for _, svc := range a.Services {
+		if svc.Name != name {
+			others = append(others, svc.Name)
+		}
+	}
+	switch len(others) {
+	case 0:
+		return ""
+	case 1:
+		return others[0] + " is left as it is."
+	}
+	return strings.Join(others[:len(others)-1], ", ") + " and " + others[len(others)-1] + " are left as they are."
 }
 
 // staleOf lists the fields where the app as stored now differs from what the
@@ -762,7 +820,7 @@ func (s *server) saveConfigure(w http.ResponseWriter, r *http.Request, session s
 	// has no form to post here, so this is a hand-made post: saving fields
 	// would deploy a definition the file doesn't say, and drop the file.
 	if rec.Compose != nil {
-		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Notice: sentence{plain(editedThroughFileNotice)}})
+		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Section: sectionSource, Notice: sentence{plain(editedThroughFileNotice)}})
 		return
 	}
 
@@ -810,7 +868,7 @@ func (s *server) saveConfigure(w http.ResponseWriter, r *http.Request, session s
 // drawEdit answers a refused save: the whole Configure tab, with what was typed
 // and the message at its input. The forms are plain posts, so a refusal is a page.
 func (s *server) drawEdit(w http.ResponseWriter, r *http.Request, status int, stored app.App, form editForm, stale *staleView) {
-	s.configurePage(w, r, status, stored.ID, configureExtras{Form: &form, Stale: stale})
+	s.configurePage(w, r, status, stored.ID, configureExtras{Section: sectionOfPost(r.PostForm, form), Form: &form, Stale: stale})
 }
 
 // refuseEdit says what a failed save looks like on the form: the message on
@@ -916,7 +974,7 @@ func (s *server) defineApp(w http.ResponseWriter, r *http.Request, session strin
 		return
 	}
 	if rec.App.Defined() {
-		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Notice: sentence{plain(alreadyDefinedNotice)}})
+		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Section: sectionSource, Notice: sentence{plain(alreadyDefinedNotice)}})
 		return
 	}
 
@@ -928,7 +986,7 @@ func (s *server) defineApp(w http.ResponseWriter, r *http.Request, session strin
 	a, ok := buildNewApp(&form, true)
 	if !ok {
 		form.markFirstError()
-		s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Define: &form})
+		s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Section: sectionSource, Define: &form})
 		return
 	}
 	a.ID, a.Name, a.Source = id, rec.App.Name, rec.App.Source
@@ -939,7 +997,7 @@ func (s *server) defineApp(w http.ResponseWriter, r *http.Request, session strin
 		return
 	}
 	if errors.Is(err, service.ErrAppChanged) {
-		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Notice: sentence{plain("The app changed since this page was drawn. Read what it is now, then define it again.")}})
+		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Section: sectionSource, Notice: sentence{plain("The app changed since this page was drawn. Read what it is now, then define it again.")}})
 		return
 	}
 	if errors.Is(err, store.ErrNotFound) {
@@ -956,11 +1014,11 @@ func (s *server) defineApp(w http.ResponseWriter, r *http.Request, session strin
 	if errors.As(err, &deployErr) {
 		// The definition was saved before the deploy failed: the tab shows the app as
 		// defined now, and says what went wrong and where the attempt is.
-		s.configurePage(w, r, status, id, configureExtras{Notice: append(form.firstProblem(), plain(" "+savedNote))})
+		s.configurePage(w, r, status, id, configureExtras{Section: sectionSource, Notice: append(form.firstProblem(), plain(" "+savedNote))})
 		return
 	}
 	form.markFirstError()
-	s.configurePage(w, r, status, id, configureExtras{Define: &form})
+	s.configurePage(w, r, status, id, configureExtras{Section: sectionSource, Define: &form})
 }
 
 // firstProblem is the sentence of the form's first error: its notice, or the
