@@ -2436,6 +2436,21 @@ module, no policy change, constitution unchanged.
   `codemagic-patch` 0.9.0-2 and `codemagic-patch-bitbucket`; the release workflow uploads `catalog.v2.json` too; `CARAVANA_REF` there is a guess (`v0.23.0`) until 058 is released.
 - Not in 058: the embedded catalog isn't rebuilt from the repository, a lab run of the new template, conditions between inputs of other kinds, a template editor.
 
+The documentation site (branch `docs-site`, 2026-11-26): the user guide is the Markdown under `docs/` (new
+pages in `docs/guide/`, the per-feature docs in `docs/*.md`), published to GitHub Pages
+(`https://cosmic-chimps.github.io/caravana/`) by `.github/workflows/pages.yml` from the Astro Starlight
+site in `site/`. `site/pages.mjs` maps each page to its source and `site/sidebar.mjs` places it;
+`site/scripts/collect.mjs` writes the pages at build time and fails on a dead link, a page outside the
+sidebar, frontmatter in a source or an image outside `docs/images/`. Sources have no frontmatter, start
+with one `# ` title, link to each other with relative paths and show a screenshot as a `<picture>` (dark
+`<source>`, light `<img>`), which the site turns into two images that follow its own theme. The
+screenshots are made by `site/scripts/screenshots/run.sh`, never by hand: it starts `TestDocsDemo`
+(`internal/ui/docsdemo*_test.go`, a console over the fake Nomad with a made-up installation: project
+`shop`, `ana@example.com`, `caravana.example.com`; skipped unless `CARAVANA_DOCS_DEMO` is set), walks
+it with Playwright in both themes and writes `docs/images/<name>-{light,dark}.png`. `site/README.md` is
+the site's manual, and the look is the designer's ruling. **A feature that changes what a user sees or
+does updates its page (and its screenshot) in the same branch.**
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
@@ -2545,6 +2560,13 @@ deploy/vm/host.sh admin status     # sudo caravana admin <cmd> on the VM
 deploy/vm/host.sh tunnel           # private access to the VM's Nomad and Traefik dashboard
 eval "$(deploy/vm/host.sh env)"    # NOMAD_ADDR, NOMAD_TOKEN through the tunnel, CARAVANA_URL
 shellcheck deploy/dev/*.sh deploy/vm/*.sh deploy/install/*.sh deploy/examples/*/*.sh tools/*.sh
+```
+
+```bash
+npm --prefix site ci               # once: the documentation site's packages (Node 22, site/.nvmrc)
+npm --prefix site run build        # collect docs/ into pages, build site/dist, check it (CI runs it on every pull request)
+npm --prefix site run dev          # the site at http://localhost:4321/caravana/ (restart to pick up a changed source)
+site/scripts/screenshots/run.sh    # make docs/images/ again from the demo console (~6 min; ONLY=a,b for some)
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these plus `go test -race` and `go mod tidy -diff`.

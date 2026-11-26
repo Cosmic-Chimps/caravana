@@ -25,6 +25,9 @@ Caravana and leaves your apps running. Details: [deploy/install/README.md](deplo
 
 ## Use
 
+The documentation is at **<https://cosmic-chimps.github.io/caravana/>**: install, a first app, every way
+to deploy, and running the host. Its sources are the Markdown in [docs/](docs/guide/index.md).
+
 Sign in to the console to create apps, deploy, follow rollouts, read logs, set secrets and
 back up databases. Everything the console does is also in the HTTP API
 ([api/openapi.yaml](api/openapi.yaml)), with API tokens made under Settings. Coding agents can

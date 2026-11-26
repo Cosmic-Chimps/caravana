@@ -1,0 +1,10 @@
+{
+  "name": "caravana-docs-screenshots",
+  "private": true,
+  "type": "module",
+  "description": "Generates the screenshots of the documentation from a throwaway console (see run.sh)",
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "sharp": "0.35.5"
+  }
+}
