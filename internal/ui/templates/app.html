@@ -521,7 +521,7 @@
       <span class="cv-blast">
         {{if .LastNow}}<span class="cv-blast-now">running now</span>
         {{else if .LastNever}}<span class="cv-blast-never">never</span>
-        {{else}}<span class="cv-blast-when">{{template "clock" .LastClock}}{{if .LastFailed}} <span class="cv-blast-failed">· failed</span>{{end}}</span>{{end}}
+        {{else}}<span class="cv-blast-when" data-local-line>{{template "clock" .LastClock}}{{if .LastFailed}} <span class="cv-blast-failed">· failed</span>{{end}}</span>{{end}}
         {{if .Took}}<span class="cv-bmeta">took {{.Took}}{{with .Stopped}} · {{.}}{{end}}</span>{{end}}
       </span>
       <span class="cv-bsize">
@@ -549,7 +549,7 @@
         {{range .Runs}}
         <div class="cv-brun cv-confirm-row" id="backup-{{.ID}}" role="row">
           <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Status "succeeded"}}succeeded{{else if eq .Status "failed"}}failed{{else}}running{{end}}</span></span>
-          <span role="cell" class="cv-brun-when">{{template "clock" .Clock}}</span>
+          <span role="cell" class="cv-brun-when" data-local-line>{{template "clock" .Clock}}</span>
           <span role="cell" class="cv-brun-fact">{{.Size}}</span>
           <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}{{if or .ByYou .By}}{{if or .Took .Stopped}} · {{end}}{{if .ByYou}}by you{{else}}by {{.By}}{{end}}{{end}}{{with .Pin}} · pinned <span class="cv-inline-mono text-fg-1">{{.}}</span>{{end}}</span>
           <span role="cell" class="cv-brun-act">
@@ -740,7 +740,7 @@
     {{range .}}
     <div class="cv-brun cv-brun-restore" role="row">
       <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Status "succeeded"}}restored{{else if eq .Status "failed"}}failed{{else if eq .Status "skipped"}}skipped{{else}}restoring{{end}}</span></span>
-      <span role="cell" class="cv-brun-when">{{template "clock" .CreatedClock}}</span>
+      <span role="cell" class="cv-brun-when" data-local-line>{{template "clock" .CreatedClock}}</span>
       <span role="cell" class="cv-brun-fact"><span class="text-fg-1">{{.Service}}</span>{{with .BackupID}} from {{.}}{{end}} · {{if .Scheduled}}on schedule from <span class="cv-inline-mono text-fg-1">{{.Pin}}</span>{{else if .By}}by {{.By}}{{else}}by you{{end}}</span>
       <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}</span>
       <span role="cell" class="cv-brun-act cv-brun-status">{{if eq .Status "succeeded"}}restored{{else if eq .Status "failed"}}failed{{else if eq .Status "skipped"}}skipped{{else}}restoring{{end}}</span>

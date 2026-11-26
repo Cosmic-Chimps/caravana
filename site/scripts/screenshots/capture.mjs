@@ -14,8 +14,11 @@
 //     says "live" (or has none), so "Reconnecting…" is never in a picture.
 //   - localtime.js, the optional script that adds "· 16:15 local" after each UTC time, is not
 //     loaded: the pictures show UTC only, and the machine's own zone is not in them.
+//     LOCAL_ZONE=Europe/Madrid (an IANA zone) loads it with the browser in that zone, to check how
+//     the local times sit in a page; pictures for docs/images are taken without it.
 //
-// Environment: DEMO_URL, DEMO_EMAIL, DEMO_PASSWORD (required); ONLY=name,name to take some screens.
+// Environment: DEMO_URL, DEMO_EMAIL, DEMO_PASSWORD (required); ONLY=name,name to take some screens;
+// LOCAL_ZONE (see above).
 // Exits non-zero if any screen failed, naming each, so a UI change that moves a selector is noticed.
 import { chromium } from '@playwright/test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -138,11 +141,13 @@ const log = (message) => console.log(message);
 // unevenly. With hinting off it places them as a real screen does.
 const browser = await chromium.launch({ args: ['--font-render-hinting=none'] });
 
+const localZone = process.env.LOCAL_ZONE ?? '';
+
 async function newContext() {
   const context = await browser.newContext({
-    viewport: VIEWPORT, deviceScaleFactor: SCALE, locale: 'en-US', timezoneId: 'UTC',
+    viewport: VIEWPORT, deviceScaleFactor: SCALE, locale: 'en-US', timezoneId: localZone || 'UTC',
   });
-  await context.route('**/static/js/localtime.js*', (route) => route.abort());
+  if (!localZone) await context.route('**/static/js/localtime.js*', (route) => route.abort());
   return context;
 }
 

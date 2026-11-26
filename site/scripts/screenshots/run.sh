@@ -23,7 +23,8 @@
 #
 # Settings (all optional): DEMO_PORT (default 7099), ONLY=name,name to take some screens only
 # (the others are not copied and the full-run checks are off), KEEP=1 to leave the demo running
-# after the capture until you press Enter (to look at it in a browser).
+# after the capture until you press Enter (to look at it in a browser), LOCAL_ZONE=Europe/Madrid to
+# see the local times beside the UTC ones (a check: the pictures stay in out/final, like ONLY's).
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -103,8 +104,8 @@ if [ -n "${KEEP:-}" ]; then
   read -r _
 fi
 
-if [ -n "${ONLY:-}" ]; then
-  echo "== ONLY is set: the pictures are in out/final, not copied to docs/images"
+if [ -n "${ONLY:-}" ] || [ -n "${LOCAL_ZONE:-}" ]; then
+  echo "== ONLY or LOCAL_ZONE is set: the pictures are in out/final, not copied to docs/images"
   exit 0
 fi
 
