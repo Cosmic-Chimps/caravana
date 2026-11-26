@@ -185,7 +185,7 @@ editable). Rollback (`RedeployVersion`) makes the version's file the kept one, a
 entry made from a file offers "Download Compose file". Secret edits (`editSecrets` rewrites the
 overlay's secret names), `Redeploy` and the webhook keep the file and record it on the new
 deployment. A deploy from a definition (`deployApp` with a body, `Deploy`) drops the file with the
-warning "This app's Compose file was dropped: it was deployed from a definition, not a file." API
+warning "This app's Compose file was dropped: it was deployed from a definition, not a file." An images-only deploy on such an app (the Deploy form, CI, the MCP tool) instead rewrites the `image:` values in the kept file (`compose.ReplaceImages`, only when the file translates back to the same app) and keeps it. API
 0.12.0: `getCompose` (with the revision as `ETag`), `getDeploymentCompose`, `composeKept` on
 `AppRecord`, `AppSummary` and `Deployment`, code `compose_not_kept` (404). No page, download or
 API read holds a secret value (tests search for `s3cret-sentinel-015`). `TestConsoleLab` has a step

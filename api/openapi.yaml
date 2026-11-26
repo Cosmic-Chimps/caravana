@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.65.0
+  version: 0.65.1
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -3840,7 +3840,8 @@ paths:
         An app deployed from an image or a definition has no file: 404 `compose_not_kept`
         (`composeKept` is false on the app). So does an app made from Compose before its file
         was kept, until it is deployed from Compose once more. A deploy from a definition
-        (`deployApp` with a body) drops the file.
+        (`deployApp` with a body) drops the file, unless it changes only images, which are then
+        written into the file.
       tags: [apps]
       responses:
         "200":
@@ -6528,7 +6529,11 @@ paths:
 
         A body on an app that keeps its Compose file (`composeKept`) drops the file, since the
         file no longer matches the app: the deploy goes on, and the deployment's `warnings`
-        say so. Without a body, and for a webhook, the kept file is unchanged.
+        say so. The exception is a body that changes nothing but the `image` of one or more
+        services: the new images are written into the kept file (every other byte of it stays)
+        and the app keeps it, as long as the new file still makes exactly the app sent (an
+        image taken from a `${VARIABLE}` or an alias can't be rewritten, so the file is dropped
+        then). Without a body, and for a webhook, the kept file is unchanged.
 
         In a preview environment of a project that has a preview password
         (`putPreviewSettings`), every domain is made Team only with that password: the stored app

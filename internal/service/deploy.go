@@ -207,7 +207,23 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 		m.warnings = append(m.warnings, RemovedSecrets(old.App, a)...)
 		oldApp = &old.App
 		if old.Compose != nil && m.file == nil {
-			m.warnings = append(m.warnings, app.Warning{Message: droppedFileWarning})
+			// A deploy that changes only images keeps the file, with the new images written
+			// into it, when the file still says the same app; any other definition deploy
+			// drops it.
+			kept := false
+			if pin == nil {
+				req, warnings, err := keptFileForImages(old, a)
+				if err == nil {
+					m.file = &req
+					m.warnings = append(m.warnings, warnings...)
+					kept = true
+				} else if !errors.Is(err, errNotImagesOnly) {
+					s.log.Info("deploy: the Compose file is dropped, since the new images can't be written into it", "app", a.ID, "reason", err.Error())
+				}
+			}
+			if !kept {
+				m.warnings = append(m.warnings, app.Warning{Message: droppedFileWarning})
+			}
 		}
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return DeployResult{}, err
