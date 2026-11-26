@@ -85,12 +85,24 @@ func (s *server) saveKeptService(w http.ResponseWriter, r *http.Request, session
 		s.drawEdit(w, r, http.StatusConflict, fresh.App, form, staleOf(fresh.App, form))
 		return
 	}
+	var backErr *service.DefaultInFileError
 	var editErr *compose.EditError
-	if errors.As(err, &editErr) {
+	switch {
+	case errors.As(err, &backErr):
+		input := keptServiceInput(backErr.Path, name, fresh.App)
+		if f, ok := form.field(inputName(name, input)); ok {
+			f.Error = sentence{plain(inputLabel(input) + " can't go back to the default from here: that means taking the key out of the file. Change it on Source.")}
+		} else {
+			form.Notice = sentence{plain("This can't go back to the default from here: that means taking "), mono(backErr.Path), plain(" out of the file. Change it on Source.")}
+		}
+		form.markFirstError()
+		s.drawEdit(w, r, http.StatusUnprocessableEntity, fresh.App, form, nil)
+		return
+	case errors.As(err, &editErr):
 		if f, ok := form.field(inputName(name, keptServiceInput(editErr.Path, name, fresh.App))); ok {
 			f.Error = sentence{plain("The Compose file can't take this here: " + editErr.Reason + ". Change it on Source.")}
 		} else {
-			form.Notice = sentence{plain("The Compose file can't take this here: "), mono(editErr.Path), plain(" " + editErr.Reason + ". Change it on Source.")}
+			form.Notice = sentence{plain("The Compose file can't take this here: at "), mono(editErr.Path), plain(", " + editErr.Reason + ". Change it on Source.")}
 		}
 		form.markFirstError()
 		s.drawEdit(w, r, http.StatusUnprocessableEntity, fresh.App, form, nil)

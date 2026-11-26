@@ -2454,10 +2454,11 @@ sections, one concern per page and one deploy per change. `plan.md` D1–D9 are 
   and `keepBackup` (the kept overlay as written, else the services'); a service the new file drops loses them and `composeChanges` says so. New app ›
   Compose keeps its full form. D4 (task gqbf, 2026-11-26): a kept-file app's Copies, Memory and Ceiling are inputs on Services, written into the file's
   text by the pure `compose.SetResources` (an existing scalar rewritten in its quoting, a missing key added as the service's first key at its
-  siblings' indentation, comments and CRLF kept; deploy.replicas before scale and deploy.resources.*.memory before mem_reservation/mem_limit, as
-  Translate reads them; aliases, anchors, merge keys, tags, variables and flow mappings to add into are an `*compose.EditError` with the path).
+  siblings' indentation, comments and CRLF kept; a value stated twice, which Compose allows only when equal (`scale` and `deploy.replicas`,
+  `mem_limit`/`mem_reservation` and `deploy.resources.*.memory`), is rewritten in both places, and a missing one is added as deploy.replicas,
+  mem_reservation or mem_limit; the result must translate (tests); aliases, anchors, merge keys, tags, variables and flow mappings to add into are an `*compose.EditError` with the path).
   `compose.CheckResources` decides per service: a file it refuses keeps "Set in the Compose file." with the reason; CPU stays the file's; memory
-  emptied back to the default is refused (it would mean removing a key). Placement and scaling still read "Set in the Compose overlay".
+  emptied back to the default is refused (`service.DefaultInFileError`, "Memory can't go back to the default from here…"). Placement and scaling still read "Set in the Compose overlay".
 - D5: `Service.SetServiceIf(ctx, appID, service, ServiceSettings{Health, Size}, cond, trigger)` writes a service's health check into a kept file's
   overlay and its changed copies and memory into the file's text (or both onto the service) and deploys once with the revision as the condition;
   `POST /apps/{id}/services/{service}/settings` (`saveKeptService`, `keptservice.go`) is Services' form for a kept-file app. D6: `Service.ChangeBackupPolicy` and `POST /apps/{id}/backups/policy/change` add "Change the policy…" (engine, SQLite file, schedule, keep) to
@@ -2468,7 +2469,23 @@ sections, one concern per page and one deploy per change. `plan.md` D1–D9 are 
   (`console-edit` reads Source and Services, `console-compose` and `console-compose-file-edit` deploy a file with no per-service inputs and check
   the health check and secret survive through the API, `console-create-only` defines on Source, `console-placement` and `console-space` use
   Services and Source); the whole `TestConsoleLab` passed on 2026-11-26 (37 min, after `console-project-page` learned the Previews and Requests sidebar items 049 and 047 added). The designer's
-  review (contract section 9) is pending. Not in 059: copies and size as inputs for a kept-file app, a Compose-file editor for them.
+  review, the impeccable critique and the last look were done the same day at 1440 and 390 px in both themes (contract §9: findings,
+  rulings, and two points left to the maintainer, D4 and "Also set"). Not in 059: copies and size as inputs for a kept-file app, a Compose-file editor for them.
+
+The documentation site (branch `docs-site`, 2026-11-26): the user guide is the Markdown under `docs/` (new
+pages in `docs/guide/`, the per-feature docs in `docs/*.md`), published to GitHub Pages
+(`https://cosmic-chimps.github.io/caravana/`) by `.github/workflows/pages.yml` from the Astro Starlight
+site in `site/`. `site/pages.mjs` maps each page to its source and `site/sidebar.mjs` places it;
+`site/scripts/collect.mjs` writes the pages at build time and fails on a dead link, a page outside the
+sidebar, frontmatter in a source or an image outside `docs/images/`. Sources have no frontmatter, start
+with one `# ` title, link to each other with relative paths and show a screenshot as a `<picture>` (dark
+`<source>`, light `<img>`), which the site turns into two images that follow its own theme. The
+screenshots are made by `site/scripts/screenshots/run.sh`, never by hand: it starts `TestDocsDemo`
+(`internal/ui/docsdemo*_test.go`, a console over the fake Nomad with a made-up installation: project
+`shop`, `ana@example.com`, `caravana.example.com`; skipped unless `CARAVANA_DOCS_DEMO` is set), walks
+it with Playwright in both themes and writes `docs/images/<name>-{light,dark}.png`. `site/README.md` is
+the site's manual, and the look is the designer's ruling. **A feature that changes what a user sees or
+does updates its page (and its screenshot) in the same branch.**
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -2579,6 +2596,13 @@ deploy/vm/host.sh admin status     # sudo caravana admin <cmd> on the VM
 deploy/vm/host.sh tunnel           # private access to the VM's Nomad and Traefik dashboard
 eval "$(deploy/vm/host.sh env)"    # NOMAD_ADDR, NOMAD_TOKEN through the tunnel, CARAVANA_URL
 shellcheck deploy/dev/*.sh deploy/vm/*.sh deploy/install/*.sh deploy/examples/*/*.sh tools/*.sh
+```
+
+```bash
+npm --prefix site ci               # once: the documentation site's packages (Node 22, site/.nvmrc)
+npm --prefix site run build        # collect docs/ into pages, build site/dist, check it (CI runs it on every pull request)
+npm --prefix site run dev          # the site at http://localhost:4321/caravana/ (restart to pick up a changed source)
+site/scripts/screenshots/run.sh    # make docs/images/ again from the demo console (~6 min; ONLY=a,b for some)
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these plus `go test -race` and `go mod tidy -diff`.

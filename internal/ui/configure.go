@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/secrets"
@@ -272,6 +273,9 @@ func (p secretsPanel) Summary() string {
 
 // Headline is "2 variables · 1 secret", the Overview's strong line.
 func (p secretsPanel) Headline() string {
+	if p.Variables == 0 && p.Count == 0 {
+		return "No variables or secrets."
+	}
 	return plural(p.Variables, "variable") + " · " + plural(p.Count, "secret")
 }
 
@@ -339,10 +343,10 @@ type editServiceView struct {
 	// without one. LeftAlone says which other services a save of this one leaves as they are.
 	VolumeText, BackupLine, LeftAlone string
 	// SizeInFile says the service's copies and memory are inputs for an app that keeps its Compose
-	// file: saving writes them into the file's text. SizeLocked is why they are read-only text instead
-	// ("services.web.mem_limit is an alias"), empty when the file couldn't be read at all.
+	// file: saving writes them into the file's text. SizeLocked is why they are read-only text instead (the
+	// place in the file and the reason, drawn as "at <path>, <reason>"), nil when the file couldn't be read at all.
 	SizeInFile bool
-	SizeLocked string
+	SizeLocked *compose.EditError
 }
 
 // SizeText is the service's copies and size in words, for an app whose file sets them:

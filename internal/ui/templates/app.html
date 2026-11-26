@@ -110,6 +110,8 @@
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 <ul class="cv-plrules">{{range .Rules}}<li>{{template "sentence" .}}</li>{{end}}</ul>
 {{if .Editable}}
+<details class="cv-scaledetails"{{if or .Notice .Require.Error .Prefer.Error .AvoidError}} open{{end}}>
+<summary class="cv-btn cv-btn-secondary cv-btn-sm">Change placement…</summary>
 <form method="post" action="{{.Action}}#{{.AnchorID}}" class="cv-svcform cv-plform" aria-labelledby="{{.AnchorID}}-title">
   <input type="hidden" name="revision" value="{{.Revision}}">
   <fieldset class="cv-fieldset cv-plfields"{{if .Stopped}} disabled{{end}}>
@@ -138,10 +140,11 @@
     </fieldset>
     {{end}}
   </fieldset>
-  {{if not .Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save placement</button><span class="cv-note">Saving deploys the app with these rules.</span></div>{{end}}
+  {{if not .Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save placement and deploy</button></div>{{end}}
 </form>
+</details>
 {{else}}
-<p class="cv-note">Set in the Compose overlay.</p>
+<p class="cv-note">Set through the API, in the Compose settings.</p>
 {{end}}
 {{end}}
 
@@ -153,7 +156,7 @@
 {{define "scale"}}
 <h3 class="cv-label" id="{{.AnchorID}}-title">Scaling</h3>
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
-<p class="cv-plrules">{{template "sentence" .Rule}}</p>
+<p class="cv-plrule">{{template "sentence" .Rule}}</p>
 {{if .Blocked}}
 <p class="cv-note">{{template "sentence" .Blocked}}</p>
 {{else if .Editable}}
@@ -186,7 +189,7 @@
       </div>
       {{template "field" (.F "value")}}
     </fieldset>
-    {{if not .Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save scaling</button><span class="cv-note">Saving deploys the app with this rule.</span></div>{{end}}
+    {{if not .Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save scaling and deploy</button></div>{{end}}
   </form>
   {{if and .Scaled (not .Stopped)}}
   <form method="post" action="{{.Action}}#{{.AnchorID}}" class="cv-svcform">
@@ -196,7 +199,7 @@
   {{end}}
 </details>
 {{else}}
-<p class="cv-note">Set it in the Compose overlay.</p>
+<p class="cv-note">Set through the API, in the Compose settings.</p>
 {{end}}
 {{end}}
 
@@ -1110,7 +1113,7 @@
     <h2 id="ov-source-title" class="cv-label">Source</h2>
     <p class="cv-cfg-strong">{{template "sentence" .Source.Strong}}</p>
     <p class="cv-note">{{.Source.Line}}</p>
-    <div class="cv-btnrow"><a href="{{.SourceHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Source.Button}}</a></div>
+    <div class="cv-btnrow"><a href="{{.SourceHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{if $.NoConfigure}}{{.Source.Look}}{{else}}{{.Source.Button}}{{end}}</a></div>
   </section>
   {{if $.Defined}}
   <section class="cv-panel cv-cfg-panel" aria-labelledby="secrets-title">
@@ -1126,10 +1129,10 @@
     <h2 id="services-title" class="cv-label">Services</h2>
     <ul class="cv-ovsvcs">
       {{range .Services}}
-      <li class="cv-ovsvc"><span class="cv-ovsvc-name">{{.Name}}</span> <span>{{.Image}}</span> <span>{{.Copies}} · {{.Size}}</span> <span>{{.Check}}{{with .Volumes}} · {{.}}{{end}}</span></li>
+      <li class="cv-ovsvc"><span class="cv-ovsvc-name">{{.Name}}</span> <span class="cv-ovsvc-image">{{.Image}}</span> <span>{{.Copies}} · {{.Size}}</span> <span>{{.Check}}{{with .Volumes}} · {{.}}{{end}}</span></li>
       {{end}}
     </ul>
-    <div class="cv-btnrow"><a href="{{.ServicesHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Change copies, size and checks</a></div>
+    <div class="cv-btnrow"><a href="{{.ServicesHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{if $.NoConfigure}}See copies, size and checks{{else}}Change copies, size and checks{{end}}</a></div>
   </section>
   <section class="cv-panel cv-cfg-panel" aria-labelledby="domains-title">
     <h2 id="domains-title" class="cv-label">Domains</h2>
@@ -1172,18 +1175,18 @@
     {{if $.Webhook.Enabled}}<p class="text-base text-fg-1">Webhook token made {{template "time" $.Webhook.Created}}.</p>
     {{else}}<p class="text-base text-fg-1">No webhook token.</p>{{end}}
     {{end}}
-    <p class="cv-note">Export the app as a plain Nomad job.</p>
+    {{if $.Export.Href}}<p class="cv-note">Export the app as a plain Nomad job.</p>{{end}}
     <div class="cv-btnrow"><a href="{{.IntegrationsHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Open integrations</a></div>
   </section>
   {{if not $.NoConfigure}}
   <section aria-labelledby="delete-title" class="cv-panel cv-cfg-panel cv-cfg-wide">
     <h2 id="delete-title" class="cv-label">Delete app</h2>
+    <p class="text-base text-fg-1">{{template "sentence" $.Delete.Goes}}</p>
     <details class="cv-confirm"{{if $.Delete.Open}} open{{end}}>
       <summary class="cv-btn cv-btn-danger cv-btn-sm">Delete app…</summary>
       {{with $.Delete}}
       <form method="post" action="/apps/{{.ID}}/delete" class="cv-confirm-body">
         {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
-        <p>{{template "sentence" .Goes}}</p>
         <label class="cv-fld" for="delete-confirm">
           <span class="cv-label">Type <span class="cv-inline-mono">{{.ID}}</span> to confirm</span>
           <input class="cv-field cv-field-mono" id="delete-confirm" type="text" name="confirm" data-confirm-name="{{.ID}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="delete-confirm-error"{{end}}>
@@ -1299,7 +1302,7 @@
 {{define "cfg-services"}}
 <section aria-labelledby="services-title" class="flex flex-col gap-2">
   <h2 id="services-title" class="cv-label">Services</h2>
-  <p class="cv-note cv-cfg-intro">Copies, size and health check of each service. Each service is saved on its own, and saving is a deploy.{{if .KeptEdit}} For this app the copies and memory are written into its Compose file and the health check into its Compose settings; the rest of the file is changed on Source.{{end}}</p>
+  <p class="cv-note cv-cfg-intro">Copies, size and health check of each service. Each service is saved on its own, and saving is a deploy.{{if .KeptEdit}} For this app, copies and memory are written into its Compose file and the health check into its Compose settings. The rest of the file is changed on Source.{{end}}</p>
   {{if .NoConfigure}}<p class="cv-note cv-cfg-intro">Your role here is to look: changing how this app is set up is for people who maintain it.</p>{{end}}
 </section>
 {{if not .Defined}}
@@ -1342,7 +1345,7 @@
         <div class="cv-cfg-group">
           <h4 class="cv-label">Copies &amp; size</h4>
           {{if and $.KeptEdit (not .SizeInFile)}}<p class="cv-data text-fg-1">{{.SizeText}}</p>
-          <p class="cv-note">Set in the Compose file.{{with .SizeLocked}} It can't be written from here: <span class="font-mono">{{.}}</span>. Change it on Source.{{end}}</p>
+          <p class="cv-note">Set in the Compose file.{{with .SizeLocked}} It can't be written from here: at <span class="font-mono">{{.Path}}</span>, {{.Reason}}. Change it on Source.{{end}}</p>
           {{else}}<div class="cv-fields4">
             {{if .Scaled}}<div class="cv-fld"><span class="cv-label">Copies</span>
               <span class="cv-data text-fg-1">Set by scaling, {{.ScaleBounds}}</span></div>
@@ -1356,7 +1359,7 @@
             {{template "field" (.F "memoryMax")}}
           </div>
           {{if and .OneCopy (not .Scaled)}}<p class="cv-note">A service with a volume or a published port runs one copy.</p>{{end}}
-          {{if $.KeptEdit}}<p class="cv-note">Saving writes these into the Compose file, beside its comments. CPU is set in the file.</p>{{end}}{{end}}
+          {{if $.KeptEdit}}<p class="cv-note">Saving writes copies and memory into the Compose file and keeps its comments and layout. CPU is changed on Source.</p>{{end}}{{end}}
         </div>
         {{if .ShowHealth}}
         <div class="cv-cfg-group">
@@ -1372,10 +1375,11 @@
       </div>
     </fieldset>
   </form>
-  <div id="{{.Placement.AnchorID}}" class="cv-cfg-block">{{template "placement" .Placement}}</div>
-  <div id="{{.Scale.AnchorID}}" class="cv-cfg-block">{{template "scale" .Scale}}</div>
+  <div class="cv-cfg-groups cv-cfg-more">
+  <div id="{{.Placement.AnchorID}}" class="cv-cfg-group">{{template "placement" .Placement}}</div>
+  <div id="{{.Scale.AnchorID}}" class="cv-cfg-group">{{template "scale" .Scale}}</div>
   {{with .Also}}
-  <div class="cv-cfg-block">
+  <div class="cv-cfg-group">
     <h4 class="cv-label">Also set</h4>
     <dl class="cv-also">
       {{range .}}
@@ -1388,8 +1392,9 @@
     <p class="cv-note">Edited through the API or a Compose file.</p>
   </div>
   {{end}}
-  {{with .Identities}}<div class="cv-cfg-block">{{template "identities" .}}</div>{{end}}
-  {{with .BackupLine}}<div class="cv-cfg-block"><h4 class="cv-label">Backups</h4><p class="text-base text-fg-1">{{.}}</p><p class="cv-note"><a href="/apps/{{$.ID}}/backups">Changed on the Backups tab.</a></p></div>{{end}}
+  {{with .Identities}}<div class="cv-cfg-group">{{template "identities" .}}</div>{{end}}
+  {{with .BackupLine}}<div class="cv-cfg-group"><h4 class="cv-label">Backups</h4><p class="text-base text-fg-1">{{.}}</p><p class="cv-note"><a href="/apps/{{$.ID}}/backups">Changed on the Backups tab.</a></p></div>{{end}}
+  </div>
   {{if and (not $.Stopped) (or .ShowHealth .SizeInFile (not $.KeptEdit))}}<div class="cv-cfg-foot"><button type="submit" form="svcform-{{.Name}}" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy{{if $.Edit.Many}} {{.Name}}{{end}}</button>{{with .LeftAlone}}<span class="cv-note">{{.}}</span>{{end}}</div>{{end}}
 </section>
 {{end}}

@@ -33,8 +33,10 @@ func (e *EditError) Error() string { return e.Path + ": " + e.Reason }
 // text as it was: comments, blank lines, quoting and key order stay. A value the file has is
 // rewritten in place, in its quoting; one it doesn't have is added as the first key of the
 // service's mapping (or of its deploy mapping, for replicas when the service has one), indented as
-// its siblings are. Each value goes where Translate reads it from first: deploy.replicas before
-// scale, deploy.resources.*.memory before mem_reservation and mem_limit.
+// its siblings are. A value the file states twice (scale and deploy.replicas, mem_limit and
+// deploy.resources.limits.memory, mem_reservation and deploy.resources.reservations.memory, which
+// Compose allows only when they are equal) is rewritten in both places. A value the file doesn't have
+// is added where Translate reads it from first: deploy.replicas, mem_reservation and mem_limit.
 //
 // It refuses, with an *EditError naming the place, what it can't write without guessing: a service
 // or a mapping on the way that is an alias, has an anchor or a merge key (<<), a value that is an
@@ -67,25 +69,27 @@ func SetResources(text, service string, r Resources) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		next, err := setOne(text, services, service, w.field, w.field.text(w.value))
+		next, err := setField(text, services, service, w.field, w.field.text(w.value))
 		if err != nil {
 			return "", err
 		}
 		text = next
 	}
 
-	// The guard: the file must now read back with each value where Translate looks for it.
+	// The guard: the file must now read back with each value in every place it states it.
 	services, err := parseServices(text)
 	if err != nil {
 		return "", fmt.Errorf("the edited Compose file doesn't read: %w", err)
 	}
 	for _, w := range wants {
-		place, err := placeOf(services, service, w.field)
+		places, err := placesOf(services, service, w.field)
 		if err != nil {
 			return "", err
 		}
-		if place.node == nil || place.node.Value != w.field.text(w.value) {
-			return "", &EditError{Path: place.path, Reason: "the edited file doesn't hold the new value"}
+		for _, p := range places {
+			if p.node == nil || p.node.Value != w.field.text(w.value) {
+				return "", &EditError{Path: p.path, Reason: "the edited file doesn't hold the new value"}
+			}
 		}
 	}
 	return text, nil
@@ -143,29 +147,55 @@ type place struct {
 	add           []string
 }
 
-// setOne writes one value into text and returns the new text.
-func setOne(text string, services *yaml.Node, service string, f fieldKind, value string) (string, error) {
-	p, err := placeOf(services, service, f)
+// setField writes one value into text, in every place the file states it, and returns the new text.
+// services is text's services mapping.
+func setField(text string, services *yaml.Node, service string, f fieldKind, value string) (string, error) {
+	places, err := placesOf(services, service, f)
 	if err != nil {
 		return "", err
 	}
-	lines := strings.Split(text, "\n")
-	if p.node != nil {
+	if places[0].node == nil {
+		return addKey(text, places[0], value)
+	}
+	for _, p := range places {
 		if err := editableScalar(p.node, "the value"); err != nil {
 			return "", &EditError{Path: p.path, Reason: err.Error()}
 		}
-		if p.node.Value == value {
+	}
+	// One place at a time, reading the file again after each: two places on one line (a flow
+	// mapping) move each other's columns.
+	for range places {
+		var pending *place
+		for i := range places {
+			if places[i].node.Value != value {
+				pending = &places[i]
+				break
+			}
+		}
+		if pending == nil {
 			return text, nil
 		}
-		edit, err := scalarEditFor(lines, p.node, value)
+		lines := strings.Split(text, "\n")
+		edit, err := scalarEditFor(lines, pending.node, value)
 		if err != nil {
-			return "", &EditError{Path: p.path, Reason: err.Error()}
+			return "", &EditError{Path: pending.path, Reason: err.Error()}
 		}
 		runes := []rune(lines[edit.line])
 		lines[edit.line] = string(runes[:edit.start]) + edit.text + string(runes[edit.end:])
-		return strings.Join(lines, "\n"), nil
+		text = strings.Join(lines, "\n")
+		if services, err = parseServices(text); err != nil {
+			return "", err
+		}
+		if places, err = placesOf(services, service, f); err != nil {
+			return "", err
+		}
 	}
+	return text, nil
+}
 
+// addKey adds the value as p says: lines under p.intoKey, as the first keys of p.into.
+func addKey(text string, p place, value string) (string, error) {
+	lines := strings.Split(text, "\n")
 	indent, step, err := childIndent(lines, p.intoKey, p.into)
 	if err != nil {
 		return "", &EditError{Path: p.path, Reason: err.Error()}
@@ -192,15 +222,16 @@ func setOne(text string, services *yaml.Node, service string, f fieldKind, value
 	return strings.Join(out, "\n"), nil
 }
 
-// placeOf finds where f is in service, or where to add it.
-func placeOf(services *yaml.Node, service string, f fieldKind) (place, error) {
+// placesOf finds every place f is in service, in the order Translate reads them (the one it reads
+// first, first), or, when the file states it nowhere, the one place to add it.
+func placesOf(services *yaml.Node, service string, f fieldKind) ([]place, error) {
 	base := "services." + service
 	svcKey, svc := mappingPair(services, service)
 	if svc == nil {
-		return place{}, &EditError{Path: base, Reason: "the service is not in the file"}
+		return nil, &EditError{Path: base, Reason: "the service is not in the file"}
 	}
 	if err := plainMapping(svc, "the service"); err != nil {
-		return place{}, &EditError{Path: base, Reason: err.Error()}
+		return nil, &EditError{Path: base, Reason: err.Error()}
 	}
 
 	// child is the mapping under key of m, nil when m has no such key.
@@ -217,22 +248,26 @@ func placeOf(services *yaml.Node, service string, f fieldKind) (place, error) {
 
 	deployKey, deploy, err := child(svc, "deploy", base+".deploy")
 	if err != nil {
-		return place{}, err
+		return nil, err
 	}
 
+	var found []place
 	if f == fieldReplicas {
 		if deploy != nil {
 			if n := mappingValue(deploy, "replicas"); n != nil {
-				return place{node: n, path: base + ".deploy.replicas"}, nil
+				found = append(found, place{node: n, path: base + ".deploy.replicas"})
 			}
 		}
 		if n := mappingValue(svc, "scale"); n != nil {
-			return place{node: n, path: base + ".scale"}, nil
+			found = append(found, place{node: n, path: base + ".scale"})
 		}
-		if deploy != nil {
-			return place{path: base + ".deploy.replicas", into: deploy, intoKey: deployKey, add: []string{"replicas:"}}, nil
+		switch {
+		case len(found) > 0:
+			return found, nil
+		case deploy != nil:
+			return []place{{path: base + ".deploy.replicas", into: deploy, intoKey: deployKey, add: []string{"replicas:"}}}, nil
 		}
-		return place{path: base + ".deploy.replicas", into: svc, intoKey: svcKey, add: []string{"deploy:", "\treplicas:"}}, nil
+		return []place{{path: base + ".deploy.replicas", into: svc, intoKey: svcKey, add: []string{"deploy:", "\treplicas:"}}}, nil
 	}
 
 	group, key := "reservations", "mem_reservation"
@@ -242,24 +277,27 @@ func placeOf(services *yaml.Node, service string, f fieldKind) (place, error) {
 	if deploy != nil {
 		_, resources, err := child(deploy, "resources", base+".deploy.resources")
 		if err != nil {
-			return place{}, err
+			return nil, err
 		}
 		if resources != nil {
 			_, g, err := child(resources, group, base+".deploy.resources."+group)
 			if err != nil {
-				return place{}, err
+				return nil, err
 			}
 			if g != nil {
 				if n := mappingValue(g, "memory"); n != nil {
-					return place{node: n, path: base + ".deploy.resources." + group + ".memory"}, nil
+					found = append(found, place{node: n, path: base + ".deploy.resources." + group + ".memory"})
 				}
 			}
 		}
 	}
 	if n := mappingValue(svc, key); n != nil {
-		return place{node: n, path: base + "." + key}, nil
+		found = append(found, place{node: n, path: base + "." + key})
 	}
-	return place{path: base + "." + key, into: svc, intoKey: svcKey, add: []string{key + ":"}}, nil
+	if len(found) > 0 {
+		return found, nil
+	}
+	return []place{{path: base + "." + key, into: svc, intoKey: svcKey, add: []string{key + ":"}}}, nil
 }
 
 // mappingPair is the key and value nodes of key in a mapping node, nils when there is none.

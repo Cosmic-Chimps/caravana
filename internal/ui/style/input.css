@@ -545,6 +545,8 @@
   .cv-formcol-narrow { max-width: 560px; }
   .cv-formfoot { display: flex; align-items: center; gap: 10px; padding-top: 14px; border-top: 1px solid var(--color-line-1); }
   .cv-btnrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  /* An open confirmation grows down from its button; the buttons beside it stay on the first line. */
+  .cv-btnrow:has(> details[open]) { align-items: flex-start; }
   .cv-spacer { flex: 1; }
   .cv-stack { display: flex; flex-direction: column; gap: 16px; }
   .cv-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -758,12 +760,14 @@
   .cv-cfg-body { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
   .cv-snav.cv-snav-inpage { flex: 1 1 200px; max-width: 260px; top: 68px; height: auto; overflow: visible; gap: 2px; padding: 0; border-right: 0; }
   .cv-cfg-intro { max-width: 760px; }
+  .cv-cfg-body .cv-note a { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); text-underline-offset: 3px; }
   .cv-cfg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
   .cv-cfg-panel { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
   .cv-cfg-wide { grid-column: 1 / -1; }
   .cv-cfg-strong { font: 400 15px/1.3 var(--font-sans); color: var(--color-fg-1); }
   .cv-ovsvcs { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; font: 400 13px/1.4 var(--font-mono); container-type: inline-size; }
-  .cv-ovsvc { display: grid; grid-template-columns: 110px minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 4px 16px; padding: 8px 0; border-top: 1px solid var(--color-line-1); color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-ovsvc { display: grid; grid-template-columns: 110px minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 4px 16px; padding: 8px 0; border-top: 1px solid var(--color-line-1); color: var(--color-fg-2); }
+  .cv-ovsvc-image { overflow-wrap: anywhere; }
   .cv-ovsvc:first-child { border-top: 0; padding-top: 0; }
   .cv-ovsvc-name { color: var(--color-fg-1); font-weight: 500; }
   @container (max-width: 720px) { .cv-ovsvc { grid-template-columns: minmax(0, 1fr); } }
@@ -773,8 +777,10 @@
   .cv-svchead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
   .cv-svchead-sub { font: 400 13px/1.3 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
   .cv-cfg-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px 28px; align-items: start; }
-  .cv-cfg-group { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-  .cv-cfg-block { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; border-top: 1px solid var(--color-line-1); }
+  .cv-cfg-group { container-type: inline-size; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  /* Copies and size in a half-width group: two fields to a row, so a placeholder isn't cut. */
+  @container (max-width: 520px) { .cv-cfg-group .cv-fields4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .cv-cfg-more { padding-top: 16px; border-top: 1px solid var(--color-line-1); }
   .cv-cfg-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding-top: 14px; border-top: 1px solid var(--color-line-1); }
 
   .cv-settings-main { container-type: inline-size; display: flex; flex-direction: column; gap: 22px; width: 100%; max-width: 1180px; min-width: 0; padding: 36px 32px 64px; }
@@ -2553,6 +2559,7 @@
   .cv-node-reclaim a { color: var(--color-fg-2); }
   /* Configure's Placement panel: the rules as sentences, then the form of three rules. */
   .cv-plpanel { margin-top: 16px; }
+  .cv-plrule { margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-1); }
   .cv-plrules { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 14px; line-height: 1.5; color: var(--color-fg-1); }
   .cv-plform { margin-top: 4px; }
   .cv-plform .cv-fld { margin-bottom: 14px; }

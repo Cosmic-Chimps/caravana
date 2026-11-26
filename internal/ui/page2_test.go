@@ -1434,7 +1434,15 @@ func TestCritiqueRulings(t *testing.T) {
 		t.Error("the note is on a page nothing was refused on")
 	}
 	// Hints are not inside labels, and name themselves in aria-describedby.
-	conf := e.pageOf(t, "/apps/duet/configure/services")
+	// web has a path, so its hint (about an empty one) shows on a refused post that emptied the path.
+	_, conf := e.get(t, "/apps/duet/configure/services")
+	var webForm plainForm
+	for _, f := range formsIn(conf) {
+		if f.Values.Has("svc.web.healthPath") {
+			webForm = f
+		}
+	}
+	_, conf = e.submit(t, webForm, url.Values{"svc.web.healthPath": {""}, "svc.web.copies": {"many"}})
 	if !strings.Contains(conf, `aria-describedby="svc-web-healthPath-hint"`) || !strings.Contains(conf, `<span class="cv-hint" id="svc-web-healthPath-hint">Empty checks the TCP port.</span>`) {
 		t.Error("the health check's hint isn't described by id")
 	}

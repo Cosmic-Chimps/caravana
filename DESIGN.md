@@ -781,7 +781,7 @@ drawn, not its length either: ten dots and a lock icon.
     Backups ("Changed on the Backups tab"). The foot (a 1px rule, 14px above) holds "Save and deploy
     <service>" ("Save and deploy" for one) and the muted "<others> is left as it is." For a kept-file app
     Copies & size has Copies, Memory and Ceiling as inputs written into the file, CPU as text and the muted
-    "Saving writes these into the Compose file, beside its comments."; a file whose values can't be rewritten
+    "Saving writes copies and memory into the Compose file and keeps its comments and layout. CPU is changed on Source."; a file whose values can't be rewritten
     safely (an alias, an anchor) keeps the text with "Set in the Compose file." and the reason. Neither
     of the handoff's switches (auto-revert, canary) is drawn: they are not choices here.
   - **Variables & secrets** and **Domains** are their own pages (below), drawn in the same frame.
@@ -1673,7 +1673,7 @@ servers with `ssd=true`", "Prefers `region=eu` (weight 80)", "Never on `three`",
 under the service's own form and posting by itself with the page's revision (a deploy). Its three inputs are Require and
 Prefer (mono text, hints in fg-3) and Never on (one checkbox per managed server, and a name that is no server any more
 stays listed and checked, with "(not a server any more)", so saving never drops it). An app that keeps its Compose file
-shows the sentences and "Set in the Compose overlay.", with no form.
+shows the sentences and "Set through the API, in the Compose settings.", with no form.
 
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's

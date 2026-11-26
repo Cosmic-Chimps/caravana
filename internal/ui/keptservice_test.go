@@ -31,7 +31,7 @@ func TestServicesKeptFileHealthForm(t *testing.T) {
 	page := e.pageOf(t, "/apps/shop/configure/services")
 	got := text(page)
 	for _, want := range []string{"Save and deploy web", "Health check", "Empty checks the TCP port.",
-		"For this app the copies and memory are written into its Compose file and the health check into its Compose settings"} {
+		"For this app, copies and memory are written into its Compose file and the health check into its Compose settings. The rest of the file is changed on Source."} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Services lacks %q:\n%s", want, got)
 		}
@@ -150,7 +150,7 @@ func TestHealthRouteOfADefinitionApp(t *testing.T) {
 }
 
 // Task gqbf: Services of an app that keeps its Compose file has Copies, Memory and Ceiling as inputs, and
-// saving writes them into the file's text, beside its comments, in one deploy with the health check.
+// saving writes them into the file's text, keeping its comments and layout, in one deploy with the health check.
 func TestServicesKeptFileSize(t *testing.T) {
 	e, _ := keptSentinelEnv(t)
 	page := e.pageOf(t, "/apps/shop/configure/services")
@@ -191,7 +191,7 @@ func TestServicesKeptFileSize(t *testing.T) {
 		n := e.deployCount(t, "shop")
 		resp, body := e.postForm(t, keptServiceAction, e.healthForm(t, url.Values{"svc.web.memoryMax": {""}}))
 		if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, `id="svc-web-memoryMax-error"`) ||
-			!strings.Contains(text(body), "going back to the default means taking the key out of the file") {
+			!strings.Contains(text(body), "Ceiling can't go back to the default from here: that means taking the key out of the file. Change it on Source.") {
 			t.Errorf("emptied memory = %d, want the message at Ceiling:\n%s", resp.StatusCode, text(body))
 		}
 		if e.deployCount(t, "shop") != n {
@@ -218,7 +218,7 @@ func TestServicesKeptFileSizeLocked(t *testing.T) {
 	e, _ := deployShop(t, req)
 	page := e.pageOf(t, "/apps/shop/configure/services")
 	got := text(page)
-	if strings.Contains(page, `name="svc.web.memory"`) || !strings.Contains(got, "Set in the Compose file. It can't be written from here: services.web.mem_limit the value is an alias") {
+	if strings.Contains(page, `name="svc.web.memory"`) || !strings.Contains(page, `at <span class="font-mono">services.web.mem_limit</span>, the value is an alias`) || !strings.Contains(got, "Set in the Compose file. It can't be written from here: at services.web.mem_limit, the value is an alias. Change it on Source.") {
 		t.Errorf("web's size should be read-only, saying why:\n%s", got)
 	}
 	if !strings.Contains(page, `name="svc.web.healthPath"`) || !strings.Contains(page, `name="svc.worker.memory"`) {

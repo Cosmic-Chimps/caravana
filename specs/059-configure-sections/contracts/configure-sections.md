@@ -149,3 +149,47 @@ At 1440 and 390 px, dark and light: each section's address, the nav current and 
 for a kept file / an image app / a built app / an undefined app, Services for a kept-file app and an image app with two
 services, Integrations after making a webhook token, a stopped app, a person with the view role. Then the impeccable
 critique (no detector) and the last look.
+
+### 9.1 What the review found (2026-11-26, fixed in 75d9f37)
+
+Run on the docs demo console with three added apps (a kept-file Compose app made from a template, a two-service
+image app, an app with a name only), at 1440 and 390 px in both themes, as the owner and as a person with the view
+role.
+
+- Overview: the Delete panel now says what goes before its button (the sentence sat inside the closed details);
+  a backup line reads "In main" (was "Go to main."); an app with neither reads "No variables or secrets." (was
+  "0 variables · 0 secrets"); sizes keep number and unit on one line; a long image name wraps inside its column
+  instead of widening the grid; a person who may only look gets "See the Compose file", "See the images" or
+  "See the build" instead of a button that promises a change.
+- Services: the placement form waits behind "Change placement…" (the sentences stay in view); the scaling rule is
+  one paragraph in the body size; the other groups sit two to a row with a rule above them; copies and size take
+  two fields a row inside a half-width group (the CPU field's "default" was cut off); the health path field is
+  labelled "Path" (the group's head already says Health check), and its hint about an empty path shows only while
+  the path is empty.
+- Source: the existing app's Compose form labels its field "The file" under the "Compose file" head (the label
+  repeated the head).
+- A row of buttons keeps them on the first line while one of its confirmations is open.
+
+### 9.2 The critique's rulings (impeccable critique, no detector)
+
+Taken (this commit):
+- 1: the read-only placement and scaling notes of a kept-file app said "Set in the Compose overlay.", a word the
+  console never shows. They now say "Set through the API, in the Compose settings."
+- 2: the placement and scaling buttons say they deploy: "Save placement and deploy", "Save scaling and deploy"
+  (the sentence under them that said so is gone; the button names its form, since Services has several).
+- 4: an existing app's Compose form says beside Preview: "Preview checks the file and shows what changes. Nothing is
+  deployed until you choose Deploy."
+- 7: a link inside a note of a section (`.cv-cfg-body .cv-note a`) is underlined like New app's, so it reads as one.
+- 8: the empty health path's placeholder is "empty: TCP check" (was "TCP port", which read like a port number).
+- 9: Overview's Source panel for an app with a name only reads "Not defined yet" with "Give it an image or a
+  Compose file on Source."; Integrations says "Export the app as a plain Nomad job." only when there is an export.
+
+Left, with the reason:
+- 3 and C (the Compose form's "Deploy" should read "Save and deploy"): "Deploy" already says it deploys, and
+  `DESIGN.md` keeps "Save and deploy" for saves of stored fields.
+- 5 (rename and widen copies and size): the fields keep the names `DESIGN.md` gave them in 021 (Copies, CPU, Memory,
+  Ceiling); two a row instead of four is the half-width group's own rule.
+- 6 (one typeface in the scaling sentence): the console puts names and numbers in mono inside sentences everywhere.
+- 10 (a long image name widens Overview's grid): fixed by the review already; the name wraps only as a last resort.
+- For the maintainer: A (copies and size read-only for a kept-file app) stays as plan D4, with follow-up task
+  `gqbf`; B, "Also set" on Services, stays so nothing the old read-only Definition showed is lost.

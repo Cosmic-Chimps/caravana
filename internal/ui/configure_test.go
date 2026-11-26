@@ -161,7 +161,7 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 		}
 		got := text(body)
 		for _, want := range []string{"Copies & size", "Copies", "CPU MHz", "Memory MB", "Ceiling MB",
-			"Health check GET", "Every s", "Timeout s", "Empty checks the TCP port.",
+			"Health check Path GET", "Every s", "Timeout s",
 			"New copies must pass this check before they take traffic; if they don't, the deploy is reverted.",
 			"Also set", "Entrypoint /entry.sh --strict", "DNS servers 1.1.1.1 10.0.0.2", "DNS search domains corp.example.com", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
 			"Placement", "Scaling", "Save and deploy web", "Save and deploy worker"} {
@@ -332,7 +332,7 @@ func TestConfigureKeptFile(t *testing.T) {
 	// file's overlay, copies and memory are inputs written into the file's text, CPU is text, and the rest
 	// of the file is on Source.
 	if words := text(services); !strings.Contains(words, "postgres:17") || !strings.Contains(services, `action="/apps/shop/services/web/settings#service-web"`) ||
-		!strings.Contains(words, "Saving writes these into the Compose file") || !strings.Contains(words, "Save and deploy web") ||
+		!strings.Contains(words, "Saving writes copies and memory into the Compose file and keeps its comments and layout. CPU is changed on Source.") || !strings.Contains(words, "Save and deploy web") ||
 		!strings.Contains(services, `name="svc.web.copies"`) || !strings.Contains(services, `name="svc.web.memory"`) || strings.Contains(services, `name="svc.web.cpu"`) {
 		t.Errorf("Services of a kept-file app should have a health form and copies and memory as inputs:\n%s", words)
 	}

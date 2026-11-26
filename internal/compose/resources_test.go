@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cosmic-chimps/caravana/internal/app"
 )
 
 func TestSetResources(t *testing.T) {
@@ -52,10 +54,34 @@ func TestSetResources(t *testing.T) {
 			want: "# app\nservices:\n  web:\n    mem_limit: 600m\n    mem_reservation: 300m\n    image: a:1\n\n  db:\n    image: postgres:17\n",
 		},
 		{
-			name: "deploy.resources memory wins over mem_limit",
-			text: "services:\n  web:\n    image: a:1\n    mem_limit: 1g\n    deploy:\n      resources:\n        limits:\n          memory: 512M\n        reservations: {memory: 128M}\n",
+			name: "deploy.resources memory rewritten in place",
+			text: "services:\n  web:\n    image: a:1\n    deploy:\n      resources:\n        limits:\n          memory: 512M\n        reservations: {memory: 128M}\n",
 			r:    Resources{MemReservationMB: new(256), MemLimitMB: new(768)},
-			want: "services:\n  web:\n    image: a:1\n    mem_limit: 1g\n    deploy:\n      resources:\n        limits:\n          memory: 768m\n        reservations: {memory: 256m}\n",
+			want: "services:\n  web:\n    image: a:1\n    deploy:\n      resources:\n        limits:\n          memory: 768m\n        reservations: {memory: 256m}\n",
+		},
+		{
+			name: "replicas stated twice: both rewritten",
+			text: "services:\n  web:\n    image: a:1\n    scale: 2\n    deploy:\n      replicas: '2'\n",
+			r:    Resources{Replicas: new(3)},
+			want: "services:\n  web:\n    image: a:1\n    scale: 3\n    deploy:\n      replicas: '3'\n",
+		},
+		{
+			name: "mem_limit stated twice: both rewritten",
+			text: "services:\n  web:\n    image: a:1\n    mem_limit: 512m # top\n    deploy:\n      resources:\n        limits:\n          memory: 512m\n",
+			r:    Resources{MemLimitMB: new(1024)},
+			want: "services:\n  web:\n    image: a:1\n    mem_limit: 1024m # top\n    deploy:\n      resources:\n        limits:\n          memory: 1024m\n",
+		},
+		{
+			name: "mem_reservation stated twice on one line: both rewritten",
+			text: "services:\n  web: {image: a:1, mem_reservation: 128m, deploy: {resources: {reservations: {memory: 128m}}}}\n",
+			r:    Resources{MemReservationMB: new(64)},
+			want: "services:\n  web: {image: a:1, mem_reservation: 64m, deploy: {resources: {reservations: {memory: 64m}}}}\n",
+		},
+		{
+			name: "both forms stated, only one value changed",
+			text: "services:\n  web:\n    image: a:1\n    mem_limit: 1g\n    mem_reservation: 256m\n    deploy:\n      resources:\n        limits: {memory: 1g}\n        reservations: {memory: 256m}\n",
+			r:    Resources{MemReservationMB: new(300)},
+			want: "services:\n  web:\n    image: a:1\n    mem_limit: 1g\n    mem_reservation: 300m\n    deploy:\n      resources:\n        limits: {memory: 1g}\n        reservations: {memory: 300m}\n",
 		},
 		{
 			name: "a value in a flow mapping is rewritten in place",
@@ -89,6 +115,27 @@ func TestSetResources(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("SetResources() =\n%q\nwant\n%q", got, tt.want)
+			}
+			// Compose's own rules (a value stated twice must be equal, say) hold for the result, and
+			// it makes the values written.
+			a, _, err := Translate("app", Request{Compose: got})
+			if err != nil {
+				t.Fatalf("Translate(edited) = %v", err)
+			}
+			var svc app.Service
+			for _, s := range a.Services {
+				if s.Name == "web" {
+					svc = s
+				}
+			}
+			if n := tt.r.Replicas; n != nil && (svc.Replicas == nil || *svc.Replicas != *n) {
+				t.Errorf("replicas = %v, want %d", svc.Replicas, *n)
+			}
+			if n := tt.r.MemReservationMB; n != nil && svc.Resources.MemoryMB != *n {
+				t.Errorf("memory = %d, want %d", svc.Resources.MemoryMB, *n)
+			}
+			if n := tt.r.MemLimitMB; n != nil && svc.Resources.MemoryMaxMB != *n {
+				t.Errorf("ceiling = %d, want %d", svc.Resources.MemoryMaxMB, *n)
 			}
 		})
 	}
@@ -142,6 +189,12 @@ func TestSetResourcesRefuses(t *testing.T) {
 			text: "services:\n  web: {image: a:1}\n",
 			r:    Resources{MemLimitMB: new(512)},
 			want: "services.web.mem_limit: the mapping is written in flow style ({...}), so a key can't be added to it safely",
+		},
+		{
+			name: "a twin that is an alias",
+			text: "x-n: &n 2\nservices:\n  web:\n    image: a:1\n    deploy:\n      replicas: 2\n    scale: *n\n",
+			r:    Resources{Replicas: new(3)},
+			want: "services.web.scale: the value is an alias",
 		},
 		{
 			name: "a tagged value",

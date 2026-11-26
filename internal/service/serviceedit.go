@@ -47,7 +47,8 @@ type Size struct {
 // Errors: store.ErrNotFound for an unknown app, ErrAppStopped for a stopped one, an *app.FieldError
 // on "service" for a service the app doesn't have or, when Health is set, one without a port (it
 // has no health check), a *compose.EditError for a size the file can't take (a value behind an
-// alias, or memory set back to the default, which would mean removing a key), and every error of a
+// alias), a *DefaultInFileError for memory set back to the default (it would mean removing a key), and
+// every error of a
 // deploy.
 func (s *Service) SetServiceIf(ctx context.Context, appID, service string, set ServiceSettings, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
 	rec, err := s.store.GetApp(ctx, appID)
@@ -114,6 +115,17 @@ func (s *Service) SetServiceIf(ctx context.Context, appID, service string, set S
 	return res.DeploymentRecord, inFile(err, a, file)
 }
 
+// DefaultInFileError says a memory size went back to Caravana's default on an app that keeps its
+// Compose file: that would mean taking a key out of the file, which SetServiceIf doesn't do. Path is
+// the key's place in the file ("services.web.mem_limit").
+type DefaultInFileError struct {
+	Path string
+}
+
+func (e *DefaultInFileError) Error() string {
+	return e.Path + ": going back to the default means taking the key out of the file"
+}
+
 // sizeChange is what of size differs from the stored service, as the file's resources: only those
 // are written, so a value the file says its own way ("1g") is left as typed. Memory set back to
 // zero, the default, would mean taking a key out of the file, which is refused.
@@ -133,8 +145,7 @@ func sizeChange(stored app.Service, size Size) (compose.Resources, error) {
 		case n == nil || *n == current:
 			return nil, nil
 		case *n == 0:
-			return nil, &compose.EditError{Path: "services." + stored.Name + "." + key,
-				Reason: "going back to the default means taking the key out of the file"}
+			return nil, &DefaultInFileError{Path: "services." + stored.Name + "." + key}
 		}
 		return new(*n), nil
 	}

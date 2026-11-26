@@ -250,10 +250,10 @@ func TestSetServiceIfSizeKeptFile(t *testing.T) {
 
 	t.Run("memory back to the default is refused", func(t *testing.T) {
 		n := len(mustDeployments(t, e))
-		var edit *compose.EditError
+		var back *DefaultInFileError
 		_, err := e.svc.SetServiceIf(ctx, "whoami", "web", ServiceSettings{Size: Size{MemoryMaxMB: new(0)}}, Condition{}, app.TriggerConsole)
-		if !errors.As(err, &edit) || edit.Path != "services.web.mem_limit" {
-			t.Errorf("memory 0: %v, want an *EditError on services.web.mem_limit", err)
+		if !errors.As(err, &back) || back.Path != "services.web.mem_limit" {
+			t.Errorf("memory 0: %v, want a *DefaultInFileError on services.web.mem_limit", err)
 		}
 		if len(mustDeployments(t, e)) != n {
 			t.Error("a refused change deployed")
