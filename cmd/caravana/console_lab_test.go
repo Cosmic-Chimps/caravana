@@ -1011,7 +1011,7 @@ func (c *console) composeFileEdit(t *testing.T) {
 	if !strings.Contains(page, "This app is edited through its Compose file.") || strings.Contains(page, `class="cv-svcform"`) {
 		t.Errorf("Source draws the per-field form of an app edited through its file")
 	}
-	if _, services := c.get(t, "/apps/"+id+"/configure/services"); !strings.Contains(services, `action="/apps/`+id+`/services/web/health#service-web"`) {
+	if _, services := c.get(t, "/apps/"+id+"/configure/services"); !strings.Contains(services, `action="/apps/`+id+`/services/web/settings#service-web"`) {
 		t.Errorf("Services has no health check form for web: %s", services)
 	}
 

@@ -338,6 +338,11 @@ type editServiceView struct {
 	// without volumes. BackupLine is the service's backup policy in a sentence, read-only there; empty
 	// without one. LeftAlone says which other services a save of this one leaves as they are.
 	VolumeText, BackupLine, LeftAlone string
+	// SizeInFile says the service's copies and memory are inputs for an app that keeps its Compose
+	// file: saving writes them into the file's text. SizeLocked is why they are read-only text instead
+	// ("services.web.mem_limit is an alias"), empty when the file couldn't be read at all.
+	SizeInFile bool
+	SizeLocked string
 }
 
 // SizeText is the service's copies and size in words, for an app whose file sets them:

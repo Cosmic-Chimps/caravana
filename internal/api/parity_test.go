@@ -196,8 +196,8 @@ var consoleParity = map[string]parity{
 	// Scaling (feature 043): the form is a deploy with the service's scale; Stop scaling a deploy without it.
 	"POST /apps/{id}/services/{service}/scale": {ops: []string{"getApp", "deployApp"}},
 	// Configure › Services' health check (feature 059): a deploy with the service's health (or its overlay's, for a kept file).
-	"POST /apps/{id}/services/{service}/health": {ops: []string{"getApp", "deployApp", "deployCompose"}},
-	"POST /apps/{id}/secrets/refresh":           {ops: []string{"refreshSecrets"}}, // feature 037
+	"POST /apps/{id}/services/{service}/settings": {ops: []string{"getApp", "deployApp", "deployCompose"}},
+	"POST /apps/{id}/secrets/refresh":             {ops: []string{"refreshSecrets"}}, // feature 037
 	// Configure's own pages (feature 021). Variables & secrets: a variable is a change to the service's env, a
 	// secret a value with its name, and the .env editor replaces one service's env; every change is a deploy of
 	// the app on the revision getApp gave. Domains: adding or removing a host changes the service's domains;
