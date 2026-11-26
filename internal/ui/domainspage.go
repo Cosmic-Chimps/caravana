@@ -228,6 +228,20 @@ type teamPasswordPanel struct {
 	Host, Password string
 	// New says it replaced an older one (New password).
 	New bool
+	// ID is the element ID the Copy button reads, so several panels on one page each copy their
+	// own; "" is team-password-value, the Domains page's one panel.
+	ID string
+	// DomainsHref, set where the panel isn't on the Domains page (after a template's Create),
+	// links that page for New password.
+	DomainsHref string
+}
+
+// CopyID is the element ID of the password's value.
+func (p teamPasswordPanel) CopyID() string {
+	if p.ID == "" {
+		return "team-password-value"
+	}
+	return p.ID
 }
 
 // recordBox is the DNS records that point a host here: one group of Type, Name
