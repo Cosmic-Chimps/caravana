@@ -308,7 +308,7 @@ func (t configureTab) SourceIntro() string {
 	case t.NoConfigure:
 		return "What this app runs. Your role here is to look: changing how this app is set up is for people who maintain it."
 	case t.ComposeForm != nil && t.ComposeForm.Kept:
-		return "This app is edited through its Compose file. Change the file, preview what changes, then deploy. Health checks are on Services, secrets on Variables & secrets, domains on Domains and backups on the Backups tab: a deploy from here keeps them as they are."
+		return "This app is edited through its Compose file. Change the file, preview what changes, then deploy. Copies and memory can also be changed on Services, which writes them into this file. Health checks are on Services, secrets on Variables & secrets, domains on Domains and backups on the Backups tab: a deploy from here keeps them as they are."
 	case t.ComposeForm != nil:
 		return "This app was made from a Compose file that wasn't kept. Paste it once to edit it here from now on."
 	case t.HasBuild():
