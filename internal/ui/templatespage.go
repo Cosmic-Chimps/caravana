@@ -798,7 +798,8 @@ func (s *server) installedWithPasswords(w http.ResponseWriter, r *http.Request, 
 		n = &installedNotice{Title: sentence{plain("Installed from the " + t.Title + " template.")}}
 	}
 	for i, host := range slices.Sorted(maps.Keys(passwords)) {
-		n.Passwords = append(n.Passwords, installedPassword{ID: "team-password-" + strconv.Itoa(i), Host: host, Password: passwords[host]})
+		n.Passwords = append(n.Passwords, teamPasswordPanel{Host: host, Password: passwords[host],
+			ID: "team-password-" + strconv.Itoa(i), DomainsHref: "/apps/" + url.PathEscape(id) + "/domains"})
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	s.deploymentsPageWith(w, r, http.StatusOK, sum, deployFormOf(sum.App), nil, nil, n)
@@ -896,13 +897,7 @@ type installedNotice struct {
 	Notes string
 	// Passwords are the Team-only passwords the install made, drawn only in the answer to the
 	// install itself (installedWithPasswords).
-	Passwords []installedPassword
-}
-
-// installedPassword is one Team-only password of an install, with the element ID its copy button
-// reads.
-type installedPassword struct {
-	ID, Host, Password string
+	Passwords []teamPasswordPanel
 }
 
 // installedNoticeOf reads ?created=template for an app that does come from a template. The answers

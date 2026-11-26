@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -566,13 +567,13 @@ func TestInstallShowsTeamOnlyPasswordOnce(t *testing.T) {
 	}
 	page := text(body)
 	for _, want := range []string{"Installed from the Adminer template.", "Copy the password for adminer.example.com now.",
-		"User name team.", "Adminer is at https://adminer.example.com"} {
+		"User name team.", "If it's lost, New password on the Domains page makes another.", "Adminer is at https://adminer.example.com"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the answer lacks %q:\n%s", want, page)
 		}
 	}
-	if !strings.Contains(body, `data-copy="team-password-0"`) {
-		t.Error("the password has no copy button")
+	if !strings.Contains(body, `data-copy="team-password-0"`) || !strings.Contains(body, `href="/apps/adminer/domains">Domains page</a>`) {
+		t.Error("the password has no copy button, or the sentence no link to the Domains page")
 	}
 	// It is the password Caravana keeps the hash of.
 	rec, err := e.Store.TeamPassword(ctx, "adminer.example.com")
@@ -598,5 +599,48 @@ func TestInstallShowsTeamOnlyPasswordOnce(t *testing.T) {
 	_, notice := e.get(t, "/apps/adminer/deployments?created=template&v_domain=adminer.example.com")
 	if !strings.Contains(text(notice), "Installed from the Adminer template.") || strings.Contains(notice, "cv-once-value") {
 		t.Errorf("the installed notice after the answer:\n%s", text(notice))
+	}
+}
+
+// TestInstallShowsEachTeamOnlyPassword installs a template with two Team-only domains: each password
+// is drawn once, with its own element ID and its own Copy button.
+func TestInstallShowsEachTeamOnlyPassword(t *testing.T) {
+	e := newConsoleEnvWith(t, nil)
+	two := demoTemplate()
+	two.Name, two.Title, two.AppName, two.Notes, two.Generated = "two", "Two", "two", "", nil
+	two.Inputs = []templates.Input{
+		{Name: "domain", Label: "Domain", Type: templates.TypeDomain, Example: "one.example.com"},
+		{Name: "admin", Label: "Admin domain", Type: templates.TypeDomain, Example: "admin.example.com"},
+	}
+	two.Services = map[string]compose.Overlay{"web": {
+		Domains: []compose.Domain{{Host: "{{domain}}", Port: 80, TeamOnly: true}, {Host: "{{admin}}", Port: 80, TeamOnly: true}},
+		Health:  &compose.Health{Path: "/"},
+	}}
+	two.Compose = "services:\n  web:\n    image: traefik/whoami:latest\n    expose: [\"80\"]\n"
+	useCatalog(t, e, two)
+
+	resp, body := e.postForm(t, "/apps/new/template/two", installForm("two", map[string]string{"domain": "one.example.com", "admin": "admin.example.com"}, nil))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Create = %d to %q:\n%s", resp.StatusCode, resp.Header.Get("Location"), text(body))
+	}
+	// Sorted by host: admin first.
+	for i, host := range []string{"admin.example.com", "one.example.com"} {
+		id := "team-password-" + strconv.Itoa(i)
+		m := regexp.MustCompile(`<code class="cv-once-value" id="` + id + `">([^<]+)</code>`).FindStringSubmatch(body)
+		if m == nil {
+			t.Fatalf("no password with ID %s:\n%s", id, body)
+		}
+		if n := strings.Count(body, m[1]); n != 1 {
+			t.Errorf("the password of %s is on the answer %d times, want once", host, n)
+		}
+		if !strings.Contains(body, `data-copy="`+id+`" hidden>Copy password</button>`) {
+			t.Errorf("no Copy button of its own for %s", id)
+		}
+		if !strings.Contains(text(body), "Copy the password for "+host+" now.") {
+			t.Errorf("no panel names %s:\n%s", host, text(body))
+		}
+	}
+	if strings.Contains(body, "team-password-value") || strings.Count(body, `class="cv-panel cv-once"`) != 2 {
+		t.Errorf("want exactly the two indexed panels:\n%s", body)
 	}
 }

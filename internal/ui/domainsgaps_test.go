@@ -41,7 +41,7 @@ func TestDomainTeamOnlySaysHowVisitorsSignIn(t *testing.T) {
 		t.Errorf("a plain domain says how visitors sign in:\n%s", row)
 	}
 	resp, body := e.postForm(t, "/domains/"+host+"/options", optionsOf(e, t, "shop", "web", url.Values{"teamOnly": {"on"}}))
-	if resp.StatusCode != 200 || !strings.Contains(text(body), "caravana only keeps a hash and can't show it again.") {
+	if resp.StatusCode != 200 || !strings.Contains(text(body), "caravana only keeps a hash and can't show it again. If it's lost, New password makes another.") {
 		t.Fatalf("Team only = %d:\n%s", resp.StatusCode, text(body))
 	}
 	row := text(dmRowOf(e.pageOf(t, "/domains"), host))

@@ -195,10 +195,10 @@
      teamPasswordPanel. */}}
 {{define "domain-once"}}
 <div class="cv-panel cv-once" role="status">
-  <p class="cv-once-text">Copy the {{if .New}}new {{end}}password for <span class="cv-inline-mono">{{.Host}}</span> now. User name <span class="cv-inline-mono">team</span>. caravana only keeps a hash and can't show it again.</p>
+  <p class="cv-once-text">Copy the {{if .New}}new {{end}}password for <span class="cv-inline-mono">{{.Host}}</span> now. User name <span class="cv-inline-mono">team</span>. caravana only keeps a hash and can't show it again. {{with .DomainsHref}}If it's lost, New password on the <a href="{{.}}">Domains page</a> makes another.{{else}}If it's lost, New password makes another.{{end}}</p>
   <div class="cv-once-row">
-    <code class="cv-once-value" id="team-password-value">{{.Password}}</code>
-    <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="team-password-value" hidden>Copy password</button>
+    <code class="cv-once-value" id="{{.CopyID}}">{{.Password}}</code>
+    <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="{{.CopyID}}" hidden>Copy password</button>
   </div>
 </div>
 {{end}}
