@@ -233,10 +233,10 @@
         </select>
       </label>
       {{template "field-error" .Service}}
-      <p class="cv-data-muted cv-hint">Each service's port is set in Configure.</p>
+      <p class="cv-data-muted cv-hint">Each service's port is set in Configure › Source.</p>
       {{else}}
       <input type="hidden" name="service" value="{{.HiddenService}}">
-      {{with .Port}}<p class="cv-data-muted cv-hint"><span class="cv-inline-mono">{{.}}</span>, set in Configure</p>{{end}}
+      {{with .Port}}<p class="cv-data-muted cv-hint"><span class="cv-inline-mono">{{.}}</span>, set in Configure › Source</p>{{end}}
       {{if .FirstService}}<p class="cv-data-muted cv-hint">The app's first service. An app with several offers them here once it is picked.</p>{{end}}
       {{end}}
       </div>

@@ -37,9 +37,9 @@ func buildRefusal(err error) (status int, words sentence, field string, ok bool)
 	}
 	switch {
 	case errors.Is(err, service.ErrGitAccessMissing):
-		return http.StatusConflict, sentence{plain("The build can't read the repository yet: make the deploy key or add the token it needs (Git access, under Configure), then build again. Nothing was deployed.")}, field, true
+		return http.StatusConflict, sentence{plain("The build can't read the repository yet: make the deploy key or add the token it needs (Git access, under Configure › Source), then build again. Nothing was deployed.")}, field, true
 	case errors.Is(err, service.ErrGitHostKeyUnknown):
-		return http.StatusUnprocessableEntity, sentence{plain("caravana doesn't know this SSH host's key. Give it as the host key in Configure's Build panel (the output of "), mono("ssh-keyscan -t ed25519 host"), plain(", without the host), or use github.com or gitlab.com. Nothing was deployed.")}, field, true
+		return http.StatusUnprocessableEntity, sentence{plain("caravana doesn't know this SSH host's key. Give it as the host key in Configure › Source, in the Build panel (the output of "), mono("ssh-keyscan -t ed25519 host"), plain(", without the host), or use github.com or gitlab.com. Nothing was deployed.")}, field, true
 	case errors.Is(err, service.ErrBuildRegistryMissing):
 		return http.StatusUnprocessableEntity, sentence{plain("No registry entry covers this image, so the build has nowhere to push it. Add one under Settings › Registries, with credentials that may push to it. Nothing was deployed.")}, field, true
 	}

@@ -377,7 +377,7 @@ func (s *server) setVariable(w http.ResponseWriter, r *http.Request, session str
 	// An app that keeps its Compose file has its variables from the file; its secrets are
 	// still the console's to set (editSecrets rewrites the overlay).
 	if rec.Compose != nil && !form.Secret {
-		form.Notice = sentence{plain(fileEditedSentence + " Change the file in Configure and deploy it.")}
+		form.Notice = sentence{plain(fileEditedSentence + " Change the file in Configure › Source and deploy it.")}
 		refuse(http.StatusConflict, &form)
 		return
 	}
@@ -542,7 +542,7 @@ func (s *server) saveEnvText(w http.ResponseWriter, r *http.Request, session str
 		return
 	}
 	if rec.Compose != nil {
-		s.variablesPage(w, r, http.StatusConflict, id, variablesExtras{Notice: sentence{plain(fileEditedSentence + " Change the file in Configure and deploy it.")}})
+		s.variablesPage(w, r, http.StatusConflict, id, variablesExtras{Notice: sentence{plain(fileEditedSentence + " Change the file in Configure › Source and deploy it.")}})
 		return
 	}
 

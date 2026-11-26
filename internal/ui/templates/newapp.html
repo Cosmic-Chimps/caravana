@@ -22,7 +22,7 @@
   <label class="cv-fld" for="repository">
     <span class="cv-label">Repository</span>
     <input class="cv-field cv-field-mono" id="repository" type="text" name="repository" value="{{.Repository.Value}}" placeholder="https://github.com/you/app.git" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Repository.Error}} aria-invalid="true" aria-describedby="repository-error"{{end}}{{if eq .Focus "repository"}} autofocus{{end}}>
-    <span class="cv-data-muted cv-hint">https://host/path, ssh://git@host/path or git@host:path. The Dockerfile in it is built on this server. For an SSH address on a host other than github.com or gitlab.com, give the host's key in Configure afterwards.</span>
+    <span class="cv-data-muted cv-hint">https://host/path, ssh://git@host/path or git@host:path. The Dockerfile in it is built on this server. For an SSH address on a host other than github.com or gitlab.com, give the host's key in Configure › Source afterwards.</span>
     {{template "field-error" .Repository}}
   </label>
 

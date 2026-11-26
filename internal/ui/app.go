@@ -1203,7 +1203,7 @@ func refuseDeploy(form *deployForm, err error) (status int, notice sentence, ok 
 	case errors.Is(err, service.ErrHostAddressUnknown):
 		return http.StatusConflict, sentence{plain("Caravana can't tell this installation's public address, so it can't make the DNS record for the domain. Set CARAVANA_PUBLIC_URL to an address that resolves. Nothing was deployed.")}, true
 	case errors.Is(err, service.ErrAppNotDefined):
-		return http.StatusConflict, sentence{plain("This app has no definition yet, so there is nothing to deploy. Define it in Configure, or deploy a Compose file.")}, true
+		return http.StatusConflict, sentence{plain("This app has no definition yet, so there is nothing to deploy. Define it in Configure › Source, or deploy a Compose file.")}, true
 	case errors.As(err, &fieldErr):
 		if onField(fieldErr.Field, fieldErr.Message) {
 			return http.StatusUnprocessableEntity, nil, true
