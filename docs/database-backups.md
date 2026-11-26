@@ -12,8 +12,8 @@ backup: {engine: mysql}      # or postgres, mongodb; schedule, keep and restore 
 ```
 
 In the console, the Backups tab offers "Back up daily" on a service whose image is `postgres`, `mysql`, `mariadb`
-or `mongo` (the last path segment of the image, any registry or tag) when it has a port. The Compose form has the
-same choice in its Backup section.
+or `mongo` (the last path segment of the image, any registry or tag) when it has a port. The Compose form of New app has the
+same choice in its Backup section; for an app that exists, use the Backups tab ("Back up daily", "Change the policy…").
 
 ## What each engine runs
 

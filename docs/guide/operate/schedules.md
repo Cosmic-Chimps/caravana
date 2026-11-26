@@ -7,7 +7,7 @@ A schedule runs a command on a timer: clear a cache every night, sync a feed eve
   <img alt="The Schedules page: the shop project's schedules, each with its next run, its last run and a strip of the last 14 runs." src="../../images/schedules-light.png" width="760">
 </picture>
 
-Open **Schedules** in the sidebar. Each row opens to show what the schedule did last, how long its runs usually take, its settings, and its buttons. For one app, the app's Configure page has a **Schedules** panel with **Manage schedules** and **New schedule**.
+Open **Schedules** in the sidebar. Each row opens to show what the schedule did last, how long its runs usually take, its settings, and its buttons. For one app, the **Schedules** panel on the app's **Configure › Overview** lists its schedules and has **Manage schedules** and **New schedule**.
 
 ## In a new copy or in the running copy
 

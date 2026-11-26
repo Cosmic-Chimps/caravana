@@ -79,7 +79,7 @@ A failed (red) mark means something is broken; a warning (amber) mark means it n
 | What it says | What it means | What to do |
 | --- | --- | --- |
 | **Shop › staging › web: v7 failed during its rollout.** (or **failed its health checks.**, or **didn't start.**), then which version keeps running. (Button **View deployment**) | The latest deploy failed or was reverted. The sentence says which version keeps running, if any. | Open the deployment entry on the Deployments tab for the reason, then Logs. See [Troubleshooting](../host/troubleshooting.md). |
-| **1 copy of Shop › staging › web/web ran out of memory.** (**Raise memory**) | Nomad killed a copy for passing its memory ceiling. | Raise the service's memory on Configure. See [Copies, memory and health checks](../configure/resources.md). |
+| **1 copy of Shop › staging › web/web ran out of memory.** (**Raise memory**) | Nomad killed a copy for passing its memory ceiling. | Raise the service's memory on **Configure › Services**. See [Copies, memory and health checks](../configure/resources.md). |
 | **1 copy of Shop › staging › web/web keeps restarting.** (**View logs**) | Restarts plus failed copies in the last hour reached 3. | Read the logs. Usually the app crashes at start. |
 | **1 copy of Shop › staging › web/web is failing its health check.** (**View logs**) | A copy fails its check outside a rollout. | Read the logs and check the health path. |
 | **The latest backup of Shop › production › db/db to main failed.** (**Open backups**) | The newest backup run failed. | Open Backups; the run says why. See [Backups](backups.md). |

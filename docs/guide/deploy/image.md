@@ -23,7 +23,7 @@ Open **New app** from the Apps page and stay on the **Image** tab. The form has 
 | **Health check path** | Used with a port. It starts as `/`. Leave it empty to get a TCP check instead of an HTTP one. |
 
 The form makes one service named like the app, with one copy. Anything else (more copies, memory, environment
-variables, volumes, more domains) you set afterwards on the app's **Configure** tab. An app with several services is
+variables, volumes, more domains) you set afterwards on the app's **Configure** pages: **Services**, **Variables & secrets** and **Domains**. The image and port are on **Source**. An app with several services is
 better made from a [Compose file](compose.md).
 
 There are two buttons:
@@ -32,11 +32,12 @@ There are two buttons:
 - **Create without deploying** only saves it. The image is optional here: you can name the image your CI has not pushed
   yet, or leave the image, port and domain out and create the app by name only. The app's page says "Nothing is deployed
   yet". If you gave an image, the Running tab offers **Deploy now** and **Create a webhook token**. If you gave only a
-  name, it says "No definition yet." and offers **Define it in Configure** and **Deploy from Compose**. A port or a domain without an image is refused, since
+  name, it says "No definition yet." and offers **Define it in Configure › Source** and **Deploy from Compose**. A port or a domain without an image is refused, since
   there would be nothing for them to belong to.
 
-An app with only a name has no definition, so it cannot be deployed until you give it one in **Configure** (**Define the
-app**), from a [Compose file](compose.md), or through the [API](../reference/api.md).
+An app with only a name has no definition, so it cannot be deployed until you give it one on **Configure › Source**, which
+opens with a **Define the app** form (**Image**, **Container port**, **Domain**, **Health check path**, and **Define and
+deploy**), from a [Compose file](compose.md), or through the [API](../reference/api.md).
 
 ## What the image reference may be
 

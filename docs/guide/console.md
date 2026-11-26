@@ -75,7 +75,7 @@ Click an app to open it. Its header shows its name, status, addresses and a summ
 | --- | --- |
 | **Running** | The copies with their status, version, restarts, CPU and memory. Below them, **Run a command**, a **Terminal** link for each copy and **Recent actions**. [Stop, start, restart, run a command](operate/commands.md) |
 | **Deployments** | The deploy form and the history of every deploy, with its stages, and **Redeploy this version**, **Export jobspec** and a download of the Compose file. [How a deploy works and rollback](deploy/rollback.md) |
-| **Configure** | The app's settings: copies and size, image, port and health check, domains, variables and secrets, schedules, webhook, deploy token, export and delete. |
+| **Configure** | The app's settings, in six sections: **Overview**, **Source**, **Services**, **Variables & secrets**, **Domains** and **Integrations**. See below. |
 | **Logs** | The Logs page, filtered to this app. |
 | **Requests** | The Requests page, filtered to this app. |
 | **Backups** | Backups and restores of the app's databases and volumes. [Backups and restore](operate/backups.md) |
@@ -85,9 +85,21 @@ Click an app to open it. Its header shows its name, status, addresses and a summ
   <img alt="The Running tab of an app with its copies table." src="../images/app-running-light.png" width="760">
 </picture>
 
-**Configure** links to two pages of their own: **Manage variables and secrets**
-([Variables and secrets](configure/variables.md)) and **Manage domains** ([Domains and
-HTTPS](configure/domains.md)).
+Configure has a side menu with six sections, each its own page with its own form, and each save is its own deploy:
+
+| Section | What it holds |
+| --- | --- |
+| **Overview** | A read-only summary of the app: its source, variables and secrets, services, domains, backups, schedules and integrations, each with a button to the page that changes it. **Delete app…** is at the bottom. |
+| **Source** | What the app runs: an image and port for each service, the Compose file for an app made from one, or the repository and build for an app built from Git. |
+| **Services** | Copies, size and health check of each service, with its placement and scaling. [Copies, memory and health checks](configure/resources.md) |
+| **Variables & secrets** | [Variables and secrets](configure/variables.md) |
+| **Domains** | [Domains and HTTPS](configure/domains.md) |
+| **Integrations** | The webhook token, a deploy token for CI, and **Export jobspec**. [From CI](deploy/ci.md) |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../images/app-configure-dark.png">
+  <img alt="The Overview section of Configure for the web app: a side menu with six sections and read-only panels for source, variables and secrets, services, domains, backups, schedules and integrations." src="../images/app-configure-light.png" width="760">
+</picture>
 
 ## Settings
 

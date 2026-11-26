@@ -100,7 +100,7 @@ On the host, `sudo caravana admin create-token --name ci [--expires-in <duration
 
 ### Deploy tokens
 
-A token made with **Only for one app** (a **Project** and an **App name**) is a **deploy token**: it can deploy that app in every environment of its project, read its deployments and promote it, and nothing else. It is the token CI should have. You can also make one from the app's Configure page. See [From CI](../deploy/ci.md) for how to use it.
+A token made with **Only for one app** (a **Project** and an **App name**) is a **deploy token**: it can deploy that app in every environment of its project, read its deployments and promote it, and nothing else. It is the token CI should have. You can also make one from the app's **Configure › Integrations** page. See [From CI](../deploy/ci.md) for how to use it.
 
 ## Inviting people
 

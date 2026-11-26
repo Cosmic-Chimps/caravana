@@ -12,7 +12,7 @@ To find out why:
 
 1. Open the app's **Deployments** tab. The failed entry shows its stages (how far the deploy got) and an error line with the reason. Common reasons are below.
 2. Open the app's **Logs**. A failed copy stays listed and readable for a while, so you can read what it printed before it died. See [Logs](../operate/logs.md).
-3. Check the **health check** on Configure. By default it is a TCP check of the port, every 10 seconds with a 2-second timeout. If the app serves HTTP and takes time to start, a path check that returns 200 only when the app is ready is better. See [Copies, memory and health checks](../configure/resources.md).
+3. Check the **health check** on **Configure › Services**. By default it is a TCP check of the port, every 10 seconds with a 2-second timeout. If the app serves HTTP and takes time to start, a path check that returns 200 only when the app is ready is better. See [Copies, memory and health checks](../configure/resources.md).
 
 The reasons Caravana words for a deploy that never started:
 
@@ -22,7 +22,7 @@ The reasons Caravana words for a deploy that never started:
 | the registry refused the stored credentials | See "Image not found" below. |
 | the registry couldn't be reached | The registry didn't answer. Try again; check the host's outbound network and DNS. |
 | Nomad couldn't be reached | The host's Nomad isn't answering. Check `sudo systemctl status nomad` and `sudo caravana-nomad status`. |
-| Nomad rejected the job | Nomad refused what Caravana registered. The message names the reason; if it names a limit (a memory or health-check value), change it on Configure. |
+| Nomad rejected the job | Nomad refused what Caravana registered. The message names the reason; if it names a limit (a memory or health-check value), change it on **Configure › Services**. |
 | a job with this name already exists in Nomad and caravana didn't create it | Another job in Nomad has this app's ID. Give your app another name, or remove the other job yourself (`sudo caravana-nomad job status <name>` shows it). |
 | the Nomad job changed while deploying | Two changes raced. Deploy again. |
 
@@ -57,11 +57,11 @@ See [Domains and HTTPS](../configure/domains.md) and [Certificates](../../certif
 
 The needs-you list says "1 copy of Shop › staging › web/web ran out of memory." Nomad killed a copy because it went past its memory ceiling. A service reserves 256 MB by default and may burst to the larger of its reservation and 1024 MB (the installer turns on Nomad's memory oversubscription for that).
 
-Choose **Raise memory** on the item, or set **Memory** (the reservation) and **Ceiling** on the service's Configure page, then deploy. If the app really needs more, check the host's room: **Monitoring › This host** says "Room for about N more apps". See [Copies, memory and health checks](../configure/resources.md).
+Choose **Raise memory** on the item, or set **Memory** (the reservation) and **Ceiling** on the service's **Configure › Services** page, then deploy. If the app really needs more, check the host's room: **Monitoring › This host** says "Room for about N more apps". See [Copies, memory and health checks](../configure/resources.md).
 
 ## A copy keeps restarting
 
-The list says "1 copy of Shop › staging › web/web keeps restarting." It appears when restarts and failed copies in the last hour reach 3. Open **View logs**: the last lines before each death are usually the cause (a bad setting, a missing variable or secret, a database that isn't reachable). If a copy restarts because of memory, you'll also see the out-of-memory item. A failing health check doesn't restart a copy by itself: during a deploy it fails the deploy, and later the list says "1 copy of Shop › staging › web/web is failing its health check." If the check is too strict for a slow app, lengthen **Every** or **Timeout** on Configure.
+The list says "1 copy of Shop › staging › web/web keeps restarting." It appears when restarts and failed copies in the last hour reach 3. Open **View logs**: the last lines before each death are usually the cause (a bad setting, a missing variable or secret, a database that isn't reachable). If a copy restarts because of memory, you'll also see the out-of-memory item. A failing health check doesn't restart a copy by itself: during a deploy it fails the deploy, and later the list says "1 copy of Shop › staging › web/web is failing its health check." If the check is too strict for a slow app, lengthen **Every** or **Timeout** on **Configure › Services**.
 
 ## "Nomad refused" and "run the installer again"
 
@@ -116,7 +116,7 @@ sudo caravana-nomad alloc status <id>      # one copy
 sudo caravana-nomad alloc logs <id>
 ```
 
-Looking is safe. Changes made directly to a job in Nomad aren't recorded by Caravana and the next deploy replaces them. To manage an app with plain Nomad, export its job (Configure › Export) and see [How a deploy works](../deploy/rollback.md).
+Looking is safe. Changes made directly to a job in Nomad aren't recorded by Caravana and the next deploy replaces them. To manage an app with plain Nomad, export its job (**Configure › Integrations › Export jobspec**) and see [How a deploy works](../deploy/rollback.md).
 
 ## Report a bug
 

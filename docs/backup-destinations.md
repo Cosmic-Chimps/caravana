@@ -47,7 +47,8 @@ backup:
 
 On the **Backups** tab each service has a **Where backups go…** form (the destination, "Also copy to", "Keep in each
 copy") that saves as a deploy of the app on the revision the page was drawn from. The policy line under the service
-says it: "to main, copied to offsite (keeps 14)". The Compose form's backup part has the same three inputs, and a
+says it: "to main, copied to offsite (keeps 14)". The Compose form of New app has the same three inputs in its Backup section (the form of an app that exists holds
+only the file and keeps these as they are), and a
 Compose overlay takes `destination`, `copyTo` and `copyKeep` under `backup`.
 
 An unknown destination name, a copy to the destination the backups already go to, a duplicate, more than two copies,

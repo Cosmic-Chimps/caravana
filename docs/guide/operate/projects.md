@@ -78,7 +78,7 @@ What is not copied:
 - **domains**: an address belongs to one environment, so the copy has none, and its services' published port
   numbers are cleared too. Set them for the new environment;
 - **secret values**: Caravana never kept them in its database. A deploy of the copy is refused until each
-  secret has a value. Right after the copy you land on its **Configure** tab, which names once the secrets that
+  secret has a value. Right after the copy you land on its **Configure** tab (**Overview**), which names once the secrets that
   still need one ("Copied to `staging`. Set its domains and these secrets before deploying: …"). Secrets that are
   references to a secret provider need nothing, since they are read at each deploy;
 - the webhook token, the deploy history, and the contents of volumes and of backups.
@@ -136,7 +136,7 @@ On **Project settings**:
 - **Delete project…** asks you to type the project's name, and works only when the project has no apps ("no
   app is deleted for you"). Default cannot be deleted.
 
-Deleting an app is on its **Configure** tab, and removes its copies, its history and its volumes.
+Deleting an app is on its **Configure** tab: **Overview** has **Delete app…** at the bottom. It removes its copies, its history and its volumes.
 
 ## Settings of a project
 

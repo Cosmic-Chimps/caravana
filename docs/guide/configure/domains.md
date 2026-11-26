@@ -6,7 +6,8 @@ places that draw the same rows:
 
 - **Domains** in the sidebar (under **Configure**), which lists every domain of every app you may see, with
   a project and app filter.
-- An app's own page: **Configure**, then **Manage domains**, which lists only that app's domains.
+- An app's own page: **Configure › Domains** (the **Overview** section has a **Manage domains** button for it), which lists
+  only that app's domains.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../images/domains-dark.png">
@@ -18,8 +19,10 @@ places that draw the same rows:
 1. Open **Domains** (or the app's Domains page) and find **Add a domain**.
 2. Type the **Domain**, for example `shop.example.com`. Capital letters are lowercased.
 3. Choose where it **Sends traffic to**: an app, and a service when the app has several. A service's
-   port is set in **Configure**; every domain of a service goes to the same port. If a service has several
-   ports, **Configure** has a **Domains go to** select to pick which.
+   port is set on **Configure › Source** (**Container port**); every domain of a service goes to the same port. If a
+   service has several ports, Source has a **Domains go to** select to pick which. For an app made from a Compose file
+   the ports are the file's. A service built from Git has no port field in the console: its port is set when the
+   app is made, or through the API.
 4. Optionally set a **Path**, such as `/api`. Only requests under that path reach the app, and the path is kept
    (it is not stripped).
 5. Create the DNS record the panel shows, where you manage DNS for the domain: **Type** `A` (and `AAAA` when

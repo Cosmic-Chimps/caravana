@@ -101,7 +101,7 @@ the confirmation, when:
 
 ## Export a jobspec
 
-**Export jobspec** on a history entry, or on the **Export** panel of **Configure** (for the live version), downloads the
+**Export jobspec** on a history entry, or on the **Export** panel of **Configure › Integrations** (for the live version), downloads the
 app as a plain [Nomad](https://developer.hashicorp.com/nomad) job file, `<app>.nomad.hcl`, the job Caravana would run for
 that deployment. It is there so that Caravana is never a trap: the app is described in a standard format that Nomad runs by
 itself (`nomad job run web.nomad.hcl`), and uninstalling Caravana leaves your apps running.

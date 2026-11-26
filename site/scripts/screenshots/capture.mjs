@@ -62,10 +62,20 @@ const SCREENS = {
   'new-app-git': { path: '/apps/new?from=git', ready: 'form', h: 1100 },
   'app-running': { path: `/apps/${WEB}`, ready: 'main', h: 960 },
   'app-deployments': { path: `/apps/${WEB}/deployments`, ready: 'main', h: 1180 },
-  'app-configure': { path: `/apps/${WEB}/configure`, ready: 'main', h: 1000 },
+  'app-configure': { path: `/apps/${WEB}/configure`, ready: 'main', h: 1200 },
+  'app-configure-source': { path: `/apps/${WEB}/configure/source`, ready: 'main', h: 900 },
+  'app-configure-services': { path: `/apps/${WEB}/configure/services`, ready: 'main', h: 1000 },
+  'app-configure-integrations': { path: `/apps/${WEB}/configure/integrations`, ready: 'main', h: 900 },
   'app-variables': { path: `/apps/${API}/variables`, ready: 'main', h: 1000 },
   'app-domains': { path: `/apps/${WEB}/domains`, ready: 'main', h: 1000 },
   'app-backups': { path: `/apps/${DB}/backups`, ready: 'main', h: 1120 },
+  'app-backups-policy': {
+    path: `/apps/${DB}/backups`, ready: 'main', h: 1560,
+    steps: async (page) => {
+      await page.locator('details.cv-confirm > summary:has-text("Change the policy")').first().click();
+      await page.locator('form[action$="/backups/policy/change"]').first().waitFor();
+    },
+  },
   'run-command': {
     path: `/apps/${WEB}`, ready: 'form.cv-runform', clip: ['section[aria-labelledby="run-title"]'],
     steps: async (page) => {

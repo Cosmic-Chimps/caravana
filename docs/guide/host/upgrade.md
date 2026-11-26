@@ -95,7 +95,7 @@ curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/latest/download/in
   sudo bash -s -- --uninstall
 ```
 
-This removes Caravana's service and binary and the updater (its script, timer, status and logs), stops the agent's timer and deletes its `node.env`, and revokes Caravana's Nomad token. The agent's program and units stay, because Nomad and the private network need them. **Nomad, the private network, Docker, Traefik and every app keep running**, so your apps stay up. The console's domain answers 502 until Caravana is installed again. Export the apps' jobspecs first if you want to manage them with plain Nomad (Configure › Export, see [How a deploy works](../deploy/rollback.md)).
+This removes Caravana's service and binary and the updater (its script, timer, status and logs), stops the agent's timer and deletes its `node.env`, and revokes Caravana's Nomad token. The agent's program and units stay, because Nomad and the private network need them. **Nomad, the private network, Docker, Traefik and every app keep running**, so your apps stay up. The console's domain answers 502 until Caravana is installed again. Export the apps' jobspecs first if you want to manage them with plain Nomad (**Configure › Integrations › Export jobspec**, see [How a deploy works](../deploy/rollback.md)).
 
 Caravana's data stays in `/var/lib/caravana`, and installing again picks it up. Add `--purge` to delete it as well: `... | sudo bash -s -- --uninstall --purge`. On a server that joined a cluster, the command is `--leave`: see [More servers](servers.md).
 

@@ -101,8 +101,8 @@ The rules:
 
 The template and its references are not secret: Caravana stores and shows them as written ("template with 2
 references: `bella-prod/DB_USER`, `bella-prod/DB_PASSWORD`"). The built value is never stored, shown or
-logged. The console lists a template secret read-only on the Variables page and the Compose form and keeps
-it through a save; it has no editor for templates yet, so set one through the API or the Compose overlay.
+logged. The console lists a template secret read-only on the Variables page and keeps
+it through a save and through a deploy from the Compose form; it has no editor for templates yet, so set one through the API or the Compose overlay.
 
 **Refresh secrets** renders every template again and rolls the app out when a built value changed, and a
 provider with a template that uses it can't be removed, as for a plain reference.

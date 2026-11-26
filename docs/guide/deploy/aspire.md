@@ -19,7 +19,7 @@ Caravana's reason if the deploy fails.
 - **Run it again and the same app is updated.** Each deploy sends the whole definition, so Caravana records it as a new
   version of the app that you can [roll back](rollback.md), like any other deploy.
 - The app is kept with its Compose file, like any [Compose app](compose.md#the-file-is-kept): the console shows it on
-  Configure and in the history.
+  **Configure › Source** and in the history.
 
 ## Add it to the AppHost
 

@@ -40,10 +40,15 @@ You can make one in two places:
 
 - **Settings › API tokens**, under **New token**, with the **Only for one app** row: choose the project and type the app
   name. The app does not have to exist yet.
-- **Configure** of the app, under **Deploy token**: **Create a deploy token for this app**.
+- **Configure › Integrations** of the app, under **Deploy token**: **Create a deploy token for this app**.
 
 The token (`cvat_…`) is shown once, so copy it into your CI system's secrets right away. Caravana stores only a hash of it.
 You can revoke it on **Settings › API tokens**.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../images/app-configure-integrations-dark.png">
+  <img alt="Configure › Integrations for the web app: the Webhook panel with No webhook token and Create token, the Deploy token panel with Create a deploy token for this app, and the Export panel with Export jobspec." src="../../images/app-configure-integrations-light.png" width="760">
+</picture>
 
 ## From a GitHub repository
 
@@ -193,7 +198,7 @@ call to it makes Caravana look every image of the app up again, and **redeploys 
 changed**, the app was saved since its last healthy deployment, or it was never deployed. It is the right tool when your CI pushes to a moving tag (`latest`, `main`)
 and the app already points at that tag.
 
-1. On the app's **Configure** tab, find **Webhook** and press **Create token**. The page shows the webhook address once
+1. On the app's **Configure › Integrations** page, find **Webhook** and press **Create token**. The page shows the webhook address once
    (**Copy it now. It won't be shown again.**): `https://caravana.example.com/v1/webhooks/shop--staging--web?token=cvwh_…`.
 2. Call it from CI. Prefer the header to the query string, so the token stays out of URLs and logs:
 

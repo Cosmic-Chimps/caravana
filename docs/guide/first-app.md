@@ -86,8 +86,8 @@ read from Nomad when you open the page. The Logs page and its filters are in [Lo
 
 Every change to an app is a deploy. There are two simple ways to try it.
 
-**Change a setting.** Open the **Configure** tab. Under **Copies & size**, set **Copies** to `2` and
-click **Save and deploy**. A new entry appears on the **Deployments** tab, and when it is healthy the
+**Change a setting.** Open the **Configure** tab and choose **Services** in its side menu. Under **Copies & size**, set
+**Copies** to `2` and click **Save and deploy**. A new entry appears on the **Deployments** tab, and when it is healthy the
 **Running** tab lists two copies.
 
 **Deploy a new image.** On the **Deployments** tab, the **Deploy** form has an **Image** field with

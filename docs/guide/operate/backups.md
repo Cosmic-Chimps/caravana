@@ -41,7 +41,7 @@ Use a database engine for a database that has a server: a `volume` backup stops 
 Any of these three ways produces the same policy.
 
 - **The Backups tab.** A service that has no backup yet and whose image is `postgres`, `mysql`, `mariadb` or `mongo` with a port is offered **Back up daily** with the matching database engine. Any other service with a volume is offered **Back up daily** too, with the `volume` engine; its confirmation says "The service stops for a few seconds each time." Choose a **Schedule** (**Every day at 03:00 UTC** or **No automatic backups (Back up now only)**) and **Back up and deploy**. Every service with a volume is also offered **A SQLite file instead**: give the **Database file** (its path inside the service, on one of its volumes; the field starts with the first volume's path) and choose **Back up the file and deploy**. Turning a backup on deploys the app.
-- **The Compose form** (New app › Compose, or Configure › Deploy from Compose): each service has a **Backup** section with **Engine**, **Backup schedule (UTC)**, **Backups to keep** and, for SQLite, **Database file**.
+- **The Compose form of New app** (New app › Compose file): each service has a **Backup** section with **Engine**, **Backup schedule (UTC)**, **Backups to keep** and, for SQLite, **Database file**. The Compose form of an app that exists has only the file and leaves its backups as they are.
 - **The definition**, through the API or a Compose overlay:
 
 ```yaml
@@ -56,6 +56,29 @@ backup:
 The default schedule is every day at 03:00 UTC (`0 3 * * *`) and the default `keep` is 7: Caravana deletes the oldest backups beyond the newest 7 (pinned ones aren't counted, see below). The schedule is a five-field cron line in UTC.
 
 `schedule: never` takes no automatic backups at all. **Back up now**, pinning, and the retention of backups you take by hand still work.
+
+### Change the policy
+
+Each backed-up service on the **Backups** tab has a **Change the policy…** button, next to **Back up now**. It opens a
+form with:
+
+- **Engine**: the engine the service has now, plus the others it can use: the one that matches its image, **Volume
+  (stops the service while it runs)** for a service with a volume, and **SQLite file (the service keeps running)** for a
+  service with a writable volume.
+- **Database file**, drawn when **SQLite file** is among the engines: the database's path inside the service.
+- **Schedule**: **Daily at 03:00 UTC**, **No automatic backups**, or, when the stored schedule is another cron line,
+  **Keep** followed by its words.
+- **Backups to keep**: 1 to 100. Pinned backups are kept besides these.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../images/app-backups-policy-dark.png">
+  <img alt="The Backups tab of the db app with Change the policy… opened: Engine, Database file, Schedule and Backups to keep, and Save and deploy." src="../../images/app-backups-policy-light.png" width="760">
+</picture>
+
+**Save and deploy** changes the policy and deploys the app. The service's restore schedule, where its backups go and
+its copies stay as they are, and a refusal is drawn at the field it is about. The button is not offered while the app is
+stopped, or to someone who may not configure the app. For an app that keeps its Compose file, the change is written
+into the app's Compose settings, beside the file, which is not rewritten.
 
 ## 4. Back up now
 
@@ -88,7 +111,7 @@ A **pin** gives a backup a label so retention never deletes it and it isn't coun
 1. Choose **Pin…** on a backup, keep or change the label (lowercase letters, digits and dashes, at most 32; the default is `golden`) and choose **Pin**. Pinning a label another backup has moves it here.
 2. **Unpin** puts it back under normal retention.
 
-A service can restore its pinned backup on a schedule, for example a public demo that starts each day from the same state. Choose **Restore on a schedule…**, give a five-field cron line in UTC and **Restore the backup pinned as** the label, then **Save and deploy**. Each time, that backup replaces what the service holds. **Stop restoring** removes it. If no backup carries the label the tab says "each restore is refused until one is". A restore that finds the service busy is recorded as skipped; one that fails is recorded failed. Restores started this way read "on schedule from <label>". The same two settings are in the Compose form as **Restore on a schedule (UTC)** and **from the backup pinned as**.
+A service can restore its pinned backup on a schedule, for example a public demo that starts each day from the same state. Choose **Restore on a schedule…**, give a five-field cron line in UTC and **Restore the backup pinned as** the label, then **Save and deploy**. Each time, that backup replaces what the service holds. **Stop restoring** removes it. If no backup carries the label the tab says "each restore is refused until one is". A restore that finds the service busy is recorded as skipped; one that fails is recorded failed. Restores started this way read "on schedule from <label>". The same two settings are in the Compose form of New app as **Restore on a schedule (UTC)** and **from the backup pinned as**.
 
 ## What is not backed up
 

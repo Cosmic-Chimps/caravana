@@ -55,9 +55,9 @@ than `local`: volumes are directories that Caravana creates itself. See
 }
 ```
 
-Send it with a deploy (see [The HTTP API](../reference/api.md)). Configure shows what a service mounts under
+Send it with a deploy (see [The HTTP API](../reference/api.md)). **Configure › Services** shows what a service mounts under
 **Also set** › **Volumes**, one line per volume (`/var/lib/postgresql/data → pgdata`, with `(read-only)` when it
-is), and a save of the Configure form keeps them; they are not edited there.
+is), and a save of that form keeps them; they are not edited there.
 
 ## What changes for a service with a volume
 

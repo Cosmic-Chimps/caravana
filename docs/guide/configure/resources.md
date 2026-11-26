@@ -2,39 +2,40 @@
 
 This page covers how many copies of a service run, how much CPU and memory each reserves, how Caravana decides
 a copy is healthy, and the few settings that change how the container starts and resolves names. Most of them
-are on the app's **Configure** tab, one panel per service.
+are on the app's **Configure** tab. **Configure › Services** has one panel per service with **Copies & size** and
+**Health check**, and its placement and scaling below them. The image and container port are on **Configure › Source**.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../../images/app-configure-dark.png">
-  <img alt="The Configure tab of the web app: the Copies and size panel with Copies, CPU, Memory and Ceiling, the Deploy panel with image, container port and health check, and the panels for domains, variables and schedules below." src="../../images/app-configure-light.png" width="760">
+  <source media="(prefers-color-scheme: dark)" srcset="../../images/app-configure-services-dark.png">
+  <img alt="Configure › Services for the web app: a panel for the service with Copies, CPU, Memory and Ceiling, the health check path, interval and timeout, and its placement and scaling." src="../../images/app-configure-services-light.png" width="760">
 </picture>
 
-Every save on **Configure** is a deploy: the button reads **Save and deploy** (or **Save web and deploy** when
-the app has several services), and the new copies must be healthy before the old ones go. If the app changed
-after you opened the page, the form keeps what you typed, and a panel says "This app changed since you opened
-the form." and lists the current values that differ. Save again to deploy what is typed over the current app. An app that keeps a
-Compose file is edited through the file instead, and the per-field form answers "This app is edited through its
-Compose file."
+Every save on **Configure** is a deploy, and each section saves on its own. On Services the button reads **Save and
+deploy** (or **Save and deploy web** when the app has several services, and only that service is saved), and the new
+copies must be healthy before the old ones go. If the app changed after you opened the page, the form keeps what you
+typed, and a panel says "This app changed since you opened the form." and lists the current values that differ. Save
+again to deploy what is typed over the current app. An app that keeps a Compose file is a special case, described under
+[Apps that keep a Compose file](#apps-that-keep-a-compose-file).
 
 ## The fields
 
 Each field has a name in the console and a name in the app's definition (what the API and the Compose overlay
-use). Where the console does not offer a field, **Configure** shows it read-only under **Also set** and a save
-keeps it.
+use). Where the console does not offer a field, **Configure › Services** shows it read-only under **Also set** and a
+save keeps it.
 
-| What | In the console (Configure) | In the definition | Default and limits |
+| What | In the console | In the definition | Default and limits |
 | --- | --- | --- | --- |
-| Number of copies | **Copies** | `replicas` | 1. At least 1. A service with a volume or a published port runs one copy. |
-| CPU | **CPU** (MHz) | `resources.cpuMHz` | 100 MHz, set by `CARAVANA_DEFAULT_CPU_MHZ`. |
-| Memory reserved | **Memory** (MB) | `resources.memoryMB` | 256 MB, set by `CARAVANA_DEFAULT_MEMORY_MB`. At least 10. |
-| Memory ceiling | **Ceiling** (MB) | `resources.memoryMaxMB` | The larger of the reservation and 1024 MB (`CARAVANA_DEFAULT_MEMORY_MAX_MB`). Not below the reservation. |
-| Image | **Image** | `image` | Required. |
-| Container port | **Container port** (shown for a service with one port) | `ports[].containerPort` | 1 to 65535. |
-| Health check | **Health check** (`GET` path), **Every**, **Timeout** | `health.path`, `health.interval`, `health.timeout` | Empty path: a TCP check. Every 10 s, timeout 2 s. |
-| Entrypoint | **Also set** › **Entrypoint**, read-only | `entrypoint` | Empty keeps the image's. |
-| Command and arguments | **Also set** › **Command**, **Arguments**, read-only | `command`, `args` | Empty keeps the image's. |
-| Time to stop | **Also set** › **Stop timeout**, read-only | `stopTimeout` | 1 to 30 seconds. Unset: 30 for a service with a volume, Nomad's 5 otherwise. |
-| Name resolution | **Also set** › **DNS servers**, **DNS search domains**, **DNS options**, read-only | `dns` | None: the server's own. |
+| Number of copies | **Services** › **Copies** | `replicas` | 1. At least 1. A service with a volume or a published port runs one copy. |
+| CPU | **Services** › **CPU** (MHz) | `resources.cpuMHz` | 100 MHz, set by `CARAVANA_DEFAULT_CPU_MHZ`. |
+| Memory reserved | **Services** › **Memory** (MB) | `resources.memoryMB` | 256 MB, set by `CARAVANA_DEFAULT_MEMORY_MB`. At least 10. |
+| Memory ceiling | **Services** › **Ceiling** (MB) | `resources.memoryMaxMB` | The larger of the reservation and 1024 MB (`CARAVANA_DEFAULT_MEMORY_MAX_MB`). Not below the reservation. |
+| Image | **Source** › **Image** | `image` | Required. |
+| Container port | **Source** › **Container port** (shown for a service with one port) | `ports[].containerPort` | 1 to 65535. |
+| Health check | **Services** › **Health check**: **Path** (after `GET`), **Every**, **Timeout** | `health.path`, `health.interval`, `health.timeout` | Empty path: a TCP check. Every 10 s, timeout 2 s. |
+| Entrypoint | **Services** › **Also set** › **Entrypoint**, read-only | `entrypoint` | Empty keeps the image's. |
+| Command and arguments | **Services** › **Also set** › **Command**, **Arguments**, read-only | `command`, `args` | Empty keeps the image's. |
+| Time to stop | **Services** › **Also set** › **Stop timeout**, read-only | `stopTimeout` | 1 to 30 seconds. Unset: 30 for a service with a volume, Nomad's 5 otherwise. |
+| Name resolution | **Services** › **Also set** › **DNS servers**, **DNS search domains**, **DNS options**, read-only | `dns` | None: the server's own. |
 
 Durations in the definition are strings such as `"10s"`. Leaving a numeric field empty in the console means
 "the default".
@@ -52,6 +53,14 @@ In the definition a service looks like this:
 }
 ```
 
+## Apps that keep a Compose file
+
+For an app that keeps its Compose file (see [From a Compose file](../deploy/compose.md#the-file-is-kept)), **Configure ›
+Services** shows each service's copies and size as text with the note *Set in the Compose file.*, and its placement and
+scaling with *Set through the API, in the Compose settings.* Change copies and size in the file on **Configure › Source**;
+placement and scaling of such an app are set through the API. The
+health check is still a form on Services: it is written into the app's Compose settings, beside the file.
+
 ## Copies
 
 **Copies** is how many identical copies of the service run. Two or more give you a service that keeps
@@ -60,7 +69,7 @@ spread over the servers rather than piled onto the emptiest one. To say which se
 [Placement and moving work between servers](../../placement-and-drain.md).
 
 If a service should add and remove copies by itself, set up scaling instead; the **Copies** field then reads
-"Set by scaling" with the range, and the count is owned by the Scaling panel. See
+"Set by scaling" with the range, and the count is owned by the **Scaling** panel on the same page. See
 [Autoscaling](../../autoscaling.md).
 
 ## CPU and memory
@@ -100,7 +109,7 @@ A service that receives traffic needs a health check. If a service has a port, t
 `health` block; without a port the service is a worker, with no address and no check, and a `health` block on
 it is refused.
 
-- With a **Health check** path (`health.path`, which must start with `/`), Caravana makes an HTTP `GET` on that
+- With a **Health check** path (**Path** on Services, `health.path`, which must start with `/`), Caravana makes an HTTP `GET` on that
   path.
 - With the path empty, it opens a TCP connection to the port instead.
 - **Every** is the time between checks and **Timeout** how long one check may take. The timeout must be shorter
@@ -124,7 +133,7 @@ By default a service runs what its image says. To change that:
 - `command` is one program name and `args` its arguments, which follow the entrypoint.
 
 Compose's `entrypoint` and `command` map to these (a `command` list becomes `command` and `args`). The console
-does not edit them: set them through the API or the Compose file, and **Configure** shows them under **Also
+does not edit them: set them through the API or the Compose file, and **Configure › Services** shows them under **Also
 set**. See [From a Compose file](../deploy/compose.md) and [The HTTP API](../reference/api.md).
 
 ## Custom DNS

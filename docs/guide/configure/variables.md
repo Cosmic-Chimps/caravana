@@ -2,8 +2,9 @@
 
 An app's configuration reaches its containers as environment variables. Caravana keeps two kinds: **plain
 variables**, which anyone who can see the app may read, and **secrets**, whose values are write-only. Both
-are managed on the app's **Variables & secrets** page: open the app, choose **Configure**, then press
-**Manage variables and secrets**.
+are managed on the app's **Variables & secrets** page: open the app, choose **Configure**, then **Variables &
+secrets** in its side menu (the **Overview** section has a **Manage variables and secrets** button that opens the same
+page).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../images/app-variables-dark.png">
@@ -44,7 +45,7 @@ Two things to know about where values live:
 Every change on this page is a deploy. The page says so ("One row per name. A change deploys the app."),
 and after you submit you land on the **Deployments** tab to watch the rollout.
 
-1. Open **Configure**, then **Manage variables and secrets**.
+1. Open **Configure › Variables & secrets**.
 2. In **Add or change**, choose the **Service** (asked only when the app has more than one), type the **Name**
    and the **Value**, leave **Keep as a secret** ticked or not, and press **Set and deploy**.
 
@@ -95,7 +96,7 @@ What this means when you deploy from outside the console:
 
 An app made from a Compose file keeps the file, so its plain variables come from the file. On such an app the
 Variables page shows them read-only ("This app is edited through its Compose file."); change them in the file,
-under **Configure**. Secrets can still be added and removed on this page: the console rewrites the secret
+under **Configure › Source**. Secrets can still be added and removed on this page: the console rewrites the secret
 names in the kept overlay for you, and no secret value is ever stored in the kept file or in a deployment
 record.
 

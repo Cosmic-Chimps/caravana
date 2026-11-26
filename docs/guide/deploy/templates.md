@@ -23,8 +23,8 @@ other app.
    produce. Nothing is made: no app, no password, no deploy. Then press **Create**.
 
 You land on the app's **Deployments** tab, which carries an *Installed from the … template* notice with the notes, now
-filled with your answers, and the rollout in the history. On **Configure**, the app says **Template ·** followed by the
-template's title and version.
+filled with your answers, and the rollout in the history. On **Configure › Overview**, the **Source** panel says **Template ·** followed by the
+template's title and version. Because the app is made from a Compose file, **Configure › Source** shows that file for editing.
 
 ## What is in the catalog
 

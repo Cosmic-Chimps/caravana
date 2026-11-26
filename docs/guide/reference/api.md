@@ -71,7 +71,7 @@ never get that error.
 
 A deploy token is an API token limited to one app, for CI. Make it in **Settings › API tokens** by
 filling **Only for one app** (a project and an app name; the app does not have to exist yet), on the
-app's **Configure** tab with **Create a deploy token for this app**, or by sending a `scope` to
+app's **Configure › Integrations** page with **Create a deploy token for this app**, or by sending a `scope` to
 `POST /v1/tokens`:
 
 ```bash
@@ -221,7 +221,7 @@ GitHub Action sets these headers for you.
 
 ## Webhooks
 
-An app can have a webhook token, made in **Configure**. `POST /v1/webhooks/{id}` with the token in the
+An app can have a webhook token, made on **Configure › Integrations**. `POST /v1/webhooks/{id}` with the token in the
 `token` query parameter or as `Authorization: Bearer` redeploys the stored app when an image changed; otherwise
 it answers `200` with `changed: false` and deploys nothing. A webhook
 token and an API token never stand in for each other. A webhook-only listener can expose just this
