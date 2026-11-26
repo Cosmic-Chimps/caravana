@@ -2464,7 +2464,8 @@ sections, one concern per page and one deploy per change. `plan.md` D1–D9 are 
   (`console-edit` reads Source and Services, `console-compose` and `console-compose-file-edit` deploy a file with no per-service inputs and check
   the health check and secret survive through the API, `console-create-only` defines on Source, `console-placement` and `console-space` use
   Services and Source); the whole `TestConsoleLab` passed on 2026-11-26 (37 min, after `console-project-page` learned the Previews and Requests sidebar items 049 and 047 added). The designer's
-  review (contract section 9) is pending. Not in 059: copies and size as inputs for a kept-file app, a Compose-file editor for them.
+  review, the impeccable critique and the last look were done the same day at 1440 and 390 px in both themes (contract §9: findings,
+  rulings, and two points left to the maintainer, D4 and "Also set"). Not in 059: copies and size as inputs for a kept-file app, a Compose-file editor for them.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
