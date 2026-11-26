@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -573,10 +574,31 @@ func publishedRows(svc app.Service, host string) []defRow {
 	}
 }
 
+// limitRows are the service's ulimits and sysctls, read-only: "nofile 65536:65536" per limit and "name = value"
+// per sysctl, sorted. None when it sets neither.
+func limitRows(svc app.Service) []defRow {
+	var rows []defRow
+	if len(svc.Ulimits) > 0 {
+		var limits []string
+		for _, name := range slices.Sorted(maps.Keys(svc.Ulimits)) {
+			limits = append(limits, name+" "+svc.Ulimits[name].String())
+		}
+		rows = append(rows, defRow{Label: "Ulimits", Values: limits})
+	}
+	if len(svc.Sysctls) > 0 {
+		var sysctls []string
+		for _, k := range slices.Sorted(maps.Keys(svc.Sysctls)) {
+			sysctls = append(sysctls, k+" = "+svc.Sysctls[k])
+		}
+		rows = append(rows, defRow{Label: "Sysctls", Values: sysctls})
+	}
+	return rows
+}
+
 // alsoSet lists the facts of a service the form can't change and a save keeps,
 // for the grid's "Also set" panel: the entrypoint, the command and its
 // arguments, the volumes (mount → name), the backup, and the ports and health
-// check port the form has no input for, and the DNS settings. Nothing when
+// check port the form has no input for, and the DNS settings, ulimits and sysctls. Nothing when
 // none is set.
 func alsoSet(svc app.Service, s editService, host string) []defRow {
 	var rows []defRow
@@ -584,6 +606,7 @@ func alsoSet(svc app.Service, s editService, host string) []defRow {
 		rows = append(rows, defRow{Label: "Entrypoint", Values: []string{strings.Join(svc.Entrypoint, " ")}})
 	}
 	rows = append(rows, dnsRows(svc)...)
+	rows = append(rows, limitRows(svc)...)
 	rows = append(rows, publishedRows(svc, host)...)
 	if svc.Command != "" {
 		rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})
@@ -656,6 +679,7 @@ func servicePanels(a app.App, host string) []defPanel {
 			rows = append(rows, defRow{Label: "Entrypoint", Values: svc.Entrypoint})
 		}
 		rows = append(rows, dnsRows(svc)...)
+		rows = append(rows, limitRows(svc)...)
 		rows = append(rows, publishedRows(svc, host)...)
 		if svc.Command != "" {
 			rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})

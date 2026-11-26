@@ -50,7 +50,7 @@ type ServiceChange struct {
 	ImageTo, DigestTo string
 	// Changed names the parts of the service's shape the promotion replaces
 	// with the source's and that differ: any of "entrypoint", "command", "args", "ports",
-	// "health", "volumes", "stopTimeout", "dns", "placement", "disconnect" and "build".
+	// "health", "volumes", "stopTimeout", "dns", "ulimits", "sysctls", "placement", "disconnect" and "build".
 	Changed []string
 }
 
@@ -282,7 +282,8 @@ func (s *Service) planPromotion(ctx context.Context, appID, to string) (promotio
 // promoted builds the target as a promotion leaves it, from the target as
 // stored and the source as its newest deployment deployed it (research R4):
 // for each service both have, the source's image, build source, entrypoint, command, arguments, ports,
-// health check, volume mounts, stop timeout, DNS and placement rules (they name servers and labels, which
+// health check, volume mounts, stop timeout, DNS, ulimits and sysctls (they are the image's configuration, like
+// its entrypoint) and placement rules (they name servers and labels, which
 // belong to the cluster, not to an environment), and the target's everything else (identities
 // included: an audience belongs to an environment, like a secret). A service
 // only the source has is added whole, without domains. A service only the
@@ -333,6 +334,12 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		if !sameDNS(t.DNS, s.DNS) {
 			change.Changed = append(change.Changed, "dns")
 		}
+		if !maps.Equal(t.Ulimits, s.Ulimits) {
+			change.Changed = append(change.Changed, "ulimits")
+		}
+		if !maps.Equal(t.Sysctls, s.Sysctls) {
+			change.Changed = append(change.Changed, "sysctls")
+		}
 		if !samePlacement(t.Placement, s.Placement) {
 			change.Changed = append(change.Changed, "placement")
 		}
@@ -351,6 +358,7 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		t.Health = cloneHealth(s.Health)
 		t.StopTimeout = s.StopTimeout
 		t.DNS = cloneDNS(s.DNS)
+		t.Ulimits, t.Sysctls = maps.Clone(s.Ulimits), maps.Clone(s.Sysctls)
 		t.Placement = clonePlacement(s.Placement)
 		t.Disconnect = cloneDisconnect(s.Disconnect)
 		t.Build = cloneBuild(s.Build)

@@ -68,6 +68,8 @@ func ScheduleRunJob(a app.App, runID string, svc app.Service, image string, comm
 		}
 	}
 	config = withPullAuth(config, image, private)
+	// A run has the limits its service's copies have.
+	config = withLimits(config, svc)
 
 	var env map[string]string // nil when there are none, so the job has no Env
 	if len(svc.Env) > 0 {

@@ -44,6 +44,13 @@ func service(p *types.Project, sc types.ServiceConfig, ov Overlay) (app.Service,
 		}
 		svc.DNS = &d
 	}
+	var err error
+	if svc.Ulimits, err = ulimits(field, sc); err != nil {
+		return app.Service{}, nil, err
+	}
+	if svc.Sysctls, err = sysctls(field, sc, warn); err != nil {
+		return app.Service{}, nil, err
+	}
 	if len(sc.Command) > 0 {
 		svc.Command, svc.Args = sc.Command[0], slices.Clone(sc.Command[1:])
 	}

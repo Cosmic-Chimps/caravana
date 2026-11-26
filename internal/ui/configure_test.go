@@ -29,6 +29,8 @@ func shopApp() app.App {
 		Services: []app.Service{
 			{Name: "web", Image: "ghcr.io/example/shop:2.1", Entrypoint: []string{"/entry.sh", "--strict"}, Command: "/bin/server", Args: []string{"--port", "8080"},
 				DNS:       &app.DNS{Servers: []string{"1.1.1.1", "10.0.0.2"}, Searches: []string{"corp.example.com"}},
+				Ulimits:   map[string]app.Ulimit{"nofile": {Soft: 65536, Hard: 65536}, "memlock": {Soft: -1, Hard: -1}},
+				Sysctls:   map[string]string{"net.core.somaxconn": "1024"},
 				Env:       []app.EnvVar{{Name: "LOG_LEVEL", Value: "debug-value-x1"}, {Name: "API_KEY", Value: "s3cr3t-value-9f2"}},
 				Ports:     []app.Port{{Name: "http", ContainerPort: 8080}},
 				Domains:   []app.Domain{{Host: "shop.example.com", Port: "http"}},
@@ -163,7 +165,7 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 		for _, want := range []string{"Copies & size", "Copies", "CPU MHz", "Memory MB", "Ceiling MB",
 			"Health check Path GET", "Every s", "Timeout s",
 			"New copies must pass this check before they take traffic; if they don't, the deploy is reverted.",
-			"Also set", "Entrypoint /entry.sh --strict", "DNS servers 1.1.1.1 10.0.0.2", "DNS search domains corp.example.com", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
+			"Also set", "Entrypoint /entry.sh --strict", "DNS servers 1.1.1.1 10.0.0.2", "DNS search domains corp.example.com", "Ulimits memlock -1:-1 nofile 65536:65536", "Sysctls net.core.somaxconn = 1024", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
 			"Placement", "Scaling", "Save and deploy web", "Save and deploy worker"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("Services lacks %q:\n%s", want, got)
@@ -887,6 +889,47 @@ func TestDNSRowsInBothPanels(t *testing.T) {
 		t.Errorf("alsoSet = %v, want %v", got, want)
 	}
 	if got := labels(panelRows(svc)); !reflect.DeepEqual(got, want) {
+		t.Errorf("servicePanels = %v, want %v", got, want)
+	}
+}
+
+// A service's ulimits and sysctls are shown read-only in both panels, sorted, and nothing without them.
+func TestLimitRowsInBothPanels(t *testing.T) {
+	limits := func(rows []defRow) map[string][]string {
+		m := map[string][]string{}
+		for _, r := range rows {
+			if r.Label == "Ulimits" || r.Label == "Sysctls" {
+				m[r.Label] = r.Values
+			}
+		}
+		return m
+	}
+	panelRows := func(svc app.Service) []defRow {
+		var rows []defRow
+		for _, p := range servicePanels(app.App{ID: "shop", Services: []app.Service{svc}}, "") {
+			rows = append(rows, p.Rows...)
+		}
+		return rows
+	}
+
+	svc := app.Service{Name: "web", Image: "x:1"}
+	if got := limits(alsoSet(svc, newEditService(svc), "")); len(got) != 0 {
+		t.Errorf("alsoSet without limits has %v", got)
+	}
+	if got := limits(panelRows(svc)); len(got) != 0 {
+		t.Errorf("servicePanels without limits has %v", got)
+	}
+
+	svc.Ulimits = map[string]app.Ulimit{"nofile": {Soft: 1024, Hard: 65536}, "memlock": {Soft: -1, Hard: -1}}
+	svc.Sysctls = map[string]string{"net.ipv4.tcp_keepalive_time": "600", "net.core.somaxconn": "1024"}
+	want := map[string][]string{
+		"Ulimits": {"memlock -1:-1", "nofile 1024:65536"},
+		"Sysctls": {"net.core.somaxconn = 1024", "net.ipv4.tcp_keepalive_time = 600"},
+	}
+	if got := limits(alsoSet(svc, newEditService(svc), "")); !reflect.DeepEqual(got, want) {
+		t.Errorf("alsoSet = %v, want %v", got, want)
+	}
+	if got := limits(panelRows(svc)); !reflect.DeepEqual(got, want) {
 		t.Errorf("servicePanels = %v, want %v", got, want)
 	}
 }

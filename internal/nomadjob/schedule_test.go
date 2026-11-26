@@ -332,3 +332,27 @@ func TestScheduleRunJobPublishedPorts(t *testing.T) {
 		t.Errorf("run network = %+v, want no ports", n)
 	}
 }
+
+// TestScheduleRunJobLimits: a run has its service's ulimits and sysctls in the docker config, and a service
+// without any gets neither.
+func TestScheduleRunJobLimits(t *testing.T) {
+	one := scheduleApp()
+	svc := one.Services[0]
+	j := ScheduleRunJob(one, "r1", svc, pinnedWorker, []string{"x"}, 256, labSettings(), nil)
+	for _, k := range []string{"ulimit", "sysctl"} {
+		if _, ok := j.TaskGroups[0].Tasks[0].Config[k]; ok {
+			t.Errorf("a service without limits: run has %s", k)
+		}
+	}
+
+	svc.Ulimits = map[string]app.Ulimit{"nofile": {Soft: 4096, Hard: 8192}}
+	svc.Sysctls = map[string]string{"net.core.somaxconn": "512"}
+	j = ScheduleRunJob(one, "r2", svc, pinnedWorker, []string{"x"}, 256, labSettings(), nil)
+	cfg := j.TaskGroups[0].Tasks[0].Config
+	if got, want := cfg["ulimit"], []map[string]any{{"nofile": "4096:8192"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("run ulimit = %v, want %v", got, want)
+	}
+	if got, want := cfg["sysctl"], []map[string]any{{"net.core.somaxconn": "512"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("run sysctl = %v, want %v", got, want)
+	}
+}

@@ -28,6 +28,8 @@ var supported = concat(
 		"services.*.dns", "services.*.dns.*",
 		"services.*.dns_search", "services.*.dns_search.*",
 		"services.*.dns_opt", "services.*.dns_opt.*",
+		"services.*.ulimits", "services.*.ulimits.*", "services.*.ulimits.*.soft", "services.*.ulimits.*.hard",
+		"services.*.sysctls", "services.*.sysctls.*",
 		"services.*.environment", "services.*.environment.*",
 		"services.*.ports", "services.*.ports.*",
 		"services.*.ports.*.name", "services.*.ports.*.target", "services.*.ports.*.published",

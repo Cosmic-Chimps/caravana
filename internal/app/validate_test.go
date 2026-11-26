@@ -246,6 +246,59 @@ func TestValidate(t *testing.T) {
 			a.Services[1].DNS = &DNS{Options: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"}}
 		}, "services[1].dns.options"},
 
+		// Ulimits and sysctls (feature 060).
+		{"valid ulimits", func(a *App, d *Deployment) {
+			a.Services[1].Ulimits = map[string]Ulimit{"memlock": {Soft: -1, Hard: -1}, "nofile": {Soft: 65536, Hard: 65536}}
+		}, ""},
+		{"valid ulimit, soft below hard", func(a *App, d *Deployment) {
+			a.Services[1].Ulimits = map[string]Ulimit{"nofile": {Soft: 1024, Hard: 1048576}, "memlock": {Soft: 0, Hard: 1 << 30}}
+		}, ""},
+		{"valid memlock, soft below unlimited", func(a *App, d *Deployment) {
+			a.Services[1].Ulimits = map[string]Ulimit{"memlock": {Soft: 65536, Hard: -1}}
+		}, ""},
+		{"ulimit nproc", func(a *App, d *Deployment) { a.Services[1].Ulimits = map[string]Ulimit{"nproc": {Soft: 1, Hard: 1}} }, "services[1].ulimits.nproc"},
+		{"ulimit core", func(a *App, d *Deployment) { a.Services[1].Ulimits = map[string]Ulimit{"core": {Soft: 0, Hard: 0}} }, "services[1].ulimits.core"},
+		{"ulimit nofile zero", func(a *App, d *Deployment) { a.Services[1].Ulimits = map[string]Ulimit{"nofile": {Soft: 0, Hard: 10}} }, "services[1].ulimits.nofile.soft"},
+		{"ulimit nofile unlimited", func(a *App, d *Deployment) { a.Services[1].Ulimits = map[string]Ulimit{"nofile": {Soft: 10, Hard: -1}} }, "services[1].ulimits.nofile.hard"},
+		{"ulimit nofile too high", func(a *App, d *Deployment) {
+			a.Services[1].Ulimits = map[string]Ulimit{"nofile": {Soft: 1048576, Hard: 1048577}}
+		}, "services[1].ulimits.nofile.hard"},
+		{"ulimit nofile soft above hard", func(a *App, d *Deployment) {
+			a.Services[1].Ulimits = map[string]Ulimit{"nofile": {Soft: 2000, Hard: 1000}}
+		}, "services[1].ulimits.nofile.soft"},
+		{"ulimit memlock below -1", func(a *App, d *Deployment) {
+			a.Services[1].Ulimits = map[string]Ulimit{"memlock": {Soft: -2, Hard: -1}}
+		}, "services[1].ulimits.memlock.soft"},
+		{"ulimit memlock unlimited soft, limited hard", func(a *App, d *Deployment) {
+			a.Services[1].Ulimits = map[string]Ulimit{"memlock": {Soft: -1, Hard: 1000}}
+		}, "services[1].ulimits.memlock.soft"},
+		{"valid sysctls", func(a *App, d *Deployment) {
+			a.Services[1].Sysctls = map[string]string{"net.ipv4.tcp_keepalive_time": "600", "net.core.somaxconn": "1024", "net.ipv4.conf.all.rp-filter": "0"}
+		}, ""},
+		{"sysctl vm", func(a *App, d *Deployment) { a.Services[1].Sysctls = map[string]string{"vm.max_map_count": "262144"} }, "services[1].sysctls.vm.max_map_count"},
+		{"sysctl kernel", func(a *App, d *Deployment) { a.Services[1].Sysctls = map[string]string{"kernel.shmmax": "1"} }, "services[1].sysctls.kernel.shmmax"},
+		{"sysctl net, one part", func(a *App, d *Deployment) { a.Services[1].Sysctls = map[string]string{"net.ipv4": "1"} }, "services[1].sysctls.net.ipv4"},
+		{"sysctl net, uppercase", func(a *App, d *Deployment) { a.Services[1].Sysctls = map[string]string{"net.IPv4.x": "1"} }, "services[1].sysctls.net.IPv4.x"},
+		{"sysctl empty value", func(a *App, d *Deployment) { a.Services[1].Sysctls = map[string]string{"net.core.somaxconn": ""} }, "services[1].sysctls.net.core.somaxconn"},
+		{"sysctl value with a space at its end", func(a *App, d *Deployment) {
+			a.Services[1].Sysctls = map[string]string{"net.core.somaxconn": "1 "}
+		}, "services[1].sysctls.net.core.somaxconn"},
+		{"sysctl value with a newline", func(a *App, d *Deployment) {
+			a.Services[1].Sysctls = map[string]string{"net.core.somaxconn": "1\n2"}
+		}, "services[1].sysctls.net.core.somaxconn"},
+		{"sysctl value too long", func(a *App, d *Deployment) {
+			a.Services[1].Sysctls = map[string]string{"net.core.somaxconn": strings.Repeat("1", 65)}
+		}, "services[1].sysctls.net.core.somaxconn"},
+		{"valid sysctl value with inner spaces", func(a *App, d *Deployment) {
+			a.Services[1].Sysctls = map[string]string{"net.ipv4.ip_local_port_range": "32768 60999"}
+		}, ""},
+		{"seventeen sysctls", func(a *App, d *Deployment) {
+			a.Services[1].Sysctls = map[string]string{}
+			for i := 0; i < 17; i++ {
+				a.Services[1].Sysctls[fmt.Sprintf("net.core.x%d", i)] = "1"
+			}
+		}, "services[1].sysctls"},
+
 		// Env.
 		{"env name empty", func(a *App, d *Deployment) { a.Services[0].Env = []EnvVar{{Name: "", Value: "x"}} }, "services[0].env[0].name"},
 		{"env name with =", func(a *App, d *Deployment) { a.Services[0].Env = []EnvVar{{Name: "A=B"}} }, "services[0].env[0].name"},
@@ -1148,4 +1201,32 @@ func manyRefs(n int) Secret {
 		tpl.WriteString("${" + name + "}")
 	}
 	return Secret{Name: "A", Template: tpl.String(), Refs: refs}
+}
+
+// A refused sysctl says why: namespaced ones only, the rest is the server's.
+func TestSysctlMessages(t *testing.T) {
+	err := CheckSysctls("services[0].sysctls", map[string]string{"kernel.shmmax": "1"})
+	var fe *FieldError
+	if !errors.As(err, &fe) || fe.Field != "services[0].sysctls.kernel.shmmax" || !strings.Contains(fe.Message, "isn't namespaced: it can only be set on the server") {
+		t.Errorf("kernel.shmmax: %v", err)
+	}
+	err = CheckUlimits("services[0].ulimits", map[string]Ulimit{"core": {}})
+	if !errors.As(err, &fe) || !strings.Contains(fe.Message, "Caravana sets only memlock and nofile") {
+		t.Errorf("core: %v", err)
+	}
+	// A limit written as one number is named by the limit itself.
+	if err := CheckUlimit("services.web.ulimits.nofile", "nofile", Ulimit{Soft: 0, Hard: 0}, true); !errors.As(err, &fe) || fe.Field != "services.web.ulimits.nofile" {
+		t.Errorf("single: %v", err)
+	}
+}
+
+// A service without ulimits and sysctls stores the same JSON as before the feature, so no revision moves.
+func TestLimitsOmittedFromJSON(t *testing.T) {
+	b, err := json.Marshal(Service{Name: "web", Image: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "ulimits") || strings.Contains(string(b), "sysctls") {
+		t.Errorf("JSON = %s", b)
+	}
 }

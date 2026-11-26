@@ -57,7 +57,7 @@ const (
 // The order is fixed, so the same input always reports the same error:
 //  1. id, name, source.kind, services (at least one)
 //  2. each service in order: name, image, build, replicas, resources, env, secrets,
-//     identities, dns, placement, scale, ports, domains, health, disconnect, then volumes;
+//     identities, dns, ulimits, sysctls, placement, scale, ports, domains, health, disconnect, then volumes;
 //     a second built service is refused after the service that comes first
 //  3. deployment: id, trigger, a digest for each service in order, then any
 //     extra digest keys in sorted order
@@ -400,6 +400,9 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 		return err
 	}
 	if err := validateDNS(field, svc.DNS); err != nil {
+		return err
+	}
+	if err := validateLimits(field, svc); err != nil {
 		return err
 	}
 	if err := validatePlacement(field, svc.Placement); err != nil {

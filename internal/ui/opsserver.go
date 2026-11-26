@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/service"
@@ -1180,9 +1181,6 @@ func withManagedFacts(now time.Time, facts []srvFact, v service.ServerView) []sr
 	return append(out, certificateFact(now, v)...)
 }
 
-// minMapCount is the vm.max_map_count OpenSearch and Elasticsearch need (feature 060); the installer sets it.
-const minMapCount = 262144
-
 // mapCountFact is the "vm.max_map_count" row, only when the agent said it: the number, and in the warning
 // colour with what to do when it is under what OpenSearch needs.
 func mapCountFact(v service.ServerView) []srvFact {
@@ -1190,9 +1188,9 @@ func mapCountFact(v service.ServerView) []srvFact {
 		return nil
 	}
 	f := srvFact{Key: "vm.max_map_count", Value: strconv.FormatInt(v.VMMaxMapCount, 10)}
-	if v.VMMaxMapCount < minMapCount {
+	if v.VMMaxMapCount < app.MinMapCount {
 		f.Mark, f.Strong = "warning", true
-		f.Note = "OpenSearch and Elasticsearch need at least " + strconv.Itoa(minMapCount) + ": rerun the installer"
+		f.Note = "OpenSearch and Elasticsearch need at least " + strconv.Itoa(app.MinMapCount) + ": rerun the installer"
 	}
 	return []srvFact{f}
 }

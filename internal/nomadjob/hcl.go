@@ -3,6 +3,7 @@ package nomadjob
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -175,10 +176,22 @@ func (w *hclWriter) task(t *api.Task) {
 		}
 		w.block("config", nil, func() {
 			for _, k := range slices.Sorted(maps.Keys(t.Config)) {
-				// A nested block (docker's auth) is a list of objects in the
-				// JSON job, and a block in HCL.
+				// A nested block (docker's auth, ulimit) is a list of objects in the
+				// JSON job, and a block in HCL. A block's names are HCL identifiers,
+				// which a sysctl's ("net.core.somaxconn") are not: that map is written
+				// as an attribute with quoted keys, which Nomad reads the same way.
 				if blocks, ok := t.Config[k].([]map[string]any); ok {
 					for _, m := range blocks {
+						if !identifierKeys(m) {
+							w.line(k + " = {")
+							w.depth++
+							for _, name := range slices.Sorted(maps.Keys(m)) {
+								w.line(quote(name) + " = " + configValue(m[name]))
+							}
+							w.depth--
+							w.line("}")
+							continue
+						}
 						w.block(k, nil, func() {
 							for _, name := range slices.Sorted(maps.Keys(m)) {
 								w.attr(name, configValue(m[name]))
@@ -330,6 +343,19 @@ func (w *hclWriter) stringMap(name string, m map[string]string) {
 	}
 	w.depth--
 	w.line("}")
+}
+
+// hclIdentifierRE is a name HCL takes unquoted as an argument.
+var hclIdentifierRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
+
+// identifierKeys reports whether every key of m can be an HCL argument name.
+func identifierKeys(m map[string]any) bool {
+	for k := range m {
+		if !hclIdentifierRE.MatchString(k) {
+			return false
+		}
+	}
+	return true
 }
 
 // configValue writes a docker driver option: Translate sets strings and lists

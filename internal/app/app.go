@@ -94,6 +94,13 @@ type Service struct {
 	// DNS sets the resolvers, search domains and options in the resolv.conf
 	// of every copy. nil keeps the node's.
 	DNS *DNS `json:"dns,omitempty"`
+	// Ulimits are the container's process limits, by name: only "memlock" and
+	// "nofile" (feature 060). None keeps Docker's.
+	Ulimits map[string]Ulimit `json:"ulimits,omitempty"`
+	// Sysctls are namespaced network kernel settings of the container, such as
+	// "net.ipv4.tcp_keepalive_time" (feature 060). Anything else is refused: it
+	// would change the server.
+	Sysctls map[string]string `json:"sysctls,omitempty"`
 	// Placement says on which servers the copies may run, by the labels and
 	// names of the servers (feature 042). nil means any server that takes
 	// work.

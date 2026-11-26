@@ -8430,6 +8430,27 @@ components:
             $ref: "#/components/schemas/Identity"
         dns:
           $ref: "#/components/schemas/ServiceDNS"
+        ulimits:
+          type: object
+          description: |
+            Process limits of the container, by name (feature 060): only `memlock` and `nofile`;
+            any other name is refused at `services[i].ulimits.<name>`. Left out keeps Docker's.
+            The docker driver gets them as `soft:hard`. Compose's `ulimits` set them (a number is
+            soft and hard). A promotion takes the source's.
+          additionalProperties:
+            $ref: "#/components/schemas/ServiceUlimit"
+        sysctls:
+          type: object
+          maxProperties: 16
+          description: |
+            Namespaced network kernel settings of the container (feature 060), such as
+            `net.ipv4.tcp_keepalive_time`: names match `^net\.[a-z0-9_]+(\.[a-z0-9_-]+)+$` and values
+            are 1 to 64 printable characters without spaces at the ends. Any other name is refused
+            at `services[i].sysctls.<name>` ("isn't namespaced: it can only be set on the server").
+            Compose's `sysctls` set them; its `vm.max_map_count` is dropped with a warning when it is
+            262144 or less (the installer sets that on every server) and refused above it. A
+            promotion takes the source's.
+          additionalProperties: {type: string}
         build:
           $ref: "#/components/schemas/ServiceBuild"
         placement:
@@ -9099,6 +9120,18 @@ components:
           minimum: 60
           maximum: 86400
           description: Seconds the copies of an unreachable server are kept before they are called lost.
+
+    ServiceUlimit:
+      type: object
+      additionalProperties: false
+      required: [soft, hard]
+      description: |
+        One limit of a service's `ulimits` (feature 060). `memlock`: `-1` (unlimited) or a number
+        of bytes. `nofile`: 1 to 1048576, never `-1`. `soft` is never above `hard` (`-1` is above
+        every number). A refusal names `services[i].ulimits.<name>.soft` or `.hard`.
+      properties:
+        soft: {type: integer, minimum: -1}
+        hard: {type: integer, minimum: -1}
 
     ServiceDNS:
       type: object
@@ -15084,7 +15117,7 @@ components:
             target's now.
           items:
             type: string
-            enum: [entrypoint, command, args, ports, health, volumes, stopTimeout, dns, placement]
+            enum: [entrypoint, command, args, ports, health, volumes, stopTimeout, dns, ulimits, sysctls, placement, disconnect, build]
 
     PromotionPreview:
       type: object

@@ -593,6 +593,7 @@ func task(appID string, svc app.Service, image string, s Settings, private map[s
 	if isPrivate {
 		config["auth"] = auth
 	}
+	config = withLimits(config, svc)
 	if len(svc.Entrypoint) > 0 {
 		config["entrypoint"] = slices.Clone(svc.Entrypoint)
 	}

@@ -76,6 +76,7 @@ func goldenCases() []goldenCase {
 	cases = append(cases, stopTimeoutCases()...)
 	cases = append(cases, identityCases()...)
 	cases = append(cases, dnsCases()...)
+	cases = append(cases, limitsCases()...)
 	cases = append(cases, placementCases()...)
 	cases = append(cases, scaleCases()...)
 	cases = append(cases, disconnectCases()...)
@@ -253,6 +254,35 @@ func dnsCases() []goldenCase {
 		"plain":  "ghcr.io/acme/plain@sha256:" + strings.Repeat("f", 64),
 	}}
 	return []goldenCase{{name: "dns", app: shop, deployment: dep, settings: labSettings()}}
+}
+
+// limitsCases is OpenSearch's shape: a service with ulimits and a namespaced
+// sysctl, beside a service with neither, which shows nothing else changes.
+func limitsCases() []goldenCase {
+	shop := app.App{
+		ID:     "shop",
+		Source: app.Source{Kind: app.SourceImage},
+		Services: []app.Service{
+			{
+				Name:  "indexer",
+				Image: "opensearchproject/opensearch:2.19.1",
+				Ulimits: map[string]app.Ulimit{
+					"nofile":  {Soft: 65536, Hard: 65536},
+					"memlock": {Soft: -1, Hard: -1},
+				},
+				Sysctls: map[string]string{
+					"net.ipv4.tcp_keepalive_time": "600",
+					"net.core.somaxconn":          "1024",
+				},
+			},
+			{Name: "plain", Image: "ghcr.io/acme/plain:main"},
+		},
+	}
+	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"indexer": "opensearchproject/opensearch@sha256:" + strings.Repeat("d", 64),
+		"plain":   "ghcr.io/acme/plain@sha256:" + strings.Repeat("f", 64),
+	}}
+	return []goldenCase{{name: "ulimits", app: shop, deployment: dep, settings: labSettings()}}
 }
 
 // placementCases is a service of two copies with every kind of placement

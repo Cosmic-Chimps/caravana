@@ -859,6 +859,43 @@ func TestPromotedTakesTheSourcesDNS(t *testing.T) {
 	}
 }
 
+// A promotion takes the source's ulimits and sysctls (the image's configuration), says so when they differ, and
+// never shares the source's maps.
+func TestPromotedTakesTheSourcesLimits(t *testing.T) {
+	source, target := staging(), production()
+	source.Services[0].Ulimits = map[string]app.Ulimit{"nofile": {Soft: 65536, Hard: 65536}}
+	source.Services[0].Sysctls = map[string]string{"net.core.somaxconn": "1024"}
+
+	got, changes, _, err := promoted(target, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Services[0].Ulimits, source.Services[0].Ulimits) || !reflect.DeepEqual(got.Services[0].Sysctls, source.Services[0].Sysctls) {
+		t.Errorf("ulimits = %+v, sysctls = %+v, want the source's", got.Services[0].Ulimits, got.Services[0].Sysctls)
+	}
+	got.Services[0].Ulimits["nofile"] = app.Ulimit{Soft: 1, Hard: 1}
+	got.Services[0].Sysctls["net.core.somaxconn"] = "1"
+	if source.Services[0].Ulimits["nofile"].Soft != 65536 || source.Services[0].Sysctls["net.core.somaxconn"] != "1024" {
+		t.Error("the target shares the source's maps; they must be copies")
+	}
+	if !slices.Contains(changes[0].Changed, "ulimits") || !slices.Contains(changes[0].Changed, "sysctls") {
+		t.Errorf("changes = %+v, want ulimits and sysctls listed", changes)
+	}
+
+	// The same limits change nothing; a source with none clears the target's.
+	target.Services[0].Ulimits = map[string]app.Ulimit{"nofile": {Soft: 65536, Hard: 65536}}
+	target.Services[0].Sysctls = map[string]string{"net.core.somaxconn": "1024"}
+	_, changes, _, _ = promoted(target, source)
+	if slices.Contains(changes[0].Changed, "ulimits") || slices.Contains(changes[0].Changed, "sysctls") {
+		t.Errorf("changes = %+v, the limits are the same", changes)
+	}
+	source.Services[0].Ulimits, source.Services[0].Sysctls = nil, nil
+	got, changes, _, _ = promoted(target, source)
+	if got.Services[0].Ulimits != nil || got.Services[0].Sysctls != nil || !slices.Contains(changes[0].Changed, "ulimits") || !slices.Contains(changes[0].Changed, "sysctls") {
+		t.Errorf("ulimits = %+v, sysctls = %+v, changes = %+v, want the target's cleared and both listed", got.Services[0].Ulimits, got.Services[0].Sysctls, changes)
+	}
+}
+
 // Spec 038: an identity's audience belongs to an environment, like a secret, so
 // a promotion keeps the target's identities and never takes the source's; a
 // service new to the target comes with its own.
