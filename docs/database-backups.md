@@ -5,7 +5,9 @@ A database service can be backed up **while it keeps running**. Three engines do
 to the backup destination and keeps the newest ones. A restore loads a dump back into the running service.
 
 The other engines still exist: `volume` stops the service and archives its volumes, `sqlite` copies one SQLite file
-online. Use a dump engine for a database that has a server, since a volume archive stops it for every backup.
+online, and `opensearch` has an OpenSearch or Elasticsearch cluster take a snapshot of itself (see
+[OpenSearch and Elasticsearch snapshots](#opensearch-and-elasticsearch-snapshots)). Use a dump engine for a database
+that has a server, since a volume archive stops it for every backup.
 
 ```yaml
 backup: {engine: mysql}      # or postgres, mongodb; schedule, keep and restore as for every engine
@@ -109,7 +111,90 @@ the job, so a custom image without the tools can't be refused at deploy: the **r
 names the tool ("the image has neither mariadb-dump nor mysqldump", "the image has no mongodump"), which is the
 backup's message, the needs-you item `backup_failed` and the notification.
 
+## OpenSearch and Elasticsearch snapshots
+
+`backup: {engine: opensearch, repository: <folder>}` backs up an OpenSearch or Elasticsearch cluster **while it
+keeps running**. It works for OpenSearch, its forks (the Wazuh indexer) and Elasticsearch 7 and 8, which share the
+snapshot API (checked by hand against OpenSearch 2.19 and Elasticsearch 8.17). Unlike the dump engines it is not a
+Nomad job beside the app: the cluster takes the snapshot through its own API, and Caravana archives it, with the same
+destination, retention, pins, copies, restore schedules and records as every other engine.
+
+```json
+{"backup": {"engine": "opensearch", "repository": "/usr/share/opensearch/snapshots", "schedule": "0 3 * * *", "keep": 7}}
+```
+
+The same policy in a Compose overlay (`overlay.services.<name>.backup`) and in the console's Compose form on New app,
+where the engine is **OpenSearch or Elasticsearch snapshot (the service keeps running)** and the folder is **Snapshot
+folder**. For an app that exists, use the Backups tab's **Change the policy…**, which offers the engine to a service
+that has a port and a writable volume.
+
+### The snapshot folder and `path.repo`
+
+`repository` is an absolute folder **as the service sees it**, equal to or inside one of the service's writable
+volumes (a folder elsewhere is refused at deploy, naming `services[i].backup.repository`). The cluster only writes
+snapshots under a folder listed in its **static** `path.repo` setting, so you set both to the same place:
+
+- **OpenSearch and Elasticsearch images**: an environment variable named `path.repo`, for example
+  `path.repo=/usr/share/opensearch/snapshots` (the images' entrypoints turn dotted variables into settings).
+- **The Wazuh indexer** (its entrypoint ignores dotted variables) and any image that doesn't: a line in
+  `opensearch.yml`, given to the service as a [file](opensearch-apps.md): `path.repo: ["/var/lib/wazuh-indexer-snapshots"]`.
+
+A deploy **warns** on `services[i].backup.repository` when the service has neither an environment variable named
+`path.repo` nor a file whose content contains `path.repo`. Without the setting the first run fails with the cluster's
+own sentence: "location [...] doesn't match any of the locations specified by path.repo".
+
+The folder is Caravana's: each run works in a fresh `caravana-<id>` folder inside it and removes the `caravana-*`
+folders earlier runs left, and nothing else. A snapshot is made on the volume first, then archived, so the volume
+needs **free disk for one snapshot** of the cluster while it runs.
+
+### What a backup holds
+
+Every index whose name doesn't start with a dot, without the cluster's global state. The object is
+`<time>.opensearch.tar.gz`, a full, self-contained snapshot (nothing is incremental), so any backup restores on its
+own, and retention, pins and copies work as for the other engines. It does **not** hold:
+
+- the cluster's global state: index templates, persistent cluster settings and ingest pipelines;
+- indices whose name starts with a dot, which include the security plugin's configuration (`.opendistro_security`),
+  Dashboards' saved objects and the plugins' own indices;
+- data streams.
+
+Keep the security configuration and the templates in your own definition (for example the Wazuh template makes them at
+install), not in the backup.
+
+### The login
+
+When the cluster has the security plugin on, the backup logs in as the admin. The values are found by name in the
+service's environment or secrets, first match:
+
+| Looks for | User |
+| --- | --- |
+| `OPENSEARCH_INITIAL_ADMIN_PASSWORD` | `admin` |
+| `INDEXER_PASSWORD` with `INDEXER_USERNAME` | `INDEXER_USERNAME`, default `admin` |
+| `ELASTIC_PASSWORD` | `elastic` |
+
+None found means no login: a cluster with the security plugin off is backed up without one, so nothing is required at
+deploy. A cluster that answers 401 fails the run with "OpenSearch refused the login: set
+OPENSEARCH_INITIAL_ADMIN_PASSWORD, INDEXER_PASSWORD or ELASTIC_PASSWORD". Caravana connects to `127.0.0.1` inside the
+service's own copy, https first and then http, without checking the certificate (the security plugin's are
+self-signed, and the connection never leaves the copy).
+
+The login travels on the standard input of Nomad's exec only: it is in no job, variable, file or argument, and a
+password given as **plain environment** warns at deploy as it does for the dump engines. Make it a secret.
+
+### Restore
+
+Restore is on the Backups tab (type the service's name to confirm), through the API and as the target of a scheduled
+restore from a pinned backup. The backup is downloaded and unpacked while the cluster runs. Then each index in the
+snapshot that exists now is **closed**, the snapshot is restored over it, and it is opened again; indices made since the
+backup **stay**, and the cluster's settings, templates and dot indices are not touched. Clients using the replaced
+indices see errors meanwhile. If the restore fails after the close, the script tries to open them again, and says in
+the record's message whether it could.
+
+Caravana doesn't stop the service for a backup or a restore, and a run restarted by Caravana's own restart is failed
+with "Caravana restarted during the run" (a restore adds that the indices it closed may still be closed).
+
 ## What it doesn't do
 
 Point-in-time recovery (binary logs, the oplog), replica sets and sharded clusters beyond the one node the service
-reaches, Percona XtraBackup and other servers' own tools, and Redis.
+reaches, Percona XtraBackup and other servers' own tools, and Redis. The `opensearch` engine doesn't back up the
+cluster's global state or its dot indices, or make an S3 repository (the repository plugin isn't in the official images).

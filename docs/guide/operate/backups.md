@@ -31,22 +31,23 @@ A service's backup has an **engine**. Choose by what the service is.
 | `postgres` | a PostgreSQL service | the database keeps running | replaces what the database holds, in one transaction |
 | `mysql` | MySQL or MariaDB | the database keeps running | drops and remakes each table in the dump; tables made since stay |
 | `mongodb` | MongoDB | the database keeps running | replaces each collection in the dump; collections made since stay |
+| `opensearch` | an OpenSearch or Elasticsearch cluster | the cluster keeps running | closes and replaces the snapshot's indices while the cluster runs; indices made since stay |
 | `sqlite` | one SQLite file on a volume | the service keeps running | the service stops for a few seconds while the file is replaced |
 | `volume` | any service with a volume | **the service stops** while its volumes are archived | the service stops; volumes are replaced by the backup's files; files added since are deleted |
 
-Use a database engine for a database that has a server: a `volume` backup stops the service every time it runs. The three database engines dump the live database and need a login the backup can use: see [Database backups](../../database-backups.md) for the variables each one looks for.
+Use a database engine for a database that has a server: a `volume` backup stops the service every time it runs. For a search cluster use `opensearch`, which needs `path.repo` set and a snapshot folder on a volume (see [OpenSearch and Elasticsearch snapshots](../../database-backups.md#opensearch-and-elasticsearch-snapshots)). The three database engines dump the live database and need a login the backup can use: see [Database backups](../../database-backups.md) for the variables each one looks for.
 
 ## 3. Turn a backup on
 
 Any of these three ways produces the same policy.
 
 - **The Backups tab.** A service that has no backup yet and whose image is `postgres`, `mysql`, `mariadb` or `mongo` with a port is offered **Back up daily** with the matching database engine. Any other service with a volume is offered **Back up daily** too, with the `volume` engine; its confirmation says "The service stops for a few seconds each time." Choose a **Schedule** (**Every day at 03:00 UTC** or **No automatic backups (Back up now only)**) and **Back up and deploy**. Every service with a volume is also offered **A SQLite file instead**: give the **Database file** (its path inside the service, on one of its volumes; the field starts with the first volume's path) and choose **Back up the file and deploy**. Turning a backup on deploys the app.
-- **The Compose form of New app** (New app › Compose file): each service has a **Backup** section with **Engine**, **Backup schedule (UTC)**, **Backups to keep** and, for SQLite, **Database file**. The Compose form of an app that exists has only the file and leaves its backups as they are.
+- **The Compose form of New app** (New app › Compose file): each service has a **Backup** section with **Engine**, **Backup schedule (UTC)**, **Backups to keep** for SQLite, **Database file** and for OpenSearch, **Snapshot folder**. The Compose form of an app that exists has only the file and leaves its backups as they are.
 - **The definition**, through the API or a Compose overlay:
 
 ```yaml
 backup:
-  engine: postgres      # postgres, mysql, mongodb, sqlite or volume
+  engine: postgres      # postgres, mysql, mongodb, opensearch, sqlite or volume
   schedule: "0 3 * * *" # optional, five-field cron in UTC, or "never"
   keep: 7               # optional, 1 to 100
 ```
@@ -66,6 +67,8 @@ form with:
   (stops the service while it runs)** for a service with a volume, and **SQLite file (the service keeps running)** for a
   service with a writable volume.
 - **Database file**, drawn when **SQLite file** is among the engines: the database's path inside the service.
+- **Snapshot folder**, drawn when **OpenSearch or Elasticsearch snapshot** is among the engines (a service with a port
+  and a writable volume): the folder the cluster writes snapshots to, on one of its volumes and in its `path.repo`.
 - **Schedule**: **Daily at 03:00 UTC**, **No automatic backups**, or, when the stored schedule is another cron line,
   **Keep** followed by its words.
 - **Backups to keep**: 1 to 100. Pinned backups are kept besides these.
@@ -92,11 +95,12 @@ Restoring is destructive. It replaces what the service holds now with the backup
 
 1. On the Backups tab, find the backup and choose **Restore…** on its row (or **Restore from <time>** under the service for the newest).
 2. Read what the form says will happen. Type the service's name to confirm.
-3. Choose the red button: **Restore db**, **Restore and stop the service briefly** (SQLite) or **Restore and stop the service while it runs** (volume).
+3. Choose the red button: **Restore db**, **Restore and stop the service briefly** (SQLite), **Restore and stop the service while it runs** (volume) or **Restore the indices** (OpenSearch, Elasticsearch).
 
 What happens, by engine:
 
 - **PostgreSQL, MySQL, MariaDB, MongoDB**: the dump is loaded into the running service, which isn't stopped. "Clients connected meanwhile may see errors. It can't be undone, except by restoring another backup." Details per engine (what stays, what is replaced) are in [Database backups](../../database-backups.md#restore-semantics).
+- **OpenSearch, Elasticsearch**: the backup is downloaded while the cluster runs, then each index in it that exists is closed, replaced and opened again; indices made since stay. The button says **Restore the indices**. Details are in [OpenSearch and Elasticsearch snapshots](../../database-backups.md#restore).
 - **SQLite**: the backup is downloaded and checked while the service runs, then the service stops for a few seconds, the file is swapped and the service starts. "Changes made since the backup are lost."
 - **Volume**: the service stops, its volumes are replaced by the backup's files, and it starts again. "Files added since the backup are deleted." It is all or nothing across the service's volumes.
 
