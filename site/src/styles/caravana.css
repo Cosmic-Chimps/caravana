@@ -1,0 +1,163 @@
+/*
+ * Caravana's look for the docs site, worn through Starlight's custom properties: the console's
+ * cool neutral ramp (internal/ui/style/theme.css, hue 255), IBM Plex Sans and Mono, no brand
+ * hue. Links and the main button are ink, not colour; Signal Blue appears only where the
+ * console uses it beside status: the focus ring, the current page's bar and a link's hover.
+ * The status colours dress Starlight's asides, each with its icon, so colour is never alone.
+ *
+ * In the light theme Starlight's grey scale is inverted (--sl-color-white is the darkest step),
+ * so each step holds the colour of its role in that theme. Every text pair reaches 4.5:1; the
+ * ratios are in this folder's README (computed from the console's oklch tokens).
+ *
+ * Check the property names against the installed @astrojs/starlight/style/props.css (0.42.x):
+ * a name Starlight doesn't define does nothing, silently.
+ */
+
+/* The console's own files (internal/ui/static/fonts, OFL), copied to src/fonts/. */
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/IBMPlexSans-Regular-Latin1.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/IBMPlexSans-Medium-Latin1.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 600; font-display: swap; src: url('../fonts/IBMPlexSans-SemiBold-Latin1.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/IBMPlexMono-Regular-Latin1.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/IBMPlexMono-Medium-Latin1.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 600; font-display: swap; src: url('../fonts/IBMPlexMono-SemiBold-Latin1.woff2') format('woff2'); }
+
+:root {
+  --sl-font: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --sl-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Dark: the console's ramp. */
+  --sl-color-white: #eef0f3;   /* fg-1 Readout White: headings */
+  --sl-color-gray-1: #eef0f3;  /* fg-1 */
+  --sl-color-gray-2: #bdc1c6;  /* fg-2 Body Text */
+  --sl-color-gray-3: #94999e;  /* fg-3 Label Text: muted text, never dimmer */
+  --sl-color-gray-4: #4e5359;  /* line-3 Strong Edge: borders that must be seen */
+  --sl-color-gray-5: #25282c;  /* line-1 Hairline */
+  --sl-color-gray-6: #131518;  /* ink-1 Panel Face */
+  --sl-color-black: #0d0e11;   /* ink-0 Unlit Panel: the page */
+
+  /* No brand hue: the accent is ink. Links, the current page's text and the main button are
+     Readout White, as in the console. */
+  --sl-color-accent-low: #0e293d;  /* healthy-bg, behind a selection */
+  --sl-color-accent: #6bb9f8;      /* Signal Blue */
+  --sl-color-accent-high: #eef0f3; /* fg-1: links and the button's fill */
+  --sl-color-text-invert: #0d0e11; /* the button's text: ink-0 on fg-1, 16.9:1 */
+
+  /* The console's sidebar and top bar sit on the page's own ground, with a hairline. */
+  --sl-color-bg-nav: #0d0e11;
+  --sl-color-bg-sidebar: #0d0e11;
+  --sl-color-bg-inline-code: #191c20; /* ink-2 Raised Control */
+  --sl-color-hairline: #25282c;
+  --sl-color-hairline-light: #25282c;
+  --sl-color-hairline-shade: #25282c;
+
+  /* Asides wear the status colours: low = tinted ground, base = edge, high = text.
+     note (blue) = healthy, tip (purple) = rolling, caution (orange) = warning, danger (red) =
+     failed; green (success badges) = healthy, since healthy is blue in Caravana. */
+  --sl-color-blue-low: #0e293d;   --sl-color-blue: #28577c;   --sl-color-blue-high: #6bb9f8;
+  --sl-color-green-low: #0e293d;  --sl-color-green: #28577c;  --sl-color-green-high: #6bb9f8;
+  --sl-color-purple-low: #2c243c; --sl-color-purple: #5e4f79; --sl-color-purple-high: #d3befd;
+  --sl-color-orange-low: #362a09; --sl-color-orange: #766027; --sl-color-orange-high: #ffd972;
+  --sl-color-red-low: #3e1b0e;    --sl-color-red: #86422a;    --sl-color-red-high: #ec6d3d;
+
+  --cv-focus: oklch(0.76 0.12 245 / 0.55); /* the console's focus ring: 9.1:1 at full, legible at 55% */
+  --cv-link-hover: #6bb9f8;
+  --cv-current-bg: #191c20;  /* ink-2, behind the current page in the sidebar */
+  --cv-current-bar: #6bb9f8;
+}
+
+:root[data-theme='light'] {
+  --sl-color-white: #161a1e;   /* fg-1 Readout Ink */
+  --sl-color-gray-1: #161a1e;
+  --sl-color-gray-2: #393e43;  /* fg-2 */
+  --sl-color-gray-3: #585d63;  /* fg-3 */
+  --sl-color-gray-4: #9a9fa5;  /* line-3 */
+  --sl-color-gray-5: #dde0e4;  /* line-1 */
+  --sl-color-gray-6: #edeff2;  /* ink-2: inline code */
+  --sl-color-gray-7: #fcfdff;  /* ink-1 Panel Face */
+  --sl-color-black: #f3f5f7;   /* ink-0: the page */
+
+  --sl-color-accent-low: #e3f1fd;  /* healthy-bg */
+  --sl-color-accent: #161a1e;      /* Readout Ink: links and the button's fill */
+  --sl-color-accent-high: #161a1e;
+  --sl-color-text-invert: #f3f5f7; /* the button's text: 16.0:1 */
+
+  --sl-color-bg-nav: #f3f5f7;
+  --sl-color-bg-sidebar: #f3f5f7;
+  --sl-color-bg-inline-code: #edeff2;
+  --sl-color-hairline: #dde0e4;
+  --sl-color-hairline-light: #dde0e4;
+  --sl-color-hairline-shade: #dde0e4;
+
+  --sl-color-blue-low: #e3f1fd;   --sl-color-blue: #9ec3e2;   --sl-color-blue-high: #1167ae;
+  --sl-color-green-low: #e3f1fd;  --sl-color-green: #9ec3e2;  --sl-color-green-high: #1167ae;
+  --sl-color-purple-low: #f2edfd; --sl-color-purple: #c6b9e3; --sl-color-purple-high: #7756a9;
+  --sl-color-orange-low: #fef2d5; --sl-color-orange: #e1c487; --sl-color-orange-high: #8a5b00;
+  --sl-color-red-low: #fdebe4;    --sl-color-red: #e9ae9a;    --sl-color-red-high: #b73d10;
+
+  --cv-focus: #1167ae; /* full strength in light: at 55% it would be 1.8:1 */
+  --cv-link-hover: #1167ae;
+  --cv-current-bg: #edeff2;
+  --cv-current-bar: #1167ae;
+}
+
+/* Headings: the console's sans, semibold, no display face. */
+main h1 { font-weight: 600; letter-spacing: -0.01em; }
+.sl-markdown-content :is(h2, h3) { font-weight: 600; }
+.sl-markdown-content :is(h4, h5, h6) { font-weight: 500; }
+
+/* Links: ink with an underline in the strong edge, Signal Blue on hover, as the console's. */
+.sl-markdown-content a:not(.sl-link-button, .card-grid a) {
+  color: var(--sl-color-white);
+  text-decoration: underline;
+  text-decoration-color: var(--sl-color-gray-4);
+  text-underline-offset: 3px;
+}
+.sl-markdown-content a:not(.sl-link-button, .card-grid a):hover { color: var(--cv-link-hover); text-decoration-color: currentColor; }
+
+/* One focus ring everywhere, the console's. */
+:focus-visible { outline: 2px solid var(--cv-focus); outline-offset: 2px; }
+#starlight__search .pagefind-ui__search-input:focus-visible { outline: 2px solid var(--cv-focus); outline-offset: 2px; }
+
+/* The wordmark: the site title in Plex Mono 600, lowercase, Readout White/Ink, with the mark. */
+.site-title {
+  font-family: var(--sl-font-mono);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: lowercase;
+  color: var(--sl-color-white);
+}
+.site-title img { height: 1.5rem; width: auto; } /* 24px: the full geometry holds from 24px up */
+
+/* Sidebar group labels: the console's label, mono 500 uppercase in Label Text.
+   Starlight 0.42's markup: check the selector for a group's summary text. */
+.sidebar-content details > summary .large {
+  font-family: var(--sl-font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sl-color-gray-3);
+}
+
+/* The current page: a raised step and a 2px Signal Blue bar inside its edge, never a fill. */
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+  background-color: var(--cv-current-bg);
+  color: var(--sl-color-white);
+  font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--cv-current-bar);
+}
+
+/* Screenshots of the console have the page's own colours: an edge says where they end. */
+.sl-markdown-content :is(picture, .cv-shot) img {
+  border: 1px solid var(--sl-color-gray-4);
+  border-radius: 6px;
+}
+
+/* A screenshot in both themes follows Starlight's theme choice, not the OS's: <picture> with
+   prefers-color-scheme would show the OS's one when the reader picked the other theme. Put both
+   images in the page with these classes. */
+:root .cv-shot-light { display: none; }
+:root[data-theme='light'] .cv-shot-light { display: block; }
+:root[data-theme='light'] .cv-shot-dark { display: none; }

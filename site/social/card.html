@@ -1,0 +1,52 @@
+<!doctype html>
+<!--
+  The picture a chat or social app shows beside a link to the documentation
+  (og:image), 1200 by 630, dark only. It is the source of public/og.png: see
+  "The link preview" in site/README.md for how the PNG is made from it. The
+  layout is the designer's (docs-site ruling, section 4); the fonts are the
+  console's, copied to src/fonts/ by scripts/collect.mjs, and the lockup is
+  docs/brand/lockup-dark.svg. Nothing comes from another host.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Caravana: the link preview card</title>
+<style>
+  @font-face { font-family: 'IBM Plex Sans'; font-weight: 400; src: url('../src/fonts/IBMPlexSans-Regular-Latin1.woff2') format('woff2'); }
+  @font-face { font-family: 'IBM Plex Sans'; font-weight: 600; src: url('../src/fonts/IBMPlexSans-SemiBold-Latin1.woff2') format('woff2'); }
+  @font-face { font-family: 'IBM Plex Mono'; font-weight: 400; src: url('../src/fonts/IBMPlexMono-Regular-Latin1.woff2') format('woff2'); }
+  html, body { margin: 0; }
+  body {
+    position: relative;
+    width: 1200px;
+    height: 630px;
+    overflow: hidden;
+    background: #0d0e11;
+    color: #eef0f3;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  .lockup { position: absolute; left: 96px; top: 150px; height: 72px; width: auto; }
+  .title {
+    position: absolute; left: 96px; top: 262px; margin: 0;
+    font-weight: 600; font-size: 52px; line-height: 1.1; color: #eef0f3;
+  }
+  .sentence {
+    position: absolute; left: 96px; top: 339px; width: 860px; margin: 0;
+    font-weight: 400; font-size: 30px; line-height: 1.35; color: #bdc1c6;
+  }
+  .rule { position: absolute; left: 96px; right: 96px; top: 534px; height: 1px; background: #25282c; }
+  .footer {
+    position: absolute; left: 96px; right: 96px; top: 560px;
+    display: flex; justify-content: space-between;
+    font-family: 'IBM Plex Mono', monospace; font-weight: 400; font-size: 22px; line-height: 1.2; color: #94999e;
+  }
+</style>
+</head>
+<body>
+  <img class="lockup" src="../../docs/brand/lockup-dark.svg" alt="">
+  <h1 class="title">Documentation</h1>
+  <p class="sentence">Install Caravana on one small server, deploy your apps, and keep them running.</p>
+  <div class="rule"></div>
+  <div class="footer"><span>open source · self-hosted</span><span>cosmic-chimps.github.io/caravana</span></div>
+</body>
+</html>
