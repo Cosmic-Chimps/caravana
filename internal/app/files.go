@@ -166,6 +166,7 @@ func validateFiles(field string, svc Service, total int) (int, error) {
 		mounts[v.Path] = true
 	}
 	seen := map[string]bool{}
+	var earlier []string
 	for k, f := range svc.Files {
 		ff := fmt.Sprintf("%s.files[%d]", field, k)
 		if err := CheckFile(ff, f, secrets, mounts); err != nil {
@@ -175,6 +176,17 @@ func validateFiles(field string, svc Service, total int) (int, error) {
 			return total, NewFieldError(ff+".path", "%s is used by an earlier file", f.Path)
 		}
 		seen[f.Path] = true
+		// A file is mounted at its path, and Docker can't mount a second target inside a file (nor a file
+		// over a folder that holds another one's target): the copy would not start. Whole segments only.
+		for _, p := range earlier {
+			switch {
+			case strings.HasPrefix(f.Path, p+"/"):
+				return total, NewFieldError(ff+".path", "%s is inside %s, which is a file", f.Path, p)
+			case strings.HasPrefix(p, f.Path+"/"):
+				return total, NewFieldError(ff+".path", "%s is a folder of %s, another file: a file can't be both", f.Path, p)
+			}
+		}
+		earlier = append(earlier, f.Path)
 		total += len(f.Content)
 		if total > MaxAppFileContent {
 			return total, NewFieldError(ff+".content", "the app's files hold more than %d bytes of content", MaxAppFileContent)

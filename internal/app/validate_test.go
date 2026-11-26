@@ -325,6 +325,18 @@ func TestValidate(t *testing.T) {
 			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
 			a.Services[1].Files = []File{{Path: "/data", Content: "a"}}
 		}, "services[1].files[0].path"},
+		{"file inside an earlier file", func(a *App, d *Deployment) {
+			a.Services[1].Files = []File{{Path: "/etc/app", Content: "a"}, {Path: "/etc/app/x.conf", Content: "b"}}
+		}, "services[1].files[1].path"},
+		{"file that is a folder of an earlier file", func(a *App, d *Deployment) {
+			a.Services[1].Files = []File{{Path: "/etc/app/x.conf", Content: "b"}, {Path: "/etc/app", Content: "a"}}
+		}, "services[1].files[1].path"},
+		{"file inside a later-listed file, three files", func(a *App, d *Deployment) {
+			a.Services[1].Files = []File{{Path: "/a", Content: "a"}, {Path: "/b/c", Content: "b"}, {Path: "/b/c/d", Content: "c"}}
+		}, "services[1].files[2].path"},
+		{"valid files that share only a prefix of letters", func(a *App, d *Deployment) {
+			a.Services[1].Files = []File{{Path: "/etc/app", Content: "a"}, {Path: "/etc/app2", Content: "b"}, {Path: "/etc/application/x.conf", Content: "c"}}
+		}, ""},
 		{"file path twice", func(a *App, d *Deployment) {
 			a.Services[1].Files = []File{{Path: "/a", Content: "a"}, {Path: "/a", Content: "b"}}
 		}, "services[1].files[1].path"},
@@ -1316,5 +1328,25 @@ func TestFilesOmittedFromJSON(t *testing.T) {
 	b, _ := json.Marshal(Service{Name: "web", Image: "x"})
 	if strings.Contains(string(b), "files") {
 		t.Errorf("JSON = %s", b)
+	}
+}
+
+// A file inside another file, in either order, is refused at the later one, in plain words.
+func TestFileInsideAFileMessages(t *testing.T) {
+	svc := Service{Name: "web", Image: "x"}
+	for name, tc := range map[string]struct {
+		files []File
+		want  string
+	}{
+		"inside": {[]File{{Path: "/etc/app", Content: "a"}, {Path: "/etc/app/x.conf", Content: "b"}}, "/etc/app/x.conf is inside /etc/app, which is a file"},
+		"folder": {[]File{{Path: "/etc/app/x.conf", Content: "b"}, {Path: "/etc/app", Content: "a"}}, "/etc/app is a folder of /etc/app/x.conf, another file"},
+		"deeper": {[]File{{Path: "/a/b", Content: "a"}, {Path: "/a/b/c/d", Content: "b"}}, "/a/b/c/d is inside /a/b, which is a file"},
+	} {
+		svc.Files = tc.files
+		_, err := validateFiles("services[0]", svc, 0)
+		var fe *FieldError
+		if !errors.As(err, &fe) || fe.Field != "services[0].files[1].path" || !strings.Contains(fe.Message, tc.want) {
+			t.Errorf("%s: %v, want a field error on services[0].files[1].path saying %q", name, err, tc.want)
+		}
 	}
 }

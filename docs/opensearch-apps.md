@@ -96,7 +96,9 @@ Each file has exactly one of `content` and `secret`. The other fields:
 
 - `path`: absolute and clean (no `..`, no `//`, no trailing `/`), without spaces, up to 1024 bytes. Not `/`, not in
   `/proc`, `/sys`, `/dev`, `/alloc`, `/local` or `/secrets`, not `/etc/hosts`, `/etc/hostname` or
-  `/etc/resolv.conf`. It may not be a volume's mount path; a path **inside** a volume is fine. A path is used once.
+  `/etc/resolv.conf`. It may not be a volume's mount path; a path **inside** a volume is fine, but Docker then creates an empty placeholder file
+  at that path inside the volume on the server, so it shows up in the volume (and in its backups) after the first start.
+  A path is used once, and a file may not sit inside another file (`/etc/app` and `/etc/app/x.conf`): the copy could not start.
 - `mode`: octal, `0640` or `640`. The default is **`0644`**: readable by every user in the container. Give a key
   `0400` and the owner that runs the app.
 - `uid` and `gid`: 0 to 65535. The default is root. A key that the app reads as a normal user needs the app's own id
