@@ -118,6 +118,10 @@ gid=$(id -g 2>/dev/null)
 case "$uid" in ''|*[!0-9]*) fail "prepare: could not read the service's user" ;; esac
 case "$gid" in ''|*[!0-9]*) fail "prepare: could not read the service's group" ;; esac
 echo "` + opensearchOwnerMarker + ` uid=$uid gid=$gid"
+# Nomad's exec can report the exit of a command that ends at once before its
+# output arrives (lab, 2026-11-27: a restore's prepare came back empty twice), and
+# this step has no result file to fall back on, so it lingers a second.
+sleep 1
 `
 
 // openSearchOwner is the helper that clean and download share: split_owner

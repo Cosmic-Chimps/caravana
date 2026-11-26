@@ -64,7 +64,7 @@ func TestOpenSearchSteps(t *testing.T) {
 		}
 	})
 
-	t.Run("prepare that never names the user fails, after the one retry", func(t *testing.T) {
+	t.Run("prepare that never names the user fails, after two retries", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		id := execCopy(nomad, "running")
 		calls := 0
@@ -74,7 +74,7 @@ func TestOpenSearchSteps(t *testing.T) {
 		})
 		_, err := d.OpenSearchPrepare(ctx, id, svc)
 		var se *SQLiteError
-		if !errors.As(err, &se) || se.Message != "prepare: the service's user could not be read" || calls != 2 {
+		if !errors.As(err, &se) || se.Message != "prepare: the service's user could not be read" || calls != 3 {
 			t.Errorf("err = %v after %d calls", err, calls)
 		}
 	})

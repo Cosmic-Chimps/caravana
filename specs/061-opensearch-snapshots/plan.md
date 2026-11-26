@@ -177,3 +177,7 @@ runs, and Caravana archives it to the backup destination with retention, pins, c
   - The tests: scripts under a real `sh` with a fake `chown` that records its arguments (a test that isn't root can't chown), the
     prepare script's refusals and marker, clean's mode and owner validation, download's `chown -R`, deploy and service tests with
     the exec fakes. The 0777 test case of ff42fba is gone.
+- **Prepare's output (lab, 2026-11-27).** The first gate run after the ownership change failed: a restore's prepare came back
+  twice with no output (Nomad's exec reports the exit of a command that ends at once before its output arrives), and prepare has
+  no result file to fall back on, since the work directory doesn't exist yet. The script now waits a second after its marker and
+  `OpenSearchPrepare` asks up to three times, a second apart. The gate step `opensearch-snapshot` then passed (97 s).

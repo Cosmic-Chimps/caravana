@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
@@ -72,7 +73,16 @@ func (d *Deployer) OpenSearchPrepare(ctx context.Context, copyID string, svc app
 		return "", err
 	}
 	cmd := nomadjob.OpenSearchCommand(nomadjob.OpenSearchPrepareScript, svc.Backup.Repository)
-	for range 2 {
+	// The script waits a second after its marker, so the exec's output arrives
+	// before its exit; an answer that still came back empty is asked again.
+	for try := range 3 {
+		if try > 0 {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(time.Second):
+			}
+		}
 		out, err := d.runStep(ctx, copyID, svc.Name, "prepare", cmd, nil, nil)
 		if err != nil {
 			return "", err
