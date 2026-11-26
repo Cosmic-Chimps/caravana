@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/compose"
@@ -102,4 +104,52 @@ func (s *Service) PreviewCompose(ctx context.Context, appID string, req compose.
 		warnings = []app.Warning{}
 	}
 	return a.WithoutSecretValues(), warnings, nil
+}
+
+// errNotImagesOnly says a deploy is not the change keptFileForImages handles: nothing but
+// images differs from the stored app, and at least one does. It is no failure worth a log line.
+var errNotImagesOnly = errors.New("not an images-only change")
+
+// keptFileForImages is how an images-only deploy of an app that keeps its Compose file keeps
+// it: the kept file with the `image:` of each changed service rewritten in place
+// (compose.ReplaceImages), the request that carries it (no secret value) and what
+// translating it warns. An error says why it can't be done, and the caller then drops the
+// file as any deploy from a definition does.
+//
+// The guard is the translation: the new file must make exactly the app being deployed
+// (compared as the JSON the store keeps, hosts in lower case, secret values left out), so a
+// file that doesn't say what the app says (a variable image, an alias, a preview's Team only
+// domains) is never kept as if it did.
+func keptFileForImages(old store.AppRecord, a app.App) (compose.Request, []app.Warning, error) {
+	if old.Compose == nil {
+		return compose.Request{}, nil, errors.New("the app keeps no file")
+	}
+	if _, ok := app.ImagesOnlyChange(old.App, a); !ok {
+		return compose.Request{}, nil, errNotImagesOnly
+	}
+	changed := map[string]string{}
+	for i, svc := range a.Services {
+		if svc.Image != old.App.Services[i].Image {
+			changed[svc.Name] = svc.Image
+		}
+	}
+	if len(changed) == 0 {
+		return compose.Request{}, nil, errNotImagesOnly
+	}
+	text, err := compose.ReplaceImages(old.Compose.Compose, changed)
+	if err != nil {
+		return compose.Request{}, nil, err
+	}
+	req := *old.Compose
+	req.Compose = text
+	translated, warnings, err := compose.Translate(a.ID, req)
+	if err != nil {
+		return compose.Request{}, nil, fmt.Errorf("the file with the new images does not translate: %w", err)
+	}
+	got, err1 := json.Marshal(translated.WithLowercaseHosts().WithoutSecretValues())
+	want, err2 := json.Marshal(a.WithoutSecretValues())
+	if err1 != nil || err2 != nil || string(got) != string(want) {
+		return compose.Request{}, nil, errors.New("the file with the new images does not make the app being deployed")
+	}
+	return req.WithoutSecretValues(), warnings, nil
 }
