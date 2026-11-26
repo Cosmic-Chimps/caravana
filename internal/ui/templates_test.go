@@ -644,3 +644,104 @@ func TestInstallShowsEachTeamOnlyPassword(t *testing.T) {
 		t.Errorf("want exactly the two indexed panels:\n%s", body)
 	}
 }
+
+// certsDemoTemplate is demoTemplate with a certificate authority, a certificate kept in secret files and a
+// password hash (spec 060).
+func certsDemoTemplate() templates.Template {
+	secret := func(s string) *string { return &s }
+	t := demoTemplate()
+	t.Requires = "0.24.0"
+	t.Generated = nil
+	t.Services = map[string]compose.Overlay{"web": {
+		Domains: []compose.Domain{{Host: "{{domain}}", Port: 80}},
+		Health:  &compose.Health{Path: "/"},
+		Secrets: []app.Secret{
+			{Name: "API_KEY", Value: secret("{{api_key}}")},
+			{Name: "CA_CERT", Value: secret("{{ca_cert}}")},
+			{Name: "NODE_CERT", Value: secret("{{node_cert}}")},
+			{Name: "NODE_KEY", Value: secret("{{node_key}}")},
+			{Name: "USERS", Value: secret("admin:\n  hash: \"{{api_key|bcrypt}}\"\n")},
+		},
+		Files: []app.File{
+			{Path: "/certs/ca.pem", Secret: "CA_CERT", Mode: "0444"},
+			{Path: "/certs/node.pem", Secret: "NODE_CERT", Mode: "0444"},
+			{Path: "/certs/node.key", Secret: "NODE_KEY", Mode: "0400"},
+			{Path: "/etc/users.yml", Secret: "USERS", Mode: "0400"},
+		},
+	}}
+	t.Compose = "services:\n  web:\n    image: traefik/whoami:latest\n    expose: [\"80\"]\n"
+	subject := func(cn string) []templates.DNPart {
+		return []templates.DNPart{{Type: "CN", Value: cn}, {Type: "O", Value: "Demo"}}
+	}
+	t.Certificates = &templates.Certificates{
+		CA:     templates.CertAuthority{Subject: subject("Demo CA")},
+		Leaves: []templates.CertLeaf{{Name: "node", Subject: subject("node"), DNSNames: []string{"web"}}},
+	}
+	return t
+}
+
+// TestTemplatePagesKeepCertificatesOut: the key and certificates a template makes, and the hash it writes,
+// are in no page the console draws, no address, no log line and no byte of the SQLite file; the secret store
+// has them.
+func TestTemplatePagesKeepCertificatesOut(t *testing.T) {
+	const typed = "s3cret-sentinel-060-typed"
+	e := newConsoleEnvWith(t, nil)
+	useCatalog(t, e, certsDemoTemplate())
+
+	var pages, locations []string
+	record := func(what string, resp *http.Response, body string) {
+		pages = append(pages, what+"\n"+body)
+		locations = append(locations, resp.Header.Get("Location"))
+	}
+	answers := map[string]string{"domain": "demo.example.com", "api_key": typed}
+	resp, body := e.postForm(t, "/apps/new/template/demo", installForm("demo", answers, url.Values{"action": {"preview"}}))
+	record("a preview", resp, body)
+	resp, body = e.postForm(t, "/apps/new/template/demo", installForm("demo", answers, nil))
+	record("the install", resp, body)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("install = %d:\n%s", resp.StatusCode, text(body))
+	}
+	resp, body = e.get(t, resp.Header.Get("Location"))
+	record("the page after the install", resp, body)
+	waitFor(t, "the key to be stored", func() bool { return e.Nomad.Variable("nomad/jobs/demo/web")["NODE_KEY"] != "" })
+	live := e.Nomad.Variable("nomad/jobs/demo/web")
+	key := live["NODE_KEY"]
+	if !strings.HasPrefix(key, "-----BEGIN PRIVATE KEY-----\n") || !strings.HasPrefix(live["CA_CERT"], "-----BEGIN CERTIFICATE-----\n") || !strings.Contains(live["USERS"], `hash: "$2y$12$`) {
+		t.Fatalf("the variable has %d items, the key starts %.30q", len(live), key)
+	}
+	needles := []string{strings.Split(key, "\n")[1], strings.Split(live["NODE_CERT"], "\n")[1], strings.Split(live["CA_CERT"], "\n")[1], typed,
+		strings.Trim(strings.TrimSpace(strings.Split(live["USERS"], "\n")[1][len("  hash:"):]), `"`)}
+
+	for _, path := range []string{"/apps/new/template/demo", "/apps/demo", "/apps/demo/configure", "/apps/demo/configure/source", "/apps/demo/configure/services",
+		"/apps/demo/deployments", "/apps/demo/variables", "/apps"} {
+		resp, body = e.get(t, path)
+		record(path, resp, body)
+	}
+	resp, body = e.get(t, "/apps/demo/deployments/"+deploymentIDOf(t, e, "demo")+"/compose")
+	record("the kept Compose file", resp, body)
+
+	for _, n := range needles {
+		for _, p := range pages {
+			if strings.Contains(p, n) {
+				t.Errorf("a page holds %.40q: %.300s", n, p)
+			}
+		}
+		for _, l := range locations {
+			if strings.Contains(l, n) || strings.Contains(l, url.QueryEscape(n)) {
+				t.Errorf("an address holds %.40q: %s", n, l)
+			}
+		}
+		if strings.Contains(e.Logs.String(), n) {
+			t.Errorf("the log holds %.40q", n)
+		}
+	}
+	files, _ := filepath.Glob(filepath.Join(e.Dir, "caravana.db*"))
+	for _, f := range files {
+		b, _ := os.ReadFile(f)
+		for _, n := range needles {
+			if strings.Contains(string(b), n) {
+				t.Errorf("%s holds %.40q", filepath.Base(f), n)
+			}
+		}
+	}
+}

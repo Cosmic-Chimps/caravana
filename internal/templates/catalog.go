@@ -2,14 +2,20 @@
 //
 // A template is a manifest plus a Compose file with {{placeholders}}. The
 // package is pure: it never touches the network, the disk (but an fs.FS it is
-// given) or the clock, and its only source of randomness is an io.Reader the
-// caller passes. Rendering turns a template and its inputs into a
+// given) or the clock, and its source of randomness is an io.Reader the caller
+// passes (with one exception, below). Rendering turns a template and its inputs into a
 // compose.Request, which the service deploys like any other Compose app.
 //
 // A template is data, not a program: placeholders are replaced once, left to
-// right, with no logic (research R1). Secret-valued names (secret inputs and
+// right, with no logic (research R1) but one filter, {{name|bcrypt}}. Secret-valued names (secret inputs and
 // generated secrets) may appear only in an overlay secret's value, so a
 // secret is never part of the Compose file Caravana keeps and shows (R2).
+//
+// One thing is not drawn from that reader (spec 060): the certificates a
+// template asks for and their RSA keys come from crypto/rand, which crypto/rsa
+// uses whatever reader it is given, and so does the salt of a bcrypt hash. Both
+// are made when a template is installed (Generate, Render), never by Check or a
+// preview, and the certificates take their dates from the time Generate is given.
 package templates
 
 import (
@@ -114,10 +120,13 @@ type Template struct {
 	Broken string `json:"broken,omitempty"`
 	// Lab is false when the catalog's lab job must skip the template. nil
 	// means true.
-	Lab       *bool                      `json:"lab,omitempty"`
-	Inputs    []Input                    `json:"inputs,omitempty"`
-	Generated []Generated                `json:"generated,omitempty"`
-	Services  map[string]compose.Overlay `json:"services,omitempty"`
+	Lab       *bool       `json:"lab,omitempty"`
+	Inputs    []Input     `json:"inputs,omitempty"`
+	Generated []Generated `json:"generated,omitempty"`
+	// Certificates (spec 060) asks for a certificate authority and certificates it signs, made at
+	// install. They make the secret-valued names ca_cert, <leaf>_cert and <leaf>_key.
+	Certificates *Certificates              `json:"certificates,omitempty"`
+	Services     map[string]compose.Overlay `json:"services,omitempty"`
 	// ItemWhens holds the conditions (format 2) of the items of each service's
 	// lists: ItemWhens[service][field] has one entry per item of the list
 	// (domains, secrets, identities, publish), nil for an item with none. In
@@ -206,7 +215,8 @@ var (
 	tagRE         = regexp.MustCompile(`^[a-z0-9][a-z0-9 -]{0,23}$`)
 	inputNameRE   = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 	choiceValueRE = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
-	placeholderRE = regexp.MustCompile(`\{\{\s*([a-z][a-z0-9_]*)\s*\}\}`)
+	// placeholderRE is {{name}}, or {{name|filter}} (spec 060): group 1 is the name, group 2 the filter.
+	placeholderRE = regexp.MustCompile(`\{\{\s*([a-z][a-z0-9_]*)(?:\s*\|\s*([a-z][a-z0-9_]*))?\s*\}\}`)
 )
 
 // ParseCatalog reads a bundle (format 1 or 2) and checks every rule of the
@@ -422,7 +432,15 @@ type nameKind int
 const (
 	plainName  nameKind = iota + 1 // domain, email, text
 	secretName                     // a secret input or a generated secret
+	certName                       // a name a certificate makes: secret-valued, and no filter applies to it
 )
+
+// filterBcrypt is the one filter: {{name|bcrypt}} is the bcrypt hash of a secret (spec 060), for the
+// password files of services that keep hashes (OpenSearch's internal users).
+const filterBcrypt = "bcrypt"
+
+// maxBcryptInput is what bcrypt reads of a password.
+const maxBcryptInput = 72
 
 // validateNames checks the inputs and the generated secrets, and returns the
 // kind of each declared name.
@@ -536,7 +554,37 @@ func (t Template) validateNames(format int) (map[string]nameKind, error) {
 			return nil, defect(t, f+".alphabet", "must be one of %s, %s, %s", AlphabetHex, AlphabetAlnum, AlphabetBase64URL)
 		}
 	}
+	if t.Certificates != nil {
+		if format < Format {
+			return nil, defect(t, "certificates", "are catalog format 2; format 1 has none")
+		}
+		if err := t.Certificates.validate(t); err != nil {
+			return nil, err
+		}
+		made, fields := t.Certificates.madeNames()
+		for i, name := range made {
+			if _, dup := names[name]; dup {
+				return nil, defect(t, fields[i], "makes %q, which an input, a generated secret or another certificate has already", name)
+			}
+			names[name] = certName
+		}
+	}
 	return names, nil
+}
+
+// certField is the path of the certificates block that makes a name, for an error.
+func (t Template) certField(name string) string {
+	if name == "ca_cert" {
+		return "certificates.ca"
+	}
+	if t.Certificates != nil {
+		for i, l := range t.Certificates.Leaves {
+			if name == l.Name+"_cert" || name == l.Name+"_key" {
+				return fmt.Sprintf("certificates.leaves[%d].name", i)
+			}
+		}
+	}
+	return "certificates"
 }
 
 // validateChoices checks a choice input's list and default.
@@ -621,18 +669,33 @@ func compilePattern(p string) (*regexp.Regexp, error) {
 // choice input used only in conditions counts as used.
 func (t Template) validatePlaceholders(names map[string]nameKind, format int) error {
 	used := map[string]bool{}
+	hashed := map[string]bool{} // the names a {{name|bcrypt}} hashes
+	filtered := false
 
-	// A plain place accepts plain names only; a secret value place accepts both.
+	// A plain place accepts plain names only; a secret value place accepts both. A filter
+	// ({{name|bcrypt}}) applies to a secret input or a generated secret, in a secret value only.
 	scan := func(field, text string, secretPlace bool) error {
 		for _, m := range placeholderRE.FindAllStringSubmatch(text, -1) {
-			kind, ok := names[m[1]]
+			name, filter := m[1], m[2]
+			kind, ok := names[name]
 			switch {
 			case !ok:
-				return defect(t, field, "uses {{%s}}, which is not an input or a generated secret", m[1])
-			case kind == secretName && !secretPlace:
-				return defect(t, field, "uses the secret {{%s}}: secrets may only go in a service's secrets[].value", m[1])
+				return defect(t, field, "uses {{%s}}, which is not an input or a generated secret", name)
+			case kind != plainName && !secretPlace:
+				return defect(t, field, "uses the secret {{%s}}: secrets may only go in a service's secrets[].value", name)
+			case filter != "" && format < Format:
+				return defect(t, field, "uses {{%s|%s}}: a filter is catalog format 2; format 1 has none", name, filter)
+			case filter != "" && filter != filterBcrypt:
+				return defect(t, field, "uses the filter %q on {{%s}}; the only filter is %s", filter, name, filterBcrypt)
+			case filter != "" && kind == plainName:
+				return defect(t, field, "uses {{%s|%s}}, but %s is a plain input: a filter hashes a secret", name, filter, name)
+			case filter != "" && kind == certName:
+				return defect(t, field, "uses {{%s|%s}}: a certificate's PEM can't be hashed", name, filter)
 			}
-			used[m[1]] = true
+			if filter != "" {
+				hashed[name], filtered = true, true
+			}
+			used[name] = true
 		}
 		return nil
 	}
@@ -669,8 +732,10 @@ func (t Template) validatePlaceholders(names map[string]nameKind, format int) er
 		switch {
 		case !ok:
 			return defect(t, "notes", "uses {{%s}}, which is not an input", m[1])
-		case kind == secretName:
+		case kind != plainName:
 			return defect(t, "notes", "uses the secret {{%s}}: notes are shown, so only plain inputs may be in them", m[1])
+		case m[2] != "":
+			return defect(t, "notes", "uses a filter on {{%s}}: notes show a plain input as it was typed", m[1])
 		}
 	}
 
@@ -709,10 +774,25 @@ func (t Template) validatePlaceholders(names map[string]nameKind, format int) er
 			return defect(t, "inputs."+in.Name, "is declared but never used in the Compose file, the services or a condition")
 		}
 	}
-	for _, g := range t.Generated {
+	for i, g := range t.Generated {
 		if !used[g.Name] {
 			return defect(t, "generated."+g.Name, "is declared but never used")
 		}
+		if hashed[g.Name] && g.Length > maxBcryptInput {
+			return defect(t, fmt.Sprintf("generated[%d].length", i), "is %d, but {{%s|%s}} hashes it and bcrypt reads %d bytes at most", g.Length, g.Name, filterBcrypt, maxBcryptInput)
+		}
+	}
+	if t.Certificates != nil {
+		for _, name := range t.Certificates.Names() {
+			if !used[name] {
+				return defect(t, t.certField(name), "makes %s, which is never used in the services", name)
+			}
+		}
+	}
+	// An older Caravana reads {{name|bcrypt}} as text and has no certificates: `requires` is what keeps it
+	// from installing the template as it would not work.
+	if (t.Certificates != nil || filtered) && t.Requires == "" {
+		return defect(t, "requires", "is required: the template uses certificates or {{name|%s}}, which an older Caravana doesn't know", filterBcrypt)
 	}
 	return nil
 }

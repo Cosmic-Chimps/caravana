@@ -4,6 +4,9 @@ This is the **current** format. `specs/035-app-templates/contracts/template-form
 the contract of `catalog.json`, which every Caravana up to 0.22 reads. Everything not named here is as in
 format 1 (field rules, values, placeholders, the bundle's layout, `Check`).
 
+Feature 060 adds to it, in format 2 only: the manifest's `certificates` and the placeholder filter
+`{{name|bcrypt}}`. See `specs/060-opensearch-apps/contracts/template-format-060.md`.
+
 ## The two bundles
 
 A release of the catalog repository publishes:

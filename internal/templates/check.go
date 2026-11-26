@@ -2,6 +2,7 @@ package templates
 
 import (
 	"embed"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -20,7 +21,7 @@ const checkDigest = "@sha256:000000000000000000000000000000000000000000000000000
 // does the following for every combination of its choice inputs' answers (at
 // most 64), once with every optional input empty and once with each filled
 // with its example: render the template with the example inputs and fixed
-// stand-ins for the generated secrets, translate the Compose file (a warning is
+// stand-ins for the generated secrets, the certificates and the hashes, translate the Compose file (a warning is
 // an error: a template must be clean), run Nomad's limits with settings, parse
 // every image reference and translate the job.
 //
@@ -132,7 +133,12 @@ func checkOnce(t Template, settings nomadjob.Settings, answers map[string]string
 		// the same on every run.
 		values[g.Name] = strings.Repeat(alphabets[g.Alphabet][:1], g.Length)
 	}
-	req, err := t.Render(values)
+	if t.Certificates != nil {
+		// Text where a PEM would be, and a fixed text for a bcrypt hash: no key or hash is made here,
+		// so Check stays fast however many cases it renders.
+		maps.Copy(values, t.Certificates.standIns())
+	}
+	req, err := t.render(values, standInHash)
 	if err != nil {
 		return fail("", "render: %v", err)
 	}

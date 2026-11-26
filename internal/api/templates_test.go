@@ -547,3 +547,97 @@ func TestTemplateAnswersKeepSecretsOut(t *testing.T) {
 
 // callStatus is call's answer as the status and the body, for record.
 func callStatus(status int, _ http.Header, raw []byte) (int, []byte) { return status, raw }
+
+// certsDemoTemplate is demoTemplate with a certificate authority, a certificate in secret files and a
+// password hash (spec 060).
+func certsDemoTemplate() templates.Template {
+	secret := func(s string) *string { return &s }
+	t := demoTemplate()
+	t.Requires = "0.24.0"
+	t.Generated = nil
+	t.Inputs = t.Inputs[:2]
+	subject := func(cn string) []templates.DNPart {
+		return []templates.DNPart{{Type: "CN", Value: cn}, {Type: "O", Value: "Demo"}}
+	}
+	t.Certificates = &templates.Certificates{
+		CA:     templates.CertAuthority{Subject: subject("Demo CA")},
+		Leaves: []templates.CertLeaf{{Name: "node", Subject: subject("node"), DNSNames: []string{"web"}}},
+	}
+	ov := t.Services["web"]
+	ov.Secrets = []app.Secret{
+		{Name: "API_KEY", Value: secret("{{api_key}}")},
+		{Name: "CA_CERT", Value: secret("{{ca_cert}}")},
+		{Name: "NODE_CERT", Value: secret("{{node_cert}}")},
+		{Name: "NODE_KEY", Value: secret("{{node_key}}")},
+		{Name: "USERS", Value: secret("admin:\n  hash: \"{{api_key|bcrypt}}\"\n")},
+	}
+	ov.Files = []app.File{
+		{Path: "/certs/ca.pem", Secret: "CA_CERT", Mode: "0444"},
+		{Path: "/certs/node.pem", Secret: "NODE_CERT", Mode: "0444"},
+		{Path: "/certs/node.key", Secret: "NODE_KEY", Mode: "0400"},
+		{Path: "/etc/users.yml", Secret: "USERS", Mode: "0400"},
+	}
+	t.Services["web"] = ov
+	return t
+}
+
+// TestTemplateAnswersKeepCertificatesOut: the key and certificates a template makes, and the hash it writes,
+// are in the Nomad Variable and in no answer of the API, no log line and no byte of the SQLite file; the Nomad
+// job has names only.
+func TestTemplateAnswersKeepCertificatesOut(t *testing.T) {
+	const typed = "s3cret-sentinel-060-typed"
+	e := newTestEnv(t, "")
+	useCatalog(t, e, certsDemoTemplate())
+
+	var answers []string
+	record := func(status int, raw []byte) { answers = append(answers, fmt.Sprintf("%d %s", status, raw)) }
+	body := `{"id": "demo", "inputs": {"domain": "demo.example.com", "api_key": "` + typed + `"}}`
+	record(callStatus(call(t, http.MethodPost, e.URL+"/v1/templates/demo/preview", "application/json", body)))
+	status, _, raw := install(t, e, "demo", body)
+	if status != http.StatusAccepted {
+		t.Fatalf("install = %d %s", status, raw)
+	}
+	record(status, raw)
+	waitHealthy(t, e, "demo", decodeAs[deployment](t, raw).ID)
+	record(callStatus(install(t, e, "demo", `{"id": "demo", "inputs": {"domain": "x.example.com", "api_key": "`+typed+`"}}`)))
+
+	live := e.Nomad.Variable("nomad/jobs/demo/web")
+	key := live["NODE_KEY"]
+	if !strings.HasPrefix(key, "-----BEGIN PRIVATE KEY-----\n") || !strings.HasPrefix(live["CA_CERT"], "-----BEGIN CERTIFICATE-----\n") || !strings.Contains(live["USERS"], `hash: "$2y$12$`) {
+		t.Fatalf("the Nomad Variable has %d items, the key starts %.30q, users %q", len(live), key, live["USERS"])
+	}
+	needles := []string{strings.Split(key, "\n")[1], strings.Split(live["NODE_CERT"], "\n")[1], strings.Split(live["CA_CERT"], "\n")[1], typed,
+		strings.Trim(strings.TrimSpace(strings.Split(live["USERS"], "\n")[1][len("  hash:"):]), `"`)}
+
+	for _, path := range []string{"/v1/templates", "/v1/templates/demo", "/v1/apps", "/v1/apps/demo", "/v1/apps/demo/compose",
+		"/v1/apps/demo/deployments", "/v1/apps/demo/jobspec", "/v1/deployments", "/v1/attention", "/v1/domains"} {
+		record(callStatus(call(t, http.MethodGet, e.URL+path, "", "")))
+	}
+	job, _ := json.Marshal(e.Nomad.Job("demo"))
+	logs := e.Logs.String()
+	for _, n := range needles {
+		for _, a := range answers {
+			if strings.Contains(a, n) {
+				t.Errorf("an answer holds %.40q: %.200s", n, a)
+			}
+		}
+		if bytes.Contains(job, []byte(n)) {
+			t.Errorf("the Nomad job holds %.40q", n)
+		}
+		if strings.Contains(logs, n) {
+			t.Errorf("the log holds %.40q", n)
+		}
+	}
+	files, _ := filepath.Glob(filepath.Join(e.Dir, "caravana.db*"))
+	if len(files) == 0 {
+		t.Fatal("no database file")
+	}
+	for _, f := range files {
+		b, _ := os.ReadFile(f)
+		for _, n := range needles {
+			if bytes.Contains(b, []byte(n)) {
+				t.Errorf("%s holds %.40q", filepath.Base(f), n)
+			}
+		}
+	}
+}

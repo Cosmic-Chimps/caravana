@@ -8,7 +8,10 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/compose"
@@ -95,6 +98,7 @@ func (t Template) checkInputs(in map[string]string, secretsRequired bool) (map[s
 			return nil, app.NewFieldError("inputs."+name, "is not an input of this template")
 		}
 	}
+	hashed := t.bcryptNames()
 	out := make(map[string]string, len(t.Inputs))
 	for _, input := range t.Inputs {
 		// An input another answer doesn't ask for is empty, and whatever was
@@ -117,6 +121,9 @@ func (t Template) checkInputs(in map[string]string, secretsRequired bool) (map[s
 		v, err := checkValue(input, v)
 		if err != nil {
 			return nil, app.NewFieldError("inputs."+input.Name, "%s", err.Error())
+		}
+		if hashed[input.Name] && len(v) > maxBcryptInput {
+			return nil, app.NewFieldError("inputs."+input.Name, "is %d bytes; at most %d are allowed, since it is stored hashed with bcrypt", len(v), maxBcryptInput)
 		}
 		out[input.Name] = v
 	}
@@ -150,9 +157,12 @@ var alphabets = map[string]string{
 }
 
 // Generate makes the template's generated secrets from r (crypto/rand.Reader
-// in production; a test gives its own). The values exist only in the returned
-// map: the caller sends them in the deploy request and nowhere else.
-func (t Template) Generate(r io.Reader) (map[string]string, error) {
+// in production; a test gives its own) and, when it has them, its certificates
+// and their keys, dated from now. Certificates and their keys are the one
+// thing not drawn from r: crypto/rsa uses the system's source whatever reader
+// it is given. The values exist only in the returned map: the caller sends
+// them in the deploy request and nowhere else.
+func (t Template) Generate(r io.Reader, now time.Time) (map[string]string, error) {
 	out := make(map[string]string, len(t.Generated))
 	for _, g := range t.Generated {
 		alphabet, ok := alphabets[g.Alphabet]
@@ -164,6 +174,13 @@ func (t Template) Generate(r io.Reader) (map[string]string, error) {
 			return nil, fmt.Errorf("generate %q: %w", g.Name, err)
 		}
 		out[g.Name] = v
+	}
+	if t.Certificates != nil {
+		certs, err := t.Certificates.generate(now)
+		if err != nil {
+			return nil, fmt.Errorf("generate certificates: %w", err)
+		}
+		maps.Copy(out, certs)
 	}
 	return out, nil
 }
@@ -213,6 +230,11 @@ func (t Template) PreviewValues(inputs map[string]string) map[string]string {
 	for _, g := range t.Generated {
 		values[g.Name] = ""
 	}
+	if t.Certificates != nil {
+		for _, name := range t.Certificates.Names() {
+			values[name] = ""
+		}
+	}
 	return values
 }
 
@@ -246,14 +268,67 @@ func cloneOverlay(ov compose.Overlay) compose.Overlay {
 // substitute replaces each placeholder once, left to right. A value is never
 // looked at again, so a value that looks like a placeholder stays text. A name
 // without a value is reported through missing.
-func substitute(text string, values map[string]string, missing func(name string) string) string {
+//
+// A {{name|bcrypt}} is the hash of the value: hash makes it, and a failure is
+// reported through failed (the first one is the one told). A plain template
+// text (the notes) has no filters, so its hash is nil and a filtered
+// placeholder stays as it is.
+func substitute(text string, values map[string]string, missing func(name string) string, hash func(string) (string, error), failed func(name string, err error)) string {
 	return placeholderRE.ReplaceAllStringFunc(text, func(m string) string {
-		name := placeholderRE.FindStringSubmatch(m)[1]
-		if v, ok := values[name]; ok {
+		parts := placeholderRE.FindStringSubmatch(m)
+		name, filter := parts[1], parts[2]
+		v, ok := values[name]
+		if !ok {
+			return missing(name)
+		}
+		if filter == "" {
 			return v
 		}
-		return missing(name)
+		if hash == nil {
+			return m
+		}
+		h, err := hash(v)
+		if err != nil {
+			failed(name, err)
+		}
+		return h
 	})
+}
+
+// bcryptCost is the cost of a hash {{name|bcrypt}} makes: what the OpenSearch
+// documentation recommends and its own hash tool writes by default.
+const bcryptCost = 12
+
+// bcryptHash is the hash of a password in the form OpenSearch writes
+// ($2y$12$...).
+func bcryptHash(password string) (string, error) {
+	h, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
+	if err != nil {
+		return "", err
+	}
+	// Go writes $2a$; the same hash is $2y$ for every reader of the format, and it is the prefix OpenSearch writes.
+	return "$2y" + string(h[3:]), nil
+}
+
+// standInHash takes the place of a hash in Check, which renders many times and must stay fast.
+func standInHash(string) (string, error) {
+	return "$2y$12$CHECKCHECKCHECKCHECKCHECKCHECKCHECKCHECKCHECKCHECKCHECKC", nil
+}
+
+// bcryptNames are the names a {{name|bcrypt}} hashes.
+func (t Template) bcryptNames() map[string]bool {
+	out := map[string]bool{}
+	for _, ov := range t.Services {
+		ov = cloneOverlay(ov)
+		for _, ref := range overlayStrings(&ov) {
+			for _, m := range placeholderRE.FindAllStringSubmatch(*ref.s, -1) {
+				if m[2] == filterBcrypt {
+					out[m[1]] = true
+				}
+			}
+		}
+	}
+	return out
 }
 
 // Render turns the template into a deploy request. values holds every input
@@ -263,7 +338,25 @@ func substitute(text string, values map[string]string, missing func(name string)
 // strings are replaced one by one, so no value can change its structure. Name
 // is left empty: the display name is the app ID, as for any Compose deploy.
 func (t Template) Render(values map[string]string) (compose.Request, error) {
+	return t.render(values, bcryptHash)
+}
+
+// RenderPreview is Render for a preview, which shows secret names and no value:
+// it makes no hash (a stand-in takes its place), so a preview never waits for bcrypt.
+func (t Template) RenderPreview(values map[string]string) (compose.Request, error) {
+	return t.render(values, standInHash)
+}
+
+// render is Render with the hash a {{name|bcrypt}} is made with: Check gives
+// a stand-in, so its many renders don't each pay for bcrypt.
+func (t Template) render(values map[string]string, hash func(string) (string, error)) (compose.Request, error) {
 	var missingName string
+	var hashErr error
+	failed := func(name string, err error) {
+		if hashErr == nil {
+			hashErr = fmt.Errorf("hash {{%s|%s}}: %w", name, filterBcrypt, err)
+		}
+	}
 	missing := func(name string) string {
 		if missingName == "" {
 			missingName = name
@@ -279,19 +372,22 @@ func (t Template) Render(values map[string]string) (compose.Request, error) {
 		}
 		return compose.Request{}, err
 	}
-	req := compose.Request{Compose: substitute(text, values, missing)}
+	req := compose.Request{Compose: substitute(text, values, missing, hash, failed)}
 	if len(t.Services) > 0 {
 		req.Services = make(map[string]compose.Overlay, len(t.Services))
 	}
 	for svc, ov := range t.Services {
 		ov = t.keptItems(svc, cloneOverlay(ov), values)
 		for _, ref := range overlayStrings(&ov) {
-			*ref.s = substitute(*ref.s, values, missing)
+			*ref.s = substitute(*ref.s, values, missing, hash, failed)
 		}
 		req.Services[svc] = ov
 	}
 	if missingName != "" {
 		return compose.Request{}, app.NewFieldError("inputs."+missingName, "has no value")
+	}
+	if hashErr != nil {
+		return compose.Request{}, hashErr
 	}
 	return req, nil
 }
@@ -345,7 +441,7 @@ func (t Template) RenderNotes(inputs map[string]string) string {
 			label = name
 		}
 		return "<your " + strings.ToLower(label) + ">"
-	})
+	}, nil, nil)
 }
 
 // ExampleInputs are answers that pass CheckInputs: each input's default, else

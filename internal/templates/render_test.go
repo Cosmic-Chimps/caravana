@@ -140,7 +140,7 @@ func TestGenerate(t *testing.T) {
 		{Name: "b", Length: 32, Alphabet: AlphabetAlnum},
 		{Name: "c", Length: 128, Alphabet: AlphabetBase64URL},
 	}}
-	got, err := tpl.Generate(&counting{})
+	got, err := tpl.Generate(&counting{}, testNow)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -161,21 +161,21 @@ func TestGenerate(t *testing.T) {
 	}
 
 	t.Run("the same reader gives the same secrets", func(t *testing.T) {
-		again, err := tpl.Generate(&counting{})
+		again, err := tpl.Generate(&counting{}, testNow)
 		if err != nil || !reflect.DeepEqual(got, again) {
 			t.Errorf("second call = %v, %v", again, err)
 		}
 	})
 
 	t.Run("a sentinel reader gives a sentinel secret", func(t *testing.T) {
-		got, err := tpl.Generate(bytes.NewReader(bytes.Repeat([]byte{0}, 4096)))
+		got, err := tpl.Generate(bytes.NewReader(bytes.Repeat([]byte{0}, 4096)), testNow)
 		if err != nil || got["a"] != strings.Repeat("0", 16) {
 			t.Errorf("Generate = %v, %v", got, err)
 		}
 	})
 
 	t.Run("a reader that fails is an error that holds no value", func(t *testing.T) {
-		_, err := tpl.Generate(io.LimitReader(&counting{}, 5))
+		_, err := tpl.Generate(io.LimitReader(&counting{}, 5), testNow)
 		if err == nil || !strings.Contains(err.Error(), `generate "a"`) {
 			t.Errorf("error = %v", err)
 		}
@@ -183,7 +183,7 @@ func TestGenerate(t *testing.T) {
 
 	t.Run("an unknown alphabet", func(t *testing.T) {
 		bad := Template{Generated: []Generated{{Name: "x", Length: 16, Alphabet: "emoji"}}}
-		if _, err := bad.Generate(&counting{}); err == nil {
+		if _, err := bad.Generate(&counting{}, testNow); err == nil {
 			t.Error("accepted")
 		}
 	})

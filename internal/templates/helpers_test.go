@@ -3,6 +3,7 @@ package templates
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/compose"
@@ -73,3 +74,6 @@ func bundleOf(t *testing.T, version string, ts ...Template) []byte {
 	}
 	return b
 }
+
+// testNow is the time the tests generate certificates at.
+var testNow = time.Date(2026, 11, 27, 10, 0, 0, 0, time.UTC)

@@ -402,7 +402,7 @@ func (s *Service) PreviewTemplate(ctx context.Context, name, appID string, input
 	if err != nil {
 		return TemplatePreview{}, err
 	}
-	req, err := t.Render(t.PreviewValues(checked))
+	req, err := t.RenderPreview(t.PreviewValues(checked))
 	if err != nil {
 		return TemplatePreview{}, err
 	}
@@ -442,7 +442,7 @@ func (s *Service) InstallTemplate(ctx context.Context, name, appID string, input
 	if err != nil {
 		return DeployResult{}, err
 	}
-	generated, err := t.Generate(s.templateRand)
+	generated, err := t.Generate(s.templateRand, s.clock.Now())
 	if err != nil {
 		return DeployResult{}, fmt.Errorf("install template %q: %w", name, err)
 	}
