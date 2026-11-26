@@ -152,7 +152,7 @@ func overviewSourceOf(a app.App, rec store.AppRecord, templateFact sentence) ove
 	var line, button, look string
 	switch {
 	case !a.Defined():
-		kind, line, button, look = sentence{plain("Nothing yet")}, "Not defined yet.", "Define the app", "Open Source"
+		kind, line, button, look = sentence{plain("Not defined yet")}, "Give it an image or a Compose file on Source.", "Define the app", "Open Source"
 	case rec.Compose != nil:
 		kind, line, button, look = sentence{plain("Compose file")}, "Made from a Compose file, kept as you typed it.", "Edit the Compose file", "See the Compose file"
 	case a.Source.Kind == app.SourceCompose:

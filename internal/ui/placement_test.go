@@ -285,7 +285,7 @@ func TestKeptFileAppPlacementIsReadOnly(t *testing.T) {
 
 	_, page := e.get(t, "/apps/shop/configure/services")
 	words := text(page)
-	for _, want := range []string{"Only on servers with ssd=true", "Prefers region=eu (weight 80)", "Never on fsn-2", "Set in the Compose overlay."} {
+	for _, want := range []string{"Only on servers with ssd=true", "Prefers region=eu (weight 80)", "Never on fsn-2", "Set through the API, in the Compose settings."} {
 		if !strings.Contains(words, want) {
 			t.Errorf("Configure lacks %q:\n%s", want, words)
 		}

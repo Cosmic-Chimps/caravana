@@ -1671,7 +1671,7 @@ servers with `ssd=true`", "Prefers `region=eu` (weight 80)", "Never on `three`",
 under the service's own form and posting by itself with the page's revision (a deploy). Its three inputs are Require and
 Prefer (mono text, hints in fg-3) and Never on (one checkbox per managed server, and a name that is no server any more
 stays listed and checked, with "(not a server any more)", so saving never drops it). An app that keeps its Compose file
-shows the sentences and "Set in the Compose overlay.", with no form.
+shows the sentences and "Set through the API, in the Compose settings.", with no form.
 
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's

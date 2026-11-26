@@ -140,11 +140,11 @@
     </fieldset>
     {{end}}
   </fieldset>
-  {{if not .Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save placement</button><span class="cv-note">Saving deploys the app with these rules.</span></div>{{end}}
+  {{if not .Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save placement and deploy</button></div>{{end}}
 </form>
 </details>
 {{else}}
-<p class="cv-note">Set in the Compose overlay.</p>
+<p class="cv-note">Set through the API, in the Compose settings.</p>
 {{end}}
 {{end}}
 
@@ -189,7 +189,7 @@
       </div>
       {{template "field" (.F "value")}}
     </fieldset>
-    {{if not .Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save scaling</button><span class="cv-note">Saving deploys the app with this rule.</span></div>{{end}}
+    {{if not .Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save scaling and deploy</button></div>{{end}}
   </form>
   {{if and .Scaled (not .Stopped)}}
   <form method="post" action="{{.Action}}#{{.AnchorID}}" class="cv-svcform">
@@ -199,7 +199,7 @@
   {{end}}
 </details>
 {{else}}
-<p class="cv-note">Set it in the Compose overlay.</p>
+<p class="cv-note">Set through the API, in the Compose settings.</p>
 {{end}}
 {{end}}
 
@@ -1175,7 +1175,7 @@
     {{if $.Webhook.Enabled}}<p class="text-base text-fg-1">Webhook token made {{template "time" $.Webhook.Created}}.</p>
     {{else}}<p class="text-base text-fg-1">No webhook token.</p>{{end}}
     {{end}}
-    <p class="cv-note">Export the app as a plain Nomad job.</p>
+    {{if $.Export.Href}}<p class="cv-note">Export the app as a plain Nomad job.</p>{{end}}
     <div class="cv-btnrow"><a href="{{.IntegrationsHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Open integrations</a></div>
   </section>
   {{if not $.NoConfigure}}

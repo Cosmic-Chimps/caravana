@@ -144,7 +144,7 @@ func (c *console) createOnly(t *testing.T) {
 	}
 
 	// 2. Define it through the form on Configure > Source (Overview only links to it).
-	if _, body = c.get(t, "/apps/"+named+"/configure"); !strings.Contains(pageText(body), "Not defined yet.") {
+	if _, body = c.get(t, "/apps/"+named+"/configure"); !strings.Contains(pageText(body), "Not defined yet") {
 		t.Errorf("Overview of %s doesn't say it isn't defined yet:\n%s", named, pageText(body))
 	}
 	resp, body = c.get(t, "/apps/"+named+"/configure/source")

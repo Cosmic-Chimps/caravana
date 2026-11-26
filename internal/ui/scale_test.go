@@ -304,7 +304,7 @@ func TestKeptFileAppScalingIsReadOnly(t *testing.T) {
 
 	_, page := e.get(t, "/apps/shop/configure/services")
 	words := text(page)
-	for _, want := range []string{"Runs 1 to 3 copies, keeping each copy's CPU near 70 % of its reservation", "Set it in the Compose overlay."} {
+	for _, want := range []string{"Runs 1 to 3 copies, keeping each copy's CPU near 70 % of its reservation", "Set through the API, in the Compose settings."} {
 		if !strings.Contains(words, want) {
 			t.Errorf("Configure lacks %q:\n%s", want, words)
 		}

@@ -127,7 +127,7 @@ var inputSpecs = []inputSpec{
 	{Name: "image", Label: "Image", Wide: true},
 	{Name: "port", Numeric: true, Label: "Container port"},
 	{Name: "domainPort", Label: "Domains go to"},
-	{Name: "healthPath", Label: "Path", Prefix: "GET", Placeholder: "TCP port", Hint: "Empty checks the TCP port."},
+	{Name: "healthPath", Label: "Path", Prefix: "GET", Placeholder: "empty: TCP check", Hint: "Empty checks the TCP port."},
 	{Name: "healthInterval", Numeric: true, Label: "Every", Suffix: "s", Placeholder: "10"},
 	{Name: "healthTimeout", Numeric: true, Label: "Timeout", Suffix: "s", Placeholder: "2"},
 }

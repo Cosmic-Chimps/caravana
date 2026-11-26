@@ -255,7 +255,7 @@ func TestOverviewOfAnAppWithNoDefinition(t *testing.T) {
 	e.seed(t, app.App{ID: "blank", Name: "blank", Source: app.Source{Kind: app.SourceImage}})
 	_, body := e.get(t, "/apps/blank/configure")
 	got := text(sectionBody(t, body))
-	for _, want := range []string{"Not defined yet.", "Define the app", "Integrations", "Delete app"} {
+	for _, want := range []string{"Not defined yet", "Give it an image or a Compose file on Source.", "Define the app", "Integrations", "Delete app"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Overview of an undefined app lacks %q:\n%s", want, got)
 		}

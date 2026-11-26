@@ -760,6 +760,7 @@
   .cv-cfg-body { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
   .cv-snav.cv-snav-inpage { flex: 1 1 200px; max-width: 260px; top: 68px; height: auto; overflow: visible; gap: 2px; padding: 0; border-right: 0; }
   .cv-cfg-intro { max-width: 760px; }
+  .cv-cfg-body .cv-note a { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); text-underline-offset: 3px; }
   .cv-cfg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
   .cv-cfg-panel { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
   .cv-cfg-wide { grid-column: 1 / -1; }

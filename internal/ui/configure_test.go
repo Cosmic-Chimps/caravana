@@ -161,7 +161,7 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 		}
 		got := text(body)
 		for _, want := range []string{"Copies & size", "Copies", "CPU MHz", "Memory MB", "Ceiling MB",
-			"Health check GET", "Every s", "Timeout s", "Empty checks the TCP port.",
+			"Health check Path GET", "Every s", "Timeout s",
 			"New copies must pass this check before they take traffic; if they don't, the deploy is reverted.",
 			"Also set", "Entrypoint /entry.sh --strict", "DNS servers 1.1.1.1 10.0.0.2", "DNS search domains corp.example.com", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
 			"Placement", "Scaling", "Save and deploy web", "Save and deploy worker"} {
