@@ -2472,6 +2472,46 @@ sections, one concern per page and one deploy per change. `plan.md` D1–D9 are 
   review, the impeccable critique and the last look were done the same day at 1440 and 390 px in both themes (contract §9: findings,
   rulings, and two points left to the maintainer, D4 and "Also set"). Not in 059: copies and size as inputs for a kept-file app, a Compose-file editor for them.
 
+Feature 060 (`specs/060-opensearch-apps`, CodeAlta task `gwfq`, worktree branch `alta/copper-pelion-48z3`, phases A to E): apps
+like OpenSearch and Wazuh run. `plan.md` D1–D12 are the decisions, R1 the lab facts; operator doc `docs/opensearch-apps.md`.
+API 0.66.0, no migration, no new module, no policy change, constitution unchanged.
+- Host: the installer (both roles), `deploy/dev/setup.sh` and `lab.sh up` write `/etc/sysctl.d/05-caravana-map-count.conf`
+  (`vm.max_map_count = 262144`; the name sorts first, so a distro file that sets more, Ubuntu's 1048576, wins) and
+  `sysctl -w` only when the running value is lower. The agent reports `vmMaxMapCount` (`/proc/sys/vm/max_map_count`), the
+  API has `Server.vmMaxMapCount`, the server page's facts show it (warning colour under 262144). No needs-you item.
+- `app.Service.Ulimits map[string]Ulimit{Soft, Hard}` (`memlock` -1 or bytes, `nofile` 1–1048576) and `Sysctls
+  map[string]string` (only `net.<group>.<name>`, at most 16), omitempty, errors at `services[i].ulimits.nofile.soft` /
+  `services[i].sysctls.<key>` (`internal/app/limits.go`). Translate and `ScheduleRunJob` write the docker driver's
+  `ulimit` and `sysctl` (each a list holding one map in JSON); the HCL export writes `ulimit { }` and `sysctl = { "net.x" =
+  "…" }` (a dotted name can't be a block argument). Compose's `ulimits` and `sysctls` map to them; a file's
+  `vm.max_map_count` ≤ 262144 is dropped with a warning, more is refused.
+- `app.Service.Files []File{Path, Content | Secret, Mode, UID, GID}` (`internal/app/files.go`; 16 per service, 64 KiB each,
+  256 KiB of content per app; reserved paths and a volume's own mount path refused, a path inside a volume allowed; mode
+  default 0644). Each file is a Nomad template plus a read-only docker bind `mount` (`internal/nomadjob/files.go`): content
+  to `local/caravana-files/<k>` with delimiters `[[cvN`/`cvN]]` chosen so neither occurs in it (Nomad copies it byte for
+  byte, `${` included; lab R1), a secret file to `secrets/caravana-files/<k>` reading its one item of the service's
+  variable (a schedule run's own), and **the environment template skips a file's secrets** (`{{ if not (eq .K …) }}`), so a
+  key never reaches the env. Bind mounts from the task directory work with the docker plugin's volumes off (R1). The HCL
+  export escapes `${`/`%{` in template data. Compose's top-level `configs` with inline `content` and a service's `configs`
+  map to content files (`file`, `environment`, `external` refused at `configs.<name>.<attr>`); the overlay takes `files`;
+  the console's Compose draft keeps them (`keepFiles`). Promotion takes the source's `ulimits`, `sysctls` and `files`;
+  Configure shows them read-only; the Variables page marks a secret a file holds.
+- Templates (`internal/templates/certs.go`, contract `contracts/template-format-060.md`): `certificates` (a CA and up to 8
+  leaves, RSA 2048, PKCS#8, 10 years, subjects as ordered lists so DNs are exact; the CA key is thrown away) yields the
+  secret-valued `ca_cert`, `<leaf>_cert`, `<leaf>_key`, and `{{name|bcrypt}}` (cost 12) hashes a secret input or generated
+  secret, both in overlay secret values only. `Check` and `RenderPreview` use stand-ins; `Generate(r, now)` makes the real
+  ones (keys from `crypto/rand`: Go ignores a caller's reader for keys). A template using either must set `requires`; a
+  0.23 host lists it as made for a newer Caravana, and it is never in `catalog.json` (format 1).
+- The Wazuh template (4.14.11 single node: `indexer`, `manager`, `dashboard`; `lab: false`, about 4 GB) is commit `d1e0908`
+  on branch `wazuh-template` of `../caravana-templates`, not pushed, `requires: 0.24.0`; the catalog's CI pin must move to
+  the release that has 060 before it is checked there. It was checked, never run against Wazuh's images: a run on a real
+  host is the maintainer's check.
+- Lab: the gate step `opensearch` (`gate_opensearch_test.go`: `opensearchproject/opensearch:2.19.1` with ulimits, a `net.*`
+  sysctl, a mounted `opensearch.yml` that `GET /` proves in use, a 0400 uid-1000 secret file, Run a command showing the
+  values and the secret not in env, the export with no diff, `kernel.shmmax` refused at its field, the sentinel nowhere
+  else) passed on 2026-11-26 (31 s, `-run 'TestLab/^(api-needs-token|opensearch)$'`). The image appends to `opensearch.yml`
+  when `DISABLE_SECURITY_PLUGIN` is set, which a read-only file refuses, so that setting goes in the file.
+
 The documentation site (branch `docs-site`, 2026-11-26): the user guide is the Markdown under `docs/` (new
 pages in `docs/guide/`, the per-feature docs in `docs/*.md`), published to GitHub Pages
 (`https://cosmic-chimps.github.io/caravana/`) by `.github/workflows/pages.yml` from the Astro Starlight
