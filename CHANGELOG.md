@@ -10,6 +10,40 @@ released sections only. `tools/release.sh unreleased` shows what the next releas
 Each section has the changes that matter to a user, in this order and only as needed: Added,
 Changed, Fixed, Security, then **Upgrade** when an upgrade needs more than rerunning the installer.
 
+## 0.23.2 - 2026-11-26
+
+### Added
+- **A health check form for apps edited through a Compose file.** Configure › Services now shows the health
+  check of each service as a form, "Save and deploy <service>", even when the app keeps its Compose file. The
+  check is written into the file's settings, so the file you typed stays as it is.
+- **Change the policy… on the Backups tab.** A backed-up service can change its engine, its schedule (daily,
+  or no automatic backups) and how many backups it keeps without going through the Compose form. Where backups
+  go, copies and the restore schedule keep their own forms.
+
+### Changed
+- **Configure is now six sections, each with its own page.** Overview (a read-only summary, with Delete app
+  last), Source (the images, the Compose file or the build), Services (copies, size, health check, placement and
+  scaling), Variables & secrets, Domains and Integrations (webhook, deploy token, export), with a menu beside
+  them. Each section has its own form and its own "Save and deploy", so one change is one deploy. Nothing was
+  removed: every form is on the page that holds what it changes.
+- **The Compose form of an app that already exists holds only the file.** Deploy from Compose and Configure ›
+  Source of an app that keeps its file show the file, Preview and Deploy, and say that secrets, domains, health
+  checks and backups stay as they are. Set secrets on Variables & secrets, health checks on Services and backups
+  on the Backups tab. New app › Compose keeps its form.
+
+### Fixed
+- **A first deploy that failed lost its secret values.** When a new app (or a template) deployed for the first time and
+  failed, for example because its image is private and Caravana has no registry credentials for it yet, the values of its
+  secrets were thrown away, and "deploy again" was refused because the app only keeps the names. Now a service that had no
+  secret values before keeps the values of the failed deploy, so after fixing the cause you can deploy again. A template's
+  generated passwords survive the same way. A service that already had values still gets them back when a deploy fails.
+- **Changing only an image no longer drops an app's Compose file.** On an app made from a Compose
+  file, deploying with only a new image (the Deployments tab's Deploy form, CI, or the MCP tool) used to
+  throw the kept file away, and Configure then asked you to paste it again. The new image is now
+  written into the kept file, with its comments and layout untouched. If the image can't be
+  rewritten (it comes from a `${VARIABLE}`, say) or anything else changes, the file is still dropped,
+  with the same warning as before.
+
 ## 0.23.1 - 2026-11-26
 
 ### Fixed
