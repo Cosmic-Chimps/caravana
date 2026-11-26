@@ -2614,3 +2614,12 @@ The maintainer comes from C#/.NET and is learning Go. When introducing a Go idio
 from C# (interfaces satisfied implicitly, error returns instead of exceptions, goroutines and
 channels, `new(expr)` for pointer fields), add a one-line explanation in your summary. Prefer
 clear, plain Go over clever Go.
+
+Reviews go to the project's standing Claude sessions (find them with `ListAgents`, send with `SendMessage`):
+- `caravana` reviews the code: the diff, its tests, correctness and the rules of the constitution.
+- `caravana_designer` reviews what a change does to the console: pages, wording, `DESIGN.md`.
+- `caravana_docs` writes and updates the documentation: the guide in `docs/guide/`, the operator docs and screenshots.
+
+When a change is committed and verified, send each one its part: the commit, the branch and worktree, what changed, which files to
+read, and the checks already run. Address their findings, commit, and answer each one with what changed. A reviewer never commits on
+your branch.
