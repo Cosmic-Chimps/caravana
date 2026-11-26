@@ -355,7 +355,7 @@ type templateServiceView struct {
 	Name, Image string
 	Domains     []string // "your domain"
 	TeamOnly    bool
-	Backup      string   // "postgres", "mysql", "mongodb", "volume", "sqlite", or ""
+	Backup      string   // "postgres", "mysql", "mongodb", "volume", "sqlite", "opensearch", or ""
 	Secrets     []string // the names of its secrets (a preview only)
 }
 

@@ -201,9 +201,10 @@ The indexer's users file holds only `admin` and `kibanaserver`, with the bcrypt 
 users are left out.
 
 **Backups.** The manager's volumes are backed up every day at 03:00 UTC. A volume backup stops the service while it
-runs, so the manager stops for a moment (agents reconnect on their own). The **indexer is not backed up**: stopping it
-for a volume backup would stop the dashboard's searches, and its alerts come from the manager. If you need the
-indexer's data kept, use OpenSearch's own snapshots to a repository; Caravana doesn't build that yet.
+runs, so the manager stops for a moment (agents reconnect on their own). The indexer is a search cluster, which a volume
+backup would stop for every run, so it uses the `opensearch` engine: the cluster takes a snapshot of itself while it
+runs. See [OpenSearch and Elasticsearch snapshots](database-backups.md#opensearch-and-elasticsearch-snapshots) for what
+it needs (`path.repo`, a folder on a volume) and what it holds.
 
 The template is in the catalog repository, not necessarily in the catalog built into your Caravana: **From a template**
 fetches a newer catalog once a day, and **Check now** does it at once (see [From a template](guide/deploy/templates.md)).

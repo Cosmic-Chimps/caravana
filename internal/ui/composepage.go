@@ -122,6 +122,8 @@ var composeSpecs = map[string]inputSpec{
 		Hint: "Empty keeps as many as the destination the backups go to."},
 	"backupFile": {Name: "backupFile", Label: "Database file", Placeholder: "/data/app.db",
 		Hint: "SQLite file only: the database's path inside the service, on one of its volumes."},
+	"backupRepository": {Name: "backupRepository", Label: "Snapshot folder", Placeholder: "/usr/share/opensearch/snapshots",
+		Hint: "OpenSearch or Elasticsearch snapshot only: a folder on one of the service's volumes, listed in the cluster's path.repo setting."},
 }
 
 // Inputs lists the plain inputs the service has, in the order they show.
@@ -152,6 +154,7 @@ func (s composeServiceView) Inputs() []editInput {
 func (s composeServiceView) BackupInputs() []editInput {
 	return []editInput{
 		{inputSpec: composeSpecs["backupFile"], Field: &s.BackupFile},
+		{inputSpec: composeSpecs["backupRepository"], Field: &s.BackupRepository},
 		{inputSpec: composeSpecs["backupSchedule"], Field: &s.BackupSchedule},
 		{inputSpec: composeSpecs["backupKeep"], Field: &s.BackupKeep},
 		{inputSpec: composeSpecs["backupRestoreSchedule"], Field: &s.BackupRestoreSchedule},
@@ -194,7 +197,7 @@ func serviceViews(d composeDraft, a *app.App) []composeServiceView {
 // hasBackupInput says the service has something in its backup inputs, or an
 // error on them, so they must be drawn whatever the image is.
 func (s draftService) hasBackupInput() bool {
-	for _, f := range []formField{s.BackupEngine, s.BackupFile, s.BackupSchedule, s.BackupKeep, s.BackupRestoreSchedule, s.BackupRestoreFrom, s.BackupDestination, s.BackupCopyTo, s.BackupCopyKeep} {
+	for _, f := range []formField{s.BackupEngine, s.BackupFile, s.BackupRepository, s.BackupSchedule, s.BackupKeep, s.BackupRestoreSchedule, s.BackupRestoreFrom, s.BackupDestination, s.BackupCopyTo, s.BackupCopyKeep} {
 		if f.Value != "" || len(f.Error) > 0 {
 			return true
 		}
@@ -387,6 +390,8 @@ func (d *composeDraft) fieldFor(path string) (field *formField, subject string) 
 		return &s.BackupCopyKeep, "The number to keep in a copy"
 	case tail == "backup.file":
 		return &s.BackupFile, "The database file"
+	case tail == "backup.repository":
+		return &s.BackupRepository, "The snapshot folder"
 	case hasPathPrefix(tail, "backup"):
 		return &s.BackupEngine, "The backup"
 	case strings.HasPrefix(tail, "secrets["):

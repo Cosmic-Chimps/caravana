@@ -108,7 +108,7 @@ runs, and Caravana archives it to the backup destination with retention, pins, c
 - [x] **A — backend**: model and validation (D1, D2, D6), `nomadjob/opensearch.go` (scripts, sidecar, markers, parser) with script
   tests and goldens, `deploy/opensearchrun.go`, `service/opensearchbackup.go` wired into Back up now, the scheduler, restore,
   restore schedules, resume, pins; migration 0048; `api/openapi.yaml` 0.67.0; the deploy warning; sentinel tests.
-- [ ] **B — console and docs**: D9, `docs/database-backups.md` (or a section in `docs/opensearch-apps.md`), the guide's backups page,
+- [x] **B — console and docs**: D9, `docs/database-backups.md` (or a section in `docs/opensearch-apps.md`), the guide's backups page,
   `changelog.d/opensearch-snapshots.md`, `CLAUDE.md`.
 - [ ] **C — lab and template**: D11 gate step passing in the lab, D10 template change.
 
@@ -138,3 +138,14 @@ runs, and Caravana archives it to the backup destination with retention, pins, c
   closed", with nothing asked of Nomad (`settleOpenSearchRuns`, called by `resumeVolumeRuns` before the volume and sqlite ones).
 - **Not done (phase B and C):** the console (Compose form engine select, Repository input, Backups tab rows and built-in schedule
   words), docs, changelog note, CLAUDE.md, the gate step, the template change.
+
+## Deviations (phase B)
+
+- **`Service.ChangeBackupPolicy` takes `repository`** (a one-parameter change to Phase A's backend, since the Backups tab's "Change the
+  policy…" had no other way to set the folder); it is written only with the opensearch engine, as `file` is only with sqlite.
+- **Offer rule.** The change form offers the engine to a service that has a port and a writable volume (the same volume test as sqlite plus the
+  port the cluster is reached over). The "Back up daily" gap on the Backups tab does not offer it (it can't know an image is a search cluster
+  and needs `path.repo` set first), so a service with an OpenSearch image and a volume still gets the volume engine there; the empty-state
+  sentence names the opensearch policy.
+- **Configure's Overview** says "OpenSearch snapshot of <folder>, <schedule>, keeping N" for this engine only; the other engines' lines are as
+  before (the Services panel and the old definition rows already name each engine through `engineText`).

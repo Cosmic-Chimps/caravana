@@ -201,6 +201,9 @@ func (s *server) overviewOf(r *http.Request, sum service.AppSummary, templateFac
 		} else {
 			row.Words = scheduleText(b.ScheduleOrDefault())
 		}
+		if b.Engine == app.BackupOpenSearch {
+			row.Words = "OpenSearch snapshot of " + b.Repository + ", " + row.Words // the folder is the policy's one fact the line has no other word for
+		}
 		if primary, copies, err := s.svc.BackupPlaces(r.Context(), a.ID, *b); err == nil && primary != "" {
 			row.Where = "In " + primary
 			if len(copies) > 0 {
