@@ -863,6 +863,71 @@ func TestValidate(t *testing.T) {
 			a.Services[0].Backup = &Backup{Engine: BackupPostgres, File: "/data/app.db"}
 		}, "services[0].backup.file"},
 
+		// OpenSearch backups (feature 061): the repository is a writable volume or a folder in one.
+		{"valid opensearch backup in a folder", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/usr/share/opensearch/data"}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/usr/share/opensearch/data/snaps", Schedule: "0 2 * * *"}
+		}, ""},
+		{"valid opensearch backup on the mount itself and no login", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/snapshots"}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/snapshots"}
+		}, ""},
+		{"opensearch backup without a port", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "snapshots", Path: "/snapshots"}}
+			a.Services[1].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/snapshots"}
+		}, "services[1].backup"},
+		{"opensearch backup without a volume", func(a *App, d *Deployment) {
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/snapshots"}
+		}, "services[0].backup.engine"},
+		{"opensearch backup without a repository", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/snapshots"}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch}
+		}, "services[0].backup.repository"},
+		{"opensearch repository relative", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/snapshots"}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "snapshots"}
+		}, "services[0].backup.repository"},
+		{"opensearch repository not clean", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/snapshots"}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/snapshots/../snapshots"}
+		}, "services[0].backup.repository"},
+		{"opensearch repository with a quote", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/snapshots"}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/snapshots/a'b"}
+		}, "services[0].backup.repository"},
+		{"opensearch repository too long", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/snapshots"}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/snapshots/" + strings.Repeat("a", 1024)}
+		}, "services[0].backup.repository"},
+		{"opensearch repository outside every volume", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/snapshots"}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/other"}
+		}, "services[0].backup.repository"},
+		{"opensearch repository beside a volume's name", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/snap"}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/snapshots"}
+		}, "services[0].backup.repository"},
+		{"opensearch repository on a read-only volume", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/snapshots", ReadOnly: true}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/snapshots/x"}
+		}, "services[0].backup.repository"},
+		{"opensearch repository under the restore directory", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/snapshots"}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/snapshots/.caravana-restore"}
+		}, "services[0].backup.repository"},
+		{"opensearch schedule out of range", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/snapshots"}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/snapshots", Schedule: "99 * * * *"}
+		}, "services[0].backup.schedule"},
+		{"repository with the volume engine", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Repository: "/data"}
+		}, "services[1].backup.repository"},
+		{"file with the opensearch engine", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "snapshots", Path: "/snapshots"}}
+			a.Services[0].Backup = &Backup{Engine: BackupOpenSearch, Repository: "/snapshots", File: "/snapshots/x.db"}
+		}, "services[0].backup.file"},
+
 		// The tasks Caravana adds beside a service with a sqlite backup own their names.
 		{"reserved sqlite task name", func(a *App, d *Deployment) {
 			a.Services[1].Name = SQLiteTaskName
