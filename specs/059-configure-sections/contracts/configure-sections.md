@@ -70,8 +70,9 @@ An app with no definition draws Source ("Define the app"), Integrations and Dele
 Label "Compose file" (kept or not kept) / "Images" / "Build" / "Define the app". What it holds:
 
 - **Kept Compose file**: the intro "This app is edited through its Compose file. Change the file, preview what changes,
-  then deploy. Health checks are on Services, secrets on Variables & secrets, domains on Domains and backups on the
-  Backups tab: a deploy from here keeps them as they are." Then today's compose form with **only** the file (the field
+  then deploy. Copies and memory can also be changed on Services, which writes them into this file. Health checks are
+  on Services, secrets on Variables & secrets, domains on Domains and backups on the Backups tab: a deploy from here
+  keeps them as they are." (The sentence on copies and memory came with task gqbf.) Then today's compose form with **only** the file (the field
   label names the template when there is one: "From template <title> <version>"), Preview, "Against the app today",
   "What changes in meaning", and Deploy. No per-service inputs at all: no domains (already gone), no health, no secret
   rows, no backup fieldset. Beside Deploy: "Secrets, domains, health checks and backups stay as they are."

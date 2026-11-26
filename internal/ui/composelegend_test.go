@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	keptLegendFirst = "This app is edited through its Compose file. Change the file, preview what changes, then deploy. Health checks are on Services, secrets on Variables & secrets, domains on Domains and backups on the Backups tab: a deploy from here keeps them as they are."
+	keptLegendFirst = "This app is edited through its Compose file. Change the file, preview what changes, then deploy. Copies and memory can also be changed on Services, which writes them into this file. Health checks are on Services, secrets on Variables & secrets, domains on Domains and backups on the Backups tab: a deploy from here keeps them as they are."
 	keptLegendCI    = "Its last deploy came from CI (acme/shop). A deploy from CI can replace changes made here, so make lasting changes in the source."
 )
 
