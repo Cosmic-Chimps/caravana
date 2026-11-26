@@ -54,7 +54,7 @@ func TestVariablesShowTemplates(t *testing.T) {
 	noProviderSecrets(t, "the log", e.Logs.String())
 }
 
-// The Compose form lists a template secret read-only, has no input for it, and a
+// The Compose form of an app that exists has no row for a template secret, and a
 // preview and a deploy from the form keep it, in the app and in the kept overlay.
 func TestComposeFormKeepsTemplates(t *testing.T) {
 	e := refsEnv(t)
@@ -67,13 +67,10 @@ func TestComposeFormKeepsTemplates(t *testing.T) {
 	}
 	e.waitDeploy(t, rec.Deployment.ID)
 
+	// The form of an app that exists has only the file (feature 059): no row for the template secret.
 	_, page := e.get(t, "/apps/duo/compose")
-	got := text(page)
-	if !strings.Contains(got, "ConnectionStrings__postgres template with 2 references: bella-prod/API_KEY, bella-prod/DATABASE_URL") {
-		t.Errorf("the form doesn't list the template:\n%s", got)
-	}
-	if strings.Contains(page, `name="svc.web.secret.ConnectionStrings__postgres"`) {
-		t.Error("the template secret has an input: a value could be typed over it")
+	if strings.Contains(page, `name="svc.web.secret.ConnectionStrings__postgres"`) || strings.Contains(page, `type="password"`) {
+		t.Error("the form has an input for the template secret: a value could be typed over it")
 	}
 	noProviderSecrets(t, "compose form", page)
 

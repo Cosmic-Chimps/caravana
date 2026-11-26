@@ -96,6 +96,13 @@ type Overlay struct {
 	Publish []Publish `json:"publish,omitempty"`
 }
 
+// Empty says the overlay sets nothing, so a request needs no entry for the
+// service.
+func (o Overlay) Empty() bool {
+	return len(o.Domains) == 0 && o.Health == nil && len(o.Secrets) == 0 && o.Backup == nil &&
+		len(o.Identities) == 0 && o.Placement == nil && o.Scale == nil && o.Disconnect == nil && len(o.Publish) == 0
+}
+
 // Publish publishes one container port of the service.
 type Publish struct {
 	// Port is the container port: one the file declares.

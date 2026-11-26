@@ -70,7 +70,20 @@ type composeDraft struct {
 	// file's overlay or through the API), so request sends these. Nil for a new
 	// app.
 	keptDisconnect map[string]*app.Disconnect
+
+	// keptHealth and keptBackup are, for an app that exists, each service's
+	// health check and backup policy as the app has them (feature 059). The form
+	// has no input for them (health is on Configure › Services, the policy on the
+	// Backups tab), so request sends these. Nil for a new app, whose services take
+	// them from the inputs.
+	keptHealth map[string]*compose.Health
+	keptBackup map[string]*app.Backup
 }
+
+// fixed says the draft is of an app that exists: it has only the file, and
+// every service's settings come from the stored record (the keep functions).
+// It is the one marker, as keptDomains is set for every such draft.
+func (d composeDraft) fixed() bool { return d.keptDomains != nil }
 
 // draftService is the overlay inputs of one Compose service: what Compose has
 // no words for (domains, health check, secrets, backup). The formFields hold
@@ -99,38 +112,16 @@ type draftService struct {
 	overlay compose.Overlay
 }
 
-// draftSecret is one secret of a service. Exists says the stored app already
-// has it, so an empty input keeps its value.
+// draftSecret is one secret of a service. A secret the stored app has travels by its name, as a
+// reference or a template when it is one (keepStored); the form has an input only for a new one.
 type draftSecret struct {
-	Name   string
-	Exists bool
-	Field  formField
-	// From is where the secret reads its value (feature 037). A reference is
-	// listed read-only, has no input, and is kept through the draft and the
-	// deploy: references are added on the Variables page.
-	From *app.SecretRef
-	// Template and Refs are a template secret (feature 053): listed read-only
-	// like a reference, with no input, and kept through the draft and the deploy.
+	Name  string
+	Field formField
+	// From is where the secret reads its value (feature 037); Template and Refs are a template
+	// secret (feature 053). The form has no input for them: they are kept through the deploy.
+	From     *app.SecretRef
 	Template string
 	Refs     map[string]app.SecretRef
-}
-
-// IsReference says the secret gets its value from a provider at each deploy
-// (a reference or a template): it has no input.
-func (d draftSecret) IsReference() bool { return d.From != nil || d.Template != "" }
-
-// RefLines are a template's references by name, for the read-only row.
-func (d draftSecret) RefLines() []refLine { return refLinesOf(d.Refs) }
-
-// HasSecrets says the service already has a secret, so the form draws its one
-// "Leave a value empty to keep it." line.
-func (s draftService) HasSecrets() bool {
-	for _, sec := range s.Secrets {
-		if sec.Exists {
-			return true
-		}
-	}
-	return false
 }
 
 // newDraftService makes a service's inputs with their IDs set.
@@ -473,7 +464,13 @@ func (d composeDraft) request() compose.Request {
 		if d.keptDisconnect != nil {
 			ov.Disconnect = d.keptDisconnect[s.Name]
 		}
-		if len(ov.Domains) == 0 && ov.Health == nil && len(ov.Secrets) == 0 && ov.Backup == nil && len(ov.Identities) == 0 && len(ov.Publish) == 0 && ov.Placement == nil && ov.Scale == nil && ov.Disconnect == nil {
+		if d.keptHealth != nil {
+			ov.Health = d.keptHealth[s.Name]
+		}
+		if d.keptBackup != nil {
+			ov.Backup = d.keptBackup[s.Name]
+		}
+		if ov.Empty() {
 			continue
 		}
 		if req.Services == nil {
@@ -484,105 +481,10 @@ func (d composeDraft) request() compose.Request {
 	return req
 }
 
-// draftFrom is the overlay a stored app has, as a draft with no file: what
-// Deploy from Compose starts from. A domain or health check on a service with
-// several ports names its port, since the new file may reorder them; with one
-// port the file's own port is all there is to say.
-func draftFrom(a app.App) composeDraft {
-	d := composeDraft{values: map[string]map[string]string{}}
-	for _, svc := range a.Services {
-		s := newDraftService(svc.Name)
-		portNumber := func(name string) string {
-			if len(svc.Ports) < 2 {
-				return ""
-			}
-			for _, p := range svc.Ports {
-				if p.Name == name {
-					return ":" + strconv.Itoa(p.ContainerPort)
-				}
-			}
-			return ""
-		}
-		var domains []string
-		for _, dom := range svc.Domains {
-			domains = append(domains, dom.Host+portNumber(dom.Port))
-		}
-		s.Domains.Value = strings.Join(domains, "\n")
-		if h := svc.Health; h != nil && len(svc.Ports) > 0 {
-			s.HealthPath.Value = h.Path
-			s.HealthInterval.Value, s.HealthTimeout.Value = secondsText(h.Interval), secondsText(h.Timeout)
-			s.HealthPort.Value = strings.TrimPrefix(portNumber(h.Port), ":")
-		}
-		if b := svc.Backup; b != nil {
-			s.BackupEngine.Value, s.BackupSchedule.Value, s.BackupFile.Value = b.Engine, b.Schedule, b.File
-			s.BackupKeep.Value = numberText(b.Keep)
-			if r := b.Restore; r != nil {
-				s.BackupRestoreSchedule.Value, s.BackupRestoreFrom.Value = r.Schedule, r.From
-			}
-			s.BackupDestination.Value, s.BackupCopyTo.Value, s.BackupCopyKeep.Value = b.Destination, strings.Join(b.CopyTo, ", "), numberText(b.CopyKeep)
-		}
-		for _, sec := range svc.Secrets {
-			s.Secrets = append(s.Secrets, draftSecret{Name: sec.Name, Exists: true, From: sec.From, Template: sec.Template, Refs: sec.Refs,
-				Field: formField{ID: inputID(svc.Name, "secret-"+sec.Name)}})
-		}
-		s.build()
-		d.Services = append(d.Services, s)
-	}
-	d.sortServices()
-	return d
-}
-
-// draftOf is a kept Compose request as the form's draft: the inverse of
-// composeDraft.request (feature 015, research R7). The owner sees what was
-// sent, not what Caravana derived from it, so an overlay with no health check
-// shows no health inputs. A secret is listed as existing, with no value: kept
-// requests have none, and an empty input keeps the value the secret store has.
-// A domain names its port only when the request does.
-func draftOf(req compose.Request) composeDraft {
-	d := composeDraft{
-		Name:   formField{ID: "name", Value: req.Name},
-		File:   formField{ID: "compose", Value: req.Compose},
-		values: map[string]map[string]string{},
-	}
-	for name, ov := range req.Services {
-		s := newDraftService(name)
-		var domains []string
-		for _, dom := range ov.Domains {
-			host := dom.Host
-			if dom.Port != 0 {
-				host += ":" + strconv.Itoa(dom.Port)
-			}
-			domains = append(domains, host)
-		}
-		s.Domains.Value = strings.Join(domains, "\n")
-		if h := ov.Health; h != nil {
-			s.HealthPath.Value = h.Path
-			s.HealthPort.Value = numberText(h.Port)
-			s.HealthInterval.Value, s.HealthTimeout.Value = secondsText(h.Interval), secondsText(h.Timeout)
-		}
-		if b := ov.Backup; b != nil {
-			s.BackupEngine.Value, s.BackupSchedule.Value, s.BackupFile.Value = b.Engine, b.Schedule, b.File
-			s.BackupKeep.Value = numberText(b.Keep)
-			if r := b.Restore; r != nil {
-				s.BackupRestoreSchedule.Value, s.BackupRestoreFrom.Value = r.Schedule, r.From
-			}
-			s.BackupDestination.Value, s.BackupCopyTo.Value, s.BackupCopyKeep.Value = b.Destination, strings.Join(b.CopyTo, ", "), numberText(b.CopyKeep)
-		}
-		for _, sec := range ov.Secrets {
-			s.Secrets = append(s.Secrets, draftSecret{Name: sec.Name, Exists: true, From: sec.From, Template: sec.Template, Refs: sec.Refs,
-				Field: formField{ID: inputID(name, "secret-"+sec.Name)}})
-		}
-		s.build()
-		d.Services = append(d.Services, s)
-	}
-	d.sortServices()
-	return d
-}
-
 // keepStored adds, to each service the stored app also has, the secrets it
-// has that the draft lacks, and marks the ones it has as existing: this form
-// can't remove a secret (the Configure tab does), so a deploy from a file
-// never drops one by accident (Constitution IV).
+// has that the draft lacks: this form can't remove a secret (Variables &
+// secrets does), so a deploy from a file never drops one by accident
+// (Constitution IV).
 func (d *composeDraft) keepStored(stored app.App) {
 	for _, svc := range stored.Services {
 		s, ok := d.service(svc.Name)
@@ -595,8 +497,7 @@ func (d *composeDraft) keepStored(stored app.App) {
 				s.Secrets = append(s.Secrets, draftSecret{Name: sec.Name, Field: formField{ID: inputID(svc.Name, "secret-"+sec.Name)}})
 				i = len(s.Secrets) - 1
 			}
-			s.Secrets[i].Exists = true
-			// A reference has no input to post, so the stored one is what the deploy keeps.
+			// The form has no input for a stored secret, so the stored one is what the deploy keeps.
 			s.Secrets[i].From, s.Secrets[i].Template, s.Secrets[i].Refs = sec.From, sec.Template, sec.Refs
 		}
 		slices.SortFunc(s.Secrets, func(a, b draftSecret) int { return strings.Compare(a.Name, b.Name) })
@@ -775,6 +676,98 @@ func (d *composeDraft) keepDisconnect(rec store.AppRecord) {
 		}
 	}
 	d.sortServices()
+}
+
+// keepHealth makes the draft carry the health checks the stored app has
+// (feature 059): the form of an app that exists has no health input, so a
+// preview or a deploy from it must not reset a check to the default
+// (constitution IV). An app that keeps its file has them in the file's overlay,
+// exactly as written; any other app has them on its services, written back as
+// keepDomains writes a domain's port: the container port, and only when the
+// service has several ports. A service whose check is Caravana's default has
+// nothing to keep.
+func (d *composeDraft) keepHealth(rec store.AppRecord) {
+	d.keptHealth = map[string]*compose.Health{}
+	for _, svc := range rec.App.Services {
+		var h *compose.Health
+		if rec.Compose != nil {
+			if kept := rec.Compose.Services[svc.Name].Health; kept != nil {
+				copied := *kept
+				h = &copied
+			}
+		} else if svc.Health != nil && len(svc.Ports) > 0 {
+			out := compose.Health{Path: svc.Health.Path, Interval: svc.Health.Interval, Timeout: svc.Health.Timeout}
+			if len(svc.Ports) > 1 {
+				if i := slices.IndexFunc(svc.Ports, func(p app.Port) bool { return p.Name == svc.Health.Port }); i >= 0 {
+					out.Port = svc.Ports[i].ContainerPort
+				}
+			}
+			if out != (compose.Health{}) {
+				h = &out
+			}
+		}
+		if h == nil {
+			continue
+		}
+		d.keptHealth[svc.Name] = h
+		if _, ok := d.service(svc.Name); !ok {
+			d.Services = append(d.Services, newDraftService(svc.Name))
+		}
+	}
+	d.sortServices()
+}
+
+// keepBackup makes the draft carry the backup policies the stored app has
+// (feature 059), as keepHealth does for health checks: the whole policy, its
+// restore schedule, destination and copies included, since the form of an app
+// that exists has no backup input (the Backups tab changes it).
+func (d *composeDraft) keepBackup(rec store.AppRecord) {
+	d.keptBackup = map[string]*app.Backup{}
+	for _, svc := range rec.App.Services {
+		b := svc.Backup
+		if rec.Compose != nil {
+			b = rec.Compose.Services[svc.Name].Backup
+		}
+		if b == nil {
+			continue
+		}
+		d.keptBackup[svc.Name] = cloneBackup(b)
+		if _, ok := d.service(svc.Name); !ok {
+			d.Services = append(d.Services, newDraftService(svc.Name))
+		}
+	}
+	d.sortServices()
+}
+
+// cloneBackup is a copy of b that shares no slice or pointer with it.
+func cloneBackup(b *app.Backup) *app.Backup {
+	out := *b
+	out.CopyTo = slices.Clone(b.CopyTo)
+	if b.Restore != nil {
+		r := *b.Restore
+		out.Restore = &r
+	}
+	return &out
+}
+
+// keepAll makes the draft the form of an app that exists: its services are the
+// stored app's, and everything the form has no input for (secrets by name,
+// domains, identities, published ports, placement, scaling, disconnect, health
+// and backup) comes from the stored record. Anything the post carried for the
+// services is dropped first, so a form drawn before feature 059 can't change
+// what this form no longer shows.
+func (d *composeDraft) keepAll(rec store.AppRecord) {
+	d.Services, d.values = nil, map[string]map[string]string{}
+	d.ensureServices(rec.App)
+	d.keepStored(rec.App)
+	d.keepDomains(rec)
+	d.keepIdentities(rec)
+	d.keepPublish(rec)
+	d.keepPlacement(rec)
+	d.keepScale(rec)
+	d.keepDisconnect(rec)
+	d.keepHealth(rec)
+	d.keepBackup(rec)
 }
 
 // clonePlacement is a copy of p that shares no slice or map with it.

@@ -340,6 +340,33 @@ type editServiceView struct {
 	VolumeText, BackupLine, LeftAlone string
 }
 
+// SizeText is the service's copies and size in words, for an app whose file sets them:
+// "1 copy · 512 MB, up to 1 GB". A scaled service's count is the scaling rule's; a size left
+// at the default says so.
+func (s editServiceView) SizeText() string {
+	copies := "1 copy"
+	switch {
+	case s.Scaled:
+		copies = s.ScaleBounds + " copies"
+	case s.Edit.Replicas != nil && *s.Edit.Replicas != 1:
+		copies = strconv.Itoa(*s.Edit.Replicas) + " copies"
+	}
+	e := s.Edit
+	size := "default size"
+	if e.MemoryMB > 0 {
+		size = memoryText(e.MemoryMB)
+		if e.MemoryMaxMB > e.MemoryMB {
+			size += ", up to " + memoryText(e.MemoryMaxMB)
+		}
+	} else if e.MemoryMaxMB > 0 {
+		size = "up to " + memoryText(e.MemoryMaxMB)
+	}
+	if e.CPUMHz > 0 {
+		size += ", " + strconv.Itoa(e.CPUMHz) + " MHz"
+	}
+	return copies + " · " + size
+}
+
 // registryPrereq is the grid's "Needs a container registry" notice (the
 // handoff's InlinePrereq): what failed, and the link to where credentials go.
 type registryPrereq struct {

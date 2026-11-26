@@ -162,3 +162,18 @@ func TestWithDomains(t *testing.T) {
 		t.Errorf("no domains left = %+v (%v), want no overlay at all", got.Services, err)
 	}
 }
+
+// Removing a service's last domain leaves its overlay when it sets anything else: identities,
+// published ports, placement, scaling and the disconnect policy are not dropped with it.
+func TestWithDomainsKeepsWhatElseTheOverlaySets(t *testing.T) {
+	file := compose.Request{Compose: domainFile, Services: map[string]compose.Overlay{
+		"web": {Domains: []compose.Domain{{Host: "shop.example.com"}}, Identities: []app.Identity{{Name: "bella", Audience: []string{"a"}}}},
+	}}
+	got, err := withDomains(file, "web", nil, []app.Port{{Name: "p80", ContainerPort: 80}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o := got.Services["web"]; len(o.Domains) != 0 || len(o.Identities) != 1 {
+		t.Errorf("overlay = %+v, want its identities and no domains", o)
+	}
+}

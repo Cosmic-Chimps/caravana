@@ -195,7 +195,9 @@ var consoleParity = map[string]parity{
 	"POST /settings/builds": {ops: []string{"putBuildSettings"}},
 	// Scaling (feature 043): the form is a deploy with the service's scale; Stop scaling a deploy without it.
 	"POST /apps/{id}/services/{service}/scale": {ops: []string{"getApp", "deployApp"}},
-	"POST /apps/{id}/secrets/refresh":          {ops: []string{"refreshSecrets"}}, // feature 037
+	// Configure › Services' health check (feature 059): a deploy with the service's health (or its overlay's, for a kept file).
+	"POST /apps/{id}/services/{service}/health": {ops: []string{"getApp", "deployApp", "deployCompose"}},
+	"POST /apps/{id}/secrets/refresh":           {ops: []string{"refreshSecrets"}}, // feature 037
 	// Configure's own pages (feature 021). Variables & secrets: a variable is a change to the service's env, a
 	// secret a value with its name, and the .env editor replaces one service's env; every change is a deploy of
 	// the app on the revision getApp gave. Domains: adding or removing a host changes the service's domains;
@@ -214,7 +216,9 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/backups/{backupId}/unpin": {ops: []string{"unpinBackup"}},
 	"POST /apps/{id}/backups/restore-schedule": {ops: []string{"getApp", "deployApp"}},
 	// Where backups go and are copied (feature 052): a deploy with the service's backup.destination, copyTo and copyKeep.
-	"POST /apps/{id}/backups/places": {ops: []string{"getApp", "deployApp"}},
+	"POST /apps/{id}/backups/places":        {ops: []string{"getApp", "deployApp"}},
+	"POST /apps/{id}/backups/policy/change": {ops: []string{"getApp", "deployApp"}}, // feature 059
+
 	// Backups (feature 010).
 	"GET /apps/{id}/backups":                     {ops: []string{"getApp", "listBackups", "listVolumes", "getBackupDestination", "listBackupDestinations", "getProject"}},
 	"POST /apps/{id}/backups":                    {ops: []string{"createBackup"}},

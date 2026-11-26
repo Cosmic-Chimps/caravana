@@ -32,8 +32,9 @@
     <span class="cv-label">Compose file</span>
     <textarea class="cv-field cv-field-area cv-field-file cv-field-mono" id="compose" name="compose" rows="{{.FileRows}}" wrap="off" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Draft.File.Error}} aria-invalid="true" aria-describedby="compose-error"{{end}}{{if .Draft.File.Alert}} autofocus{{end}}>
 {{.Draft.File.Value}}</textarea>
-    <span class="cv-data-muted cv-hint">A compose.yaml as docker compose reads it. {{if .Existing}}Health checks and secrets{{else}}Domains, health checks and secrets{{end}} are set below, after the preview.</span>
-    <span class="cv-data-muted cv-hint">Put passwords and keys in secrets below, not in the file.</span>
+    {{if .Existing}}<span class="cv-data-muted cv-hint">A compose.yaml as docker compose reads it. Put passwords and keys in Variables &amp; secrets, not in the file.</span>
+    {{else}}<span class="cv-data-muted cv-hint">A compose.yaml as docker compose reads it. Domains, health checks and secrets are set below, after the preview.</span>
+    <span class="cv-data-muted cv-hint">Put passwords and keys in secrets below, not in the file.</span>{{end}}
     {{template "field-error" .Draft.File}}
   </label>
 
@@ -48,7 +49,7 @@
 
   <div><button type="submit" class="cv-btn {{if .CanDeploy}}cv-btn-secondary{{else}}cv-btn-primary{{end}}" hx-post="{{.PreviewAction}}">Preview</button></div>
 
-  {{if or .Previewed .Services}}
+  {{if or .Previewed .Services .Kept .NotKept}}
   {{with .Changes}}
   <section aria-labelledby="changes-title" class="flex flex-col gap-2">
     <h2 id="changes-title" class="cv-label">Against the app today</h2>
@@ -67,9 +68,9 @@
   </section>
   {{end}}
 
+  {{if not .Existing}}
   <section aria-labelledby="services-title" class="flex flex-col gap-3">
     <h2 id="services-title" class="cv-label">{{if or .Previewed .Kept .NotKept}}Services{{else}}Services (fix what is marked, then preview again){{end}}</h2>
-    {{if .Existing}}<p class="cv-note">Domains aren't set here: a deploy from this form keeps them as they are. Add and change them on the <a href="/apps/{{.AppID}}/domains">Domains page</a>.</p>{{end}}
     {{range .Services}}
     {{$svc := .}}
     <div class="cv-panel cv-edit" role="group" aria-labelledby="svc-{{.Name}}-title">
@@ -107,24 +108,14 @@
 
       <fieldset class="flex flex-col gap-3">
         <legend class="cv-label">Secrets</legend>
-        {{if .HasSecrets}}<p class="cv-data-muted cv-hint">Leave a value empty to keep it.</p>{{end}}
         <div class="cv-secret-rows">
           {{range .Secrets}}
-          {{if .IsReference}}
-          <div class="cv-secret-row">
-            <span class="cv-secret-name cv-data text-fg-1">{{.Name}}</span>
-            {{if .From}}<span class="cv-data-muted">from <span class="cv-inline-mono">{{.From.Provider}}</span> · <span class="cv-inline-mono">{{.From.Path}}</span></span>
-            {{else}}<span class="cv-data-muted">template with {{len .RefLines}} {{if eq (len .RefLines) 1}}reference{{else}}references{{end}}: {{range $i, $r := .RefLines}}{{if $i}}, {{end}}<span class="cv-inline-mono">{{$r.Provider}}/{{$r.Path}}</span>{{end}}</span>{{end}}
-            <span class="cv-data-muted cv-hint cv-secret-aside">Kept as it is.{{if .From}} Change it on the Variables page.{{else}} Set through the API or the Compose overlay.{{end}}</span>
-          </div>
-          {{else}}
           <div class="cv-secret-row">
             <label class="cv-secret-name cv-data text-fg-1" for="{{.Field.ID}}">{{.Name}}</label>
             <input class="cv-field cv-field-mono" id="{{.Field.ID}}" type="password" name="svc.{{$svc.Name}}.secret.{{.Name}}" autocomplete="new-password"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
-            {{if not .Exists}}<span class="cv-data-muted cv-hint cv-secret-aside">Type its value.</span>{{end}}
+            <span class="cv-data-muted cv-hint cv-secret-aside">Type its value.</span>
             {{template "field-error" .Field}}
           </div>
-          {{end}}
           {{end}}
         </div>
         <p class="cv-data-muted cv-hint">Add a secret: its name, then its value. It reaches the service as an environment variable. Values are not kept on this page.</p>
@@ -175,9 +166,11 @@
     </div>
     {{end}}
   </section>
+  {{end}}
 
   {{if .CanDeploy}}
-  <div><button type="submit" class="cv-btn cv-btn-primary" formaction="{{.DeployAction}}" hx-post="{{.DeployAction}}">{{if .Existing}}Deploy{{else}}Create and deploy{{end}}</button></div>
+  <div class="flex flex-wrap items-center gap-3"><button type="submit" class="cv-btn cv-btn-primary" formaction="{{.DeployAction}}" hx-post="{{.DeployAction}}">{{if .Existing}}Deploy{{else}}Create and deploy{{end}}</button>
+    {{if .Existing}}<span class="cv-data-muted cv-hint">Secrets, domains, health checks and backups stay as they are.</span>{{end}}</div>
   {{end}}
   {{end}}
 </form>
@@ -187,7 +180,7 @@
 {{define "compose-deploy"}}
 <section aria-labelledby="compose-title" class="flex flex-col gap-3">
   <h2 id="compose-title" class="cv-label">Deploy from Compose</h2>
-  <p class="text-sm text-fg-3">The file replaces the app's definition, as a Compose deploy through the API does: a service it doesn't have is removed, and what you changed on Configure is replaced. Health checks and secret names start from the app's, and its domains are kept as they are. <a href="/apps/{{.AppID}}/configure/source">Back to Configure</a></p>
+  <p class="text-sm text-fg-3">The file replaces the app's definition, as a Compose deploy through the API does: a service it doesn't have is removed, and what you changed on Configure is replaced. Its secrets, domains, health checks and backups are kept as they are. <a href="/apps/{{.AppID}}/configure/source">Back to Configure</a></p>
   {{template "compose-form" .}}
 </section>
 {{end}}

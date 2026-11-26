@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -325,4 +326,93 @@ func TestSetBackupPlaces(t *testing.T) {
 			t.Errorf("kept file = %+v, want the same text and the overlay's backup with the copy", stored.Compose)
 		}
 	})
+}
+
+// ChangeBackupPolicy (feature 059) replaces the engine, file, schedule and keep of a policy the
+// service already has, and leaves its restore schedule, destination and copies as they were.
+func TestChangeBackupPolicy(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	setDestination(t, e)
+	saveDestination(t, e, "offsite", destinationSentinel)
+	a := kuma(false)
+	a.Services[0].Backup = &app.Backup{Engine: app.BackupVolume, Keep: 3, Schedule: "0 5 * * *",
+		Restore: &app.RestoreSchedule{Schedule: "0 6 * * *", From: "golden"}, CopyTo: []string{"offsite"}, CopyKeep: 4}
+	deployHealthy(t, e, a)
+	rec, _ := e.svc.GetApp(ctx, "whoami")
+
+	got, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "", app.BackupScheduleNever, 9, Condition{IfRevision: rec.Revision}, app.TriggerConsole)
+	if err != nil {
+		t.Fatalf("ChangeBackupPolicy: %v", err)
+	}
+	if got.Deployment.Trigger != app.TriggerConsole {
+		t.Errorf("trigger = %s, want console", got.Deployment.Trigger)
+	}
+	waitFinal(t, e.store, got.Deployment.ID)
+	stored, _ := e.svc.GetApp(ctx, "whoami")
+	b := stored.App.Services[0].Backup
+	want := app.Backup{Engine: app.BackupVolume, Keep: 9, Schedule: app.BackupScheduleNever,
+		Restore: &app.RestoreSchedule{Schedule: "0 6 * * *", From: "golden"}, CopyTo: []string{"offsite"}, CopyKeep: 4}
+	if b == nil || !reflect.DeepEqual(*b, want) {
+		t.Errorf("backup = %+v, want %+v", b, want)
+	}
+
+	t.Run("refusals", func(t *testing.T) {
+		n := len(mustDeployments(t, e))
+		var fe *app.FieldError
+		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "nope", app.BackupVolume, "", "", 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "service" {
+			t.Errorf("an unknown service: %v", err)
+		}
+		if _, err := e.svc.ChangeBackupPolicy(ctx, "ghost", "web", app.BackupVolume, "", "", 0, Condition{}, app.TriggerConsole); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("an unknown app: %v", err)
+		}
+		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "", "nightly", 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "services[0].backup.schedule" {
+			t.Errorf("a bad schedule: %v, want a field error on services[0].backup.schedule", err)
+		}
+		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "/data/app.db", "", 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || !strings.HasPrefix(fe.Field, "services[0].backup") {
+			t.Errorf("a file for a volume policy: %v, want a field error on the backup", err)
+		}
+		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "", "", 0, Condition{IfRevision: "0000000000000000"}, app.TriggerConsole); !errors.Is(err, ErrAppChanged) {
+			t.Errorf("a stale revision: %v", err)
+		}
+		if len(mustDeployments(t, e)) != n {
+			t.Error("a refused change deployed")
+		}
+	})
+
+	t.Run("a service with no policy", func(t *testing.T) {
+		e := newEnv(t)
+		a := db()
+		a.Services[0].Backup = nil
+		deployHealthy(t, e, a)
+		var fe *app.FieldError
+		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupPostgres, "", "", 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "service" {
+			t.Errorf("no policy: %v, want a field error on service", err)
+		}
+	})
+}
+
+// A kept Compose file keeps its text, and its overlay's backup follows the change.
+func TestChangeBackupPolicyKeepsFile(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	setDestination(t, e)
+	const file = "# kuma\nservices:\n  web:\n    image: traefik/whoami:latest\n    volumes: [\"data:/data\"]\nvolumes:\n  data: {}\n"
+	req := compose.Request{Compose: file, Services: map[string]compose.Overlay{
+		"web": {Backup: &app.Backup{Engine: app.BackupVolume, Keep: 3, Restore: &app.RestoreSchedule{Schedule: "0 4 * * *", From: "golden"}}},
+	}}
+	composeHealthy(t, e, req)
+	got, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "", app.BackupScheduleNever, 8, Condition{}, app.TriggerConsole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFinal(t, e.store, got.Deployment.ID)
+	stored, _ := e.svc.GetApp(ctx, "whoami")
+	if stored.Compose == nil || stored.Compose.Compose != file {
+		t.Fatalf("kept file = %+v, want the same text", stored.Compose)
+	}
+	web := stored.Compose.Services["web"]
+	if web.Backup == nil || web.Backup.Keep != 8 || web.Backup.Schedule != app.BackupScheduleNever || web.Backup.Restore == nil || web.Backup.Restore.From != "golden" {
+		t.Errorf("overlay = %+v, want the new policy with the restore schedule kept", web)
+	}
 }

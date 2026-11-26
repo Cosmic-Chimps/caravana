@@ -327,14 +327,7 @@ func TestComposeFormBackupPlaces(t *testing.T) {
 	if got := d.request().Services["web"].Backup; !reflect.DeepEqual(got, want) {
 		t.Errorf("backup = %+v, want %+v", got, want)
 	}
-	back := draftOf(d.request())
-	web, _ := back.service("web")
-	if web.BackupDestination.Value != "main" || web.BackupCopyTo.Value != "offsite, cold, archive" || web.BackupCopyKeep.Value != "14" {
-		t.Errorf("draftOf = %q, %q, %q", web.BackupDestination.Value, web.BackupCopyTo.Value, web.BackupCopyKeep.Value)
-	}
-	if got := back.request().Services["web"].Backup; !reflect.DeepEqual(got, want) {
-		t.Errorf("round trip = %+v, want %+v", got, want)
-	}
+	web, _ := d.service("web")
 	if !web.hasBackupInput() {
 		t.Error("a service with only places hides the backup inputs")
 	}

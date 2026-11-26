@@ -294,25 +294,24 @@ func TestConfigureKeptFile(t *testing.T) {
 	if got := f.Values.Get("compose"); got != keptShopFile {
 		t.Errorf("the textarea = %q, want the kept file byte for byte", got)
 	}
-	// The overlay, the secret names with empty inputs, and the revision.
-	for name, want := range map[string]string{
-		"revision":                        revision,
-		"svc.web.healthPath":              "/health",
-		"svc.web.secret.API_KEY":          "",
-		"svc.db.secret.POSTGRES_PASSWORD": "",
-		"svc.db.backupKeep":               "5",
-	} {
-		if got, ok := f.Values[name]; !ok || got[0] != want {
-			t.Errorf("input %s = %v, want %q", name, got, want)
+	// The form has only the file and the revision (feature 059): no overlay input, no secret row.
+	if got := f.Values.Get("revision"); got != revision {
+		t.Errorf("revision = %q, want %q", got, revision)
+	}
+	for name := range f.Values {
+		if strings.HasPrefix(name, "svc.") {
+			t.Errorf("the form has the overlay input %s", name)
 		}
 	}
-	// The services are drawn from the kept file, so Deploy is there from the
-	// start, under them; Preview stays for a look first.
+	if strings.Contains(body, `type="password"`) {
+		t.Error("the form of a kept-file app has a password input")
+	}
+	// Deploy is there from the start; Preview stays for a look first.
 	if !strings.Contains(body, `hx-post="/apps/shop/compose/preview">Preview</button>`) ||
 		!strings.Contains(body, `formaction="/apps/shop/compose" hx-post="/apps/shop/compose">Deploy</button>`) {
 		t.Errorf("the form should offer Preview and Deploy:\n%s", text(body))
 	}
-	for _, want := range []string{`wrap="off"`, `spellcheck="false"`, `autocapitalize="off"`, "Put passwords and keys in secrets below, not in the file."} {
+	for _, want := range []string{`wrap="off"`, `spellcheck="false"`, `autocapitalize="off"`, "Secrets, domains, health checks and backups stay as they are."} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the file's textarea lacks %q", want)
 		}
@@ -329,8 +328,12 @@ func TestConfigureKeptFile(t *testing.T) {
 		}
 	}
 	_, services := e.get(t, "/apps/shop/configure/services")
-	if words := text(services); !strings.Contains(words, "Image postgres:17") || strings.Contains(services, `class="cv-svcform"`) || strings.Contains(words, "Save and deploy") {
-		t.Errorf("Services of a kept-file app should be read-only facts:\n%s", words)
+	// Services of a kept-file app (feature 059): the health check is a form that writes into the file's
+	// overlay, copies and size are read-only text, and the file itself is on Source.
+	if words := text(services); !strings.Contains(words, "postgres:17") || !strings.Contains(services, `action="/apps/shop/services/web/health#service-web"`) ||
+		!strings.Contains(words, "Set in the Compose file.") || !strings.Contains(words, "Save and deploy web") ||
+		strings.Contains(services, `name="svc.web.copies"`) || strings.Contains(services, `name="svc.web.memory"`) {
+		t.Errorf("Services of a kept-file app should have a health form and copies and size as text:\n%s", words)
 	}
 	_, overview := e.get(t, "/apps/shop/configure")
 	// The sections around are as before, and no value is anywhere.
@@ -383,20 +386,17 @@ func TestConfigureNotKeptFile(t *testing.T) {
 		t.Errorf("the page lacks the notice:\n%s", got)
 	}
 
-	// The Compose form: an empty file, the overlay the app has, secret names with empty inputs.
+	// The Compose form: an empty file and the revision, and no overlay input.
 	f := formWith(t, body, "/apps/shop/compose/preview")
 	if v, ok := f.Values["compose"]; !ok || v[0] != "" {
 		t.Errorf("the textarea = %v, want it present and empty", v)
 	}
-	for name, want := range map[string]string{
-		"revision":                        revision,
-		"svc.web.healthPath":              "/health",
-		"svc.web.secret.API_KEY":          "",
-		"svc.db.secret.POSTGRES_PASSWORD": "",
-		"svc.db.backupKeep":               "5",
-	} {
-		if got, ok := f.Values[name]; !ok || got[0] != want {
-			t.Errorf("input %s = %v, want %q", name, got, want)
+	if got := f.Values.Get("revision"); got != revision {
+		t.Errorf("revision = %q, want %q", got, revision)
+	}
+	for name := range f.Values {
+		if strings.HasPrefix(name, "svc.") {
+			t.Errorf("the form has the overlay input %s", name)
 		}
 	}
 	if !strings.Contains(body, `hx-post="/apps/shop/compose/preview">Preview</button>`) ||
@@ -440,9 +440,8 @@ func TestConfigureAfterADefinitionDeploy(t *testing.T) {
 	if !strings.Contains(got, "This app's Compose file wasn't kept. Paste it once to edit it here from now on.") {
 		t.Errorf("Configure lacks the notice after the drop:\n%s", got)
 	}
-	if f := formWith(t, body, "/apps/shop/compose/preview"); f.Values.Get("compose") != "" || f.Values.Get("svc.web.healthPath") != "/health" {
-		t.Errorf("the Compose form: file %q, health path %q; want an empty file and the overlay from the app",
-			f.Values.Get("compose"), f.Values.Get("svc.web.healthPath"))
+	if f := formWith(t, body, "/apps/shop/compose/preview"); f.Values.Get("compose") != "" {
+		t.Errorf("the Compose form's file = %q; want it empty", f.Values.Get("compose"))
 	}
 	for _, want := range []string{`class="cv-svcform"`, "and deploy", `name="svc.web.image"`} {
 		if !strings.Contains(body, want) {

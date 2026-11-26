@@ -47,11 +47,10 @@ type composeView struct {
 	Place placeChoice
 	Draft composeDraft
 	// Kept says the draft was filled from the Compose file the app keeps
-	// (feature 015), not typed: its services are drawn before any preview.
+	// (feature 015), not typed: Deploy is offered before any preview.
 	Kept bool
 	// NotKept says the app was made from Compose before the file was kept: the
-	// file is empty and the overlay is filled from the app, so Configure can ask
-	// for the file once (feature 015, US2).
+	// file is empty, so Source can ask for it once (feature 015, US2).
 	NotKept bool
 	// FromCI is the repository of the app's newest deployment when a CI run
 	// made it (feature 020's origin), for Configure's legend of a kept-file
@@ -67,8 +66,8 @@ type composeView struct {
 	SecretsNote bool
 
 	// Previewed is set when the file translated: Services then has the file's
-	// services with their facts, Warnings what changed in meaning and, for an
-	// existing app, Changes the services added and removed.
+	// services with their facts (a new app's form only), Warnings what changed
+	// in meaning and, for an existing app, Changes the services added and removed.
 	Previewed bool
 	Services  []composeServiceView
 	Changes   []sentence
@@ -78,8 +77,7 @@ type composeView struct {
 
 // CanDeploy is whether the page offers the second button: the file
 // translated and nothing is refused, or the form was filled from the app
-// (Kept, NotKept), so its services are already drawn and the owner edits them
-// in place. A deploy previews the file first anyway and comes back with the
+// (Kept, NotKept). A deploy previews the file first anyway and comes back with the
 // refusals instead of deploying, so skipping Preview is safe; without the
 // button, the nearest "Deploy" was the top bar's link, which leaves the page.
 func (v composeView) CanDeploy() bool {
@@ -168,6 +166,9 @@ func (s composeServiceView) BackupInputs() []editInput {
 // the previewed app a when there is one. A service of a that the draft lacks
 // is not shown; ensureServices adds it first.
 func serviceViews(d composeDraft, a *app.App) []composeServiceView {
+	if d.fixed() {
+		return nil // the form of an app that exists has only the file
+	}
 	var out []composeServiceView
 	for _, ds := range d.Services {
 		v := composeServiceView{draftService: ds, ShowDomains: true, ShowHealth: true,
@@ -185,8 +186,6 @@ func serviceViews(d composeDraft, a *app.App) []composeServiceView {
 				v.ShowBackup = ds.hasBackupInput() || isDumpImage(svc.Image) || len(svc.Volumes) > 0
 			}
 		}
-		// An existing app's domains are edited on its Domains page, not here.
-		v.ShowDomains = v.ShowDomains && d.keptDomains == nil
 		out = append(out, v)
 	}
 	return out
@@ -292,10 +291,45 @@ func composeChanges(stored, previewed app.App) []sentence {
 			default:
 				s = append(s, plain(" stop answering"))
 			}
-			out = append(out, append(s, plain(".")))
+			s = append(s, plain("."))
+			// The form of an app that exists has no input for these: they are kept from the
+			// stored app, so a service the file drops loses them and the owner is told.
+			if goes := removedWith(svc); len(goes) > 0 {
+				verb := "goes"
+				if len(goes) > 1 || strings.HasSuffix(goes[0], "secrets") {
+					verb = "go"
+				}
+				s = append(s, plain(" Its "+joinWords(goes)+" "+verb+" with it."))
+			}
+			out = append(out, s)
 		}
 	}
 	return out
+}
+
+// removedWith names what a removed service takes with it that no input of the
+// Compose form shows: a health check set on purpose, its secrets and its backup
+// policy.
+func removedWith(svc app.Service) []string {
+	var goes []string
+	if h := svc.Health; h != nil && (h.Path != "" || h.Interval > 0 || h.Timeout > 0) {
+		goes = append(goes, "health check")
+	}
+	if len(svc.Secrets) > 0 {
+		goes = append(goes, "secrets")
+	}
+	if svc.Backup != nil {
+		goes = append(goes, "backup policy")
+	}
+	return goes
+}
+
+// joinWords is "a", "a and b", "a, b and c".
+func joinWords(words []string) string {
+	if len(words) < 2 {
+		return strings.Join(words, "")
+	}
+	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
 }
 
 // fieldFor is the input an error about a Compose path belongs to (the
@@ -308,6 +342,11 @@ func (d *composeDraft) fieldFor(path string) (field *formField, subject string) 
 		return &d.Name, "The name"
 	case path == "compose":
 		return &d.File, "The file"
+	}
+	if d.fixed() {
+		// The form of an app that exists has no input for a service's settings:
+		// the list of refusals says where the file's path is wrong.
+		return nil, ""
 	}
 	rest, ok := strings.CutPrefix(path, "services.")
 	if !ok {
@@ -323,10 +362,6 @@ func (d *composeDraft) fieldFor(path string) (field *formField, subject string) 
 	}
 	switch {
 	case hasPathPrefix(tail, "domains"):
-		if d.keptDomains != nil {
-			// The form has no input for the domains of an existing app: the list of refusals says it.
-			return nil, ""
-		}
 		return &s.Domains, "The domain"
 	case tail == "health.port":
 		return &s.HealthPort, "The check port"
@@ -406,46 +441,28 @@ func newComposeView(appID string) composeView {
 }
 
 // keptComposeView is the Compose form of an app that keeps its file (feature
-// 015, research R6, R7): the file as it was deployed, the overlay it had, and
-// the stored app's secrets as names with empty inputs, with the revision of the
-// app the form was drawn from. Its services are drawn at once, with the facts of
-// the stored app, so the owner can edit them before a preview. rec.Compose must
-// not be nil.
+// 015, research R6, R7): the file as it was deployed and the revision of the app
+// the form was drawn from. It has only the file (feature 059): what a Compose
+// file has no words for is kept from the stored record, on a deploy and on a
+// preview. rec.Compose must not be nil.
 func keptComposeView(rec store.AppRecord) composeView {
 	v := newComposeView(rec.App.ID)
 	v.Kept = true
-	v.Draft = draftOf(*rec.Compose)
+	v.Draft = composeDraft{Name: formField{ID: "name"}, File: formField{ID: "compose", Value: rec.Compose.Compose}}
 	v.Draft.Revision = rec.Revision
-	v.Draft.keepStored(rec.App)
-	v.Draft.keepDomains(rec)
-	v.Draft.keepIdentities(rec)
-	v.Draft.keepPublish(rec)
-	v.Draft.keepPlacement(rec)
-	v.Draft.keepScale(rec)
-	v.Draft.keepDisconnect(rec)
-	v.Draft.ensureServices(rec.App)
-	v.Services = serviceViews(v.Draft, &rec.App)
+	v.Draft.keepAll(rec)
 	return v
 }
 
 // notKeptComposeView is the Compose form of an app made from Compose before
 // the file was kept (feature 015, US2, research R6): an empty file to paste
-// once, the overlay as the stored app has it (draftFrom), and the app's
-// revision. Its services are drawn at once, as the kept view's are, so the
-// overlay can be seen and edited with the file.
+// once, and the app's revision. Like the kept view it has only the file; the
+// app's own settings travel with the deploy.
 func notKeptComposeView(rec store.AppRecord) composeView {
 	v := newComposeView(rec.App.ID)
 	v.NotKept = true
-	v.Draft = draftFrom(rec.App)
-	v.Draft.File = formField{ID: "compose"}
-	v.Draft.keepDomains(rec)
-	v.Draft.keepIdentities(rec)
-	v.Draft.keepPublish(rec)
-	v.Draft.keepPlacement(rec)
-	v.Draft.keepScale(rec)
-	v.Draft.keepDisconnect(rec)
 	v.Draft.Revision = rec.Revision
-	v.Services = serviceViews(v.Draft, &rec.App)
+	v.Draft.keepAll(rec)
 	return v
 }
 
@@ -576,19 +593,10 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 			}
 			draft.Revision = stored.Revision
 		}
-		// A post with no overlay is the first look at a file: start from what the app has.
-		if len(draft.Services) == 0 {
-			draft.Services = draftFrom(stored.App).Services
-		}
-		draft.keepStored(stored.App)
-		draft.keepDomains(*stored)
-		draft.keepIdentities(*stored)
-		draft.keepPublish(*stored)
-		draft.keepPlacement(*stored)
-		draft.keepScale(*stored)
-		draft.keepDisconnect(*stored)
-		// A form drawn before ruling 12 may still post a domains text that didn't
-		// parse; keepDomains dropped it with its error, so judge what is left.
+		// The form of an app that exists has only the file: every service's
+		// settings are the stored app's (a form drawn before feature 059 may
+		// still post some, which are not read).
+		draft.keepAll(*stored)
 		ok = !draft.hasError()
 	}
 
@@ -689,16 +697,10 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 			return
 		}
 		draft.Revision = fresh.Revision
-		draft.keepStored(fresh.App)
-		draft.keepDomains(fresh)
-		draft.keepIdentities(fresh)
-		draft.keepPublish(fresh)
-		draft.keepPlacement(fresh)
-		draft.keepScale(fresh)
-		draft.keepDisconnect(fresh)
+		draft.keepAll(fresh)
 		v.Changes = composeChanges(fresh.App, prev)
 	}
-	v.SecretsNote = slices.ContainsFunc(draft.Services, func(s draftService) bool { return len(s.Secrets) > 0 })
+	v.SecretsNote = !v.Existing && slices.ContainsFunc(draft.Services, func(s draftService) bool { return len(s.Secrets) > 0 })
 	status, ok = v.refuseFailure(&draft, prev, id, err)
 	if !ok {
 		s.serverError(w, r, "deploy compose from the console", err)

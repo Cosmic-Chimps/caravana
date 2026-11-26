@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -497,21 +498,16 @@ func TestComposeDeployFormKeptFile(t *testing.T) {
 	if got := f.Values.Get("compose"); got != keptShopFile {
 		t.Errorf("the textarea = %q, want the kept file", got)
 	}
-	for name, want := range map[string]string{
-		"revision":               revision,
-		"svc.web.healthPath":     "/health",
-		"svc.web.secret.API_KEY": "",
-		"svc.db.backupKeep":      "5",
-	} {
-		if got, ok := f.Values[name]; !ok || got[0] != want {
-			t.Errorf("input %s = %v, want %q", name, got, want)
+	if got := f.Values.Get("revision"); got != revision {
+		t.Errorf("revision = %q, want %q", got, revision)
+	}
+	// Only the file (feature 059): no overlay input, no secret row; the line that says what stays.
+	for name := range f.Values {
+		if strings.HasPrefix(name, "svc.") {
+			t.Errorf("the form has the overlay input %s", name)
 		}
 	}
-	// Domains are edited on the Domains page (ruling 12), and the form says so.
-	if _, ok := f.Values["svc.web.domains"]; ok || strings.Contains(body, `name="svc.web.domains"`) {
-		t.Error("the form of an existing app has a Domains input")
-	}
-	for _, want := range []string{`wrap="off"`, "Put passwords and keys in secrets below, not in the file."} {
+	for _, want := range []string{`wrap="off"`, "Secrets, domains, health checks and backups stay as they are."} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page lacks %q", want)
 		}
@@ -534,18 +530,22 @@ func TestComposeDeployFormKeptFile(t *testing.T) {
 func TestComposeDeployRefusedKeptFileEchoesNoSecret(t *testing.T) {
 	e, _ := keptSentinelEnv(t)
 	_, page := e.get(t, "/apps/shop/configure/source")
+	// A form drawn before feature 059 may still post overlay inputs: they are not read, so a value
+	// typed in one is never deployed and never drawn back.
 	typed := shopFormOf(t, page, url.Values{
+		"compose":                  {"services:\n  web:\n    image: traefik/whoami:latest\n    build: .\n"},
+		"svc.web.overlay":          {"1"},
 		"svc.web.secret.API_KEY":   {sentinel015 + "-typed"},
 		"svc.web.newSecret.0":      {"TOKEN"},
 		"svc.web.newSecretValue.0": {sentinel015 + "-new"},
-		"svc.web.healthInterval":   {"often"}, // refused: not a number of seconds
+		"svc.web.healthInterval":   {"often"},
 	})
 
 	resp, body := e.postForm(t, "/apps/shop/compose", typed)
-	if resp.StatusCode != http.StatusUnprocessableEntity {
-		t.Fatalf("a refused deploy = %d, want 422:\n%s", resp.StatusCode, text(body))
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, `<span class="cv-inline-mono text-fg-1">services.web.build</span>`) {
+		t.Fatalf("a refused deploy = %d, want 422 naming services.web.build:\n%s", resp.StatusCode, text(body))
 	}
-	if got := formWith(t, body, "/apps/shop/compose/preview").Values.Get("compose"); got != keptShopFile {
+	if got := formWith(t, body, "/apps/shop/compose/preview").Values.Get("compose"); !strings.Contains(got, "build: .") {
 		t.Errorf("the redrawn file = %q, want what was typed", got)
 	}
 	if strings.Contains(body, sentinel015) || strings.Contains(body, storedSecret) {
@@ -556,31 +556,79 @@ func TestComposeDeployRefusedKeptFileEchoesNoSecret(t *testing.T) {
 	}
 }
 
-// Feature 015: Configure's form is drawn with the services filled in, so the
-// owner can change one (a health check) and deploy at once, without a preview.
-// The deploy checks the file itself; the change is kept and deployed, and the
-// service's domain stays as it was.
-func TestConfigureKeptFileDeployWithoutPreview(t *testing.T) {
+// Feature 059: a deploy from Source of an app that keeps its file, with no preview, keeps what the
+// form has no input for: each service's secrets by name (and their stored values), its backup policy
+// and its health check, exactly, and its domain. A secret value is never in the request.
+func TestConfigureKeptFileDeployKeepsWhatTheFormLacks(t *testing.T) {
 	e, _ := keptSentinelEnv(t)
+	ctx := context.Background()
+	before, err := e.Store.GetApp(ctx, "shop")
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, page := e.get(t, "/apps/shop/configure/source")
-	resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, url.Values{"svc.web.healthPath": {"/edited"}}))
+	resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, url.Values{"compose": {"# edited\n" + keptShopFile}}))
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("deploy = %d:\n%s", resp.StatusCode, text(body))
 	}
 	recs := e.deployments(t, "shop")
 	e.waitDeploy(t, recs[0].Deployment.ID)
 
-	rec, err := e.Store.GetApp(context.Background(), "shop")
+	rec, err := e.Store.GetApp(ctx, "shop")
 	if err != nil {
 		t.Fatal(err)
 	}
-	web := rec.Compose.Services["web"]
-	if len(web.Domains) != 1 || web.Domains[0].Host != "shop.example.com" || web.Health == nil || web.Health.Path != "/edited" {
-		t.Errorf("kept overlay = %+v, want shop.example.com kept and the new health path", web)
+	if !strings.HasPrefix(rec.Compose.Compose, "# edited\n") {
+		t.Errorf("kept file = %q, want the edit", rec.Compose.Compose)
+	}
+	for _, name := range []string{"web", "db"} {
+		want := before.Compose.Services[name]
+		got := rec.Compose.Services[name]
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("overlay of %s\n got: %+v\nwant: %+v", name, got, want)
+		}
+	}
+	web, db := rec.Compose.Services["web"], rec.Compose.Services["db"]
+	if web.Health == nil || web.Health.Path != "/health" || db.Backup == nil || db.Backup.Engine != "postgres" || db.Backup.Keep != 5 ||
+		len(web.Secrets) != 1 || web.Secrets[0].Name != "API_KEY" || web.Secrets[0].Value != nil || len(web.Domains) != 1 || web.Domains[0].Host != "shop.example.com" {
+		t.Errorf("kept overlay = web %+v, db %+v; want the health check, domain, backup policy and secret names as they were", web, db)
 	}
 	for _, svc := range rec.App.Services {
-		if svc.Name == "web" && (len(svc.Domains) != 1 || svc.Domains[0].Host != "shop.example.com" || svc.Health.Path != "/edited") {
-			t.Errorf("app web = domains %+v, health %+v; want shop.example.com kept and /edited", svc.Domains, svc.Health)
+		if svc.Name == "web" && (len(svc.Domains) != 1 || svc.Health == nil || svc.Health.Path != "/health") {
+			t.Errorf("app web = domains %+v, health %+v", svc.Domains, svc.Health)
+		}
+	}
+	if v := e.Nomad.Variable("nomad/jobs/shop/web")["API_KEY"]; v != sentinel015 {
+		t.Errorf("API_KEY = %q, want the stored value kept", v)
+	}
+	if data, _ := json.Marshal(rec.Compose); strings.Contains(string(data), sentinel015) {
+		t.Error("the kept file holds a secret value")
+	}
+}
+
+// Feature 059: Deploy from Compose of an app made from an image keeps its health check and backup
+// policy too, written back from the stored app (there is no kept overlay to read them from).
+func TestComposeDeployOfAnImageAppKeepsHealthAndBackup(t *testing.T) {
+	e, revision := shopEnv(t) // shop's stored app, with no kept file
+	before := e.storedApp(t, "shop")
+	_, page := e.previewShop(t, revision, shopCompose)
+	resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, nil))
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("deploy = %d:\n%s", resp.StatusCode, text(body))
+	}
+	e.waitDeploy(t, e.deployments(t, "shop")[0].Deployment.ID)
+	after := e.storedApp(t, "shop")
+	for i, svc := range before.Services {
+		if !reflect.DeepEqual(after.Services[i].Health, svc.Health) {
+			t.Errorf("%s health = %+v, want %+v", svc.Name, after.Services[i].Health, svc.Health)
+		}
+		if !reflect.DeepEqual(after.Services[i].Backup, svc.Backup) {
+			t.Errorf("%s backup = %+v, want %+v", svc.Name, after.Services[i].Backup, svc.Backup)
+		}
+	}
+	for _, svc := range after.Services {
+		if svc.Name == "web" && (svc.Health == nil || svc.Health.Path != "/health") {
+			t.Errorf("web health = %+v, want /health", svc.Health)
 		}
 	}
 }

@@ -74,7 +74,6 @@ func (e *consoleEnv) previewShop(t *testing.T, revision, file string) (*http.Res
 func shopFormOf(t *testing.T, body string, set url.Values) url.Values {
 	t.Helper()
 	f := formWith(t, body, "/apps/shop/compose/preview")
-	f.Values.Set("svc.db.backupEngine", "postgres") // a select, which formsIn doesn't read
 	for k, v := range set {
 		f.Values[k] = v
 	}
@@ -115,7 +114,9 @@ func TestComposeDeployForm(t *testing.T) {
 	}
 }
 
-func TestComposeDeployPreviewPrefills(t *testing.T) {
+// The form of an app that exists has only the file (feature 059): no overlay input of any service, so no
+// secret row, no backup and no health check, and the line that says they stay as they are.
+func TestComposeDeployPreviewHasOnlyTheFile(t *testing.T) {
 	e, revision := shopEnv(t)
 	regs := e.Nomad.Registrations()
 	resp, body := e.previewShop(t, revision, shopCompose)
@@ -123,27 +124,27 @@ func TestComposeDeployPreviewPrefills(t *testing.T) {
 		t.Fatalf("preview = %d:\n%s", resp.StatusCode, text(body))
 	}
 	f := formWith(t, body, "/apps/shop/compose/preview")
-	if _, ok := f.Values["svc.web.domains"]; ok || f.Values.Get("svc.web.healthPath") != "/health" ||
-		f.Values.Get("svc.db.backupKeep") != "5" || f.Values.Get("revision") != revision {
-		t.Errorf("the overlay isn't the app's (and has no domains input): %v", f.Values)
-	}
-	// The secrets are names, as inputs that start empty, and the stored values are nowhere.
-	for _, name := range []string{"svc.web.secret.API_KEY", "svc.db.secret.POSTGRES_PASSWORD"} {
-		if v, ok := f.Values[name]; !ok || v[0] != "" {
-			t.Errorf("input %s = %v, want it there and empty", name, v)
+	for name := range f.Values {
+		if strings.HasPrefix(name, "svc.") {
+			t.Errorf("the form has an overlay input %s", name)
 		}
+	}
+	if f.Values.Get("revision") != revision {
+		t.Errorf("revision = %q, want %q", f.Values.Get("revision"), revision)
 	}
 	for _, secret := range []string{storedSecret, "pw"} {
 		if strings.Contains(body, `"`+secret+`"`) || strings.Contains(body, ">"+secret+"<") {
 			t.Errorf("the page holds a stored secret value %q", secret)
 		}
 	}
-	if strings.Contains(body, storedSecret) {
-		t.Error("the page holds a stored secret value")
-	}
-	for _, want := range []string{"Leave a value empty to keep it.", `<option value="postgres" selected>`, ">Deploy</button>", `formaction="/apps/shop/compose"`} {
+	for _, want := range []string{"Secrets, domains, health checks and backups stay as they are.", ">Deploy</button>", `formaction="/apps/shop/compose"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the preview lacks %q", want)
+		}
+	}
+	for _, gone := range []string{"Leave a value empty to keep it.", "<legend", `type="password"`, `<option value="postgres"`, "Services (fix"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the form of an app that exists still has %q", gone)
 		}
 	}
 	if strings.Contains(text(body), "Adds service") || strings.Contains(text(body), "Removes service") {
@@ -159,18 +160,14 @@ func TestComposeDeployPreviewNamesAddedAndRemoved(t *testing.T) {
 	file := "services:\n  web:\n    image: traefik/whoami:latest\n    expose: [\"80\"]\n  cache:\n    image: traefik/whoami:latest\n"
 	_, body := e.previewShop(t, revision, file)
 	page := text(body)
-	for _, want := range []string{"Adds service cache.", "Removes service worker: its copies stop.", "Removes service db: its copies stop."} {
+	// A removed service takes what the form has no input for with it, and says so.
+	for _, want := range []string{"Adds service cache.", "Removes service worker: its copies stop.", "Removes service db: its copies stop. Its secrets and backup policy go with it."} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the preview lacks %q:\n%s", want, page)
 		}
 	}
-	// The overlay of a service the file dropped isn't asked for; the new one's starts empty.
-	if strings.Contains(body, `name="svc.db.`) || !strings.Contains(body, `name="svc.cache.newSecret.0"`) {
-		t.Errorf("the overlay isn't the file's services':\n%s", page)
-	}
-	// Domains aren't an input of an existing app's form (ruling 12): they are kept as they are.
-	if f := formWith(t, body, "/apps/shop/compose/preview"); strings.Contains(body, `name="svc.web.domains"`) || f.Values.Get("svc.web.healthPath") != "/health" {
-		t.Errorf("web has a domains input, or lost its health check: %v", f.Values)
+	if strings.Contains(body, `name="svc.`) {
+		t.Errorf("the form of an app that exists has an overlay input:\n%s", page)
 	}
 }
 
@@ -206,22 +203,38 @@ func TestComposeDeploy(t *testing.T) {
 		}
 	})
 
-	t.Run("a typed value replaces the secret", func(t *testing.T) {
+	t.Run("every secret keeps its value, the health check and the backup stay", func(t *testing.T) {
 		e, revision := shopEnv(t)
 		_, page := e.previewShop(t, revision, shopCompose)
-		resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, url.Values{"svc.web.secret.API_KEY": {"new-value"}}))
+		resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, nil))
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("deploy = %d:\n%s", resp.StatusCode, text(body))
 		}
-		if v := e.Nomad.Variable("nomad/jobs/shop/web")["API_KEY"]; v != "new-value" {
-			t.Errorf("API_KEY = %q, want the typed value", v)
+		if v := e.Nomad.Variable("nomad/jobs/shop/web")["API_KEY"]; v != storedSecret {
+			t.Errorf("API_KEY = %q, want the value kept", v)
+		}
+		if v := e.Nomad.Variable("nomad/jobs/shop/db")["POSTGRES_PASSWORD"]; v != "pw" {
+			t.Errorf("POSTGRES_PASSWORD = %q, want the value kept", v)
+		}
+		got := e.storedApp(t, "shop")
+		for _, svc := range got.Services {
+			switch svc.Name {
+			case "web":
+				if svc.Health == nil || svc.Health.Path != "/health" || len(svc.Domains) != 1 {
+					t.Errorf("web = health %+v, domains %+v; want /health and its domain", svc.Health, svc.Domains)
+				}
+			case "db":
+				if svc.Backup == nil || svc.Backup.Engine != "postgres" || svc.Backup.Keep != 5 {
+					t.Errorf("db backup = %+v, want postgres keeping 5", svc.Backup)
+				}
+			}
 		}
 	})
 
 	t.Run("an app that changed since the form was drawn is refused", func(t *testing.T) {
 		e, revision := shopEnv(t)
 		_, page := e.previewShop(t, revision, shopCompose)
-		values := shopFormOf(t, page, url.Values{"svc.web.secret.API_KEY": {aSecret}})
+		values := shopFormOf(t, page, nil)
 
 		// Someone else saves the app: its revision moves on.
 		changed := e.storedApp(t, "shop")
@@ -243,11 +256,11 @@ func TestComposeDeploy(t *testing.T) {
 		if e.Nomad.Registrations() != regs || len(e.deployments(t, "shop")) != deployments {
 			t.Error("a stale deploy deployed")
 		}
-		if strings.Contains(body, aSecret) || strings.Contains(body, storedSecret) {
+		if strings.Contains(body, storedSecret) {
 			t.Error("the stale page holds a secret value")
 		}
-		if !strings.Contains(text(body), "Secret values aren't kept; type them again.") {
-			t.Error("the stale page doesn't say the values were dropped")
+		if strings.Contains(text(body), "Secret values aren't kept; type them again.") {
+			t.Error("the stale page of a form with no secret input asks for secrets to be typed again")
 		}
 		if got := e.storedApp(t, "shop"); got.Services[0].Env[0].Value != "other" {
 			t.Error("the other save was overwritten")

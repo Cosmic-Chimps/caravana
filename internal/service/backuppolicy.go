@@ -47,6 +47,45 @@ func (s *Service) SetBackupPolicy(ctx context.Context, appID, service string, po
 	return recordOnly(s.saveAndDeploy(ctx, a, cond, trigger, m, nil))
 }
 
+// ChangeBackupPolicy deploys appID with the engine, database file, schedule and
+// number to keep of service's backup policy replaced (feature 059): a Deploy of
+// the stored app with that one change, on the condition that the app still has
+// the revision the caller read (ErrAppChanged otherwise; an empty Condition
+// saves whatever is there), as SetBackupPolicy does for a service with none. The
+// rest of the policy stays as it was: its restore schedule, destination, copies
+// and how many each copy keeps. An empty schedule is the default, daily at
+// 03:00 UTC, and "never" takes no automatic backups; keep 0 is the default
+// count. An unknown service, or one with no policy, is an *app.FieldError on
+// "service"; what the model refuses is its *app.FieldError on
+// services[i].backup.*, as a deploy says it. An app that keeps its Compose file
+// keeps it, with the overlay's backup following the app.
+func (s *Service) ChangeBackupPolicy(ctx context.Context, appID, service, engine, file, schedule string, keep int, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
+	rec, err := s.store.GetApp(ctx, appID)
+	if err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	a := rec.App
+	i := slices.IndexFunc(a.Services, func(svc app.Service) bool { return svc.Name == service })
+	if i < 0 {
+		return store.DeploymentRecord{}, app.NewFieldError("service", "app %q has no service %q", appID, service)
+	}
+	if a.Services[i].Backup == nil {
+		return store.DeploymentRecord{}, app.NewFieldError("service", "service %q has no backup policy", service)
+	}
+	policy := *a.Services[i].Backup
+	policy.Engine, policy.File, policy.Schedule, policy.Keep = engine, file, schedule, keep
+	services := slices.Clone(a.Services)
+	services[i].Backup = &policy
+	a.Services = services
+
+	m := made{action: audit.ActionUpdated}
+	if rec.Compose != nil {
+		file := withBackup(*rec.Compose, service, policy)
+		m.file = &file
+	}
+	return recordOnly(s.saveAndDeploy(ctx, a, cond, trigger, m, nil))
+}
+
 // SetRestoreSchedule sets, or with restore nil removes, the restore schedule of
 // a service that already has a backup policy, and deploys, as SetBackupPolicy
 // does for the policy itself (feature 036): the same condition, trigger and

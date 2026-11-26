@@ -99,7 +99,7 @@ func withDomains(file compose.Request, service string, domains []app.Domain, por
 		out = append(out, compose.Domain{Host: d.Host, Port: port, Path: d.Path, WWWRedirect: d.WWWRedirect, TeamOnly: d.TeamOnly})
 	}
 	overlay.Domains = out
-	if len(overlay.Domains) == 0 && overlay.Health == nil && len(overlay.Secrets) == 0 && overlay.Backup == nil {
+	if overlay.Empty() {
 		delete(services, service)
 	} else {
 		services[service] = overlay

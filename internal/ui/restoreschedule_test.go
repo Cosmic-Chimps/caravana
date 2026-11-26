@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
-	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -334,23 +333,9 @@ func TestComposeFormRestoreSchedule(t *testing.T) {
 		t.Errorf("backup = %+v, want %+v", got, want)
 	}
 
-	// From the kept request back into the inputs, and out again.
-	back := draftOf(d.request())
-	web, _ := back.service("web")
-	if web.BackupRestoreSchedule.Value != "0 4 * * *" || web.BackupRestoreFrom.Value != "golden" {
-		t.Errorf("draftOf = %q, %q", web.BackupRestoreSchedule.Value, web.BackupRestoreFrom.Value)
-	}
-	if got := back.request().Services["web"].Backup; !reflect.DeepEqual(got, want) {
-		t.Errorf("round trip = %+v, want %+v", got, want)
-	}
+	web, _ := d.service("web")
 	if !web.hasBackupInput() {
 		t.Error("a service with only a restore schedule hides the backup inputs")
-	}
-
-	// The same from the stored app's policy.
-	rev := compose.Request{Compose: "x", Services: map[string]compose.Overlay{"web": {Backup: want}}}
-	if got := draftOf(rev).request().Services["web"].Backup; !reflect.DeepEqual(got, want) {
-		t.Errorf("from a request = %+v", got)
 	}
 
 	for _, tt := range []struct {

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	keptLegendFirst = "This app was deployed from a Compose file, so Caravana keeps the file and you edit the app through it: the file, then each service's health check, secrets and backup. An app deployed from an image is edited field by field instead."
+	keptLegendFirst = "This app is edited through its Compose file. Change the file, preview what changes, then deploy. Health checks are on Services, secrets on Variables & secrets, domains on Domains and backups on the Backups tab: a deploy from here keeps them as they are."
 	keptLegendCI    = "Its last deploy came from CI (acme/shop). A deploy from CI can replace changes made here, so make lasting changes in the source."
 )
 
@@ -70,44 +70,41 @@ func TestConfigureKeptFileLegend(t *testing.T) {
 	}
 }
 
-// A service's secrets are rows: the name is the label of its password input,
-// the keep hint is said once per service, and the add rows are a name input and
-// a value input, each with a label for screen readers. No password input has a value.
+// The form of an app that exists has no secret rows (feature 059): its secrets are kept by name and
+// set on Variables & secrets. New app's Compose tab keeps them: a service's secrets are rows, the
+// name is the label of its password input, and the add rows are a name input and a value input,
+// each with a label for screen readers. No password input has a value.
 func TestComposeFormSecretRows(t *testing.T) {
 	e, _ := keptSentinelEnv(t)
-	_, body := e.get(t, "/apps/shop/configure/source")
-	if n := strings.Count(body, "Leave a value empty to keep it."); n != 2 {
-		t.Errorf("the keep hint is drawn %d times, want once for each of the 2 services with secrets", n)
+	_, source := e.get(t, "/apps/shop/configure/source")
+	if strings.Contains(source, `type="password"`) || strings.Contains(source, "cv-secret-rows") || strings.Contains(source, "Leave a value empty to keep it.") {
+		t.Error("the form of an app that exists draws secret rows")
 	}
-	for _, gone := range []string{"Empty keeps the current value.", `class="cv-edit-fields">
-          <label class="cv-fld" for="svc-web-secret`} {
-		if strings.Contains(body, gone) {
-			t.Errorf("the page still has %q", gone)
-		}
+	if strings.Contains(source, sentinel015) {
+		t.Error("a secret value is on the page")
 	}
+
+	ne := composeEnv(t)
+	_, body := ne.previewNew(t, "fresh", shopCompose)
 	for _, want := range []string{
 		`class="cv-secret-rows"`,
-		`class="cv-secret-name cv-data text-fg-1" for="svc-web-secret-API_KEY">API_KEY</label>`,
 		`class="cv-secret-label" for="svc-web-newSecret-0">Name of new secret 1</label>`,
 		`class="cv-secret-label" for="svc-web-newSecret-0-value">Value of new secret 1</label>`,
 		`class="cv-secret-label" for="svc-web-newSecret-2-value">Value of new secret 3</label>`,
 		`class="cv-secret-row cv-secret-heads" aria-hidden="true"`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("the form lacks %q", want)
+			t.Errorf("the new app's form lacks %q", want)
 		}
 	}
 	inputs := regexp.MustCompile(`<input[^>]*type="password"[^>]*>`).FindAllString(body, -1)
 	if len(inputs) == 0 {
-		t.Fatal("no password input on the page")
+		t.Fatal("no password input on the new app's page")
 	}
 	for _, in := range inputs {
 		if strings.Contains(in, " value=") {
 			t.Errorf("a password input has a value: %s", in)
 		}
-	}
-	if strings.Contains(body, sentinel015) {
-		t.Error("a secret value is on the page")
 	}
 }
 

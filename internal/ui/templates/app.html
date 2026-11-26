@@ -609,6 +609,46 @@
         </form>
         {{end}}
         {{end}}
+        {{if .CanChange}}
+        <details class="cv-confirm"{{if .ChangeErr}} open{{end}}>
+          <summary class="cv-btn cv-btn-secondary cv-btn-sm">Change the policy…</summary>
+          <form method="post" action="/apps/{{$.ID}}/backups/policy/change" class="cv-confirm-body">
+            <input type="hidden" name="revision" value="{{$.Revision}}">
+            <input type="hidden" name="service" value="{{.Name}}">
+            <p>The engine, the schedule and how many backups of this service are kept. Its restore schedule and where its backups go stay as they are. This deploys the app.</p>
+            <label class="cv-fld" for="chg-engine-{{.Name}}">
+              <span class="cv-label">Engine</span>
+              <select class="cv-field cv-select" id="chg-engine-{{.Name}}" name="engine"{{if eq .ChangeField "engine"}} aria-invalid="true" aria-describedby="chg-engine-{{.Name}}-error"{{end}}>
+                {{range .ChangeEngines}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{.Label}}</option>{{end}}
+              </select>
+              {{if eq .ChangeField "engine"}}<span id="chg-engine-{{.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .ChangeErr}}</span></span>{{end}}
+            </label>
+            {{if .ChangeHasFile}}
+            <label class="cv-fld" for="chg-file-{{.Name}}">
+              <span class="cv-label">Database file</span>
+              <input class="cv-field cv-field-mono" id="chg-file-{{.Name}}" type="text" name="file" value="{{.ChangeFile}}" placeholder="/data/app.db" autocomplete="off" autocapitalize="off" spellcheck="false"{{if eq .ChangeField "file"}} aria-invalid="true" aria-describedby="chg-file-{{.Name}}-error"{{end}}>
+              <span class="cv-data-muted cv-hint">SQLite file only: the database's path inside the service, on one of its volumes.</span>
+              {{if eq .ChangeField "file"}}<span id="chg-file-{{.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .ChangeErr}}</span></span>{{end}}
+            </label>
+            {{end}}
+            <label class="cv-fld" for="chg-schedule-{{.Name}}">
+              <span class="cv-label">Schedule</span>
+              <select class="cv-field cv-select" id="chg-schedule-{{.Name}}" name="schedule"{{if eq .ChangeField "schedule"}} aria-invalid="true" aria-describedby="chg-schedule-{{.Name}}-error"{{end}}>
+                {{range .ChangeSchedules}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{.Label}}</option>{{end}}
+              </select>
+              {{if eq .ChangeField "schedule"}}<span id="chg-schedule-{{.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .ChangeErr}}</span></span>{{end}}
+            </label>
+            <label class="cv-fld" for="chg-keep-{{.Name}}">
+              <span class="cv-label">Backups to keep</span>
+              <input class="cv-field cv-field-mono" id="chg-keep-{{.Name}}" type="text" inputmode="numeric" name="keep" value="{{.ChangeKeep}}" maxlength="3" autocomplete="off"{{if eq .ChangeField "keep"}} aria-invalid="true" aria-describedby="chg-keep-{{.Name}}-error"{{end}}>
+              <span class="cv-data-muted cv-hint">1 to 100. Pinned backups are kept besides these.</span>
+              {{if eq .ChangeField "keep"}}<span id="chg-keep-{{.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .ChangeErr}}</span></span>{{end}}
+            </label>
+            {{if and .ChangeErr (not .ChangeField)}}<span role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .ChangeErr}}</span></span>{{end}}
+            <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy</button></div>
+          </form>
+        </details>
+        {{end}}
         {{if .CanPlaces}}
         <details class="cv-confirm"{{if .PlacesErr}} open{{end}}>
           <summary class="cv-btn cv-btn-secondary cv-btn-sm">Where backups go…</summary>
@@ -1194,7 +1234,7 @@
 {{with .ComposeForm}}
 <section aria-labelledby="compose-edit-title" class="flex flex-col gap-2">
   <h3 id="compose-edit-title" class="sr-only">Edit the Compose file</h3>
-  {{if .Kept}}<p class="cv-note">This app was deployed from a Compose file, so Caravana keeps the file and you edit the app through it: the file, then each service's health check, secrets and backup. An app deployed from an image is edited field by field instead.{{with .FromCI}} Its last deploy came from CI ({{.}}). A deploy from CI can replace changes made here, so make lasting changes in the source.{{end}}</p>{{end}}
+  {{if and .Kept .FromCI}}<p class="cv-note">Its last deploy came from CI ({{.FromCI}}). A deploy from CI can replace changes made here, so make lasting changes in the source.</p>{{end}}
   {{if .NotKept}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>This app's Compose file wasn't kept. Paste it once to edit it here from now on.</span></div>{{end}}
   {{template "compose-form" .}}
 </section>
@@ -1259,12 +1299,12 @@
 {{define "cfg-services"}}
 <section aria-labelledby="services-title" class="flex flex-col gap-2">
   <h2 id="services-title" class="cv-label">Services</h2>
-  <p class="cv-note cv-cfg-intro">Copies, size and health check of each service. Each service is saved on its own, and saving is a deploy.{{if .Edit.ReadOnly}}{{if not .NoConfigure}} For this app they are set in its Compose file, which is changed on Source.{{end}}{{end}}</p>
+  <p class="cv-note cv-cfg-intro">Copies, size and health check of each service. Each service is saved on its own, and saving is a deploy.{{if .KeptEdit}} For this app the health check is written into its Compose settings; the file itself is changed on Source.{{end}}</p>
   {{if .NoConfigure}}<p class="cv-note cv-cfg-intro">Your role here is to look: changing how this app is set up is for people who maintain it.</p>{{end}}
 </section>
 {{if not .Defined}}
 <p class="cv-note">This app has no services yet. <a href="/apps/{{.ID}}/configure/source">Define it on Source.</a></p>
-{{else if .Edit.ReadOnly}}
+{{else if and .Edit.ReadOnly (not .KeptEdit)}}
 {{range .Edit.Panels}}
 <div class="cv-panel cv-def">
   <h3 class="cv-data text-fg-1">{{.Title}}</h3>
@@ -1293,7 +1333,7 @@
     <h3 id="svc-{{.Name}}-title" class="cv-svc-title">{{.Name}}</h3>
     <span class="cv-svchead-sub">{{.Edit.Image}}{{with .VolumeText}} · {{.}}{{end}}</span>
   </div>
-  <form id="svcform-{{.Name}}" method="post" action="{{$.Edit.Action}}#service-{{.Name}}" class="cv-svcform">
+  <form id="svcform-{{.Name}}" method="post" action="{{if $.KeptEdit}}/apps/{{$.ID}}/services/{{.Name}}/health{{else}}{{$.Edit.Action}}{{end}}#service-{{.Name}}" class="cv-svcform">
     <input type="hidden" name="revision" value="{{$.Edit.Form.Revision}}">
     <input type="hidden" name="section" value="services">
     <input type="hidden" name="svc.{{.Name}}.form" value="1">
@@ -1301,7 +1341,9 @@
       <div class="cv-cfg-groups">
         <div class="cv-cfg-group">
           <h4 class="cv-label">Copies &amp; size</h4>
-          <div class="cv-fields4">
+          {{if $.KeptEdit}}<p class="cv-data text-fg-1">{{.SizeText}}</p>
+          <p class="cv-note">Set in the Compose file.</p>
+          {{else}}<div class="cv-fields4">
             {{if .Scaled}}<div class="cv-fld"><span class="cv-label">Copies</span>
               <span class="cv-data text-fg-1">Set by scaling, {{.ScaleBounds}}</span></div>
             {{else if .OneCopy}}<div class="cv-fld"><span class="cv-label">Copies</span>
@@ -1311,7 +1353,7 @@
             {{template "field" (.F "memory")}}
             {{template "field" (.F "memoryMax")}}
           </div>
-          {{if and .OneCopy (not .Scaled)}}<p class="cv-note">A service with a volume or a published port runs one copy.</p>{{end}}
+          {{if and .OneCopy (not .Scaled)}}<p class="cv-note">A service with a volume or a published port runs one copy.</p>{{end}}{{end}}
         </div>
         {{if .ShowHealth}}
         <div class="cv-cfg-group">
@@ -1345,7 +1387,7 @@
   {{end}}
   {{with .Identities}}<div class="cv-cfg-block">{{template "identities" .}}</div>{{end}}
   {{with .BackupLine}}<div class="cv-cfg-block"><h4 class="cv-label">Backups</h4><p class="text-base text-fg-1">{{.}}</p><p class="cv-note"><a href="/apps/{{$.ID}}/backups">Changed on the Backups tab.</a></p></div>{{end}}
-  {{if not $.Stopped}}<div class="cv-cfg-foot"><button type="submit" form="svcform-{{.Name}}" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy{{if $.Edit.Many}} {{.Name}}{{end}}</button>{{with .LeftAlone}}<span class="cv-note">{{.}}</span>{{end}}</div>{{end}}
+  {{if and (not $.Stopped) (or .ShowHealth (not $.KeptEdit))}}<div class="cv-cfg-foot"><button type="submit" form="svcform-{{.Name}}" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy{{if $.Edit.Many}} {{.Name}}{{end}}</button>{{with .LeftAlone}}<span class="cv-note">{{.}}</span>{{end}}</div>{{end}}
 </section>
 {{end}}
 {{end}}

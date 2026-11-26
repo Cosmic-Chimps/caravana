@@ -271,6 +271,8 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/secrets/remove", s.protected(s.requireSession(s.removeSecret))},
 		{"POST", "/apps/{id}/services/{service}/placement", s.protected(s.requireSession(s.savePlacement))},
 		{"POST", "/apps/{id}/services/{service}/scale", s.protected(s.requireSession(s.saveScale))},
+		{"POST", "/apps/{id}/services/{service}/health", s.protected(s.requireSession(s.saveHealth))},
+		{"POST", "/apps/{id}/backups/policy/change", s.protected(s.requireSession(s.changeBackupPolicy))},
 		{"POST", "/apps/{id}/services/{service}/build", s.protected(s.requireSession(s.saveBuild))},
 		{"POST", "/apps/{id}/services/{service}/git-access/deploy-key", s.protected(s.requireSession(s.makeDeployKey))},
 		{"POST", "/apps/{id}/services/{service}/git-access/token", s.protected(s.requireSession(s.setGitToken))},

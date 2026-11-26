@@ -86,19 +86,14 @@ func TestNotKeptFileDeployKeepsDomainOptions(t *testing.T) {
 }
 
 func TestConfigureKeptFileListsDomainsOnce(t *testing.T) {
-	const note = "Domains aren't set here: a deploy from this form keeps them as they are. Add and change them on the Domains page."
 	e, _ := keptSentinelEnv(t)
 	// The Compose form is on Source, the Domains panel on Overview and the read-only definition on Services.
+	// The form has no Domains input and no note about them any more (feature 059): only the file, and the line
+	// that says domains stay as they are.
 	_, body := e.get(t, "/apps/shop/configure/source")
 	got := text(body)
-	if !strings.Contains(got, note) || !strings.Contains(body, `<a href="/apps/shop/domains">Domains page</a>`) {
-		t.Errorf("the form lacks the note:\n%s", got)
-	}
-	if strings.Count(got, note) != 1 {
-		t.Errorf("the note is drawn %d times, want once", strings.Count(got, note))
-	}
-	if !strings.Contains(got, "Health checks and secrets are set below, after the preview.") {
-		t.Errorf("the file's hint is the new app's:\n%s", got)
+	if !strings.Contains(got, "Secrets, domains, health checks and backups stay as they are.") || strings.Contains(body, `name="svc.web.domains"`) {
+		t.Errorf("the form lacks the line, or has a Domains input:\n%s", got)
 	}
 	// The host is in the Domains panel once; the compose form and the read-only definition don't
 	// repeat it (the page header's link and the Delete section's sentence are other things).

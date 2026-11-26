@@ -257,6 +257,11 @@ func sectionOfPost(post interface{ Get(string) string }, f editForm) string {
 	return sectionServices
 }
 
+// KeptEdit says the app keeps its Compose file and the person may change it: Services then draws each
+// service's health check as a form that writes it into the file's overlay, and its copies and size
+// read-only (they are set in the file).
+func (t configureTab) KeptEdit() bool { return t.ComposeForm != nil && t.ComposeForm.Kept }
+
 // HasBuild says a service of the app is built from a Git repository.
 func (t configureTab) HasBuild() bool {
 	return slices.ContainsFunc(t.Edit.Services, func(sv editServiceView) bool { return sv.Build != nil })
@@ -283,7 +288,7 @@ func (t configureTab) SourceIntro() string {
 	case t.NoConfigure:
 		return "What this app runs. Your role here is to look: changing how this app is set up is for people who maintain it."
 	case t.ComposeForm != nil && t.ComposeForm.Kept:
-		return "This app is edited through its Compose file. Change the file, preview what changes, then deploy."
+		return "This app is edited through its Compose file. Change the file, preview what changes, then deploy. Health checks are on Services, secrets on Variables & secrets, domains on Domains and backups on the Backups tab: a deploy from here keeps them as they are."
 	case t.ComposeForm != nil:
 		return "This app was made from a Compose file that wasn't kept. Paste it once to edit it here from now on."
 	case t.HasBuild():

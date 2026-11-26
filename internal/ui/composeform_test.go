@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/compose"
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 // overlayPost makes the posted form for a draft: the marker of each service,
@@ -244,37 +244,27 @@ func TestComposeDraftErrors(t *testing.T) {
 	}
 }
 
-func TestComposeDraftFrom(t *testing.T) {
+// The form of an app that exists has only the file (feature 059): keepAll makes its draft from the stored
+// record, and the request it makes says, per service, what the app has: secrets by name, the health check
+// and the backup policy, so a deploy from the form drops none of them.
+func TestComposeDraftKeepAll(t *testing.T) {
 	stored := app.App{ID: "shop", Services: []app.Service{
 		{Name: "web", Image: "ghcr.io/acme/shop:2",
 			Ports:   []app.Port{{Name: "http", ContainerPort: 3000}, {Name: "metrics", ContainerPort: 9100}},
 			Domains: []app.Domain{{Host: "shop.example.com", Port: "http"}},
 			Health:  &app.HealthCheck{Path: "/healthz", Port: "http", Interval: 15 * time.Second},
 			Secrets: []app.Secret{{Name: "API_KEY"}}},
-		{Name: "db", Image: "postgres:17", Backup: &app.Backup{Engine: "postgres", Keep: 3}},
+		{Name: "db", Image: "postgres:17", Backup: &app.Backup{Engine: "postgres", Keep: 3, CopyTo: []string{"offsite"},
+			Restore: &app.RestoreSchedule{Schedule: "0 4 * * *", From: "golden"}}},
 		{Name: "docs", Image: "nginx", Ports: []app.Port{{Name: "http", ContainerPort: 80}},
-			Domains: []app.Domain{{Host: "docs.example.com", Port: "http"}}},
+			Domains: []app.Domain{{Host: "docs.example.com", Port: "http"}}, Health: &app.HealthCheck{}},
 	}}
-	d := draftFrom(stored)
-
-	web, _ := d.service("web")
-	if web.Domains.Value != "shop.example.com:3000" || web.HealthPath.Value != "/healthz" ||
-		web.HealthInterval.Value != "15" || web.HealthPort.Value != "3000" {
-		t.Errorf("web = %q, %q, %q, %q; the several-ports service names its ports", web.Domains.Value, web.HealthPath.Value, web.HealthInterval.Value, web.HealthPort.Value)
-	}
-	if len(web.Secrets) != 1 || web.Secrets[0].Name != "API_KEY" || !web.Secrets[0].Exists {
-		t.Errorf("web secrets = %+v, want API_KEY, existing", web.Secrets)
-	}
-	docs, _ := d.service("docs")
-	if docs.Domains.Value != "docs.example.com" {
-		t.Errorf("docs domains = %q; a one-port service names no port", docs.Domains.Value)
-	}
-	db, _ := d.service("db")
-	if db.BackupEngine.Value != "postgres" || db.BackupKeep.Value != "3" || db.BackupSchedule.Value != "" {
-		t.Errorf("db backup = %q, %q, %q", db.BackupEngine.Value, db.BackupSchedule.Value, db.BackupKeep.Value)
+	d := composeDraft{File: formField{ID: "compose", Value: "x"}}
+	d.keepAll(store.AppRecord{App: stored})
+	if !d.fixed() {
+		t.Error("a draft of an app that exists isn't marked as such")
 	}
 
-	// The prefill is a request that, translated, would give back what is stored.
 	req := d.request()
 	want := compose.Overlay{
 		Domains: []compose.Domain{{Host: "shop.example.com", Port: 3000}},
@@ -284,112 +274,50 @@ func TestComposeDraftFrom(t *testing.T) {
 	if !reflect.DeepEqual(req.Services["web"], want) {
 		t.Errorf("web overlay = %+v, want %+v", req.Services["web"], want)
 	}
-	if req.Services["db"].Backup == nil || req.Services["db"].Backup.Keep != 3 {
-		t.Errorf("db overlay = %+v, want its backup", req.Services["db"])
+	if got := req.Services["db"].Backup; !reflect.DeepEqual(got, stored.Services[1].Backup) {
+		t.Errorf("db backup = %+v, want %+v", got, stored.Services[1].Backup)
+	}
+	// A one-port service names no port, and Caravana's default check has nothing to keep.
+	if ov := req.Services["docs"]; ov.Health != nil || len(ov.Domains) != 1 || ov.Domains[0].Port != 0 {
+		t.Errorf("docs overlay = %+v, want its domain with no port and no health", ov)
+	}
+	// The backup is a copy: the request can't change the stored policy.
+	req.Services["db"].Backup.CopyTo[0] = "changed"
+	if stored.Services[1].Backup.CopyTo[0] != "offsite" {
+		t.Error("the kept backup shares its copies with the stored app")
 	}
 	if names := serviceNames(d); !slices.Equal(names, []string{"db", "docs", "web"}) {
 		t.Errorf("services = %v, want them sorted", names)
 	}
 }
 
-// draftPost is the form a browser posts from a drawn draft: the file, the name,
-// each service's marker and inputs, and its secrets as empty password inputs.
-func draftPost(d composeDraft) url.Values {
-	post := url.Values{"compose": {d.File.Value}, "name": {d.Name.Value}}
-	for i := range d.Services {
-		s := &d.Services[i]
-		post.Set("svc."+s.Name+".overlay", "1")
-		for _, in := range s.inputs() {
-			post.Set(inputName(s.Name, in.name), in.field.Value)
-		}
-		for _, sec := range s.Secrets {
-			post.Set(inputName(s.Name, "secret."+sec.Name), "")
-		}
+// For an app that keeps its file the overlay is kept as written: its health check with its port number
+// and its backup policy exactly, not what the translation derived from them.
+func TestComposeDraftKeepAllFromTheKeptOverlay(t *testing.T) {
+	overlay := compose.Overlay{
+		Health: &compose.Health{Path: "/up", Port: 8080},
+		Backup: &app.Backup{Engine: "volume", Schedule: "never"},
 	}
-	return post
-}
-
-// Feature 015: a kept request drawn as a draft and posted back is the same
-// request, with secret values removed, for every example pair the translator
-// is tested with, for Hollo, and for a request that has no overlay at all.
-func TestDraftOfRoundTrip(t *testing.T) {
-	type pair struct {
-		name string
-		req  compose.Request
+	rec := store.AppRecord{
+		App:     app.App{ID: "shop", Services: []app.Service{{Name: "web", Image: "x", Ports: []app.Port{{Name: "p", ContainerPort: 8080}}}}},
+		Compose: &compose.Request{Compose: "services: {}\n", Services: map[string]compose.Overlay{"web": overlay}},
 	}
-	var pairs []pair
-	load := func(name, composePath, overlayPath string) {
-		file, err := os.ReadFile(composePath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		req := compose.Request{Compose: string(file)}
-		if raw, err := os.ReadFile(overlayPath); err == nil {
-			if err := json.Unmarshal(raw, &req); err != nil {
-				t.Fatalf("%s: %v", overlayPath, err)
-			}
-			req.Compose = string(file)
-		}
-		pairs = append(pairs, pair{name, req})
-	}
-	files, err := filepath.Glob("../compose/testdata/*.compose.yaml")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no compose test data: %v", err)
-	}
-	for _, f := range files {
-		name := strings.TrimSuffix(filepath.Base(f), ".compose.yaml")
-		load(name, f, "../compose/testdata/"+name+".overlay.json")
-	}
-	load("hollo", "../../deploy/examples/hollo/compose.yaml", "../../deploy/examples/hollo/overlay.example.json")
-	load("ntfy", "../../deploy/examples/ntfy/compose.yaml", "../../deploy/examples/ntfy/overlay.example.json")
-	pairs = append(pairs,
-		pair{"no overlay", compose.Request{Compose: "# kept\nservices:\n  web:\n    image: traefik/whoami\n"}},
-		pair{"every overlay field", compose.Request{Compose: "services: {}\n", Services: map[string]compose.Overlay{
-			"web": {
-				Domains: []compose.Domain{{Host: "a.example.com"}, {Host: "b.example.com", Port: 8080}},
-				Health:  &compose.Health{Path: "/up", Port: 8080, Interval: 1500 * time.Millisecond, Timeout: 500 * time.Millisecond},
-				Secrets: []app.Secret{{Name: "TOKEN", Value: new("s3cret-sentinel-015")}},
-			},
-			"db": {Backup: &app.Backup{Engine: "postgres", Schedule: "0 4 * * *", Keep: 7}},
-		}}})
-
-	for _, p := range pairs {
-		t.Run(p.name, func(t *testing.T) {
-			d := draftOf(p.req)
-			if d.File.Value != p.req.Compose || d.Name.Value != p.req.Name {
-				t.Errorf("file or name differ: %q, %q", d.File.Value, d.Name.Value)
-			}
-			for _, s := range d.Services {
-				for _, sec := range s.Secrets {
-					if !sec.Exists {
-						t.Errorf("secret %s of %s isn't marked as existing", sec.Name, s.Name)
-					}
-				}
-			}
-			parsed, ok := parseComposeDraft(draftPost(d))
-			if !ok {
-				t.Fatalf("the draft's own post was refused: %+v", parsed)
-			}
-			got := parsed.request()
-			got.Name = parsed.Name.Value // the console sets the name from the stored app, not the form
-			want := p.req.WithoutSecretValues()
-			if !reflect.DeepEqual(sortedSecrets(got), sortedSecrets(want)) {
-				t.Errorf("round trip = %+v\nwant        %+v", got, want)
-			}
-		})
+	d := composeDraft{}
+	d.keepAll(rec)
+	if got := d.request().Services["web"]; !reflect.DeepEqual(got, overlay) {
+		t.Errorf("web overlay = %+v, want %+v", got, overlay)
 	}
 }
 
-// Feature 015: the draft of a kept request never carries a secret value, even
-// when the request does.
-func TestDraftOfHasNoSecretValues(t *testing.T) {
-	d := draftOf(compose.Request{Compose: "x", Services: map[string]compose.Overlay{
-		"web": {Secrets: []app.Secret{{Name: "TOKEN", Value: new("s3cret-sentinel-015")}}},
-	}})
+// Feature 059: the draft of an app that exists never carries a secret value, even when a request holds
+// one: its secrets are names, which keep the stored values.
+func TestKeepAllHasNoSecretValues(t *testing.T) {
+	d := composeDraft{}
+	d.keepAll(store.AppRecord{App: app.App{Services: []app.Service{{Name: "web", Secrets: []app.Secret{{Name: "TOKEN", Value: new("s3cret-sentinel-015")}}}}}})
 	if len(d.values) != 0 {
 		t.Errorf("values = %v, want none", d.values)
 	}
-	if got := d.request().Services["web"].Secrets; len(got) != 1 || got[0].Value != nil {
+	if got := d.request().Services["web"].Secrets; len(got) != 1 || got[0].Name != "TOKEN" || got[0].Value != nil {
 		t.Errorf("request secrets = %+v, want TOKEN with no value", got)
 	}
 }
@@ -417,9 +345,9 @@ func TestComposeDraftKeepStored(t *testing.T) {
 	web, _ := d.service("web")
 	var got []string
 	for _, s := range web.Secrets {
-		got = append(got, fmt.Sprintf("%s/%v", s.Name, s.Exists))
+		got = append(got, s.Name)
 	}
-	if want := []string{"API_KEY/true", "NEW/false", "TOKEN/true"}; !slices.Equal(got, want) {
+	if want := []string{"API_KEY", "NEW", "TOKEN"}; !slices.Equal(got, want) {
 		t.Errorf("secrets = %v, want %v", got, want)
 	}
 	secrets := d.request().Services["web"].Secrets

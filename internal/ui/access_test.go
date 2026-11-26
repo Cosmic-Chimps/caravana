@@ -150,6 +150,7 @@ func appNeed(key string, env string) int {
 		"POST /apps/{id}/compose", "POST /apps/{id}/variables", "POST /apps/{id}/variables/env", "POST /apps/{id}/secrets/remove",
 		"POST /apps/{id}/domains", "POST /apps/{id}/backups/policy", "POST /apps/{id}/backups/restore-schedule",
 		"POST /apps/{id}/backups/places", "POST /apps/{id}/services/{service}/placement", "POST /apps/{id}/services/{service}/scale",
+		"POST /apps/{id}/services/{service}/health", "POST /apps/{id}/backups/policy/change",
 		"POST /apps/{id}/services/{service}/build", "POST /apps/{id}/delete":
 		return configure
 	case "GET /apps/{id}/stop", "POST /apps/{id}/stop", "POST /apps/{id}/copies/{copyId}/run", "GET /apps/{id}/copies/{copyId}/terminal",

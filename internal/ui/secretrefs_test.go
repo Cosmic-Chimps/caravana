@@ -235,8 +235,8 @@ func TestRefreshSecretsFromTheConsole(t *testing.T) {
 	})
 }
 
-// Feature 037: a reference survives the Compose form. It is listed read-only,
-// has no input, and a deploy from the form keeps it.
+// Feature 037: a reference survives the Compose form. The form has no row for it
+// (feature 059), and a deploy from the form keeps it.
 func TestComposeFormKeepsReferences(t *testing.T) {
 	e := refsEnv(t)
 	req := compose.Request{Compose: "services:\n  web:\n    image: traefik/whoami:latest\n    ports: [\"8080:80\"]\n", Services: map[string]compose.Overlay{
@@ -248,13 +248,11 @@ func TestComposeFormKeepsReferences(t *testing.T) {
 	}
 	e.waitDeploy(t, rec.Deployment.ID)
 
+	// The form of an app that exists has only the file (feature 059): no row for the reference, so no
+	// input a value could be typed over; it is kept by the deploy.
 	_, page := e.get(t, "/apps/duo/compose")
-	got := text(page)
-	if !strings.Contains(got, "DATABASE_URL from bella-prod · DATABASE_URL") {
-		t.Errorf("the form doesn't list the reference:\n%s", got)
-	}
-	if strings.Contains(page, `name="svc.web.secret.DATABASE_URL"`) {
-		t.Error("the reference has an input: a value could be typed over it")
+	if strings.Contains(page, `name="svc.web.secret.DATABASE_URL"`) || strings.Contains(page, `type="password"`) {
+		t.Error("the form has an input for the reference: a value could be typed over it")
 	}
 	noProviderSecrets(t, "compose form", page)
 

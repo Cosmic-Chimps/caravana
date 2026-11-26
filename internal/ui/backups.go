@@ -56,6 +56,12 @@ type backupsTab struct {
 	PlacesFor, PlacesField string
 	PlacesErr              sentence
 	Posted                 *placesPosted
+	// ChangeFor names the service whose "Change the policy" form was refused: its row opens and the
+	// form draws ChangePosted, with the refusal at ChangeField (engine, file, schedule or keep; ""
+	// for the form as a whole). Feature 059.
+	ChangeFor, ChangeField string
+	ChangeErr              sentence
+	ChangePosted           *changePosted
 	BackedUp               int // services with a policy
 	Failing                int // of those, the ones whose newest run failed
 	// Gaps are the services that could be backed up and have no policy.
@@ -86,6 +92,11 @@ type placesPosted struct {
 	Destination string
 	CopyTo      []string
 	CopyKeep    string
+}
+
+// changePosted is what the "Change the policy" form was given, drawn again after a refusal.
+type changePosted struct {
+	Engine, File, Schedule, Keep string
 }
 
 // Not is how many services could be backed up and aren't.
@@ -179,6 +190,19 @@ type backupSvcRow struct {
 	// PlacesErr is the refusal of the form, drawn at PlacesField.
 	PlacesField string
 	PlacesErr   sentence
+
+	// CanChange says the "Change the policy…" form is offered (feature 059): the app is deployed as
+	// defined, not stopped, and the person may configure it. ChangeEngines, ChangeSchedules and the two
+	// inputs are the form's, which draws what was posted after a refusal, with it at ChangeField.
+	CanChange       bool
+	ChangeEngines   []backupPlaceChoice
+	ChangeSchedules []backupPlaceChoice
+	ChangeFile      string
+	ChangeKeep      string
+	ChangeField     string
+	ChangeErr       sentence
+	// ChangeHasFile says the engine select has the SQLite choice, so the form has its Database file input.
+	ChangeHasFile bool
 }
 
 // backupPlaceChoice is one option of the destination select or one "Also copy to" checkbox.
@@ -422,7 +446,7 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 		if row.Mark == "failed" {
 			tab.Failing++
 		}
-		row.Open = len(tab.Rows) == 0 || svc.Name == tab.ShowAll || svc.Name == tab.PlacesFor || slices.ContainsFunc(row.Runs, func(r backupRun) bool { return r.ID == tab.ConfirmErr })
+		row.Open = len(tab.Rows) == 0 || svc.Name == tab.ShowAll || svc.Name == tab.PlacesFor || svc.Name == tab.ChangeFor || slices.ContainsFunc(row.Runs, func(r backupRun) bool { return r.ID == tab.ConfirmErr })
 		tab.Rows = append(tab.Rows, row)
 	}
 
@@ -634,6 +658,7 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 	}
 	row.State = stateText(svc.Name, row.Mark)
 	placesOf(&row, svc, tab)
+	changeOf(&row, svc, tab)
 	if row.Pinned > 0 {
 		row.Keep += ", plus " + strconv.Itoa(row.Pinned) + " pinned"
 	}
@@ -741,6 +766,72 @@ func placesOf(row *backupSvcRow, svc app.Service, tab backupsTab) {
 			row.CopyChoices = append(row.CopyChoices, backupPlaceChoice{Value: d.Name, Label: d.Name, On: slices.Contains(copies, d.Name)})
 		}
 	}
+}
+
+// changeOf fills the row's "Change the policy…" form (feature 059): the engines the service can use
+// (the one it has, the one backupEngineFor names, volume for a service with a volume and sqlite for one
+// with a writable volume), the schedule (daily, none, or the stored line as "Keep …" when it is another)
+// and the number to keep, as stored or as posted after a refusal.
+func changeOf(row *backupSvcRow, svc app.Service, tab backupsTab) {
+	row.CanChange = tab.Defined && !tab.Stopped && !tab.NoConfigure
+	if !row.CanChange {
+		return
+	}
+	b := svc.Backup
+	engine, schedule, file, keep := b.Engine, b.ScheduleOrDefault(), b.File, strconv.Itoa(b.KeepOrDefault())
+	if b.Schedule != "" && b.Schedule != app.DefaultBackupSchedule && b.Schedule != app.BackupScheduleNever {
+		schedule = b.Schedule
+	}
+	if p := tab.ChangePosted; p != nil && tab.ChangeFor == svc.Name {
+		engine, schedule, file, keep = p.Engine, p.Schedule, p.File, p.Keep
+		row.ChangeField, row.ChangeErr = tab.ChangeField, tab.ChangeErr
+	}
+	row.ChangeFile, row.ChangeKeep = file, keep
+
+	engines := []string{b.Engine}
+	if recommended, ok := backupEngineFor(svc); ok {
+		engines = append(engines, recommended)
+	}
+	if len(svc.Volumes) > 0 {
+		engines = append(engines, app.BackupVolume)
+	}
+	if slices.ContainsFunc(svc.Volumes, func(v app.Volume) bool { return !v.ReadOnly }) {
+		engines = append(engines, app.BackupSQLite)
+	}
+	seen := map[string]bool{}
+	for _, e := range engines {
+		if seen[e] {
+			continue
+		}
+		seen[e] = true
+		row.ChangeEngines = append(row.ChangeEngines, backupPlaceChoice{Value: e, Label: engineChoiceLabel(e), On: e == engine})
+		row.ChangeHasFile = row.ChangeHasFile || e == app.BackupSQLite
+	}
+
+	row.ChangeSchedules = []backupPlaceChoice{
+		{Value: app.DefaultBackupSchedule, Label: "Daily at 03:00 UTC", On: schedule == app.DefaultBackupSchedule || schedule == ""},
+		{Value: app.BackupScheduleNever, Label: "No automatic backups", On: schedule == app.BackupScheduleNever},
+	}
+	if schedule != "" && schedule != app.DefaultBackupSchedule && schedule != app.BackupScheduleNever {
+		row.ChangeSchedules = append(row.ChangeSchedules, backupPlaceChoice{Value: schedule, Label: "Keep " + scheduleText(schedule), On: true})
+	}
+}
+
+// engineChoiceLabel is an engine as the policy forms' select says it.
+func engineChoiceLabel(engine string) string {
+	switch engine {
+	case app.BackupPostgres:
+		return "PostgreSQL (the service keeps running)"
+	case app.BackupMySQL:
+		return "MySQL or MariaDB (the service keeps running)"
+	case app.BackupMongoDB:
+		return "MongoDB (the service keeps running)"
+	case app.BackupVolume:
+		return "Volume (stops the service while it runs)"
+	case app.BackupSQLite:
+		return "SQLite file (the service keeps running)"
+	}
+	return engine
 }
 
 // restoreScheduleOf fills the row's restore schedule (feature 036): the line that says it, how the
@@ -1301,6 +1392,89 @@ func (s *server) setBackupPlaces(w http.ResponseWriter, r *http.Request, session
 		status, notice, ok := refusalOf(edited, err)
 		if !ok {
 			s.serverError(w, r, "set where backups go", err)
+			return
+		}
+		s.backupsPage(w, r, status, id, backupsTab{Notice: notice})
+	}
+}
+
+// changeBackupPolicy answers POST /apps/{id}/backups/policy/change (feature 059): the engine, database
+// file, schedule and number to keep of a service that already has a policy, as a deploy of the stored app
+// on the revision the page was drawn from. Its restore schedule, destination and copies stay as they are.
+// A refusal draws the tab again with the form open, what was posted and the refusal at its field.
+func (s *server) changeBackupPolicy(w http.ResponseWriter, r *http.Request, session string) {
+	ctx := r.Context()
+	id := r.PathValue("id")
+	if !s.readForm(w, r) {
+		return
+	}
+	revision, ok := s.formRevision(w, r, "change the policy")
+	if !ok {
+		return
+	}
+	name := strings.TrimSpace(r.PostForm.Get("service"))
+	rec, err := s.svc.GetApp(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.appNotFound(w, r, id)
+		return
+	}
+	if err != nil {
+		s.serverError(w, r, "read app", err)
+		return
+	}
+	i, found := serviceNamed(rec.App, name)
+	if !found || rec.App.Services[i].Backup == nil {
+		s.backupsPage(w, r, http.StatusUnprocessableEntity, id, backupsTab{Notice: sentence{plain("This app has no backed-up service "), mono(name), plain(".")}})
+		return
+	}
+
+	posted := &changePosted{Engine: strings.TrimSpace(r.PostForm.Get("engine")), File: strings.TrimSpace(r.PostForm.Get("file")),
+		Schedule: strings.TrimSpace(r.PostForm.Get("schedule")), Keep: strings.TrimSpace(r.PostForm.Get("keep"))}
+	refuse := func(status int, field, text string) {
+		s.backupsPage(w, r, status, id, backupsTab{ChangeFor: name, ChangeField: field, ChangeErr: sentence{plain(text)}, ChangePosted: posted})
+	}
+	keep := 0
+	if posted.Keep != "" {
+		n, convErr := strconv.Atoi(posted.Keep)
+		if convErr != nil || n < 1 || n > 100 {
+			refuse(http.StatusUnprocessableEntity, "keep", "Enter a whole number from 1 to 100.")
+			return
+		}
+		keep = n
+	}
+	file := ""
+	if posted.Engine == app.BackupSQLite {
+		file = posted.File // the file belongs to the SQLite engine alone
+	}
+
+	deployment, err := s.svc.ChangeBackupPolicy(ctx, id, name, posted.Engine, file, posted.Schedule, keep, service.Condition{IfRevision: revision}, app.TriggerConsole)
+	if err == nil {
+		http.Redirect(w, r, "/apps/"+id+"/deployments#deployment-"+deployment.Deployment.ID, http.StatusSeeOther)
+		return
+	}
+	var fieldErr *app.FieldError
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.appNotFound(w, r, id)
+	case errors.Is(err, service.ErrAppChanged):
+		s.backupsPage(w, r, http.StatusConflict, id, backupsTab{Notice: sentence{plain(changedSincePage)}})
+	case errors.Is(err, service.ErrAppStopped):
+		s.backupsPage(w, r, http.StatusConflict, id, backupsTab{Notice: sentence{plain(appStoppedText)}})
+	case errors.As(err, &fieldErr) && fieldErr.Field == "service":
+		s.backupsPage(w, r, http.StatusConflict, id, backupsTab{Notice: sentence{plain(fieldErr.Message + ". Reload the page.")}})
+	case errors.As(err, &fieldErr) && strings.Contains(fieldErr.Field, ".backup"):
+		field := ""
+		for _, f := range []string{"engine", "file", "schedule", "keep"} {
+			if strings.HasSuffix(fieldErr.Field, ".backup."+f) {
+				field = f
+			}
+		}
+		refuse(http.StatusUnprocessableEntity, field, capital(strings.TrimSuffix(fieldErr.Message, "."))+".")
+	default:
+		edited := rec.App
+		status, notice, ok := refusalOf(edited, err)
+		if !ok {
+			s.serverError(w, r, "change a backup policy", err)
 			return
 		}
 		s.backupsPage(w, r, status, id, backupsTab{Notice: notice})
