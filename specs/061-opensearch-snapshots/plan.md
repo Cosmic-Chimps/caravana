@@ -129,8 +129,8 @@ runs, and Caravana archives it to the backup destination with retention, pins, c
   scripts; the sqlite goldens and tests are unchanged.
 - **Scripts.** The clean script takes a mode (`fresh` empties the work directory of old results, `keep` doesn't: the last clean of
   a restore, and the clean after a failed snapshot, run when results of the run are still wanted) and makes the work directory
-  world-writable, since the service's own task (another user) writes its result files there (a result it can't write is not an
-  error: the markers are on stdout). The snapshot and restore scripts also unregister a repository an earlier run left
+  the service's user's (mode 0770; see "Deviations (review)": it was world-writable at first), since the service's own task writes
+  its result files there (a result it can't write is not an error: the markers are on stdout). The snapshot and restore scripts also unregister a repository an earlier run left
   (`DELETE _snapshot/caravana` first, its answer ignored) and again on exit. The restore script refuses an index name outside
   `[A-Za-z0-9._+@,-]` rather than put it in a URL unencoded. The upload script refuses a folder with no `index.latest`, and every
   script that removes or empties a folder refuses one whose last segment doesn't start with `caravana-`.
@@ -150,3 +150,30 @@ runs, and Caravana archives it to the backup destination with retention, pins, c
   sentence names the opensearch policy.
 - **Configure's Overview** says "OpenSearch snapshot of <folder>, <schedule>, keeping N" for this engine only; the other engines' lines are as
   before (the Services panel and the old definition rows already name each engine through `engineText`).
+
+## Deviations (review)
+
+- **No world-writable folders.** The clean script, which runs as root in `caravana-upload`, used to make the work directory
+  (`/alloc/data/caravana/opensearch`) and a missing repository folder mode 0777 (commit ff42fba), because the cluster runs as
+  another user (uid 1000 in OpenSearch and Wazuh; Elasticsearch is uid 1000, gid 0). The review: 0777 on a host volume lets any user
+  or process on the host write into snapshots a restore later loads. Now everything is owned by the cluster's own user:
+  - A new first step, **prepare** (`OpenSearchPrepareScript`, `Deployer.OpenSearchPrepare`), runs with alloc exec in the **service's
+    own task**, so as the cluster's user. It refuses a path that isn't absolute, makes the repository folder with `mkdir -p` when it
+    is missing (so the folder belongs to that user), requires it writable, and prints `caravana-opensearch-owner uid=<n> gid=<n>`
+    from `id -u` and `id -g`. It prints to stdout only: the work directory doesn't exist yet, so there is no result file, and
+    `OpenSearchPrepare` asks once more when an exit 0 came back without the marker (Docker's exec-output race, as for the other
+    steps). `ParseSQLiteOutput` reads the marker into `SQLiteOutput.Owner`, `"uid:gid"`, digits only (anything else is no owner);
+    `nomadjob.ValidOwner` is the same rule for what goes the other way.
+  - **clean** takes the owner as a fourth argument, validated in the script (two numbers) and in Go, makes the work directory,
+    `chown`s it to the owner and `chmod 770`s it, and no longer creates or chmods the repository folder (a missing one has nothing
+    to remove). **download**, also root, takes the owner as a fifth argument and `chown -R`s the run folder it extracted, so
+    nothing in the repository is root's; the cluster reads it and can remove it later, and root's `rm -rf` in upload and clean
+    still works. A chown that fails fails the step (download removes its folder first).
+  - `driveOpenSearchBackup` and `driveOpenSearchRestore` run prepare first and pass its owner to every clean and to the download; a
+    prepare failure fails the run with its sentence ("prepare: ..."), before anything was cleaned or closed.
+  - **Why not the volume root's owner.** The obvious alternative, making the sidecar's folders owned by whoever owns the repository
+    volume's root, doesn't work: the `mkdir` host volume plugin makes the volume root root-owned mode 0777 (016), so it says nothing
+    about the cluster's user. Asking the service's own task is the only place that knows the user without knowing the image.
+  - The tests: scripts under a real `sh` with a fake `chown` that records its arguments (a test that isn't root can't chown), the
+    prepare script's refusals and marker, clean's mode and owner validation, download's `chown -R`, deploy and service tests with
+    the exec fakes. The 0777 test case of ff42fba is gone.

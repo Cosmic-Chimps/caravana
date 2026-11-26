@@ -206,7 +206,7 @@ func hasIndices(out nomadjob.SQLiteOutput) bool { return out.Indices > 0 }
 func hasFiles(out nomadjob.SQLiteOutput) bool   { return out.Files > 0 }
 
 // sqliteSteps are the steps the scripts name at the start of a failure's line.
-var sqliteSteps = []string{"copy", "check", "upload", "download", "stage", "clean", "snapshot", "restore"}
+var sqliteSteps = []string{"copy", "check", "upload", "download", "stage", "clean", "prepare", "snapshot", "restore"}
 
 // sqliteReason is the text of a failed step: the last line of the script's
 // standard error, which already starts with the step ("copy: ..."). A script
