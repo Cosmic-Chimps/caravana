@@ -65,8 +65,9 @@ The list says "1 copy of Shop › staging › web/web keeps restarting." It appe
 
 ## OpenSearch or Elasticsearch won't start
 
-The copy exits and its logs say `max virtual memory areas vm.max_map_count [65530] is too low`. The server's limit is
-under 262144. **Operator › Servers › the server** shows `vm.max_map_count` in the warning colour; rerun the installer
+The copy exits and its logs say `max virtual memory areas vm.max_map_count [65530] is too low` (*as of writing, not checked live*). The server's limit is
+under 262144. **Operator › Servers › the server** shows `vm.max_map_count` (in the warning colour when it is low; no row
+at all on a server whose installer hasn't been rerun); rerun the installer
 (it sets 262144 and needs no reboot), or run `sudo sysctl -w vm.max_map_count=262144` for now. If the logs complain about
 open files or locked memory, set the service's `ulimits`. See [Limits, sysctls and files](../../opensearch-apps.md).
 

@@ -11,8 +11,8 @@ deploy without a hand-made setup on the server.
 
 ## The server's map count
 
-OpenSearch maps a file for each shard and refuses to start when the kernel allows too few maps. Linux allows 65530
-by default; OpenSearch wants at least **262144**.
+OpenSearch refuses to start when the kernel allows too few memory maps, and it wants at least **262144**. Linux's
+default is 65530 (*as of writing, not checked live*), and OpenSearch maps a file for each shard (*same*).
 
 The installer sets `vm.max_map_count` to 262144 on **every server** (the first one and the ones you add), in
 `/etc/sysctl.d/05-caravana-map-count.conf`, and sets the running value too, so nothing needs a reboot. It is a limit,
@@ -21,12 +21,15 @@ not a reservation: it costs nothing until an app uses the maps. A file that sort
 
 To see the value:
 
-- Open **Operator › Servers**, then the server. The **Server** facts list `vm.max_map_count`. A number under 262144 is
-  shown in the warning colour, with *262144 is the least OpenSearch and Elasticsearch need. Run the installer on this server again.*
+- Open **Operator › Servers**, then the server. The **Server** facts list `vm.max_map_count` once the server's agent
+  reports it; no row means its agent is older than this feature, so run the installer on that server. A number under
+  262144 is shown in the warning colour, with *262144 is the least OpenSearch and Elasticsearch need. Run the installer on this server again.*
 - Or on the server: `sysctl vm.max_map_count`.
 
-A server installed before this feature has the default until you **rerun the installer** (see
-[Keeping Caravana up to date](guide/host/upgrade.md)). Nothing else changes, and nothing restarts.
+A server installed before this feature has the default until the installer runs on it again (see
+[Keeping Caravana up to date](guide/host/upgrade.md)): on the first server, **Update to X…** on **Operator › Updates**
+(it runs the installer) or the installer command by hand; on a joined server, its join command run again. Setting it
+needs no reboot and restarts no app.
 
 A container can't set `vm.max_map_count`: it belongs to the whole server. So a Compose file that asks for it is
 answered by the host: a value of 262144 or less is dropped, with a warning that says every server already has it; a
@@ -52,7 +55,8 @@ In Compose, write `ulimits:` as Compose does: a number (`nofile: 65536`, the sam
 A refusal names the path in your file, for example `services.web.ulimits.core`.
 
 Copies of the service, and runs of its schedules, get the limits. **Configure › Services** shows them under **Also
-set** as **Limits** (`nofile 65536 (soft) · 65536 (hard)`, or `memlock unlimited` when soft and hard are the same);
+set** as **Limits** (`nofile 65536` and `memlock unlimited` when soft and hard are the same, `nofile 32768 (soft) · 65536 (hard)`
+when they differ);
 change them through the API or the Compose file.
 
 ## Sysctls
@@ -65,12 +69,12 @@ A service may set a few kernel settings inside its own copies, as `sysctls`:
 
 Only **network** settings (`net.…`) are allowed. They belong to the container's own network, so changing one changes
 nothing on the server. Any other setting is a setting of the whole server, and a container would change everyone's:
-those are refused, naming the field (`services[0].sysctls.kernel.shmmax`), with *it isn't namespaced: it can only be
-set on the server*.
+those are refused, naming the field (`services[0].sysctls.kernel.shmmax`), with *kernel.shmmax isn't namespaced: it can
+only be set on the server*.
 
 - At most 16 sysctls. A value is 1 to 64 printable characters, with no space at either end.
 - A name looks like `net.ipv4.tcp_keepalive_time`: lowercase, in parts separated by dots.
-- A name the kernel doesn't know makes the copy fail to start, like any other bad setting.
+- A name the kernel doesn't know makes the copy fail to start, like any other bad setting (*as of writing, not checked live*).
 - **Configure › Services** shows them as **Kernel settings**, read-only.
 - In Compose, `sysctls:` takes a map or a list (`- net.core.somaxconn=1024`). `vm.max_map_count` is the one other
   setting Compose files carry: see [The server's map count](#the-servers-map-count).
@@ -96,13 +100,13 @@ Each file has exactly one of `content` and `secret`. The other fields:
 
 - `path`: absolute and clean (no `..`, no `//`, no trailing `/`), without spaces, up to 1024 bytes. Not `/`, not in
   `/proc`, `/sys`, `/dev`, `/alloc`, `/local` or `/secrets`, not `/etc/hosts`, `/etc/hostname` or
-  `/etc/resolv.conf`. It may not be a volume's mount path; a path **inside** a volume is fine, but Docker then creates an empty placeholder file
+  `/etc/resolv.conf`. It may not be a volume's mount path; a path **inside** a volume is accepted (*as of writing, not checked live*), but Docker then creates an empty placeholder file
   at that path inside the volume on the server, so it shows up in the volume (and in its backups) after the first start.
   A path is used once, and a file may not sit inside another file (`/etc/app` and `/etc/app/x.conf`): the copy could not start.
 - `mode`: octal, `0640` or `640`. The default is **`0644`**: readable by every user in the container. Give a key
   `0400` and the owner that runs the app.
 - `uid` and `gid`: 0 to 65535. The default is root. A key that the app reads as a normal user needs the app's own id
-  (OpenSearch and Wazuh run as 1000).
+  (the project's OpenSearch test observed uid 1000; Wazuh's images are *as of writing, not checked live*).
 - Limits: 16 files per service, 64 KiB of content per file, 256 KiB of content for the whole app. A content file is UTF-8
   text without NUL characters. `{{ … }}` and `${…}` in it stay as they are.
 
@@ -116,7 +120,7 @@ Apart from that, the secret behaves as any other: it is write-only, may come fro
 provider](secret-providers.md), may be a template, is kept when a deploy names it without a value, and a deploy
 replaces it. The value is in Nomad's variable store and in the file inside the copy, and nowhere in Caravana's
 database, the job, the export or a log. The **Variables** page marks it: *Written to /certs/node.key, not to the
-environment.*.
+environment.*
 
 ### Changing a file
 
@@ -177,7 +181,7 @@ app that has them; it has no input to set them.
 
 ## Ports for agents
 
-Wazuh's agents connect to the manager on ports 1514 and 1515. Those are not web traffic, so Traefik doesn't carry
+Wazuh's agents connect to the manager on ports 1514 and 1515 (*as of writing, not checked live*). Those are not web traffic, so Traefik doesn't carry
 them. Publish them on the server's address: see [Published ports](published-ports.md). The template does it for you.
 Open the two ports in your cloud provider's firewall, and point each agent at the server's IP address or a DNS name
 for it (not the dashboard's domain, which goes through the HTTPS proxy).
@@ -194,28 +198,34 @@ for it (not the dashboard's domain, which goes through the HTTPS proxy).
 
 Plan for about **4 GB** of memory for the three. The template asks for:
 
-- **A domain** for the dashboard. Its DNS must point at the server.
-- **An admin password**. It is the dashboard's `admin` user, and the manager's login to the indexer. Keep a note of it:
+- **Dashboard domain**. Its DNS must point at the server.
+- **Admin password**. It is the dashboard's `admin` user, and the manager's login to the indexer. Keep a note of it:
   Caravana doesn't show it again. It is at most 72 bytes, since the indexer keeps its hash.
 
 Everything else is made at install and never shown: a certificate authority and the certificates of the indexer,
 the manager and the admin (RSA 2048, valid ten years; the authority's key is thrown away), the password of the dashboard's
-user and the one of the API. Each certificate is a secret, mounted as a file with mode `0400` where it has a key.
+user and the one of the API. Each certificate and each key is a secret mounted as a file: keys with mode `0400`, certificates with `0444`.
 The indexer's users file holds only `admin` and `kibanaserver`, with the bcrypt hashes of their passwords: Wazuh's demo
 users are left out.
 
 **Backups.** The manager's volumes are backed up every day at 03:00 UTC. A volume backup stops the service while it
-runs, so the manager stops for a moment (agents reconnect on their own). The **indexer is not backed up**: stopping it
-for a volume backup would stop the dashboard's searches, and its alerts come from the manager. If you need the
+runs, so the manager stops for a moment (the template's notes say agents reconnect on their own; *as of writing, not
+checked live*). The **indexer is not backed up**, and neither are the dashboard's two volumes (`dashboard-config` and
+`dashboard-custom`): stopping the indexer for a volume backup would stop the dashboard's searches, and its alerts come
+from the manager. If you need the
 indexer's data kept, use OpenSearch's own snapshots to a repository; Caravana doesn't build that yet.
 
-The template is in the catalog repository, not necessarily in the catalog built into your Caravana: **From a template**
-fetches a newer catalog once a day, and **Check now** does it at once (see [From a template](guide/deploy/templates.md)).
-It needs a Caravana that has the features on this page. An older one lists it as unavailable.
+*The template passed Caravana's template check and hasn't yet been run on a real host. Wazuh's ports and the other
+facts about its images in this section are as of writing, not checked live.*
+
+It will be in the catalog with Caravana 0.24.0, which has the features on this page; an older Caravana lists it as
+unavailable. **From a template** fetches a newer catalog once a day, and **Check now** does it at once (see [From a
+template](guide/deploy/templates.md)).
 
 ## A single OpenSearch node of your own
 
-This definition is what the project's own tests deploy, through the API. It runs one node with the security plugin off,
+This definition is the one the project's own tests deploy through the API, without their sysctl, their secret file
+and a plain secret, and with the default health timings. It runs one node with the security plugin off,
 so keep it on a private network or behind Team only:
 
 ```json

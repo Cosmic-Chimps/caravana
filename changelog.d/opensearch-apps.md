@@ -6,12 +6,14 @@
   `files`. Anything else is refused naming the field. Configure shows them read-only, a promotion takes them, and the
   export writes them. See "Limits, sysctls and files" in the guide.
 - **Every server has `vm.max_map_count` of at least 262144**, which OpenSearch and Elasticsearch need. The installer sets
-  it (a larger value already there is kept), and the server's page shows the value, in the warning colour when it is
-  lower. A Compose file's own `vm.max_map_count` is answered by the server: 262144 or less is dropped with a warning,
+  it (a larger value already there is kept), and the server's page shows the value once its agent reports it, in the
+  warning colour when it is lower. A Compose file's own `vm.max_map_count` is answered by the server: 262144 or less is dropped with a warning,
   more is refused.
 - **Templates can make certificates and password hashes at install** (catalog format 2): `certificates` asks for a
   certificate authority and the certificates it signs, and `{{password|bcrypt}}` writes the bcrypt hash of a secret.
-  The Wazuh template, in the catalog repository, uses both.
+  The Wazuh template, which will be in the catalog with this release (it needs 0.24.0), uses both.
 
 ### Upgrade
-- **Rerun the installer on each server** to set `vm.max_map_count`. It needs no reboot and no restart of your apps.
+- **Run the installer again on each server** to set `vm.max_map_count`: on the first server, **Update to X…** on
+  Operator › Updates (it runs the installer) or the installer command; on a joined server, its join command again.
+  Setting it needs no reboot and restarts no app.

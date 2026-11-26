@@ -779,8 +779,8 @@ drawn, not its length either: ten dots and a lock icon.
     s, and one sentence that new copies must pass it or the deploy is reverted), then Placement and Scaling as
     their own forms, and read-only Identities, "Also set" (entrypoint, command, arguments, volumes) and
     Backups ("Changed on the Backups tab"). "Also set" and the app's read-only panels draw DNS and Published
-    ports beside three more rows for apps like OpenSearch: Limits ("nofile 65536 (soft) · 65536 (hard)", or
-    "memlock unlimited" when soft and hard are the same), Kernel settings ("net.core.somaxconn = 1024", mono) and
+    ports beside three more rows for apps like OpenSearch: Limits ("nofile 65536" and "memlock unlimited" when soft and hard are the same, "nofile 32768 (soft) · 65536 (hard)"
+    when they differ), Kernel settings ("net.core.somaxconn = 1024", mono) and
     Files (the path in mono, then "mode 0400", then the size or "from secret `NAME`", words in the text face). The foot (a 1px rule, 14px above) holds "Save and deploy
     <service>" ("Save and deploy" for one) and the muted "<others> is left as it is." For a kept-file app
     Copies & size has Copies, Memory and Ceiling as inputs written into the file, CPU as text and the muted

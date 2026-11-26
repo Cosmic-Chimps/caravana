@@ -106,7 +106,8 @@ deploy will carry, and a sentence saying what the target keeps.
 its memory and CPU, its backup settings, its identities and its published port numbers.
 
 **The target takes from the source**: the image, entrypoint, command and arguments, ports, health check,
-volume declarations, stop timeout, DNS settings, placement rules, disconnect time and Git build source. A
+volume declarations, stop timeout, DNS settings, ulimits, sysctls and files (not the values of the secrets they name),
+placement rules, disconnect time and Git build source. A
 service that only the source has is added whole, without domains; its secrets need values in the target first.
 
 Press **Promote to <environment>** to deploy. You land on the target's **Deployments** tab, where the entry
