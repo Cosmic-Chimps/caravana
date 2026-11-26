@@ -23,7 +23,8 @@ other app.
    produce. Nothing is made: no app, no password, no deploy. Then press **Create**.
 
 You land on the app's **Deployments** tab, which carries an *Installed from the … template* notice with the notes, now
-filled with your answers, and the rollout in the history. On **Configure › Overview**, the **Source** panel says **Template ·** followed by the
+filled with your answers, and the rollout in the history. A template with a Team only domain also shows its password
+there, once (see below). On **Configure › Overview**, the **Source** panel says **Template ·** followed by the
 template's title and version. Because the app is made from a Compose file, **Configure › Source** shows that file for editing.
 
 ## What is in the catalog
@@ -66,9 +67,10 @@ file, in the API's answers or in the logs. If you need a value later, you cannot
 app's Variables page.
 
 **Team only passwords.** Adminer (alone, and inside the PostgreSQL template) is served behind a user name `team` and a
-password that Caravana makes. The template's notes say the password is shown once after **Create**. The console install
-does not show it: after installing, open the app's **Domains** page and press **New password** on the domain to make
-one, which is shown once. See [Domains and HTTPS](../configure/domains.md).
+password that Caravana makes. After **Create**, the Deployments tab you land on shows that password once, with a
+**Copy password** button: copy it then, because Caravana keeps only a hash and no later page shows it. If it is lost,
+open the app's **Domains** page and press **New password** on the domain to make another, also shown once. See
+[Domains and HTTPS](../configure/domains.md).
 
 ## Backups in a template
 

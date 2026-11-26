@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"maps"
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +25,9 @@ import (
 //
 // Secrets rule: a generated secret never reaches this package (the service makes it and sends
 // it to the secret store), and a typed secret input is read from the post, handed to the
-// service and dropped: it is never put in a field, a page, an address or a log line.
+// service and dropped: it is never put in a field, a page, an address or a log line. A Team-only
+// password the install made is drawn once in the answer to the install (installedWithPasswords),
+// never cached, and nowhere else.
 
 // ---- the grid -------------------------------------------------------------------------
 
@@ -733,8 +737,14 @@ func (s *server) createFromTemplate(w http.ResponseWriter, r *http.Request, sess
 		return
 	}
 
-	_, err = s.svc.InstallTemplate(r.Context(), t.Name, id, answers, opts, app.TriggerConsole)
+	res, err := s.svc.InstallTemplate(r.Context(), t.Name, id, answers, opts, app.TriggerConsole)
 	var deployErr *service.DeployError
+	if err == nil && len(res.TeamPasswords) > 0 {
+		// A Team-only password exists only in this answer: the Deployments tab is drawn here, with it
+		// once, instead of a redirect that could not carry it (as the Domains options form does).
+		s.installedWithPasswords(w, r, t, id, answers, res.TeamPasswords)
+		return
+	}
 	if err == nil {
 		http.Redirect(w, r, installedHref(t, id, answers), http.StatusSeeOther)
 		return
@@ -756,6 +766,11 @@ func (s *server) createFromTemplate(w http.ResponseWriter, r *http.Request, sess
 // created notice reads and the answers of the plain inputs, so the notes can say them. A secret
 // input is never in it.
 func installedHref(t service.TemplateInfo, id string, answers map[string]string) string {
+	return "/apps/" + url.PathEscape(id) + "/deployments?" + installedValues(t, answers).Encode()
+}
+
+// installedValues is the query of installedHref: the flag and the plain answers.
+func installedValues(t service.TemplateInfo, answers map[string]string) url.Values {
 	v := url.Values{"created": {"template"}}
 	// The checked answers (trimmed, a domain in lower case), as the service used them.
 	if checked, err := t.CheckPreviewInputs(answers); err == nil {
@@ -766,7 +781,27 @@ func installedHref(t service.TemplateInfo, id string, answers map[string]string)
 			v.Set("v_"+in.Name, answers[in.Name])
 		}
 	}
-	return "/apps/" + url.PathEscape(id) + "/deployments?" + v.Encode()
+	return v
+}
+
+// installedWithPasswords answers an install that made Team-only passwords: 200, never cached, the
+// app's Deployments tab with the installed notice and each password once. Nothing keeps them: a
+// reload of the tab, or any later page, has the notice without them.
+func (s *server) installedWithPasswords(w http.ResponseWriter, r *http.Request, t service.TemplateInfo, id string, answers map[string]string, passwords map[string]string) {
+	sum, err := s.svc.AppSummary(r.Context(), id)
+	if err != nil {
+		s.serverError(w, r, "read app", err)
+		return
+	}
+	n := s.installedNotice(r.Context(), sum.AppRecord, installedValues(t, answers))
+	if n == nil { // the template wasn't recorded on the app; the passwords are still shown
+		n = &installedNotice{Title: sentence{plain("Installed from the " + t.Title + " template.")}}
+	}
+	for i, host := range slices.Sorted(maps.Keys(passwords)) {
+		n.Passwords = append(n.Passwords, installedPassword{ID: "team-password-" + strconv.Itoa(i), Host: host, Password: passwords[host]})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	s.deploymentsPageWith(w, r, http.StatusOK, sum, deployFormOf(sum.App), nil, nil, n)
 }
 
 // refuseTemplate puts a refusal where it belongs on the form and returns the HTTP status, or 0 for
@@ -859,17 +894,32 @@ func inputMessage(message string) string {
 type installedNotice struct {
 	Title sentence
 	Notes string
+	// Passwords are the Team-only passwords the install made, drawn only in the answer to the
+	// install itself (installedWithPasswords).
+	Passwords []installedPassword
+}
+
+// installedPassword is one Team-only password of an install, with the element ID its copy button
+// reads.
+type installedPassword struct {
+	ID, Host, Password string
 }
 
 // installedNoticeOf reads ?created=template for an app that does come from a template. The answers
 // in the address are used only for the plain inputs the template asks for, and only when they
 // pass the same checks as when they were typed.
 func (s *server) installedNoticeOf(r *http.Request, rec store.AppRecord) *installedNotice {
-	if r.URL.Query().Get("created") != "template" || !rec.Template.Set() {
+	return s.installedNotice(r.Context(), rec, r.URL.Query())
+}
+
+// installedNotice is the notice from a query of installedValues' shape: nil without
+// created=template or for an app that doesn't come from a template.
+func (s *server) installedNotice(ctx context.Context, rec store.AppRecord, query url.Values) *installedNotice {
+	if query.Get("created") != "template" || !rec.Template.Set() {
 		return nil
 	}
 	n := &installedNotice{Title: sentence{plain("Installed from the "), mono(rec.Template.Name), plain(" template.")}}
-	info, err := s.svc.Template(r.Context(), rec.Template.Name)
+	info, err := s.svc.Template(ctx, rec.Template.Name)
 	if err != nil {
 		return n
 	}
@@ -877,7 +927,7 @@ func (s *server) installedNoticeOf(r *http.Request, rec store.AppRecord) *instal
 	answers := map[string]string{}
 	for _, in := range info.Inputs {
 		if in.Type != templates.TypeSecret {
-			answers[in.Name] = r.URL.Query().Get("v_" + in.Name)
+			answers[in.Name] = query.Get("v_" + in.Name)
 		}
 	}
 	checked, err := info.CheckPreviewInputs(answers)
