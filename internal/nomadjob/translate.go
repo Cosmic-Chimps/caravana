@@ -374,7 +374,10 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 		tg.Tasks = append(tg.Tasks, volumeTask(a.ID, svc, s))
 	}
 	if hasSQLiteBackup(svc) {
-		tg.Tasks = append(tg.Tasks, sqliteTask(svc, s), uploadTask(s))
+		tg.Tasks = append(tg.Tasks, sqliteTask(svc, s), uploadTask(svc, s))
+	}
+	if hasOpenSearchBackup(svc) {
+		tg.Tasks = append(tg.Tasks, uploadTask(svc, s))
 	}
 	return tg
 }
