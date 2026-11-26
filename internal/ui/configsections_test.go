@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 // Feature 059: Configure is five pages, each with its nav, its own form and its own submit.
@@ -387,5 +388,42 @@ func TestSourceAndServicesFormsEachChangeOnlyTheirOwn(t *testing.T) {
 	last := e.storedApp(t, "duo").Services[0]
 	if last.Health == nil || last.Health.Path != "/ready" || last.Image != after.Services[0].Image {
 		t.Errorf("a Services post changed the image or missed the health path: %+v", last)
+	}
+}
+
+// The designer's review of 059 (contract §9): what the first build drew wrong.
+func TestConfigureReviewFixes(t *testing.T) {
+	e := configureEnv(t)
+
+	_, overview := e.get(t, "/apps/shop/configure")
+	overview = sectionBody(t, overview)
+	// What a delete takes is said before the button, not only inside the confirmation.
+	panel := overview[strings.Index(overview, `id="delete-title"`):]
+	goes, details := strings.Index(panel, "<p class=\"text-base text-fg-1\">"), strings.Index(panel, "Delete app…</summary>")
+	if goes < 0 || details < 0 || goes > details {
+		t.Errorf("the Delete panel doesn't say what goes before its button (at %d, button at %d)", goes, details)
+	}
+
+	_, services := e.get(t, "/apps/shop/configure/services")
+	// Placement's form waits behind "Change placement…" until something was refused.
+	if !strings.Contains(services, `<details class="cv-scaledetails">
+<summary class="cv-btn cv-btn-secondary cv-btn-sm">Change placement…</summary>`) {
+		t.Error("the placement form isn't behind a closed Change placement…")
+	}
+	// The scaling sentence is one paragraph, not a column of its parts.
+	if !strings.Contains(services, `<p class="cv-plrule">`) || strings.Contains(services, `<p class="cv-plrules">`) {
+		t.Error("the scaling sentence isn't a plain paragraph")
+	}
+	// web has a path, so the hint about an empty one isn't drawn.
+	if strings.Contains(text(services), "Empty checks the TCP port.") {
+		t.Error("the empty-path hint is drawn for a service that has a path")
+	}
+
+	if got := (secretsPanel{}).Headline(); got != "No variables or secrets." {
+		t.Errorf("Headline of no variables = %q", got)
+	}
+	img := app.App{ID: "a", Services: []app.Service{{Name: "web", Image: "x:1"}}}
+	if got := overviewSourceOf(img, store.AppRecord{App: img}, nil); got.Button != "Change the images" || got.Look != "See the images" {
+		t.Errorf("an image app's Source buttons = %q / %q", got.Button, got.Look)
 	}
 }

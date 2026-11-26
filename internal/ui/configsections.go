@@ -84,11 +84,13 @@ type overviewView struct {
 	SourceHref, ServicesHref, IntegrationsHref, BackupsHref string
 }
 
-// overviewSource is the Source panel: the strong line, the second line and the button.
+// overviewSource is the Source panel: the strong line, the second line and the button. Look is the
+// button's words for a person who may only look (the page it opens is read-only for them).
 type overviewSource struct {
 	Strong sentence
 	Line   string
 	Button string
+	Look   string
 }
 
 // overviewService is one row of the Services panel, in the four columns of the grid.
@@ -115,13 +117,15 @@ func overviewServiceOf(svc app.Service) overviewService {
 		row.Copies = strconv.Itoa(sc.Min) + "–" + strconv.Itoa(sc.Max) + " copies"
 	}
 	r := svc.Resources
+	// A size keeps its number and unit on one line ("1 GB", never "1" then "GB").
+	size := func(mb int) string { return strings.ReplaceAll(sizeText(int64(mb)), " ", "\u00a0") }
 	switch {
 	case r.MemoryMB > 0 && r.MemoryMaxMB > r.MemoryMB:
-		row.Size = sizeText(int64(r.MemoryMB)) + ", up to " + sizeText(int64(r.MemoryMaxMB))
+		row.Size = size(r.MemoryMB) + ", up to " + size(r.MemoryMaxMB)
 	case r.MemoryMB > 0:
-		row.Size = sizeText(int64(r.MemoryMB))
+		row.Size = size(r.MemoryMB)
 	case r.MemoryMaxMB > 0:
-		row.Size = "up to " + sizeText(int64(r.MemoryMaxMB))
+		row.Size = "up to " + size(r.MemoryMaxMB)
 	default:
 		row.Size = "default size"
 	}
@@ -145,31 +149,31 @@ func overviewServiceOf(svc app.Service) overviewService {
 // template first; the second line and the button follow the app's own kind.
 func overviewSourceOf(a app.App, rec store.AppRecord, templateFact sentence) overviewSource {
 	var kind sentence
-	var line, button string
+	var line, button, look string
 	switch {
 	case !a.Defined():
-		kind, line, button = sentence{plain("Nothing yet")}, "Not defined yet.", "Define the app"
+		kind, line, button, look = sentence{plain("Nothing yet")}, "Not defined yet.", "Define the app", "Open Source"
 	case rec.Compose != nil:
-		kind, line, button = sentence{plain("Compose file")}, "Made from a Compose file, kept as you typed it.", "Edit the Compose file"
+		kind, line, button, look = sentence{plain("Compose file")}, "Made from a Compose file, kept as you typed it.", "Edit the Compose file", "See the Compose file"
 	case a.Source.Kind == app.SourceCompose:
-		kind, line, button = sentence{plain("Compose file, not kept")}, "Made from a Compose file that wasn't kept. Paste it once to edit it here.", "Edit the Compose file"
+		kind, line, button, look = sentence{plain("Compose file, not kept")}, "Made from a Compose file that wasn't kept. Paste it once to edit it here.", "Edit the Compose file", "Open Source"
 	default:
 		if i, built := a.BuiltService(); built {
 			b := a.Services[i].Build
 			kind = sentence{plain("Git · "), mono(b.Repository), plain(" "), mono(b.Branch)}
-			line, button = "Built from "+b.Branch+" on each deploy.", "Change the build"
+			line, button, look = "Built from "+b.Branch+" on each deploy.", "Change the build", "See the build"
 		} else {
 			word := "Image"
 			if len(a.Services) > 1 {
 				word = "Images"
 			}
-			kind, line, button = sentence{plain(word)}, "Each service runs the image it names.", "Change the images"
+			kind, line, button, look = sentence{plain(word)}, "Each service runs the image it names.", "Change the images", "See the images"
 		}
 	}
 	if len(templateFact) > 0 {
 		kind = templateFact
 	}
-	return overviewSource{Strong: kind, Line: line, Button: button}
+	return overviewSource{Strong: kind, Line: line, Button: button, Look: look}
 }
 
 // overviewOf builds the Overview's summaries from the stored app. backups are the app's backups,
@@ -196,7 +200,7 @@ func (s *server) overviewOf(r *http.Request, sum service.AppSummary, templateFac
 			row.Words = scheduleText(b.ScheduleOrDefault())
 		}
 		if primary, copies, err := s.svc.BackupPlaces(r.Context(), a.ID, *b); err == nil && primary != "" {
-			row.Where = "Go to " + primary
+			row.Where = "In " + primary
 			if len(copies) > 0 {
 				row.Where += ", copied to " + strings.Join(copies, ", ")
 			}

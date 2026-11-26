@@ -29,7 +29,7 @@
   {{end}}
 
   <label class="cv-fld" for="compose">
-    <span class="cv-label">Compose file</span>
+    <span class="cv-label">{{if .Existing}}The file{{else}}Compose file{{end}}</span>
     <textarea class="cv-field cv-field-area cv-field-file cv-field-mono" id="compose" name="compose" rows="{{.FileRows}}" wrap="off" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Draft.File.Error}} aria-invalid="true" aria-describedby="compose-error"{{end}}{{if .Draft.File.Alert}} autofocus{{end}}>
 {{.Draft.File.Value}}</textarea>
     {{if .Existing}}<span class="cv-data-muted cv-hint">A compose.yaml as docker compose reads it. Put passwords and keys in Variables &amp; secrets, not in the file.</span>

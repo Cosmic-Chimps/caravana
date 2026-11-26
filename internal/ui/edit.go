@@ -127,7 +127,7 @@ var inputSpecs = []inputSpec{
 	{Name: "image", Label: "Image", Wide: true},
 	{Name: "port", Numeric: true, Label: "Container port"},
 	{Name: "domainPort", Label: "Domains go to"},
-	{Name: "healthPath", Label: "Health check", Prefix: "GET", Placeholder: "TCP port", Hint: "Empty checks the TCP port."},
+	{Name: "healthPath", Label: "Path", Prefix: "GET", Placeholder: "TCP port", Hint: "Empty checks the TCP port."},
 	{Name: "healthInterval", Numeric: true, Label: "Every", Suffix: "s", Placeholder: "10"},
 	{Name: "healthTimeout", Numeric: true, Label: "Timeout", Suffix: "s", Placeholder: "2"},
 }
@@ -168,6 +168,9 @@ func (s editService) F(name string) fieldView {
 		}
 		for _, spec := range inputSpecs {
 			if spec.Name == name {
+				if name == "healthPath" && in.Field.Value != "" {
+					spec.Hint = "" // the hint says what an empty path means
+				}
 				return fieldView{inputSpec: spec, Field: in.Field, Service: s.Name}
 			}
 		}

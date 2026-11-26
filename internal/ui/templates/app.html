@@ -110,6 +110,8 @@
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 <ul class="cv-plrules">{{range .Rules}}<li>{{template "sentence" .}}</li>{{end}}</ul>
 {{if .Editable}}
+<details class="cv-scaledetails"{{if or .Notice .Require.Error .Prefer.Error .AvoidError}} open{{end}}>
+<summary class="cv-btn cv-btn-secondary cv-btn-sm">Change placement…</summary>
 <form method="post" action="{{.Action}}#{{.AnchorID}}" class="cv-svcform cv-plform" aria-labelledby="{{.AnchorID}}-title">
   <input type="hidden" name="revision" value="{{.Revision}}">
   <fieldset class="cv-fieldset cv-plfields"{{if .Stopped}} disabled{{end}}>
@@ -140,6 +142,7 @@
   </fieldset>
   {{if not .Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save placement</button><span class="cv-note">Saving deploys the app with these rules.</span></div>{{end}}
 </form>
+</details>
 {{else}}
 <p class="cv-note">Set in the Compose overlay.</p>
 {{end}}
@@ -153,7 +156,7 @@
 {{define "scale"}}
 <h3 class="cv-label" id="{{.AnchorID}}-title">Scaling</h3>
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
-<p class="cv-plrules">{{template "sentence" .Rule}}</p>
+<p class="cv-plrule">{{template "sentence" .Rule}}</p>
 {{if .Blocked}}
 <p class="cv-note">{{template "sentence" .Blocked}}</p>
 {{else if .Editable}}
@@ -1110,7 +1113,7 @@
     <h2 id="ov-source-title" class="cv-label">Source</h2>
     <p class="cv-cfg-strong">{{template "sentence" .Source.Strong}}</p>
     <p class="cv-note">{{.Source.Line}}</p>
-    <div class="cv-btnrow"><a href="{{.SourceHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Source.Button}}</a></div>
+    <div class="cv-btnrow"><a href="{{.SourceHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{if $.NoConfigure}}{{.Source.Look}}{{else}}{{.Source.Button}}{{end}}</a></div>
   </section>
   {{if $.Defined}}
   <section class="cv-panel cv-cfg-panel" aria-labelledby="secrets-title">
@@ -1126,10 +1129,10 @@
     <h2 id="services-title" class="cv-label">Services</h2>
     <ul class="cv-ovsvcs">
       {{range .Services}}
-      <li class="cv-ovsvc"><span class="cv-ovsvc-name">{{.Name}}</span> <span>{{.Image}}</span> <span>{{.Copies}} · {{.Size}}</span> <span>{{.Check}}{{with .Volumes}} · {{.}}{{end}}</span></li>
+      <li class="cv-ovsvc"><span class="cv-ovsvc-name">{{.Name}}</span> <span class="cv-ovsvc-image">{{.Image}}</span> <span>{{.Copies}} · {{.Size}}</span> <span>{{.Check}}{{with .Volumes}} · {{.}}{{end}}</span></li>
       {{end}}
     </ul>
-    <div class="cv-btnrow"><a href="{{.ServicesHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Change copies, size and checks</a></div>
+    <div class="cv-btnrow"><a href="{{.ServicesHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{if $.NoConfigure}}See copies, size and checks{{else}}Change copies, size and checks{{end}}</a></div>
   </section>
   <section class="cv-panel cv-cfg-panel" aria-labelledby="domains-title">
     <h2 id="domains-title" class="cv-label">Domains</h2>
@@ -1178,12 +1181,12 @@
   {{if not $.NoConfigure}}
   <section aria-labelledby="delete-title" class="cv-panel cv-cfg-panel cv-cfg-wide">
     <h2 id="delete-title" class="cv-label">Delete app</h2>
+    <p class="text-base text-fg-1">{{template "sentence" $.Delete.Goes}}</p>
     <details class="cv-confirm"{{if $.Delete.Open}} open{{end}}>
       <summary class="cv-btn cv-btn-danger cv-btn-sm">Delete app…</summary>
       {{with $.Delete}}
       <form method="post" action="/apps/{{.ID}}/delete" class="cv-confirm-body">
         {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
-        <p>{{template "sentence" .Goes}}</p>
         <label class="cv-fld" for="delete-confirm">
           <span class="cv-label">Type <span class="cv-inline-mono">{{.ID}}</span> to confirm</span>
           <input class="cv-field cv-field-mono" id="delete-confirm" type="text" name="confirm" data-confirm-name="{{.ID}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="delete-confirm-error"{{end}}>
@@ -1369,10 +1372,11 @@
       </div>
     </fieldset>
   </form>
-  <div id="{{.Placement.AnchorID}}" class="cv-cfg-block">{{template "placement" .Placement}}</div>
-  <div id="{{.Scale.AnchorID}}" class="cv-cfg-block">{{template "scale" .Scale}}</div>
+  <div class="cv-cfg-groups cv-cfg-more">
+  <div id="{{.Placement.AnchorID}}" class="cv-cfg-group">{{template "placement" .Placement}}</div>
+  <div id="{{.Scale.AnchorID}}" class="cv-cfg-group">{{template "scale" .Scale}}</div>
   {{with .Also}}
-  <div class="cv-cfg-block">
+  <div class="cv-cfg-group">
     <h4 class="cv-label">Also set</h4>
     <dl class="cv-also">
       {{range .}}
@@ -1385,8 +1389,9 @@
     <p class="cv-note">Edited through the API or a Compose file.</p>
   </div>
   {{end}}
-  {{with .Identities}}<div class="cv-cfg-block">{{template "identities" .}}</div>{{end}}
-  {{with .BackupLine}}<div class="cv-cfg-block"><h4 class="cv-label">Backups</h4><p class="text-base text-fg-1">{{.}}</p><p class="cv-note"><a href="/apps/{{$.ID}}/backups">Changed on the Backups tab.</a></p></div>{{end}}
+  {{with .Identities}}<div class="cv-cfg-group">{{template "identities" .}}</div>{{end}}
+  {{with .BackupLine}}<div class="cv-cfg-group"><h4 class="cv-label">Backups</h4><p class="text-base text-fg-1">{{.}}</p><p class="cv-note"><a href="/apps/{{$.ID}}/backups">Changed on the Backups tab.</a></p></div>{{end}}
+  </div>
   {{if and (not $.Stopped) (or .ShowHealth (not $.KeptEdit))}}<div class="cv-cfg-foot"><button type="submit" form="svcform-{{.Name}}" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy{{if $.Edit.Many}} {{.Name}}{{end}}</button>{{with .LeftAlone}}<span class="cv-note">{{.}}</span>{{end}}</div>{{end}}
 </section>
 {{end}}

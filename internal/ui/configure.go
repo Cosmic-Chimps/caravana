@@ -272,6 +272,9 @@ func (p secretsPanel) Summary() string {
 
 // Headline is "2 variables · 1 secret", the Overview's strong line.
 func (p secretsPanel) Headline() string {
+	if p.Variables == 0 && p.Count == 0 {
+		return "No variables or secrets."
+	}
 	return plural(p.Variables, "variable") + " · " + plural(p.Count, "secret")
 }
 
