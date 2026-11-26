@@ -81,7 +81,8 @@ seam (`Provider`, `Sets`, `Build`, `ErrUnavailable`; `secretstest` has the in-me
 the shared contract suite `TestProvider`); the Nomad store is `deploy.Variables`. A deploy
 replaces the sets just before `Register`; the replaced sets are kept at
 `nomad/jobs/<app>/caravana/previous`, owned by the deployment, and once it ends they are
-dropped (healthy) or put back (failed, reverted), also across restarts. The task's env
+dropped (healthy) or put back (failed, reverted), also across restarts; a service that had no
+values before keeps the failed deploy's values, so a failed first deploy can be deployed again. The task's env
 template is `noop`, so values reach copies only through a rollout. Configure has a Secrets
 section (set, remove, each a deploy); the API is `deployApp` with `secrets`
 (`api/openapi.yaml` 0.6.0, new code `secret_store_unavailable`). The scoped policy gained

@@ -39,7 +39,10 @@ type Provider interface {
 	// is the one running now.
 	Commit(ctx context.Context, appID, deploymentID string) error
 	// Restore makes the kept sets live again and forgets them, if
-	// deploymentID owns them: its version never got healthy.
+	// deploymentID owns them: its version never got healthy. A service that
+	// has no values in the kept sets (it had none before the deploy) keeps the
+	// values it has now: there is nothing earlier to put back, and a failed
+	// first deploy must be possible to deploy again.
 	Restore(ctx context.Context, appID, deploymentID string) error
 	// Delete removes every secret of appID, kept ones included.
 	Delete(ctx context.Context, appID string) error
