@@ -163,7 +163,7 @@ func TestComposeDraftOpenSearch(t *testing.T) {
 			continue
 		}
 		os, _ := d.service("os")
-		if name == "a folder with another engine" && !strings.Contains(os.BackupRepository.Error.String(), "Only the OpenSearch engine") {
+		if name == "a folder with another engine" && !strings.Contains(os.BackupRepository.Error.String(), "Only an OpenSearch or Elasticsearch snapshot takes") {
 			t.Errorf("%s: the folder's error = %q", name, os.BackupRepository.Error.String())
 		}
 		if name == "a folder with no engine" && !strings.Contains(os.BackupEngine.Error.String(), "Choose an engine") {

@@ -123,8 +123,16 @@ var composeSpecs = map[string]inputSpec{
 	"backupFile": {Name: "backupFile", Label: "Database file", Placeholder: "/data/app.db",
 		Hint: "SQLite file only: the database's path inside the service, on one of its volumes."},
 	"backupRepository": {Name: "backupRepository", Label: "Snapshot folder", Placeholder: "/usr/share/opensearch/snapshots",
-		Hint: "OpenSearch or Elasticsearch snapshot only: a folder on one of the service's volumes, listed in the cluster's path.repo setting."},
+		Hint: snapshotFolderHint},
 }
+
+// snapshotFolderHint is the Snapshot folder input's hint, the same in the Compose form and the
+// Backups tab's "Change the policy" form. It says plainly what Caravana deletes there: the
+// caravana-* folders, which every opensearch run makes and removes once its upload or restore
+// is done (and the next run's first step removes any an interrupted run left).
+const snapshotFolderHint = "A folder on one of the service's volumes, listed in the cluster's path.repo setting. " +
+	"Caravana keeps its snapshots in caravana-* folders there and removes them once each backup or restore is done, " +
+	"so keep nothing of your own under those names."
 
 // Inputs lists the plain inputs the service has, in the order they show.
 func (s composeServiceView) Inputs() []editInput {

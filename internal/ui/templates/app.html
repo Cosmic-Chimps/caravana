@@ -639,7 +639,7 @@
             <label class="cv-fld" for="chg-repo-{{.Name}}">
               <span class="cv-label">Snapshot folder</span>
               <input class="cv-field cv-field-mono" id="chg-repo-{{.Name}}" type="text" name="repository" value="{{.ChangeRepo}}" placeholder="/usr/share/opensearch/snapshots" autocomplete="off" autocapitalize="off" spellcheck="false"{{if eq .ChangeField "repository"}} aria-invalid="true" aria-describedby="chg-repo-{{.Name}}-error"{{end}}>
-              <span class="cv-data-muted cv-hint">OpenSearch or Elasticsearch snapshot only: a folder on one of the service's volumes, listed in the cluster's <span class="cv-inline-mono">path.repo</span> setting. Caravana empties the <span class="cv-inline-mono">caravana-*</span> folders in it.</span>
+              <span class="cv-data-muted cv-hint">{{snapshotFolderHint}}</span>
               {{if eq .ChangeField "repository"}}<span id="chg-repo-{{.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .ChangeErr}}</span></span>{{end}}
             </label>
             {{end}}
@@ -728,7 +728,13 @@
 {{else if not .Gaps}}
 <div class="cv-panel"><div class="cv-empty">
   <p class="cv-empty-title">Nothing to back up.</p>
-  <p class="cv-empty-text">No service of this app has a database image or a volume. A service can be given a backup policy in its definition (<span class="cv-inline-mono">backup: {engine: postgres}</span> (or <span class="cv-inline-mono">mysql</span>, <span class="cv-inline-mono">mongodb</span>) for a database, <span class="cv-inline-mono">backup: {engine: volume}</span> for a service with a volume, <span class="cv-inline-mono">backup: {engine: sqlite, file: /data/app.db}</span> for a SQLite database on a volume, <span class="cv-inline-mono">backup: {engine: opensearch, repository: /usr/share/opensearch/snapshots}</span> for an OpenSearch or Elasticsearch cluster), through the API or the Compose request.</p>
+  <p class="cv-empty-text">No service of this app has a database image or a volume. A service can be given a backup policy in its definition, through the API or the Compose request:</p>
+  <ul class="cv-empty-text">
+    <li><span class="cv-inline-mono">backup: {engine: postgres}</span> (or <span class="cv-inline-mono">mysql</span>, <span class="cv-inline-mono">mongodb</span>) for a PostgreSQL, MySQL, MariaDB or MongoDB database</li>
+    <li><span class="cv-inline-mono">backup: {engine: volume}</span> for a service with a volume</li>
+    <li><span class="cv-inline-mono">backup: {engine: sqlite, file: /data/app.db}</span> for a SQLite file on a volume</li>
+    <li><span class="cv-inline-mono">backup: {engine: opensearch, repository: /usr/share/opensearch/snapshots}</span> for an OpenSearch or Elasticsearch cluster</li>
+  </ul>
 </div></div>
 {{end}}
 
@@ -769,7 +775,7 @@
 <form method="post" action="/apps/{{.AppID}}/backups/{{.Run.ID}}/restore" class="cv-confirm-body">
   {{if .Run.Volume}}<p>The service stops, its volumes are replaced by the files of the backup from {{.When}}, and it starts again. Files added since the backup are deleted.</p>
   {{else if .Run.SQLite}}<p>The backup from {{.When}} is downloaded and checked while <span class="cv-inline-mono">{{.Run.Service}}</span> runs. Then the service stops for a few seconds while <span class="cv-inline-mono">{{.Run.File}}</span> is replaced, and starts again. Changes made since the backup are lost.</p>
-  {{else if .Run.OpenSearch}}<p>The backup from {{.When}} is downloaded while <span class="cv-inline-mono">{{.Run.Service}}</span> runs. Then each index in it that exists now is closed and replaced by the backup's copy, and opened again. Indices made since the backup stay, and the cluster's settings, templates and dot indices are not touched. Clients using the replaced indices see errors meanwhile.</p>
+  {{else if .Run.OpenSearch}}<p>The backup from {{.When}} is downloaded while <span class="cv-inline-mono">{{.Run.Service}}</span> runs. Then each index in it that exists now is closed and replaced by the backup's copy, and opened again. Indices made since the backup stay, and the cluster's settings, templates and system indices (names that start with a dot) are not touched. Clients using an index see errors while it is closed.</p>
   {{else}}<p>This replaces everything <span class="cv-inline-mono">{{.Run.Service}}</span> holds now with the backup from {{.When}}. Clients connected meanwhile may see errors. It can't be undone, except by restoring another backup.</p>{{end}}
   {{if gt (len .Places) 1}}
   <label class="cv-fld" for="from-{{.Prefix}}{{.Run.ID}}">

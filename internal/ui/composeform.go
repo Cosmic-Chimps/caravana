@@ -409,7 +409,7 @@ func (s *draftService) build() bool {
 	case engine != app.BackupSQLite && s.BackupFile.Value != "":
 		refuse(&s.BackupFile, "Only the SQLite engine backs up a file; clear it, or choose SQLite file.")
 	case engine != app.BackupOpenSearch && s.BackupRepository.Value != "":
-		refuse(&s.BackupRepository, "Only the OpenSearch engine takes a snapshot folder; clear it, or choose OpenSearch or Elasticsearch snapshot.")
+		refuse(&s.BackupRepository, "Only an OpenSearch or Elasticsearch snapshot takes a snapshot folder. Clear it, or choose that engine.")
 	case app.DumpEngine(engine) || engine == app.BackupVolume || engine == app.BackupSQLite || engine == app.BackupOpenSearch:
 		// The file's and the folder's rules are the model's (app.Validate); its
 		// errors come back on these inputs (fieldFor).
@@ -424,7 +424,7 @@ func (s *draftService) build() bool {
 		}
 		s.overlay.Backup = &b
 	case engine != "":
-		refuse(&s.BackupEngine, "Choose none, PostgreSQL, MySQL or MariaDB, MongoDB, Volume, SQLite file or OpenSearch snapshot.")
+		refuse(&s.BackupEngine, "Choose none, PostgreSQL, MySQL or MariaDB, MongoDB, Volume, SQLite file, or an OpenSearch or Elasticsearch snapshot.")
 	}
 	return ok
 }
