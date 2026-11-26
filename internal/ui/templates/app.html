@@ -587,7 +587,7 @@
       {{else}}
       <p class="cv-note">No backups yet.</p>
       {{end}}
-      <div class="cv-btnrow">
+      <div class="cv-btnrow cv-actrow">
         {{if $.Stopped}}<p class="cv-note">The app is stopped: start it first.</p>
         {{else if $.Destination}}
         {{with .RestoreLast}}{{if not $.NoMaintain}}

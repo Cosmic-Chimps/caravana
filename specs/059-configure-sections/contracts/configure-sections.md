@@ -48,7 +48,8 @@ panel is `cv-panel` 18px padding, a column with gap 12px: Label head, lines, the
 3. **Services** (wide, `grid-column: 1/-1`): one row per service, a 4-column grid (110px name, image, copies and size,
    check and volumes), mono 13px, 1px dividers between rows: `server · <image> · 1 copy · 512 MB, up to 1 GB · GET
    /health/ready`; a service with volumes adds `volume <name>` to the last column; a scaled service says
-   `1–3 copies`. Under 720px of room the row stacks (name, then the others). Button "Change copies, size and checks".
+   `1–3 copies`. Under 720px of room the row has two columns (the 110px name, then image, copies and check each on
+   its own line beside it), and under 480px it stacks (task `qqrj`). Button "Change copies, size and checks".
 4. **Domains**: one line per domain (status mark of its state when known, host in mono strong, `→ <service> :<port>`
    when the app has several services). None: "No domains. Copies are reachable only inside the app." Buttons
    "Manage domains", and "+ Add domain" when the person may add one.
