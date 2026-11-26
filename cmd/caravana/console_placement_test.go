@@ -1,7 +1,7 @@
 package main
 
 // The console-placement step of the lab test (feature 042): a service's placement rules set and
-// cleared through Configure's Placement form, against the lab's real Nomad (one node, not managed:
+// cleared through the Placement form of Configure > Services, against the lab's real Nomad (one node, not managed:
 // no labels, no server to avoid, and nowhere to move work to). It is in its own file only because
 // console_lab_test.go is long; runConsole lists it after console-servers.
 
@@ -15,7 +15,7 @@ import (
 
 // consolePlacement:
 //
-//  1. Configure shows the service's Placement panel: "Any server that accepts work." and the form
+//  1. Configure > Services shows the service's Placement panel: "Any server that accepts work." and the form
 //     with Require and Prefer (no "Never on": the lab has no managed server).
 //  2. A label no server has is refused 409 at the Require input, naming the label; the app keeps
 //     its one healthy copy.
@@ -49,13 +49,13 @@ func (c *console) consolePlacement(t *testing.T) {
 	action := "/apps/" + id + "/services/web/placement"
 
 	// 1. The panel.
-	resp, page := c.get(t, "/apps/"+id+"/configure")
+	resp, page := c.get(t, "/apps/"+id+"/configure/services")
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /apps/%s/configure = %d", id, resp.StatusCode)
+		t.Fatalf("GET /apps/%s/configure/services = %d", id, resp.StatusCode)
 	}
 	for _, want := range []string{`action="` + action + `#placement-web"`, `name="require"`, `name="prefer"`, `Save placement`} {
 		if !strings.Contains(page, want) {
-			t.Errorf("Configure lacks %q", want)
+			t.Errorf("Configure > Services lacks %q", want)
 		}
 	}
 	if words := htmlText(page); !strings.Contains(words, "Any server that accepts work.") || strings.Contains(words, "Never on") {
@@ -82,7 +82,7 @@ func (c *console) consolePlacement(t *testing.T) {
 	if final := c.g.waitFinalOf(t, id, depID, 4*time.Minute); final.Status != "healthy" {
 		t.Fatalf("the deploy with a preference ended %s: %s", final.Status, final.Error)
 	}
-	_, page = c.get(t, "/apps/"+id+"/configure")
+	_, page = c.get(t, "/apps/"+id+"/configure/services")
 	if words := htmlText(page); !strings.Contains(words, "Prefers ssd=true (weight 80)") {
 		t.Errorf("the Placement panel after the save = %s, want \"Prefers ssd=true (weight 80)\"", words)
 	}
@@ -114,7 +114,7 @@ func (c *console) consolePlacement(t *testing.T) {
 	if final := c.g.waitFinalOf(t, id, depID, 4*time.Minute); final.Status != "healthy" {
 		t.Fatalf("the deploy without rules ended %s: %s", final.Status, final.Error)
 	}
-	_, page = c.get(t, "/apps/"+id+"/configure")
+	_, page = c.get(t, "/apps/"+id+"/configure/services")
 	if words := htmlText(page); !strings.Contains(words, "Any server that accepts work.") || strings.Contains(words, "Prefers ssd=true") {
 		t.Errorf("the Placement panel after clearing = %s, want \"Any server that accepts work.\"", words)
 	}

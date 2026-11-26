@@ -26,7 +26,7 @@ them back when it returns.
 ## Placement rules
 
 A service may carry `placement` with three rules, through the API, the Compose overlay
-(`services.<name>.placement`) or Configure's Placement panel:
+(`services.<name>.placement`) or the Placement panel of Configure › Services:
 
 ```json
 {

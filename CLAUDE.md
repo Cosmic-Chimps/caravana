@@ -2436,6 +2436,36 @@ module, no policy change, constitution unchanged.
   `codemagic-patch` 0.9.0-2 and `codemagic-patch-bitbucket`; the release workflow uploads `catalog.v2.json` too; `CARAVANA_REF` there is a guess (`v0.23.0`) until 058 is released.
 - Not in 058: the embedded catalog isn't rebuilt from the repository, a lab run of the new template, conditions between inputs of other kinds, a template editor.
 
+Feature 059 (`specs/059-configure-sections`, CodeAlta task `4mvb`, worktree branch `alta/hushed-mica-zmp3`, phases A to C): Configure is six
+sections, one concern per page and one deploy per change. `plan.md` D1–D9 are the decisions; the contract is `contracts/configure-sections.md`
+(drafted from the maintainer's mockup, 2026-11-26). Console only: no migration, no new module, no Nomad policy change, **no API change**
+(`openapi.yaml` stays 0.65.0: `deployApp` and `deployCompose` already set health and backup).
+- Sections and addresses: Overview `/apps/{id}/configure` (read-only panels, Delete app last and without the danger edge), Source
+  `/configure/source`, Services `/configure/services`, Variables & secrets `/apps/{id}/variables`, Domains `/apps/{id}/domains`, Integrations
+  `/configure/integrations` (webhook, deploy token, export). The first three and Integrations are new GET routes (view level in `consoleAccess`
+  and the parity table); every POST keeps its route and draws or redirects to the section that holds its form. The frame is `.cv-cfg` with a nav
+  that reuses Settings' `cv-snav` items under the modifier `cv-snav-inpage` (`configNavOf`, counts on Services, Variables and Domains).
+  `internal/ui/configsections.go` has the nav and Overview.
+- D2: `POST /apps/{id}/configure` serves both the Source image form and the Services form. `parseEditForm` reads a service when the post carries
+  `svc.<name>.form` (or its image, for a form drawn before) and each field only when the post has it, so one section never resets what another owns.
+- D3: the Compose form of an app that exists (Source of a kept-file app, and `/apps/{id}/compose`) holds only the file, Preview, "Against the app
+  today" and Deploy, with "Secrets, domains, health checks and backups stay as they are." `composeDraft.keepAll(rec)` makes the draft from the stored
+  record: secrets by name (references and templates too), domains, identities, published ports, placement, scaling, disconnect and, new, `keepHealth`
+  and `keepBackup` (the kept overlay as written, else the services'); a service the new file drops loses them and `composeChanges` says so. New app ›
+  Compose keeps its full form. D4: a kept-file app's copies and size read "Set in the Compose file." on Services (writing them into the YAML can't
+  keep the owner's formatting); placement and scaling read the same.
+- D5: `Service.SetHealthIf(ctx, appID, service, path, interval, timeout, cond, trigger)` writes a service's health check into a kept file's overlay
+  (or onto the service) and deploys with the revision as the condition; `POST /apps/{id}/services/{service}/health` is Services' form for a kept-file
+  app. D6: `Service.ChangeBackupPolicy` and `POST /apps/{id}/backups/policy/change` add "Change the policy…" (engine, SQLite file, schedule, keep) to
+  the Backups tab; the restore schedule, destination and copies stay. `compose.Overlay.Empty` is the one "sets nothing" test (`withDomains` had its
+  own and dropped an overlay that held only identities, publish, placement, scale or disconnect when its last domain went).
+- Tests: `internal/ui` (`configsections_test.go`, `healthform_test.go`, `backupchange_test.go`), `service` (`healthedit_test.go`,
+  `backuppolicy_test.go`) and the two default-deny walks. The lab steps that read Configure were pointed at the section that now holds their form
+  (`console-edit` reads Source and Services, `console-compose` and `console-compose-file-edit` deploy a file with no per-service inputs and check
+  the health check and secret survive through the API, `console-create-only` defines on Source, `console-placement` and `console-space` use
+  Services and Source); they compile (`go vet`, `go test ./cmd/caravana -run TestNothing`) and were **not run** (they need the lab). The designer's
+  review (contract section 9) is pending. Not in 059: copies and size as inputs for a kept-file app, a Compose-file editor for them.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

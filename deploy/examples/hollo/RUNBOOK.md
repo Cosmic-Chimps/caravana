@@ -268,7 +268,7 @@ That's the gate. Tell me, and I'll record it as passed.
   - `sudo caravana admin reset-password`
   - `sudo caravana-nomad status`
   - `journalctl -u caravana`
-- **Export Hollo** as a plain Nomad job: Configure › Export.
+- **Export Hollo** as a plain Nomad job: Configure › Integrations › Export.
 - **More apps** (Frunchy, …): add an A record per domain (DNS only) and deploy each as its own
   app. Every Compose service needs a `mem_limit`: without one, it gets 64 MB.
 

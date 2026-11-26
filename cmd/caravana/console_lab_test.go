@@ -202,7 +202,8 @@ func (c *console) healthy(t *testing.T) {
 // calling the app).
 func (c *console) reads(t *testing.T) {
 	for _, path := range []string{"/apps", "/apps/whoami", "/apps/whoami/deployments", "/apps/whoami/configure",
-		"/apps/whoami/logs", "/apps/new", "/settings", "/settings/registries", "/settings/backup-storage",
+		"/apps/whoami/configure/source", "/apps/whoami/configure/services", "/apps/whoami/configure/integrations",
+		"/apps/whoami/variables", "/apps/whoami/domains", "/apps/whoami/logs", "/apps/new", "/settings", "/settings/registries", "/settings/backup-storage",
 		"/settings/notifications", "/settings/tokens"} {
 		if resp, _ := c.get(t, path); resp.StatusCode != http.StatusOK {
 			t.Errorf("GET %s = %d, want 200", path, resp.StatusCode)
@@ -354,7 +355,7 @@ func (c *console) secrets(t *testing.T) {
 	if err != nil || v.Items["CONSOLE_SECRET"] != value {
 		t.Fatalf("Nomad variable %s = %v, %v; want CONSOLE_SECRET set", path, v, err)
 	}
-	for _, page := range []string{"/apps/whoami/configure", "/apps/whoami/variables"} {
+	for _, page := range []string{"/apps/whoami/configure", "/apps/whoami/variables"} { // Overview lists the secret names too
 		if _, body := c.get(t, page); !strings.Contains(body, "CONSOLE_SECRET") || strings.Contains(body, value) {
 			t.Errorf("%s should list CONSOLE_SECRET and never its value", page)
 		}
@@ -366,20 +367,26 @@ func (c *console) secrets(t *testing.T) {
 	}
 }
 
-// edit: the Configure form (feature 014) changes the memory of whoami in one
+// edit: the form of Configure > Services (feature 014, split by 059) changes the memory of whoami in one
 // save and the .env editor of the Variables page (feature 021) its environment
 // in another: each is one deployment that ends healthy, Nomad's job has the new
 // env and memory, and the stored app kept what the form doesn't touch (saving
-// Configure leaves the env, as the .env editor leaves the memory). A post from
-// the Configure form drawn before, now stale, is refused with 409 and registers
+// Services leaves the env, as the .env editor leaves the memory; Source's image form is read too). A post
+// from the Services form drawn before, now stale, is refused with 409 and registers
 // nothing. (Volumes and backup are kept by the same merge; a volume needs a host
 // volume plugin, which the unit tests cover.)
 func (c *console) edit(t *testing.T) {
 	value := "edit " + c.g.run
-	_, page := c.get(t, "/apps/whoami/configure")
-	form := editFormValues(t, page)
-	if form.Get("revision") == "" || form.Get("svc.whoami.image") != "traefik/whoami:v1.10" {
-		t.Fatalf("the Configure form = %v, want a revision and the image traefik/whoami:v1.10", form)
+	// Source holds the image form and Services the size and health check: each posts to /configure and
+	// leaves what the other owns (feature 059).
+	_, source := c.get(t, "/apps/whoami/configure/source")
+	if img := editFormValues(t, source); img.Get("revision") == "" || img.Get("svc.whoami.image") != "traefik/whoami:v1.10" {
+		t.Fatalf("the Source form = %v, want a revision and the image traefik/whoami:v1.10", img)
+	}
+	_, page := c.get(t, "/apps/whoami/configure/services")
+	form := servicesFormValues(t, page, "whoami")
+	if form.Get("revision") == "" || !form.Has("svc.whoami.memory") || form.Has("svc.whoami.image") {
+		t.Fatalf("the Services form = %v, want a revision and the memory but no image", form)
 	}
 	stale := url.Values{}
 	for k, v := range form {
@@ -455,9 +462,16 @@ func (c *console) edit(t *testing.T) {
 	}
 }
 
+// servicesFormValues reads the form of one service on Configure > Services (copies, size and health
+// check; its ID is svcform-<service>), as a browser without script would send it.
+func servicesFormValues(t *testing.T, page, service string) url.Values {
+	t.Helper()
+	return formValuesOf(t, page, "svcform-"+service)
+}
+
 // editFormValues reads the values of the Configure form of the app's first
-// service from its page, as a browser without script would send them: every
-// named input and textarea.
+// service from the page that holds it (Source's image form), as a browser without
+// script would send them: every named input and textarea.
 func editFormValues(t *testing.T, page string) url.Values {
 	t.Helper()
 	return formValuesAction(t, page, "/apps/whoami/configure")
@@ -726,7 +740,7 @@ func (c *console) needsYou(t *testing.T) {
 	if oom.Service != "hog" || len(oom.Copies) == 0 || killed.LastRestartAt == "" {
 		t.Errorf("out_of_memory item = %+v, copy = %+v; want service hog, its copies, and a last restart time", oom, killed)
 	}
-	for _, want := range []string{"oomer/hog", "ran out of memory.", `href="/apps/oomer/configure#svc-hog-memory"`} {
+	for _, want := range []string{"oomer/hog", "ran out of memory.", `href="/apps/oomer/configure/services#svc-hog-memory"`} {
 		if !strings.Contains(attentionPart, want) {
 			t.Errorf("/parts/attention lacks %q:\n%s", want, attentionPart)
 		}
@@ -754,9 +768,9 @@ const consoleComposeV2 = consoleCompose + `    environment:
 // the second button creates the app with the health check and the secret
 // typed into the page, the deployment ends healthy and the secret reaches the
 // service; the stored app is what the API makes of the same file and overlay;
-// a taken name is refused. Then Deploy from Compose: the overlay starts from
-// the app's (the secret as a name, empty), a new file deploys with the
-// secret's value kept, and the form opened before is refused as stale.
+// a taken name is refused. Then Deploy from Compose, whose form holds only the
+// file: a new file deploys with the health check and the secret (and its value)
+// kept, and the form opened before is refused as stale.
 func (c *console) compose(t *testing.T) {
 	const id = "console-compose"
 	remove := func() {
@@ -853,7 +867,8 @@ func (c *console) compose(t *testing.T) {
 		t.Errorf("POST /apps/new/compose for a taken name = %d, want 409 saying it already exists", resp.StatusCode)
 	}
 
-	// Deploy from Compose: the form carries the revision; the preview starts from the app's overlay.
+	// Deploy from Compose: the form of an app that exists holds only the file (feature 059). It carries the
+	// revision, has no input for secrets, health checks, domains or backups, and says they stay as they are.
 	resp, body = c.get(t, "/apps/"+id+"/compose")
 	if resp.StatusCode != http.StatusOK || formValuesOf(t, body, "compose-form").Get("revision") == "" {
 		t.Fatalf("GET /apps/%s/compose = %d, want 200 with a revision: %s", id, resp.StatusCode, body)
@@ -861,11 +876,16 @@ func (c *console) compose(t *testing.T) {
 	revision := formValuesOf(t, body, "compose-form").Get("revision")
 	resp, preview = c.post(t, "/apps/"+id+"/compose/preview", url.Values{"revision": {revision}, "compose": {consoleComposeV2}})
 	again := formValuesOf(t, preview, "compose-form")
-	if resp.StatusCode != http.StatusOK || again.Get("svc.web.healthPath") != "/" || !strings.Contains(preview, "Leave a value empty to keep it.") {
-		t.Fatalf("the preview from Deploy from Compose = %d, want the app's health check and the secret kept: %s", resp.StatusCode, preview)
+	if resp.StatusCode != http.StatusOK || again.Get("revision") == "" || !strings.Contains(preview, "Secrets, domains, health checks and backups stay as they are.") {
+		t.Fatalf("the preview from Deploy from Compose = %d, want the file, the revision and the note that the rest stays: %s", resp.StatusCode, preview)
 	}
-	if v, ok := again["svc.web.secret.API_KEY"]; !ok || v[0] != "" || strings.Contains(preview, secret) {
-		t.Errorf("the secret on the page = %v (present: %v), want its name with an empty input and no value anywhere", v, ok)
+	for name := range again {
+		if strings.HasPrefix(name, "svc.") {
+			t.Errorf("the Compose form of an app that exists has the input %q, want only the file", name)
+		}
+	}
+	if strings.Contains(preview, secret) {
+		t.Errorf("the preview shows the secret's value")
 	}
 	staleForm := url.Values{}
 	for k, v := range again {
@@ -875,7 +895,20 @@ func (c *console) compose(t *testing.T) {
 	resp, body = c.post(t, "/apps/"+id+"/compose", again)
 	second := deployed(resp, body)
 	envIs(second, "FLAG", "v2", "v2 from the new file")
-	envIs(second, "API_KEY", secret, "the value kept by the empty secret input")
+	envIs(second, "API_KEY", secret, "the value kept with the secret's name")
+	var kept struct {
+		App struct {
+			Services []struct {
+				Health  struct{ Path string }   `json:"health"`
+				Secrets []struct{ Name string } `json:"secrets"`
+			} `json:"services"`
+		} `json:"app"`
+	}
+	c.g.getJSON(t, "/v1/apps/"+id, &kept)
+	if len(kept.App.Services) != 1 || kept.App.Services[0].Health.Path != "/" ||
+		len(kept.App.Services[0].Secrets) != 1 || kept.App.Services[0].Secrets[0].Name != "API_KEY" {
+		t.Errorf("the app after the file deploy = %+v, want the health check / and the secret API_KEY kept", kept.App.Services)
+	}
 
 	// The form opened before that deploy is stale now.
 	var before, after struct {
@@ -919,7 +952,7 @@ func (c *console) deployedFrom(t *testing.T, id string, resp *http.Response, bod
 
 // composeFileEdit: an app made from a Compose file keeps the file (feature
 // 015). It is created through the console form from a file with a comment;
-// Configure shows the file as typed (the comment is in the page); editing the
+// Configure > Source shows the file as typed (the comment is in the page); editing the
 // tag, previewing and deploying with the revision from the page ends healthy,
 // the API's app has the new image, and Configure shows the edited file. Then the
 // first deployment is redeployed from the history: Configure shows v1.10 and
@@ -956,22 +989,30 @@ func (c *console) composeFileEdit(t *testing.T) {
 	resp, body := c.post(t, "/apps/new/compose", form)
 	first := c.deployedFrom(t, id, resp, body)
 
-	// Configure shows the file as typed, the comment in it, and the overlay.
-	resp, page := c.get(t, "/apps/"+id+"/configure")
+	// Configure > Source shows the file as typed, the comment in it, and nothing else to edit.
+	resp, page := c.get(t, "/apps/"+id+"/configure/source")
 	if resp.StatusCode != http.StatusOK || !strings.Contains(page, "# cfe: edited here, kept as typed") {
-		t.Fatalf("GET /apps/%s/configure = %d, want 200 with the file's comment in the page: %s", id, resp.StatusCode, page)
+		t.Fatalf("GET /apps/%s/configure/source = %d, want 200 with the file's comment in the page: %s", id, resp.StatusCode, page)
 	}
 	kept := formValuesOf(t, page, "compose-form")
-	if kept.Get("compose") != v10 || kept.Get("revision") == "" || kept.Get("svc.web.healthPath") != "/" {
-		t.Fatalf("Configure's Compose form = %v, want the file as typed, a revision, and the overlay", kept)
+	if kept.Get("compose") != v10 || kept.Get("revision") == "" {
+		t.Fatalf("Source's Compose form = %v, want the file as typed and a revision", kept)
 	}
-	// The Compose form of an app that exists has no Domains input (021's ruling 12: each domain once):
-	// the form carries the domains as they are, and the page lists them in its Domains panel.
-	if _, has := kept["svc.web.domains"]; has || !strings.Contains(page, id+".localhost") {
-		t.Fatalf("Configure should list %s.localhost once, outside the Compose form's inputs: %v", id, kept)
+	// The form holds only the file (feature 059): no Domains, health or secret input. The domain is listed once
+	// on Overview, and the health check is on Services.
+	for name := range kept {
+		if strings.HasPrefix(name, "svc.") {
+			t.Errorf("Source's Compose form has the input %q, want only the file", name)
+		}
+	}
+	if _, overview := c.get(t, "/apps/"+id+"/configure"); !strings.Contains(overview, id+".localhost") {
+		t.Fatalf("Overview should list %s.localhost: %s", id, overview)
 	}
 	if !strings.Contains(page, "This app is edited through its Compose file.") || strings.Contains(page, `class="cv-svcform"`) {
-		t.Errorf("Configure draws the per-field form of an app edited through its file")
+		t.Errorf("Source draws the per-field form of an app edited through its file")
+	}
+	if _, services := c.get(t, "/apps/"+id+"/configure/services"); !strings.Contains(services, `action="/apps/`+id+`/services/web/health#service-web"`) {
+		t.Errorf("Services has no health check form for web: %s", services)
 	}
 
 	// Edit the tag from that page: preview, then deploy with its revision.
@@ -990,9 +1031,9 @@ func (c *console) composeFileEdit(t *testing.T) {
 	if got := imageOf(); got != "traefik/whoami:v1.11" {
 		t.Errorf("the app's image = %q, want traefik/whoami:v1.11", got)
 	}
-	_, page = c.get(t, "/apps/"+id+"/configure")
+	_, page = c.get(t, "/apps/"+id+"/configure/source")
 	if got := formValuesOf(t, page, "compose-form").Get("compose"); got != v11 {
-		t.Errorf("Configure's file after the edit = %q, want %q", got, v11)
+		t.Errorf("Source's file after the edit = %q, want %q", got, v11)
 	}
 
 	// Rollback: redeploying the first deployment from the history brings back
@@ -1020,12 +1061,12 @@ func (c *console) composeFileEdit(t *testing.T) {
 	if got := imageOf(); got != "traefik/whoami:v1.10" {
 		t.Errorf("the app's image after the rollback = %q, want traefik/whoami:v1.10", got)
 	}
-	_, page = c.get(t, "/apps/"+id+"/configure")
+	_, page = c.get(t, "/apps/"+id+"/configure/source")
 	if got := formValuesOf(t, page, "compose-form").Get("compose"); got != v10 {
-		t.Errorf("Configure's file after the rollback = %q, want the first file %q", got, v10)
+		t.Errorf("Source's file after the rollback = %q, want the first file %q", got, v10)
 	}
 	if !strings.Contains(page, "# cfe: edited here, kept as typed") {
-		t.Errorf("Configure after the rollback lacks the original comment")
+		t.Errorf("Source after the rollback lacks the original comment")
 	}
 
 	// The history downloads each deployment's own file, byte for byte.

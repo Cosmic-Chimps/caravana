@@ -6,7 +6,7 @@ install: Caravana already measures every service each minute (Monitoring), and t
 
 ## Say how a service scales
 
-Through the API (`services[i].scale`), the Compose overlay (`services.<name>.scale`) or Configure's Scaling panel:
+Through the API (`services[i].scale`), the Compose overlay (`services.<name>.scale`) or the Scaling panel of Configure › Services:
 
 ```json
 {
@@ -72,10 +72,10 @@ and the API show the copies as the version of the deployment they run, so the hi
 
 A deploy keeps the number of copies the service has now (kept within a new `min` and `max`), and rolls out as many
 new copies beside them before the old ones stop. The starting count only applies to the first deploy; Start after a
-Stop runs the job as it was, at its count. Removing `scale` makes the service run `replicas` again; Configure's **Stop scaling** keeps the
+Stop runs the job as it was, at its count. Removing `scale` makes the service run `replicas` again; Configure › Services' **Stop scaling** keeps the
 count it has as its `replicas`.
 
-The exported job (Configure › Export) has the starting count, with a line in its header saying the service scales.
+The exported job (Configure › Integrations › Export) has the starting count, with a line in its header saying the service scales.
 
 ## What it never does
 

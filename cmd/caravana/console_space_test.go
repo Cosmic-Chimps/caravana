@@ -133,7 +133,7 @@ func (c *console) consoleSpace(t *testing.T) {
 	}
 
 	// 2. Redeploy without scratch.
-	_, page = c.get(t, "/apps/"+id+"/configure")
+	_, page = c.get(t, "/apps/"+id+"/configure/source")
 	kept := formValuesOf(t, page, "compose-form")
 	kept.Set("compose", consoleSpaceFile(false))
 	resp, preview = c.post(t, "/apps/"+id+"/compose/preview", kept)

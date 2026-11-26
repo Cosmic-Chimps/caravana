@@ -143,11 +143,14 @@ func (c *console) createOnly(t *testing.T) {
 		t.Errorf("the refused webhook left %d deployments (job absent: %v), want none", n, c.jobAbsent(named))
 	}
 
-	// 2. Define it through Configure's form.
-	resp, body = c.get(t, "/apps/"+named+"/configure")
+	// 2. Define it through the form on Configure > Source (Overview only links to it).
+	if _, body = c.get(t, "/apps/"+named+"/configure"); !strings.Contains(pageText(body), "Not defined yet.") {
+		t.Errorf("Overview of %s doesn't say it isn't defined yet:\n%s", named, pageText(body))
+	}
+	resp, body = c.get(t, "/apps/"+named+"/configure/source")
 	revision := regexp.MustCompile(`name="revision" value="([^"]+)"`).FindStringSubmatch(body)
 	if got := pageText(body); resp.StatusCode != http.StatusOK || revision == nil || !strings.Contains(got, "Define the app") {
-		t.Fatalf("GET Configure of %s = %d, want the Define the app form with a revision:\n%s", named, resp.StatusCode, got)
+		t.Fatalf("GET Configure > Source of %s = %d, want the Define the app form with a revision:\n%s", named, resp.StatusCode, got)
 	}
 	resp, body = c.post(t, "/apps/"+named+"/define", url.Values{"revision": {"0000000000000000"}, "image": {"traefik/whoami:v1.10"},
 		"port": {"80"}, "domain": {""}, "healthPath": {"/"}})
@@ -164,8 +167,8 @@ func (c *console) createOnly(t *testing.T) {
 	if !rec.Defined {
 		t.Errorf("GET /v1/apps/%s after defining it says not defined", named)
 	}
-	if _, body = c.get(t, "/apps/"+named+"/configure"); strings.Contains(pageText(body), "Define the app") {
-		t.Errorf("Configure of %s still offers the Define form after it was defined", named)
+	if _, body = c.get(t, "/apps/"+named+"/configure/source"); strings.Contains(pageText(body), "Define the app") {
+		t.Errorf("Configure > Source of %s still offers the Define form after it was defined", named)
 	}
 	// It reserved the default memory: free it for the next part.
 	if resp, body = c.post(t, "/apps/"+named+"/delete", url.Values{"confirm": {named}}); resp.StatusCode != http.StatusSeeOther {

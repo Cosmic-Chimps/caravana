@@ -432,11 +432,12 @@ in place never shifts its neighbors.
   below the main column under 1412px, when the column beside even the narrow rail would be under 720px.
 - **App pages:** five tabs by intent, in this order: Running, Deployments, Configure, Logs, Backups. The tab
   is named "Deployments", never "Ship". Running is the app's own page (the copies in a live
-  table), Deployments holds the deploy form and the history, Configure the grid of Copies & size and
-  Deploy, the Domains and Secrets panels, the webhook and Delete app, Logs the output of the copies,
-  Backups the app's backed-up services. Each tab is its own URL. Variables & secrets
-  (`/apps/{id}/variables`) and Domains (`/apps/{id}/domains`) are Configure's own pages: they draw the
-  app header with the Configure tab current, and no second back link.
+  table), Deployments holds the deploy form and the history, Configure is six sections (Overview, Source,
+  Services, Variables & secrets, Domains, Integrations; see "Configure, Variables, Domains and Backups"),
+  Logs the output of the copies, Backups the app's backed-up services. Each tab is its own URL. Every
+  Configure section is its own URL too (`/apps/{id}/configure`, `.../configure/source`, `.../services`,
+  `.../integrations`, and the older `/apps/{id}/variables` and `/apps/{id}/domains`): each draws the app
+  header with the Configure tab current, the section nav, and no second back link.
 - **Login:** the only page without the shell. A centered 380px column on the bare ground: the mark, the
   wordmark, the host in mono, "Sign in", two 42px fields, one primary button, and the reset command in its
   own block under it.
@@ -445,7 +446,7 @@ in place never shifts its neighbors.
 - **Primary actions:** the frame has two, as the design draws it: "New app" in the top bar, and on an
   app's page the header's "Deploy" (a link to the Deployments tab's deploy form, or "Start" for a
   stopped app). A page's own content adds at most one more, in the form it submits ("Deploy" on
-  Deployments, "Deploy" or "Save" on Configure), so pressing it deploys what that page holds. The
+  Deployments, "Save and deploy" on a Configure section), so pressing it deploys what that page holds. The
   header's Deploy never deploys by itself: a one-click redeploy from the header would be a surprise,
   and it would deploy without the edit in the form. An empty list doesn't repeat the top bar's New
   app. Everything else on a page is secondary, danger or ghost-weight.
@@ -737,11 +738,11 @@ so it works without script. The summary is the button; the body opens below it o
 - **Replace token** and **Revoke token** say that the current token stops working at once. Revoke's
   confirming button is danger; so is Revoke in a token row, where the body opens as an overlay under
   the row's right edge so the three columns keep their widths;
-- **Delete app** sits last and apart, in a panel with a Fault Ember Edge border, as a danger small
-  button. Its body says what goes with the app, asks for the name ("Type blog to confirm"), and its
-  "Delete blog" button is disabled until the field holds exactly that name, case and all. The server
-  checks the name again. After a refusal the disclosure opens by itself with the error under the
-  field.
+- **Delete app** sits last on Configure's Overview, in a wide panel of its own like the others (no colored
+  edge: colour is status only), as a danger small button. Its body says what goes with the app, asks for the
+  name ("Type blog to confirm"), and its "Delete blog" button is disabled until the field holds exactly that
+  name, case and all. The server checks the name again. After a refusal the disclosure opens by itself with
+  the error under the field.
 
 ### Configure, Variables, Domains and Backups (feature 021)
 The handoff's app pages, with what the console can do today. Every change on them is a deploy, so each
@@ -750,16 +751,43 @@ no pending state and no Discard. A stopped app's forms say "The app is stopped: 
 submit would be, and an app edited through its Compose file shows its tables read-only with "This app is
 edited through its Compose file." (secrets can still be set and removed). A secret's value is never
 drawn, not its length either: ten dots and a lock icon.
-- **Configure:** per service a grid of two panels (`cv-grid2`, gap 16, one column under 860px of room), each
-  `cv-panel` with 18px padding and a Label head: Copies & size (Copies, CPU in MHz, Memory in MB, Ceiling in
-  MB, in four columns) and Deploy (Image, Container port, then the health check as a path with a `GET`
-  prefix, Every in s and Timeout in s, and one sentence that new copies must pass it or the deploy is
-  reverted). "Also set" is a read-only panel under Deploy for what the form leaves alone (entrypoint,
-  command, arguments, volumes, backup). With several services the grid is drawn once per service under
-  its name in mono. Domains and Secrets follow, once per app, each a panel with its link ("Manage
-  domains", "Manage variables and secrets"); a service whose image can't be pulled for want of credentials
-  gets the dashed "Needs a container registry" notice. Neither of the handoff's switches (auto-revert,
-  canary) is drawn: they are not choices here.
+- **Configure** (feature 059, from the maintainer's mockup): six sections, **one concern per page, one deploy
+  per change**; each is its own address with its own form and submit on the page's revision. Under the tab
+  row, `.cv-cfg` is a wrapping flex row (gap 28px): the **section nav**, then the body (a column, gap 16px).
+  The nav is Settings' nav (`cv-snav-item`, `cv-snav-text`, `cv-snav-count`) with the `cv-snav-inpage`
+  modifier (not full height, no right border, sticky, 2px gap): Overview, Source, Services, Variables &
+  secrets, Domains, Integrations, no title, group labels or icons, a mono count on Services, Variables &
+  secrets and Domains, and the current one `aria-current="page"`. Under 900px it is Settings' strip, a row
+  that scrolls sideways. Each body opens with a Label head and one 13px `cv-note` sentence; a section's
+  notices (stopped, copied, a refusal) sit above them.
+  - **Overview** is read-only: a grid of `cv-panel`s (`repeat(auto-fit, minmax(320px, 1fr))`, 18px padding,
+    gap 12 inside, 16 between) in this order, each a Label head, lines and a foot of small secondary
+    buttons: Source (what the app is made from, one strong line), Variables & secrets, Services (wide: a
+    mono row per service in four columns, stacking under 720px), Domains, Backups, Schedules, Integrations
+    and, last and wide, Delete app. An app with no definition draws Source, Integrations and Delete only.
+  - **Source** holds how the app is made. An image app has a `cv-panel` per service with Image, Container
+    port and "Domains go to" (a select of the service's ports when it has several ports and domains: saving
+    sets the port of every one of its domains and nothing else of them), "Save and deploy <service>" and
+    beside it "<other> is left as it is."; a kept-file app has only the Compose file, Preview, "Against the
+    app today" and Deploy, with "Secrets, domains, health checks and backups stay as they are."; a built app
+    has the Build panel and Git access; an app with no definition has the Define form. A service whose image
+    can't be pulled for want of credentials gets the dashed "Needs a container registry" notice. "Deploy from
+    Compose" is a panel under the image forms.
+  - **Services** has one `cv-panel` per service: its name in mono and, muted, its image and volume, then
+    groups in a grid (`repeat(auto-fit, minmax(300px, 1fr))`, gap 18 and 28): Copies & size (Copies, CPU in
+    MHz, Memory in MB, Ceiling in MB, in four columns), Health check (a `GET` path, Every in s and Timeout in
+    s, and one sentence that new copies must pass it or the deploy is reverted), then Placement and Scaling as
+    their own forms, and read-only Identities, "Also set" (entrypoint, command, arguments, volumes) and
+    Backups ("Changed on the Backups tab"). The foot (a 1px rule, 14px above) holds "Save and deploy
+    <service>" ("Save and deploy" for one) and the muted "<others> is left as it is." For a kept-file app
+    Copies & size reads as text with "Set in the Compose file." and only the health check is a form. Neither
+    of the handoff's switches (auto-revert, canary) is drawn: they are not choices here.
+  - **Variables & secrets** and **Domains** are their own pages (below), drawn in the same frame.
+  - **Integrations** has three panels: Webhook (with its call as a `cv-cmd` block once a token exists),
+    Deploy token and Export. A token is shown once, in the answer that makes it.
+  - **Backups tab, Change the policy…:** each backed-up service's `<details>` offers a confirmation form like
+    "Back up daily" with Engine, Schedule and Keep, and "Save and deploy"; the restore schedule, destination
+    and copies keep their own forms.
 - **Page head** (Variables, Domains, Backups): the title in sans 500 at 18px (the app header owns the h1),
   one sentence in Body, the page's actions at the right, secondary small buttons and one primary
   (`cv-pghead`).
@@ -819,12 +847,12 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   first and names both when both hold.
 - **Content:** 1180px at most, padding 36px 32px 64px, 22px between blocks. The head is the headline
   (30px, 400) over a 15px sentence, and the page's one primary action at the right (small, with a plus).
-- **Secrets in a form** (the Compose form, on New app, Deploy from Compose and Configure of a kept-file app) are
+- **Secrets in a form** (the Compose form of New app, the only one that has them: the Compose form of an app
+  that exists holds only the file) are
   rows: the name at the left (mono, wrapping inside its column), the password input at the right, the
   "Leave a value empty to keep it." hint said once above; the add rows are a name input and a value input side by
   side under heads drawn once. Never a column grid of names: a long one (`Auth__Providers__X__ClientSecret`)
   would run into the next. Under 640px a row stacks and the add rows' labels show in place of the heads.
-  Configure of a kept-file app opens with a 13px legend saying why it differs from an image app's.
 - **Setting rows** (Account, the add and edit forms): a panel of rows, a 220px label with its 13px hint at
   the left and the controls at the right, 24px between, 18px 20px of padding, a Hairline between rows. Fields
   are the 32px field at 360px. The form's primary button ends its last row.
@@ -1182,7 +1210,7 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   value in a box that selects whole, Copy hidden without script): the password is in no address, no later page
   and no log. A Team-only domain says "Visitors sign in as `team`." in 13px fg-3 above New password. The panel and
   every sentence write "caravana" in lowercase. A stopped app's rows show "The app is stopped: start it first." in place of the form.
-- **Domains go to** (Configure's Deploy panel): a service with several ports and domains has a select of its ports
+- **Domains go to** (Configure's Source): a service with several ports and domains has a select of its ports
   ("http · :80") after Image; saving sets the port of every one of its domains and nothing else of them. A
   service with one port has the Container port input, as before.
 - **The switch** (the Options form's): a checkbox drawn as one, `.cv-switch`, 30×18, radius 9. Off: ink-2
@@ -1689,7 +1717,7 @@ pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
 - **Don't** show status as a colored dot or color alone, and don't rely on telling red from green.
 - **Don't** add drop shadows to panels, cards, buttons or inputs. Shadows are for overlays only.
 - **Don't** use gradients, texture, imagery or illustration. The rolling mark's half fill is the only pattern.
-- **Don't** add a colored left-border accent to panels, rows, banners or log lines. (The delete panel's full Fault Ember Edge outline is a border, not an accent.)
+- **Don't** add a colored left-border accent to panels, rows, banners or log lines, or a status colour to a panel that isn't a status (the Delete app panel has none).
 - **Don't** round anything fully except the circular status marks and the live indicator's disc
   and ring.
 - **Don't** use daisyUI's solid `alert-*` fills for problems. Use a panel with a mark, a sentence

@@ -67,7 +67,7 @@ copies' restarts pull it from there.
 | `deploy-key` | `ssh://` or `git@host:path` | a private key it made, in a Nomad Variable |
 | `token` | `https://` | a token you gave, in a Nomad Variable |
 
-**Deploy key.** Under Configure › Build › Git access (or Next steps after New app), **Make a deploy key**. Caravana
+**Deploy key.** Under Configure › Source › Git access (or Next steps after New app), **Make a deploy key**. Caravana
 makes an ed25519 key pair, keeps the private half and shows the public key and its fingerprint: add the public key to
 the repository's deploy keys, with read-only access. **New key…** replaces it; the old key stops working at once.
 
@@ -90,12 +90,12 @@ other SSH host needs its key in `build.hostKey`, as `"<type> <base64>"` without 
 ssh-keyscan -t ed25519 git.example.com | cut -d' ' -f2-
 ```
 
-Without it a deploy is refused (`422 git_host_key_unknown` at `services[i].build.hostKey`). Configure's Build panel has
+Without it a deploy is refused (`422 git_host_key_unknown` at `services[i].build.hostKey`). Configure › Source's Build panel has
 the field. A host on a port other than 22 always needs its key.
 
 ## Build on every push
 
-The app's webhook is the repository's push webhook. Create the app's webhook token (Next steps or Configure › Webhook),
+The app's webhook is the repository's push webhook. Create the app's webhook token (Next steps or Configure › Integrations › Webhook),
 which shows the webhook address once: `https://console.example.com/v1/webhooks/shop?token=cvwh_…`.
 
 | Provider | Where | Settings |

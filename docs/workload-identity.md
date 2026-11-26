@@ -31,7 +31,7 @@ you need the token instead of keeping it. There is no environment variable: Noma
 A scheduled run of the service gets the same identities. A promotion keeps the identities of the environment it
 promotes into, because an audience belongs to one environment.
 
-The console shows a service's identities under **Configure**, read-only. Caravana never reads the token: it isn't
+The console shows a service's identities under **Configure › Services**, read-only. Caravana never reads the token: it isn't
 in any page, answer, log or record.
 
 ## Your cluster's issuer
