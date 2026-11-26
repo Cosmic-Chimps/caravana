@@ -97,7 +97,9 @@ const OpenSearchLoginRefused = "OpenSearch refused the login: set OPENSEARCH_INI
 // another user, writes its result files there), empties it when the mode is
 // "fresh" (the first clean of a run), and removes the "caravana-*" folders
 // earlier runs left in the repository. Only those: a folder of another name,
-// and a link, is never touched.
+// and a link, is never touched. A repository folder that doesn't exist yet is
+// made world-writable, like the volume it is in: this script runs as root, and
+// the cluster, another user, makes each run's folder in it.
 const OpenSearchCleanScript = `repo=$1
 work=$2
 mode=$3
@@ -110,7 +112,9 @@ if [ "$mode" = fresh ]; then
   rm -f "$work"/*.result
   rm -rf "$work"/*.work
 fi
-[ -d "$repo" ] || exit 0
+if [ ! -d "$repo" ]; then
+  mkdir -p "$repo" && chmod 777 "$repo" || fail "clean: could not make the repository folder $repo"
+fi
 for old in "$repo"/caravana-*; do
   [ -d "$old" ] || continue
   [ ! -L "$old" ] || continue

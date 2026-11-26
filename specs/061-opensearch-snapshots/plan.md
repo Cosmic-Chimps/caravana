@@ -87,7 +87,7 @@ runs, and Caravana archives it to the backup destination with retention, pins, c
   Repository input (beside Database file), the Backups tab's change-policy form, rows and built-in schedules saying "OpenSearch
   snapshot". No designer pass (existing parts).
 - **D10 Wazuh template** (`caravana-templates` branch `wazuh-template`): the indexer gets a volume `indexer-snapshots` at
-  `/var/lib/wazuh-indexer-snapshots`, `path.repo` in its `opensearch.yml`, the secret `INDEXER_PASSWORD` = the admin password,
+  `/var/lib/wazuh-indexer-snapshots`, `path.repo` in its `opensearch.yml`, the secret `OPENSEARCH_INITIAL_ADMIN_PASSWORD` = the admin password (not `INDEXER_PASSWORD`: Wazuh's entrypoint writes that one into a keystore; the image ignores this name),
   and `backup: {engine: opensearch, repository: /var/lib/wazuh-indexer-snapshots}`; the notes lose the "isn't backed up" sentence;
   `requires` follows the release that has 061.
 - **D11 Lab.** Gate step `opensearch-snapshot`: single-node OpenSearch 2.19.1 with the security plugin on

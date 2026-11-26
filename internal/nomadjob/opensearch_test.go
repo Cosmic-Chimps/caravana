@@ -381,16 +381,19 @@ func TestOpenSearchCleanScript(t *testing.T) {
 			t.Errorf("work after a fresh clean = %v, want empty", got)
 		}
 	})
-	t.Run("makes the work directory writable by the service's user, and a missing repository is fine", func(t *testing.T) {
+	t.Run("makes the work directory and a missing repository writable by the service's user", func(t *testing.T) {
 		r := newOpenSearchRun(t)
 		fresh := filepath.Join(r.dir, "new", "work")
-		res := r.run(OpenSearchCleanScript, "", nil, filepath.Join(r.dir, "no-such-repo"), fresh, "fresh")
+		repo := filepath.Join(r.dir, "no-such-repo", "snapshots")
+		res := r.run(OpenSearchCleanScript, "", nil, repo, fresh, "fresh")
 		if res.code != 0 {
 			t.Fatalf("exit %d: %s", res.code, res.stderr)
 		}
-		info, err := os.Stat(fresh)
-		if err != nil || info.Mode().Perm() != 0o777 {
-			t.Errorf("work dir = %v, %v; want mode 0777", info, err)
+		for _, dir := range []string{fresh, repo} {
+			info, err := os.Stat(dir)
+			if err != nil || info.Mode().Perm() != 0o777 {
+				t.Errorf("%s = %v, %v; want mode 0777", dir, info, err)
+			}
 		}
 	})
 	t.Run("a path that isn't absolute is refused", func(t *testing.T) {
