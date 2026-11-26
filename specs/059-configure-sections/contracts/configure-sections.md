@@ -96,8 +96,9 @@ One `form.cv-panel` per service (gap 18px): head = name (mono 500 15px) and, mut
 
 - **Copies & size**: Copies, Reserve MB, Up to MB, and CPU MHz (four fields: keep today's four, `cv-fields4`). A scaled
   service's Copies reads "Set by scaling, 1–3". A service with a volume or a published port: Copies is read-only "1",
-  muted "A service with a volume runs one copy." For a kept-file app the group is read-only text (e.g. "1 copy · 512 MB,
-  up to 1 GB") with muted "Set in the Compose file." (deviation from the mockup, see plan D4).
+  muted "A service with a volume runs one copy." For a kept-file app the group was read-only text (e.g. "1 copy · 512 MB,
+  up to 1 GB") with muted "Set in the Compose file." (deviation from the mockup, see plan D4); task gqbf made Copies,
+  Reserve and Up to inputs written into the file, and keeps the text only for a file that can't take the edit.
 - **Health check**: GET path, Every s, Timeout s; muted "New copies must pass it before they take traffic; if they
   don't, the deploy is reverted." An empty path: placeholder "TCP port", muted "Empty checks the TCP port." Not drawn for a
   service with no port (as today, `ShowHealth`).

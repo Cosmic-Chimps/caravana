@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -262,9 +264,23 @@ func sectionOfPost(post interface{ Get(string) string }, f editForm) string {
 }
 
 // KeptEdit says the app keeps its Compose file and the person may change it: Services then draws each
-// service's health check as a form that writes it into the file's overlay, and its copies and size
-// read-only (they are set in the file).
+// service's health check as a form that writes it into the file's overlay, and its copies and memory as
+// inputs written into the file's text when the file allows it (SizeInFile), else read-only.
 func (t configureTab) KeptEdit() bool { return t.ComposeForm != nil && t.ComposeForm.Kept }
+
+// addKeptSizes says, for each service of an app that keeps its Compose file, whether Services may draw
+// its copies and memory as inputs: only when compose.SetResources can write them into text, the kept
+// file, without guessing. Otherwise they stay read-only text, with the reason.
+func addKeptSizes(v *editView, text string) {
+	for i := range v.Services {
+		sv := &v.Services[i]
+		err := compose.CheckResources(text, sv.Name, !sv.Scaled && !sv.OneCopy)
+		sv.SizeInFile = err == nil
+		if edit := (*compose.EditError)(nil); errors.As(err, &edit) {
+			sv.SizeLocked = edit
+		}
+	}
+}
 
 // HasBuild says a service of the app is built from a Git repository.
 func (t configureTab) HasBuild() bool {

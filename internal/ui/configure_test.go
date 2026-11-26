@@ -328,12 +328,13 @@ func TestConfigureKeptFile(t *testing.T) {
 		}
 	}
 	_, services := e.get(t, "/apps/shop/configure/services")
-	// Services of a kept-file app (feature 059): the health check is a form that writes into the file's
-	// overlay, copies and size are read-only text, and the file itself is on Source.
-	if words := text(services); !strings.Contains(words, "postgres:17") || !strings.Contains(services, `action="/apps/shop/services/web/health#service-web"`) ||
-		!strings.Contains(words, "Set in the Compose file.") || !strings.Contains(words, "Save and deploy web") ||
-		strings.Contains(services, `name="svc.web.copies"`) || strings.Contains(services, `name="svc.web.memory"`) {
-		t.Errorf("Services of a kept-file app should have a health form and copies and size as text:\n%s", words)
+	// Services of a kept-file app (feature 059, task gqbf): the health check is a form that writes into the
+	// file's overlay, copies and memory are inputs written into the file's text, CPU is text, and the rest
+	// of the file is on Source.
+	if words := text(services); !strings.Contains(words, "postgres:17") || !strings.Contains(services, `action="/apps/shop/services/web/settings#service-web"`) ||
+		!strings.Contains(words, "Saving writes copies and memory into the Compose file and keeps its comments and layout. CPU is changed on Source.") || !strings.Contains(words, "Save and deploy web") ||
+		!strings.Contains(services, `name="svc.web.copies"`) || !strings.Contains(services, `name="svc.web.memory"`) || strings.Contains(services, `name="svc.web.cpu"`) {
+		t.Errorf("Services of a kept-file app should have a health form and copies and memory as inputs:\n%s", words)
 	}
 	_, overview := e.get(t, "/apps/shop/configure")
 	// The sections around are as before, and no value is anywhere.

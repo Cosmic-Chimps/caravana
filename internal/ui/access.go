@@ -418,7 +418,7 @@ var consoleAccess = map[string]accessRule{
 	"POST /apps/{id}/backups/places":                           appConfigure(),
 	"POST /apps/{id}/services/{service}/placement":             appConfigure(),
 	"POST /apps/{id}/services/{service}/scale":                 appConfigure(),
-	"POST /apps/{id}/services/{service}/health":                appConfigure(),
+	"POST /apps/{id}/services/{service}/settings":              appConfigure(),
 	"POST /apps/{id}/backups/policy/change":                    appConfigure(),
 	"POST /apps/{id}/services/{service}/build":                 appConfigure(),
 	"POST /apps/{id}/delete":                                   appConfigure(),

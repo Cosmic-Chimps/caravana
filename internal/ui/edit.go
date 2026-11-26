@@ -132,6 +132,17 @@ var inputSpecs = []inputSpec{
 	{Name: "healthTimeout", Numeric: true, Label: "Timeout", Suffix: "s", Placeholder: "2"},
 }
 
+// inputLabel is the label the named input is drawn with ("Memory", "Ceiling"), the name itself when
+// no spec has it.
+func inputLabel(name string) string {
+	for _, spec := range inputSpecs {
+		if spec.Name == name {
+			return spec.Label
+		}
+	}
+	return name
+}
+
 // shows reports whether the service has this input: see the Show flags.
 func (s editService) shows(field string) bool {
 	switch field {

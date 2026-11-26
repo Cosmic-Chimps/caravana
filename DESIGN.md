@@ -780,7 +780,9 @@ drawn, not its length either: ten dots and a lock icon.
     their own forms, and read-only Identities, "Also set" (entrypoint, command, arguments, volumes) and
     Backups ("Changed on the Backups tab"). The foot (a 1px rule, 14px above) holds "Save and deploy
     <service>" ("Save and deploy" for one) and the muted "<others> is left as it is." For a kept-file app
-    Copies & size reads as text with "Set in the Compose file." and only the health check is a form. Neither
+    Copies & size has Copies, Memory and Ceiling as inputs written into the file, CPU as text and the muted
+    "Saving writes copies and memory into the Compose file and keeps its comments and layout. CPU is changed on Source."; a file whose values can't be rewritten
+    safely (an alias, an anchor) keeps the text with "Set in the Compose file." and the reason. Neither
     of the handoff's switches (auto-revert, canary) is drawn: they are not choices here.
   - **Variables & secrets** and **Domains** are their own pages (below), drawn in the same frame.
   - **Integrations** has three panels: Webhook (with its call as a `cv-cmd` block once a token exists),

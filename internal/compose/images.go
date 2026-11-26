@@ -36,21 +36,9 @@ type imageEdit struct {
 // that isn't one YAML document. An image whose value is already the new one is left
 // as it is. Pure: no I/O.
 func ReplaceImages(text string, images map[string]string) (string, error) {
-	dec := yaml.NewDecoder(strings.NewReader(text))
-	var doc yaml.Node
-	if err := dec.Decode(&doc); err != nil {
-		return "", fmt.Errorf("read the Compose file: %w", err)
-	}
-	var extra yaml.Node
-	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return "", errors.New("the Compose file has more than one YAML document")
-	}
-	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
-		return "", errors.New("the Compose file is not a mapping")
-	}
-	services := mappingValue(doc.Content[0], "services")
-	if services == nil || services.Kind != yaml.MappingNode {
-		return "", errors.New("services: not found as a mapping")
+	services, err := parseServices(text)
+	if err != nil {
+		return "", err
 	}
 
 	lines := strings.Split(text, "\n")
@@ -91,6 +79,27 @@ func ReplaceImages(text string, images map[string]string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
+// parseServices reads text as one YAML document and returns its services mapping.
+func parseServices(text string) (*yaml.Node, error) {
+	dec := yaml.NewDecoder(strings.NewReader(text))
+	var doc yaml.Node
+	if err := dec.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("read the Compose file: %w", err)
+	}
+	var extra yaml.Node
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, errors.New("the Compose file has more than one YAML document")
+	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
+		return nil, errors.New("the Compose file is not a mapping")
+	}
+	services := mappingValue(doc.Content[0], "services")
+	if services == nil || services.Kind != yaml.MappingNode {
+		return nil, errors.New("services: not found as a mapping")
+	}
+	return services, nil
+}
+
 // mappingValue is the value of key in a mapping node, nil when there is none.
 func mappingValue(m *yaml.Node, key string) *yaml.Node {
 	for i := 0; i+1 < len(m.Content); i += 2 {
@@ -116,21 +125,31 @@ func imageNode(services *yaml.Node, name string) (*yaml.Node, error) {
 	if node == nil {
 		return nil, errors.New("the service has no image key in its own mapping")
 	}
-	switch {
-	case node.Kind == yaml.AliasNode:
-		return nil, errors.New("the image is an alias")
-	case node.Kind != yaml.ScalarNode:
-		return nil, errors.New("the image is not a scalar")
-	case node.Anchor != "":
-		return nil, errors.New("the image has an anchor")
-	case node.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0:
-		return nil, errors.New("the image is a multi-line block scalar")
-	case node.Style&yaml.TaggedStyle != 0:
-		return nil, errors.New("the image has a tag")
-	case strings.Contains(node.Value, "$"):
-		return nil, errors.New("the image holds a variable, which can't be rewritten")
+	if err := editableScalar(node, "the image"); err != nil {
+		return nil, err
 	}
 	return node, nil
+}
+
+// editableScalar says why node, a value the file holds, can't be rewritten in place, or nil
+// when it can: one plain or quoted scalar on one line, with no alias, anchor, tag or variable.
+// what names it in the reason ("the image").
+func editableScalar(node *yaml.Node, what string) error {
+	switch {
+	case node.Kind == yaml.AliasNode:
+		return errors.New(what + " is an alias")
+	case node.Kind != yaml.ScalarNode:
+		return errors.New(what + " is not a scalar")
+	case node.Anchor != "":
+		return errors.New(what + " has an anchor")
+	case node.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0:
+		return errors.New(what + " is a multi-line block scalar")
+	case node.Style&yaml.TaggedStyle != 0:
+		return errors.New(what + " has a tag")
+	case strings.Contains(node.Value, "$"):
+		return errors.New(what + " holds a variable, which can't be rewritten")
+	}
+	return nil
 }
 
 // imageEditFor finds the exact characters of node's scalar on its line and says what to
@@ -169,7 +188,7 @@ func imageEditFor(lines []string, node *yaml.Node, next string) (imageEdit, erro
 // checking that the text there decodes to node.Value in node's style: the guard that
 // the position is right and nothing is guessed.
 func tokenEnd(runes []rune, start int, node *yaml.Node) (int, error) {
-	mismatch := errors.New("the image's text in the file is not what the parser read (an anchor, a tag or several lines?)")
+	mismatch := errors.New("the value's text in the file is not what the parser read (an anchor, a tag or several lines?)")
 	switch {
 	case node.Style&yaml.DoubleQuotedStyle != 0:
 		if runes[start] != '"' {
@@ -187,7 +206,7 @@ func tokenEnd(runes []rune, start int, node *yaml.Node) (int, error) {
 				return i + 1, nil
 			}
 		}
-		return 0, errors.New("the image is not closed on its line")
+		return 0, errors.New("the value is not closed on its line")
 	case node.Style&yaml.SingleQuotedStyle != 0:
 		if runes[start] != '\'' {
 			return 0, mismatch
@@ -206,7 +225,7 @@ func tokenEnd(runes []rune, start int, node *yaml.Node) (int, error) {
 			}
 			return i + 1, nil
 		}
-		return 0, errors.New("the image is not closed on its line")
+		return 0, errors.New("the value is not closed on its line")
 	default:
 		value := []rune(node.Value)
 		end := start + len(value)

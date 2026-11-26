@@ -1302,7 +1302,7 @@
 {{define "cfg-services"}}
 <section aria-labelledby="services-title" class="flex flex-col gap-2">
   <h2 id="services-title" class="cv-label">Services</h2>
-  <p class="cv-note cv-cfg-intro">Copies, size and health check of each service. Each service is saved on its own, and saving is a deploy.{{if .KeptEdit}} For this app the health check is written into its Compose settings; the file itself is changed on Source.{{end}}</p>
+  <p class="cv-note cv-cfg-intro">Copies, size and health check of each service. Each service is saved on its own, and saving is a deploy.{{if .KeptEdit}} For this app, copies and memory are written into its Compose file and the health check into its Compose settings. The rest of the file is changed on Source.{{end}}</p>
   {{if .NoConfigure}}<p class="cv-note cv-cfg-intro">Your role here is to look: changing how this app is set up is for people who maintain it.</p>{{end}}
 </section>
 {{if not .Defined}}
@@ -1336,7 +1336,7 @@
     <h3 id="svc-{{.Name}}-title" class="cv-svc-title">{{.Name}}</h3>
     <span class="cv-svchead-sub">{{.Edit.Image}}{{with .VolumeText}} · {{.}}{{end}}</span>
   </div>
-  <form id="svcform-{{.Name}}" method="post" action="{{if $.KeptEdit}}/apps/{{$.ID}}/services/{{.Name}}/health{{else}}{{$.Edit.Action}}{{end}}#service-{{.Name}}" class="cv-svcform">
+  <form id="svcform-{{.Name}}" method="post" action="{{if $.KeptEdit}}/apps/{{$.ID}}/services/{{.Name}}/settings{{else}}{{$.Edit.Action}}{{end}}#service-{{.Name}}" class="cv-svcform">
     <input type="hidden" name="revision" value="{{$.Edit.Form.Revision}}">
     <input type="hidden" name="section" value="services">
     <input type="hidden" name="svc.{{.Name}}.form" value="1">
@@ -1344,19 +1344,22 @@
       <div class="cv-cfg-groups">
         <div class="cv-cfg-group">
           <h4 class="cv-label">Copies &amp; size</h4>
-          {{if $.KeptEdit}}<p class="cv-data text-fg-1">{{.SizeText}}</p>
-          <p class="cv-note">Set in the Compose file.</p>
+          {{if and $.KeptEdit (not .SizeInFile)}}<p class="cv-data text-fg-1">{{.SizeText}}</p>
+          <p class="cv-note">Set in the Compose file.{{with .SizeLocked}} It can't be written from here: at <span class="font-mono">{{.Path}}</span>, {{.Reason}}. Change it on Source.{{end}}</p>
           {{else}}<div class="cv-fields4">
             {{if .Scaled}}<div class="cv-fld"><span class="cv-label">Copies</span>
               <span class="cv-data text-fg-1">Set by scaling, {{.ScaleBounds}}</span></div>
             {{else if .OneCopy}}<div class="cv-fld"><span class="cv-label">Copies</span>
               <span class="cv-data text-fg-1">1</span></div>
             {{else}}{{template "field" (.F "copies")}}{{end}}
-            {{template "field" (.F "cpu")}}
+            {{if $.KeptEdit}}<div class="cv-fld"><span class="cv-label">CPU</span>
+              <span class="cv-data text-fg-1">{{with .Edit.CPUMHz}}{{.}} MHz{{else}}default{{end}}</span></div>
+            {{else}}{{template "field" (.F "cpu")}}{{end}}
             {{template "field" (.F "memory")}}
             {{template "field" (.F "memoryMax")}}
           </div>
-          {{if and .OneCopy (not .Scaled)}}<p class="cv-note">A service with a volume or a published port runs one copy.</p>{{end}}{{end}}
+          {{if and .OneCopy (not .Scaled)}}<p class="cv-note">A service with a volume or a published port runs one copy.</p>{{end}}
+          {{if $.KeptEdit}}<p class="cv-note">Saving writes copies and memory into the Compose file and keeps its comments and layout. CPU is changed on Source.</p>{{end}}{{end}}
         </div>
         {{if .ShowHealth}}
         <div class="cv-cfg-group">
@@ -1392,7 +1395,7 @@
   {{with .Identities}}<div class="cv-cfg-group">{{template "identities" .}}</div>{{end}}
   {{with .BackupLine}}<div class="cv-cfg-group"><h4 class="cv-label">Backups</h4><p class="text-base text-fg-1">{{.}}</p><p class="cv-note"><a href="/apps/{{$.ID}}/backups">Changed on the Backups tab.</a></p></div>{{end}}
   </div>
-  {{if and (not $.Stopped) (or .ShowHealth (not $.KeptEdit))}}<div class="cv-cfg-foot"><button type="submit" form="svcform-{{.Name}}" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy{{if $.Edit.Many}} {{.Name}}{{end}}</button>{{with .LeftAlone}}<span class="cv-note">{{.}}</span>{{end}}</div>{{end}}
+  {{if and (not $.Stopped) (or .ShowHealth .SizeInFile (not $.KeptEdit))}}<div class="cv-cfg-foot"><button type="submit" form="svcform-{{.Name}}" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy{{if $.Edit.Many}} {{.Name}}{{end}}</button>{{with .LeftAlone}}<span class="cv-note">{{.}}</span>{{end}}</div>{{end}}
 </section>
 {{end}}
 {{end}}

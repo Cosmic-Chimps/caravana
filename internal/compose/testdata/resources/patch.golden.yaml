@@ -1,0 +1,23 @@
+# Codemagic Patch: the OTA server and its database.
+name: patch
+
+services:
+  server:   # the API
+    mem_reservation: 384m
+    deploy:
+      replicas: 2
+    # Pinned by CI.
+    image: ghcr.io/acme/patch-server:0.9.0
+    expose:
+      - "8080"
+    environment:
+      DATABASE_HOST: db   # the service below
+    mem_limit: 1536m # was enough until spring
+
+  db:
+    image: postgres:17
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

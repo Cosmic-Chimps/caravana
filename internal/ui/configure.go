@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/secrets"
@@ -341,6 +342,11 @@ type editServiceView struct {
 	// without volumes. BackupLine is the service's backup policy in a sentence, read-only there; empty
 	// without one. LeftAlone says which other services a save of this one leaves as they are.
 	VolumeText, BackupLine, LeftAlone string
+	// SizeInFile says the service's copies and memory are inputs for an app that keeps its Compose
+	// file: saving writes them into the file's text. SizeLocked is why they are read-only text instead (the
+	// place in the file and the reason, drawn as "at <path>, <reason>"), nil when the file couldn't be read at all.
+	SizeInFile bool
+	SizeLocked *compose.EditError
 }
 
 // SizeText is the service's copies and size in words, for an app whose file sets them:

@@ -20,7 +20,9 @@ route. The service gains two methods the API can already reach by deploying a wh
   and backup (a new app has nothing to keep).
 - **D4 A kept-file app's copies and size stay in the file.** The mockup draws them as inputs; writing `replicas` and
   `mem_*` into the YAML text when the key is absent can't keep the owner's formatting in all cases, so this pass shows
-  them read-only, "Set in the Compose file", as for placement and scaling. Follow-up task if wanted.
+  them read-only, "Set in the Compose file", as for placement and scaling. Follow-up task if wanted. Done by task
+  gqbf: `compose.SetResources` writes them into the text, and `SetHealthIf` became `SetServiceIf` (health and size in
+  one deploy) on `POST /apps/{id}/services/{service}/settings`.
 - **D5 Health of a kept-file app** goes into the kept overlay: `Service.SetHealthIf(ctx, appID, service, path,
   interval, timeout, cond, trigger)` rewrites `overlay.Health` (keeping its port), translates the file and deploys with
   it kept, as `SetDomainsIf` does; errors renamed by `inFile`. Route `POST /apps/{id}/services/{service}/health`

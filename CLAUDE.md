@@ -2452,14 +2452,19 @@ sections, one concern per page and one deploy per change. `plan.md` D1–D9 are 
   today" and Deploy, with "Secrets, domains, health checks and backups stay as they are." `composeDraft.keepAll(rec)` makes the draft from the stored
   record: secrets by name (references and templates too), domains, identities, published ports, placement, scaling, disconnect and, new, `keepHealth`
   and `keepBackup` (the kept overlay as written, else the services'); a service the new file drops loses them and `composeChanges` says so. New app ›
-  Compose keeps its full form. D4: a kept-file app's copies and size read "Set in the Compose file." on Services (writing them into the YAML can't
-  keep the owner's formatting); placement and scaling read the same.
-- D5: `Service.SetHealthIf(ctx, appID, service, path, interval, timeout, cond, trigger)` writes a service's health check into a kept file's overlay
-  (or onto the service) and deploys with the revision as the condition; `POST /apps/{id}/services/{service}/health` is Services' form for a kept-file
-  app. D6: `Service.ChangeBackupPolicy` and `POST /apps/{id}/backups/policy/change` add "Change the policy…" (engine, SQLite file, schedule, keep) to
+  Compose keeps its full form. D4 (task gqbf, 2026-11-26): a kept-file app's Copies, Memory and Ceiling are inputs on Services, written into the file's
+  text by the pure `compose.SetResources` (an existing scalar rewritten in its quoting, a missing key added as the service's first key at its
+  siblings' indentation, comments and CRLF kept; a value stated twice, which Compose allows only when equal (`scale` and `deploy.replicas`,
+  `mem_limit`/`mem_reservation` and `deploy.resources.*.memory`), is rewritten in both places, and a missing one is added as deploy.replicas,
+  mem_reservation or mem_limit; the result must translate (tests); aliases, anchors, merge keys, tags, variables and flow mappings to add into are an `*compose.EditError` with the path).
+  `compose.CheckResources` decides per service: a file it refuses keeps "Set in the Compose file." with the reason; CPU stays the file's; memory
+  emptied back to the default is refused (`service.DefaultInFileError`, "Memory can't go back to the default from here…"). Placement and scaling still read "Set in the Compose overlay".
+- D5: `Service.SetServiceIf(ctx, appID, service, ServiceSettings{Health, Size}, cond, trigger)` writes a service's health check into a kept file's
+  overlay and its changed copies and memory into the file's text (or both onto the service) and deploys once with the revision as the condition;
+  `POST /apps/{id}/services/{service}/settings` (`saveKeptService`, `keptservice.go`) is Services' form for a kept-file app. D6: `Service.ChangeBackupPolicy` and `POST /apps/{id}/backups/policy/change` add "Change the policy…" (engine, SQLite file, schedule, keep) to
   the Backups tab; the restore schedule, destination and copies stay. `compose.Overlay.Empty` is the one "sets nothing" test (`withDomains` had its
   own and dropped an overlay that held only identities, publish, placement, scale or disconnect when its last domain went).
-- Tests: `internal/ui` (`configsections_test.go`, `healthform_test.go`, `backupchange_test.go`), `service` (`healthedit_test.go`,
+- Tests: `internal/ui` (`configsections_test.go`, `keptservice_test.go`, `backupchange_test.go`), `service` (`serviceedit_test.go`,
   `backuppolicy_test.go`) and the two default-deny walks. The lab steps that read Configure were pointed at the section that now holds their form
   (`console-edit` reads Source and Services, `console-compose` and `console-compose-file-edit` deploy a file with no per-service inputs and check
   the health check and secret survive through the API, `console-create-only` defines on Source, `console-placement` and `console-space` use
@@ -2609,3 +2614,12 @@ The maintainer comes from C#/.NET and is learning Go. When introducing a Go idio
 from C# (interfaces satisfied implicitly, error returns instead of exceptions, goroutines and
 channels, `new(expr)` for pointer fields), add a one-line explanation in your summary. Prefer
 clear, plain Go over clever Go.
+
+Reviews go to the project's standing Claude sessions (find them with `ListAgents`, send with `SendMessage`):
+- `caravana` reviews the code: the diff, its tests, correctness and the rules of the constitution.
+- `caravana_designer` reviews what a change does to the console: pages, wording, `DESIGN.md`.
+- `caravana_docs` writes and updates the documentation: the guide in `docs/guide/`, the operator docs and screenshots.
+
+When a change is committed and verified, send each one its part: the commit, the branch and worktree, what changed, which files to
+read, and the checks already run. Address their findings, commit, and answer each one with what changed. A reviewer never commits on
+your branch.
