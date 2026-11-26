@@ -110,7 +110,8 @@ runs, and Caravana archives it to the backup destination with retention, pins, c
   restore schedules, resume, pins; migration 0048; `api/openapi.yaml` 0.67.0; the deploy warning; sentinel tests.
 - [x] **B — console and docs**: D9, `docs/database-backups.md` (or a section in `docs/opensearch-apps.md`), the guide's backups page,
   `changelog.d/opensearch-snapshots.md`, `CLAUDE.md`.
-- [ ] **C — lab and template**: D11 gate step passing in the lab, D10 template change.
+- [x] **C — lab and template**: D11 gate step passing in the lab (2026-11-26, 127 s; `sqlite-backup-restore` again, 279 s), D10
+  template change (`92b4c09` on `wazuh-template` of `caravana-templates`, checked with `caravana template check`, not pushed).
 
 ## Deviations (phase A)
 

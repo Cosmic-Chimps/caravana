@@ -2512,8 +2512,8 @@ API 0.66.0, no migration, no new module, no policy change, constitution unchange
   else) passed on 2026-11-26 (31 s, `-run 'TestLab/^(api-needs-token|opensearch)$'`). The image appends to `opensearch.yml`
   when `DISABLE_SECURITY_PLUGIN` is set, which a read-only file refuses, so that setting goes in the file.
 
-Feature 061 (`specs/061-opensearch-snapshots`, CodeAlta task `pcqt`, worktree branch `alta/polar-zanzibar-p5fm`, stacked on 060, phases A and
-B): `backup: {engine: opensearch, repository: <folder>}` backs up an OpenSearch (or fork, or Elasticsearch 7/8) cluster while it runs.
+Feature 061 (`specs/061-opensearch-snapshots`, CodeAlta task `pcqt`, worktree branch `alta/polar-zanzibar-p5fm`, stacked on 060, phases A to
+C): `backup: {engine: opensearch, repository: <folder>}` backs up an OpenSearch (or fork, or Elasticsearch 7/8) cluster while it runs.
 `plan.md` D1–D11 are the decisions, R1–R6 the lab facts (no `repository-s3` in the official images, so the cluster writes a shared-filesystem
 snapshot and Caravana archives the folder); operator doc: the "OpenSearch and Elasticsearch snapshots" section of `docs/database-backups.md`.
 Migration 0048, API 0.67.0, no new module, no policy change, constitution unchanged (the sidecar is 029's `caravana-upload`).
@@ -2556,7 +2556,15 @@ Migration 0048, API 0.67.0, no new module, no policy change, constitution unchan
   (`TestOpenSearchBackupsShowNoPassword`) searches every page and the log for a secret `OPENSEARCH_INITIAL_ADMIN_PASSWORD` and, apart from
   Configure, a plain one.
 - Tests: scripts under `sh`, goldens `opensearch-backup`, `service` (`opensearchbackup_test.go`: runs, restore, schedules, resume, pins, sentinel),
-  `store` (0048), `ui` (`opensearchbackups_test.go`). Phase C: the gate step `opensearch-snapshot` and the Wazuh template change (D10, D11).
+  `store` (0048), `ui` (`opensearchbackups_test.go`). The gate step `opensearch-snapshot` (`gate_opensearch_snapshot_test.go`: the
+  repository refusals, OpenSearch 2.19.1 with its security plugin on, Back up now and a restore with the same copy, no restart, the same job
+  version and no run folder left, the document back and an index made since kept, a pinned backup outliving `keep: 1`, the admin password in
+  no answer, log, job, export or data file) passed in the lab on 2026-11-26 (127 s, `-run 'TestLab/^(api-needs-token|opensearch-snapshot)$'`),
+  and `sqlite-backup-restore` passed again after the shared code's refactor (279 s). The clean step makes a missing repository folder 0777: a
+  restore's root sidecar would otherwise make it 0755 and the cluster (uid 1000) could not snapshot there. The Wazuh template's indexer
+  (`92b4c09` on `wazuh-template` of `../caravana-templates`, not pushed) has an `indexer-snapshots` volume, `path.repo` in its
+  `opensearch.yml`, `OPENSEARCH_INITIAL_ADMIN_PASSWORD` (not `INDEXER_PASSWORD`, which Wazuh's entrypoint writes into a keystore) and a
+  daily opensearch backup; it passes `caravana template check`, and a run against Wazuh's images is still the maintainer's.
 - Not in 061: an S3 repository, incremental snapshots, the cluster's global state or dot indices, data streams, a multi-node cluster's per-node
   folders (every node needs the same shared `path.repo`), an Elasticsearch image check by script beyond the hand check on 8.17.
 
