@@ -99,6 +99,8 @@ type draftService struct {
 
 	Domains, HealthPath, HealthInterval, HealthTimeout, HealthPort formField
 	BackupEngine, BackupFile, BackupSchedule, BackupKeep           formField
+	// BackupRepository is the OpenSearch engine's snapshot folder (feature 061), as BackupFile is the SQLite engine's.
+	BackupRepository formField
 	// BackupRestoreSchedule and BackupRestoreFrom are the policy's restore schedule (feature 036):
 	// both or neither.
 	BackupRestoreSchedule, BackupRestoreFrom formField
@@ -153,7 +155,7 @@ func (s *draftService) inputs() []struct {
 	}{
 		{"domains", &s.Domains}, {"healthPath", &s.HealthPath}, {"healthInterval", &s.HealthInterval},
 		{"healthTimeout", &s.HealthTimeout}, {"healthPort", &s.HealthPort},
-		{"backupEngine", &s.BackupEngine}, {"backupFile", &s.BackupFile}, {"backupSchedule", &s.BackupSchedule}, {"backupKeep", &s.BackupKeep},
+		{"backupEngine", &s.BackupEngine}, {"backupFile", &s.BackupFile}, {"backupRepository", &s.BackupRepository}, {"backupSchedule", &s.BackupSchedule}, {"backupKeep", &s.BackupKeep},
 		{"backupRestoreSchedule", &s.BackupRestoreSchedule}, {"backupRestoreFrom", &s.BackupRestoreFrom},
 		{"backupDestination", &s.BackupDestination}, {"backupCopyTo", &s.BackupCopyTo}, {"backupCopyKeep", &s.BackupCopyKeep},
 	}
@@ -278,7 +280,7 @@ func (s *draftService) read(post url.Values, values map[string]string) bool {
 	s.HealthPath.Value = text("healthPath")
 	s.HealthInterval.Value, s.HealthTimeout.Value, s.HealthPort.Value = text("healthInterval"), text("healthTimeout"), text("healthPort")
 	s.BackupEngine.Value, s.BackupSchedule.Value, s.BackupKeep.Value = text("backupEngine"), text("backupSchedule"), text("backupKeep")
-	s.BackupFile.Value = text("backupFile")
+	s.BackupFile.Value, s.BackupRepository.Value = text("backupFile"), text("backupRepository")
 	s.BackupRestoreSchedule.Value, s.BackupRestoreFrom.Value = text("backupRestoreSchedule"), text("backupRestoreFrom")
 	s.BackupDestination.Value, s.BackupCopyTo.Value, s.BackupCopyKeep.Value = text("backupDestination"), text("backupCopyTo"), text("backupCopyKeep")
 
@@ -400,16 +402,18 @@ func (s *draftService) build() bool {
 	switch engine := s.BackupEngine.Value; {
 	case engine == "" && restore != nil:
 		refuse(&s.BackupEngine, "Choose an engine to restore on a schedule.")
-	case engine == "" && (s.BackupSchedule.Value != "" || s.BackupKeep.Value != "" || s.BackupFile.Value != ""):
-		refuse(&s.BackupEngine, "Choose an engine to set a schedule, a file or how many to keep.")
+	case engine == "" && (s.BackupSchedule.Value != "" || s.BackupKeep.Value != "" || s.BackupFile.Value != "" || s.BackupRepository.Value != ""):
+		refuse(&s.BackupEngine, "Choose an engine to set a schedule, a file, a snapshot folder or how many to keep.")
 	case engine == "" && (s.BackupDestination.Value != "" || len(copyTo) > 0 || s.BackupCopyKeep.Value != ""):
 		refuse(&s.BackupEngine, "Choose an engine to set where backups go.")
 	case engine != app.BackupSQLite && s.BackupFile.Value != "":
 		refuse(&s.BackupFile, "Only the SQLite engine backs up a file; clear it, or choose SQLite file.")
-	case app.DumpEngine(engine) || engine == app.BackupVolume || engine == app.BackupSQLite:
-		// The file's rules are the model's (app.Validate); its errors come back
-		// on this input (fieldFor).
-		b := app.Backup{Engine: engine, File: s.BackupFile.Value, Schedule: s.BackupSchedule.Value, Restore: restore,
+	case engine != app.BackupOpenSearch && s.BackupRepository.Value != "":
+		refuse(&s.BackupRepository, "Only the OpenSearch engine takes a snapshot folder; clear it, or choose OpenSearch or Elasticsearch snapshot.")
+	case app.DumpEngine(engine) || engine == app.BackupVolume || engine == app.BackupSQLite || engine == app.BackupOpenSearch:
+		// The file's and the folder's rules are the model's (app.Validate); its
+		// errors come back on these inputs (fieldFor).
+		b := app.Backup{Engine: engine, File: s.BackupFile.Value, Repository: s.BackupRepository.Value, Schedule: s.BackupSchedule.Value, Restore: restore,
 			Destination: s.BackupDestination.Value, CopyTo: copyTo, CopyKeep: copyKeep}
 		if s.BackupKeep.Value != "" {
 			if n, err := strconv.Atoi(s.BackupKeep.Value); err != nil || n < 1 || n > 100 {
@@ -420,7 +424,7 @@ func (s *draftService) build() bool {
 		}
 		s.overlay.Backup = &b
 	case engine != "":
-		refuse(&s.BackupEngine, "Choose none, PostgreSQL, MySQL or MariaDB, MongoDB, Volume or SQLite file.")
+		refuse(&s.BackupEngine, "Choose none, PostgreSQL, MySQL or MariaDB, MongoDB, Volume, SQLite file or OpenSearch snapshot.")
 	}
 	return ok
 }

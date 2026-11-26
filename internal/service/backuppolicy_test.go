@@ -341,7 +341,7 @@ func TestChangeBackupPolicy(t *testing.T) {
 	deployHealthy(t, e, a)
 	rec, _ := e.svc.GetApp(ctx, "whoami")
 
-	got, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "", app.BackupScheduleNever, 9, Condition{IfRevision: rec.Revision}, app.TriggerConsole)
+	got, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "", "", app.BackupScheduleNever, 9, Condition{IfRevision: rec.Revision}, app.TriggerConsole)
 	if err != nil {
 		t.Fatalf("ChangeBackupPolicy: %v", err)
 	}
@@ -360,19 +360,19 @@ func TestChangeBackupPolicy(t *testing.T) {
 	t.Run("refusals", func(t *testing.T) {
 		n := len(mustDeployments(t, e))
 		var fe *app.FieldError
-		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "nope", app.BackupVolume, "", "", 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "service" {
+		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "nope", app.BackupVolume, "", "", "", 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "service" {
 			t.Errorf("an unknown service: %v", err)
 		}
-		if _, err := e.svc.ChangeBackupPolicy(ctx, "ghost", "web", app.BackupVolume, "", "", 0, Condition{}, app.TriggerConsole); !errors.Is(err, store.ErrNotFound) {
+		if _, err := e.svc.ChangeBackupPolicy(ctx, "ghost", "web", app.BackupVolume, "", "", "", 0, Condition{}, app.TriggerConsole); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("an unknown app: %v", err)
 		}
-		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "", "nightly", 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "services[0].backup.schedule" {
+		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "", "", "nightly", 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "services[0].backup.schedule" {
 			t.Errorf("a bad schedule: %v, want a field error on services[0].backup.schedule", err)
 		}
-		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "/data/app.db", "", 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || !strings.HasPrefix(fe.Field, "services[0].backup") {
+		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "/data/app.db", "", "", 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || !strings.HasPrefix(fe.Field, "services[0].backup") {
 			t.Errorf("a file for a volume policy: %v, want a field error on the backup", err)
 		}
-		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "", "", 0, Condition{IfRevision: "0000000000000000"}, app.TriggerConsole); !errors.Is(err, ErrAppChanged) {
+		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "", "", "", 0, Condition{IfRevision: "0000000000000000"}, app.TriggerConsole); !errors.Is(err, ErrAppChanged) {
 			t.Errorf("a stale revision: %v", err)
 		}
 		if len(mustDeployments(t, e)) != n {
@@ -386,7 +386,7 @@ func TestChangeBackupPolicy(t *testing.T) {
 		a.Services[0].Backup = nil
 		deployHealthy(t, e, a)
 		var fe *app.FieldError
-		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupPostgres, "", "", 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "service" {
+		if _, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupPostgres, "", "", "", 0, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "service" {
 			t.Errorf("no policy: %v, want a field error on service", err)
 		}
 	})
@@ -402,7 +402,7 @@ func TestChangeBackupPolicyKeepsFile(t *testing.T) {
 		"web": {Backup: &app.Backup{Engine: app.BackupVolume, Keep: 3, Restore: &app.RestoreSchedule{Schedule: "0 4 * * *", From: "golden"}}},
 	}}
 	composeHealthy(t, e, req)
-	got, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "", app.BackupScheduleNever, 8, Condition{}, app.TriggerConsole)
+	got, err := e.svc.ChangeBackupPolicy(ctx, "whoami", "web", app.BackupVolume, "", "", app.BackupScheduleNever, 8, Condition{}, app.TriggerConsole)
 	if err != nil {
 		t.Fatal(err)
 	}

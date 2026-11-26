@@ -47,8 +47,8 @@ func (s *Service) SetBackupPolicy(ctx context.Context, appID, service string, po
 	return recordOnly(s.saveAndDeploy(ctx, a, cond, trigger, m, nil))
 }
 
-// ChangeBackupPolicy deploys appID with the engine, database file, schedule and
-// number to keep of service's backup policy replaced (feature 059): a Deploy of
+// ChangeBackupPolicy deploys appID with the engine, database file, snapshot
+// folder (feature 061), schedule and number to keep of service's backup policy replaced (feature 059): a Deploy of
 // the stored app with that one change, on the condition that the app still has
 // the revision the caller read (ErrAppChanged otherwise; an empty Condition
 // saves whatever is there), as SetBackupPolicy does for a service with none. The
@@ -59,7 +59,7 @@ func (s *Service) SetBackupPolicy(ctx context.Context, appID, service string, po
 // "service"; what the model refuses is its *app.FieldError on
 // services[i].backup.*, as a deploy says it. An app that keeps its Compose file
 // keeps it, with the overlay's backup following the app.
-func (s *Service) ChangeBackupPolicy(ctx context.Context, appID, service, engine, file, schedule string, keep int, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
+func (s *Service) ChangeBackupPolicy(ctx context.Context, appID, service, engine, file, repository, schedule string, keep int, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
 	rec, err := s.store.GetApp(ctx, appID)
 	if err != nil {
 		return store.DeploymentRecord{}, err
@@ -73,7 +73,7 @@ func (s *Service) ChangeBackupPolicy(ctx context.Context, appID, service, engine
 		return store.DeploymentRecord{}, app.NewFieldError("service", "service %q has no backup policy", service)
 	}
 	policy := *a.Services[i].Backup
-	policy.Engine, policy.File, policy.Schedule, policy.Keep = engine, file, schedule, keep
+	policy.Engine, policy.File, policy.Repository, policy.Schedule, policy.Keep = engine, file, repository, schedule, keep
 	services := slices.Clone(a.Services)
 	services[i].Backup = &policy
 	a.Services = services
