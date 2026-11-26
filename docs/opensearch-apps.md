@@ -22,7 +22,7 @@ not a reservation: it costs nothing until an app uses the maps. A file that sort
 To see the value:
 
 - Open **Operator › Servers**, then the server. The **Server** facts list `vm.max_map_count`. A number under 262144 is
-  shown in the warning colour with *OpenSearch and Elasticsearch need at least 262144: rerun the installer*.
+  shown in the warning colour, with *262144 is the least OpenSearch and Elasticsearch need. Run the installer on this server again.*
 - Or on the server: `sysctl vm.max_map_count`.
 
 A server installed before this feature has the default until you **rerun the installer** (see
@@ -52,7 +52,8 @@ In Compose, write `ulimits:` as Compose does: a number (`nofile: 65536`, the sam
 A refusal names the path in your file, for example `services.web.ulimits.core`.
 
 Copies of the service, and runs of its schedules, get the limits. **Configure › Services** shows them under **Also
-set**; change them through the API or the Compose file.
+set** as **Limits** (`nofile 65536 (soft) · 65536 (hard)`, or `memlock unlimited` when soft and hard are the same);
+change them through the API or the Compose file.
 
 ## Sysctls
 
@@ -70,6 +71,7 @@ set on the server*.
 - At most 16 sysctls. A value is 1 to 64 printable characters, with no space at either end.
 - A name looks like `net.ipv4.tcp_keepalive_time`: lowercase, in parts separated by dots.
 - A name the kernel doesn't know makes the copy fail to start, like any other bad setting.
+- **Configure › Services** shows them as **Kernel settings**, read-only.
 - In Compose, `sysctls:` takes a map or a list (`- net.core.somaxconn=1024`). `vm.max_map_count` is the one other
   setting Compose files carry: see [The server's map count](#the-servers-map-count).
 
@@ -111,13 +113,13 @@ the service still reaches the app as an environment variable.
 Apart from that, the secret behaves as any other: it is write-only, may come from a [secret
 provider](secret-providers.md), may be a template, is kept when a deploy names it without a value, and a deploy
 replaces it. The value is in Nomad's variable store and in the file inside the copy, and nowhere in Caravana's
-database, the job, the export or a log. The **Variables** page marks it: *written to /certs/node.key, not to the
-environment*.
+database, the job, the export or a log. The **Variables** page marks it: *Written to /certs/node.key, not to the
+environment.*.
 
 ### Changing a file
 
 A file is part of the app, so changing it is a deploy: the new content, or the secret's new value, reaches the app
-with the next copies. Configure shows each file read-only: its path, its mode, and its size or the name of its secret.
+with the next copies. Configure shows each file read-only under **Files**: its path, `mode 0400`, and its size or `from secret TLS_KEY`.
 Set files through the API or Compose. A [promotion](guide/operate/projects.md) takes the source's files (not the
 secret values: those belong to each environment), and **Copy to** keeps them.
 

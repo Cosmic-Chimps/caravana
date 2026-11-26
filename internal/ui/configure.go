@@ -33,7 +33,10 @@ import (
 type defRow struct {
 	Label  string
 	Values []string
-	Note   string
+	// Lines are values with their names marked in mono and the words between them in plain text, one
+	// per line (the files). A row has Values or Lines.
+	Lines []sentence
+	Note  string
 }
 
 // defPanel is one panel of the definition: the app's own facts, or one
@@ -56,7 +59,7 @@ type defPanel struct {
 func defPanelOf(title string, rows []defRow) defPanel {
 	p := defPanel{Title: title}
 	for _, r := range rows {
-		if len(r.Values) == 0 {
+		if len(r.Values) == 0 && len(r.Lines) == 0 {
 			p.Defaults = append(p.Defaults, defaultName(r.Label))
 			continue
 		}
@@ -574,43 +577,59 @@ func publishedRows(svc app.Service, host string) []defRow {
 	}
 }
 
-// limitRows are the service's ulimits and sysctls, read-only: "nofile 65536:65536" per limit and "name = value"
-// per sysctl, sorted. None when it sets neither.
+// limitRows are the service's ulimits and sysctls, read-only, sorted: "Limits" in words ("nofile 65536 (soft) ·
+// 65536 (hard)" when the two differ, "nofile 65536" and "memlock unlimited" when they don't) and "Kernel settings"
+// as "name = value". None when it sets neither.
 func limitRows(svc app.Service) []defRow {
 	var rows []defRow
 	if len(svc.Ulimits) > 0 {
 		var limits []string
 		for _, name := range slices.Sorted(maps.Keys(svc.Ulimits)) {
-			limits = append(limits, name+" "+svc.Ulimits[name].String())
+			u := svc.Ulimits[name]
+			if u.Soft == u.Hard {
+				limits = append(limits, name+" "+limitWord(u.Soft))
+				continue
+			}
+			limits = append(limits, name+" "+limitWord(u.Soft)+" (soft) · "+limitWord(u.Hard)+" (hard)")
 		}
-		rows = append(rows, defRow{Label: "Ulimits", Values: limits})
+		rows = append(rows, defRow{Label: "Limits", Values: limits})
 	}
 	if len(svc.Sysctls) > 0 {
 		var sysctls []string
 		for _, k := range slices.Sorted(maps.Keys(svc.Sysctls)) {
 			sysctls = append(sysctls, k+" = "+svc.Sysctls[k])
 		}
-		rows = append(rows, defRow{Label: "Sysctls", Values: sysctls})
+		rows = append(rows, defRow{Label: "Kernel settings", Values: sysctls})
 	}
 	return rows
 }
 
-// fileRows are the service's files, read-only, one value per file: "/etc/app.yml · 0640 · 1.2 KB" for
-// content, "/certs/node.key · 0400 · from secret TLS_KEY" for a secret. The content itself is not drawn (it
-// may be long; the Compose file or the API has it). None when the service has none.
+// limitWord is a limit as words: -1 is "unlimited".
+func limitWord(v int64) string {
+	if v == -1 {
+		return "unlimited"
+	}
+	return strconv.FormatInt(v, 10)
+}
+
+// fileRows are the service's files, read-only, one line per file: the path, "mode 0640", and the size of the
+// content or "from secret NAME", with the path and the name in mono. The content itself is not drawn (it may be
+// long; the Compose file or the API has it). None when the service has none.
 func fileRows(svc app.Service) []defRow {
 	if len(svc.Files) == 0 {
 		return nil
 	}
-	var values []string
+	var lines []sentence
 	for _, f := range svc.Files {
-		what := humanBytes(int64(len(f.Content)))
+		line := sentence{mono(f.Path), plain(" · mode " + f.Perms() + " · ")}
 		if f.Secret != "" {
-			what = "from secret " + f.Secret
+			line = append(line, plain("from secret "), mono(f.Secret))
+		} else {
+			line = append(line, plain(humanBytes(int64(len(f.Content)))))
 		}
-		values = append(values, f.Path+" · "+f.Perms()+" · "+what)
+		lines = append(lines, line)
 	}
-	return []defRow{{Label: "Files", Values: values}}
+	return []defRow{{Label: "Files", Lines: lines}}
 }
 
 // alsoSet lists the facts of a service the form can't change and a save keeps,

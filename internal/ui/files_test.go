@@ -110,13 +110,13 @@ func TestNoPageDrawsASecretFile(t *testing.T) {
 		}
 	}
 	_, vars := e.get(t, "/apps/shop/variables")
-	if !strings.Contains(text(vars), "written to /certs/api.key, not to the environment") {
+	if !strings.Contains(text(vars), "Written to /certs/api.key, not to the environment.") {
 		t.Errorf("Variables doesn't say where API_KEY is written:\n%s", text(vars))
 	}
 	_, services := e.get(t, "/apps/shop/configure/services")
-	for _, want := range []string{"/etc/shop/shop.yml · 0640 · 13 B", "/certs/api.key · 0400 · from secret API_KEY"} {
-		if !strings.Contains(text(services), want) {
-			t.Errorf("Services lacks %q:\n%s", want, text(services))
+	for _, want := range []string{"/etc/shop/shop.yml · mode 0640 · 13 B", "/certs/api.key · mode 0400 · from secret API_KEY"} {
+		if n := strings.Count(text(services), want); n != 1 {
+			t.Errorf("Services has %q %d times, want once:\n%s", want, n, text(services))
 		}
 	}
 }

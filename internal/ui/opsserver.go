@@ -1182,7 +1182,7 @@ func withManagedFacts(now time.Time, facts []srvFact, v service.ServerView) []sr
 }
 
 // mapCountFact is the "vm.max_map_count" row, only when the agent said it: the number, and in the warning
-// colour with what to do when it is under what OpenSearch needs.
+// colour, with two plain sentences saying what is needed and what to do, when it is under what OpenSearch needs.
 func mapCountFact(v service.ServerView) []srvFact {
 	if v.VMMaxMapCount <= 0 {
 		return nil
@@ -1190,7 +1190,7 @@ func mapCountFact(v service.ServerView) []srvFact {
 	f := srvFact{Key: "vm.max_map_count", Value: strconv.FormatInt(v.VMMaxMapCount, 10)}
 	if v.VMMaxMapCount < app.MinMapCount {
 		f.Mark, f.Strong = "warning", true
-		f.Note = "OpenSearch and Elasticsearch need at least " + strconv.Itoa(app.MinMapCount) + ": rerun the installer"
+		f.Note = strconv.Itoa(app.MinMapCount) + " is the least OpenSearch and Elasticsearch need. Run the installer on this server again."
 	}
 	return []srvFact{f}
 }
