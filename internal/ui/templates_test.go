@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 	"github.com/cosmic-chimps/caravana/internal/templates"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -538,4 +540,63 @@ func deploymentIDOf(t *testing.T, e *consoleEnv, id string) string {
 		t.Fatalf("deployments of %s: %v, %v", id, recs, err)
 	}
 	return recs[0].Deployment.ID
+}
+
+// TestInstallShowsTeamOnlyPasswordOnce installs Adminer, whose domain is Team only: the answer to
+// Create is the Deployments tab with the password once (never cached), and no later page has it.
+func TestInstallShowsTeamOnlyPasswordOnce(t *testing.T) {
+	ctx := context.Background()
+	e := newConsoleEnvWith(t, nil)
+	e.Reg.AddIndex("library/adminer", "5.5.1", kumaDigest)
+
+	resp, body := e.postForm(t, "/apps/new/template/adminer", installForm("adminer", map[string]string{"domain": "Adminer.Example.com"}, nil))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Create = %d to %q:\n%s", resp.StatusCode, resp.Header.Get("Location"), text(body))
+	}
+	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+	m := regexp.MustCompile(`<code class="cv-once-value" id="team-password-0">([^<]+)</code>`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("the answer has no password:\n%s", body)
+	}
+	password := m[1]
+	if n := strings.Count(body, password); n != 1 {
+		t.Errorf("the password is on the answer %d times, want once", n)
+	}
+	page := text(body)
+	for _, want := range []string{"Installed from the Adminer template.", "Copy the password for adminer.example.com now.",
+		"User name team.", "Adminer is at https://adminer.example.com"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the answer lacks %q:\n%s", want, page)
+		}
+	}
+	if !strings.Contains(body, `data-copy="team-password-0"`) {
+		t.Error("the password has no copy button")
+	}
+	// It is the password Caravana keeps the hash of.
+	rec, err := e.Store.TeamPassword(ctx, "adminer.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(rec.Hash), []byte(password)) != nil {
+		t.Error("the password shown isn't the one whose hash is kept")
+	}
+
+	// No later page has it, the installed notice included.
+	for _, path := range []string{
+		"/apps/adminer/deployments?created=template",
+		"/apps/adminer/deployments?created=template&v_domain=adminer.example.com",
+		"/apps/adminer", "/apps/adminer/deployments", "/apps/adminer/domains", "/apps/adminer/configure", "/domains",
+		"/parts/apps/adminer/deployments",
+	} {
+		resp, later := e.get(t, path)
+		if strings.Contains(later, password) {
+			t.Errorf("GET %s (%d) has the password", path, resp.StatusCode)
+		}
+	}
+	_, notice := e.get(t, "/apps/adminer/deployments?created=template&v_domain=adminer.example.com")
+	if !strings.Contains(text(notice), "Installed from the Adminer template.") || strings.Contains(notice, "cv-once-value") {
+		t.Errorf("the installed notice after the answer:\n%s", text(notice))
+	}
 }

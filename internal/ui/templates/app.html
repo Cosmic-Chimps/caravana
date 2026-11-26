@@ -61,6 +61,13 @@
 {{else}}
 {{with .Created}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{with .Installed}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .Title}}</span></div>
+{{range .Passwords}}<div class="cv-main"><div class="cv-panel cv-once" role="status">
+  <p class="cv-once-text">Copy the password for <span class="cv-inline-mono">{{.Host}}</span> now. User name <span class="cv-inline-mono">team</span>. caravana only keeps a hash and can't show it again; New password on the Domains page makes another.</p>
+  <div class="cv-once-row">
+    <code class="cv-once-value" id="{{.ID}}">{{.Password}}</code>
+    <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="{{.ID}}" hidden>Copy password</button>
+  </div>
+</div></div>{{end}}
 {{with .Notes}}<div class="cv-main"><div class="cv-panel p-4"><p class="cv-tplnotes">{{.}}</p></div></div>{{end}}{{end}}
 {{with .Notice}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{with .Refusal}}<div role="alert" class="cv-main cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}

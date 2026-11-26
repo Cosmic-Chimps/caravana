@@ -1003,15 +1003,17 @@ func (s *server) appNotFound(w http.ResponseWriter, r *http.Request, id string) 
 // refused, when set, is a refused redeploy of a past version, shown in its
 // entry.
 func (s *server) deploymentsPage(w http.ResponseWriter, r *http.Request, status int, sum service.AppSummary, form deployForm, refused *refusedRedeploy) {
-	s.deploymentsPageWith(w, r, status, sum, form, refused, nil)
+	s.deploymentsPageWith(w, r, status, sum, form, refused, nil, s.installedNoticeOf(r, sum.AppRecord))
 }
 
 // deploymentsPageNotice draws the Deployments tab with the sentence of a Scan now that was turned down.
 func (s *server) deploymentsPageNotice(w http.ResponseWriter, r *http.Request, status int, sum service.AppSummary, scanRefusal sentence) {
-	s.deploymentsPageWith(w, r, status, sum, deployFormOf(sum.App), nil, scanRefusal)
+	s.deploymentsPageWith(w, r, status, sum, deployFormOf(sum.App), nil, scanRefusal, s.installedNoticeOf(r, sum.AppRecord))
 }
 
-func (s *server) deploymentsPageWith(w http.ResponseWriter, r *http.Request, status int, sum service.AppSummary, form deployForm, refused *refusedRedeploy, scanRefusal sentence) {
+// deploymentsPageWith draws the Deployments tab. installed is the notice of a template install, nil
+// for none.
+func (s *server) deploymentsPageWith(w http.ResponseWriter, r *http.Request, status int, sum service.AppSummary, form deployForm, refused *refusedRedeploy, scanRefusal sentence, installed *installedNotice) {
 	id := sum.App.ID
 	form.ReadOnly = !s.can(r.Context(), "deploy", id)
 	if sum.StoppedAt != nil && len(form.Notice) == 0 {
@@ -1056,7 +1058,7 @@ func (s *server) deploymentsPageWith(w http.ResponseWriter, r *http.Request, sta
 	}
 	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "deployments"),
 		Deployments: &deploymentsTab{Form: form, History: history, Security: panel, ScanRefusal: scanRefusal},
-		Installed:   s.installedNoticeOf(r, sum.AppRecord)})
+		Installed:   installed})
 }
 
 // showDeployments answers GET /apps/{id}/deployments.
