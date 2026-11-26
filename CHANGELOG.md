@@ -10,6 +10,11 @@ released sections only. `tools/release.sh unreleased` shows what the next releas
 Each section has the changes that matter to a user, in this order and only as needed: Added,
 Changed, Fixed, Security, then **Upgrade** when an upgrade needs more than rerunning the installer.
 
+## 0.23.1 - 2026-11-26
+
+### Fixed
+- **Settings › People listed everyone twice.** Each person now has one row.
+
 ## 0.23.0 - 2026-11-25
 
 ### Added
