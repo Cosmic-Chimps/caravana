@@ -199,7 +199,7 @@ for it (not the dashboard's domain, which goes through the HTTPS proxy).
 Plan for about **4 GB** of memory for the three. The template asks for:
 
 - **Dashboard domain**. Its DNS must point at the server.
-- **Admin password**. It is the dashboard's `admin` user, and the manager's login to the indexer. Keep a note of it:
+- **Admin password**. It is the dashboard's `admin` user, the manager's login to the indexer and the login of the indexer's backup. Keep a note of it:
   Caravana doesn't show it again. It is at most 72 bytes, since the indexer keeps its hash.
 
 Everything else is made at install and never shown: a certificate authority and the certificates of the indexer,
@@ -213,12 +213,13 @@ runs, so the manager stops for a moment (the template's notes say agents reconne
 checked live*). The indexer is a search cluster, which a volume backup would stop for every run, so it uses the
 `opensearch` engine: the cluster takes a snapshot of itself while it runs. See [OpenSearch and Elasticsearch
 snapshots](database-backups.md#opensearch-and-elasticsearch-snapshots) for what it needs (`path.repo`, a folder on a
-volume) and what it holds. The dashboard's two volumes (`dashboard-config` and `dashboard-custom`) are not backed up.
+volume) and what it holds. The indexer has a second volume for the snapshots, `indexer-snapshots`, at `/var/lib/wazuh-indexer-snapshots`, and
+the volume needs free disk for one snapshot of the indexer while it is uploaded. The dashboard's two volumes (`dashboard-config` and `dashboard-custom`) are not backed up.
 
 *The template passed Caravana's template check and hasn't yet been run on a real host. Wazuh's ports and the other
 facts about its images in this section are as of writing, not checked live.*
 
-It will be in the catalog with Caravana 0.24.0, which has the features on this page; an older Caravana lists it as
+*As of writing, it is not in the catalog yet: it is on an unpushed branch of the catalog repository.* It will be in the catalog with Caravana 0.24.0, which has the features on this page; an older Caravana lists it as
 unavailable. **From a template** fetches a newer catalog once a day, and **Check now** does it at once (see [From a
 template](guide/deploy/templates.md)).
 
