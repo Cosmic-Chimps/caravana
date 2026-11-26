@@ -356,3 +356,58 @@ func TestScheduleRunJobLimits(t *testing.T) {
 		t.Errorf("run sysctl = %v, want %v", got, want)
 	}
 }
+
+// TestScheduleRunJobFiles: a run has its service's files: the same mounts, content files as templates, and
+// secret files read from the run's own variable, which the run's environment template skips.
+func TestScheduleRunJobFiles(t *testing.T) {
+	one := scheduleApp()
+	svc := one.Services[0]
+	svc.Secrets = []app.Secret{{Name: "TLS_KEY"}, {Name: "API_KEY"}}
+	svc.Files = []app.File{{Path: "/etc/app.yml", Content: "a: 1\n"}, {Path: "/certs/key", Secret: "TLS_KEY", Mode: "0400"}}
+	j := ScheduleRunJob(one, "r1", svc, pinnedWorker, []string{"x"}, 256, labSettings(), nil)
+	task := j.TaskGroups[0].Tasks[0]
+
+	wantMounts := []map[string]any{
+		{"type": "bind", "target": "/etc/app.yml", "source": "local/caravana-files/0", "readonly": true},
+		{"type": "bind", "target": "/certs/key", "source": "secrets/caravana-files/1", "readonly": true},
+	}
+	if got := task.Config["mount"]; !reflect.DeepEqual(got, wantMounts) {
+		t.Errorf("mount = %v, want %v", got, wantMounts)
+	}
+	if len(task.Templates) != 3 {
+		t.Fatalf("templates = %d, want the environment's and one per file", len(task.Templates))
+	}
+	env, content, secret := task.Templates[0], task.Templates[1], task.Templates[2]
+	if !strings.Contains(*env.EmbeddedTmpl, `{{ if not (eq .K "TLS_KEY") }}`) {
+		t.Errorf("the run's environment template doesn't skip the file's secret: %s", *env.EmbeddedTmpl)
+	}
+	runVar := ScheduleRunVariablePath(*j.ID)
+	if !strings.Contains(*env.EmbeddedTmpl, runVar) || !strings.Contains(*secret.EmbeddedTmpl, runVar) || !strings.Contains(*secret.EmbeddedTmpl, `eq .K "TLS_KEY"`) {
+		t.Errorf("the run's templates don't read the run's variable %s:\n%s\n%s", runVar, *env.EmbeddedTmpl, *secret.EmbeddedTmpl)
+	}
+	if *content.EmbeddedTmpl != "a: 1\n" || *content.DestPath != "local/caravana-files/0" || *secret.DestPath != "secrets/caravana-files/1" || *secret.Perms != "0400" {
+		t.Errorf("file templates = %+v and %+v", content, secret)
+	}
+
+	// A service without files has no mount and the one template it had.
+	svc.Files = nil
+	j = ScheduleRunJob(one, "r2", svc, pinnedWorker, []string{"x"}, 256, labSettings(), nil)
+	if _, ok := j.TaskGroups[0].Tasks[0].Config["mount"]; ok || len(j.TaskGroups[0].Tasks[0].Templates) != 1 {
+		t.Errorf("a run of a service without files has %+v", j.TaskGroups[0].Tasks[0])
+	}
+}
+
+// TestFilesDelimiters: the delimiters are the first pair neither of which is in the content.
+func TestFilesDelimiters(t *testing.T) {
+	for content, want := range map[string][2]string{
+		"":                          {"[[cv0", "cv0]]"},
+		"{{ a }} ${b} [[x]]":        {"[[cv0", "cv0]]"},
+		"a [[cv0 b":                 {"[[cv1", "cv1]]"},
+		"a cv0]] b":                 {"[[cv1", "cv1]]"},
+		"[[cv0 cv1]] [[cv2 cv0]] c": {"[[cv3", "cv3]]"},
+	} {
+		if l, r := filesDelimiters(content); l != want[0] || r != want[1] {
+			t.Errorf("filesDelimiters(%q) = %s %s, want %s %s", content, l, r, want[0], want[1])
+		}
+	}
+}

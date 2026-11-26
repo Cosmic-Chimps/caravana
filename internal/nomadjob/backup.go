@@ -230,10 +230,15 @@ func batchGroup(name string, tasks ...*api.Task) *api.TaskGroup {
 
 // variableTemplate renders the job's own variable as env, each value
 // JSON-quoted (see secretsTemplate).
-func variableTemplate(jobID string) *api.Template {
+func variableTemplate(jobID string) *api.Template { return runVariableTemplate(jobID, nil) }
+
+// runVariableTemplate is variableTemplate for a schedule run: the secrets the service's files hold (skip)
+// go to those files, not to the environment.
+func runVariableTemplate(jobID string, skip []string) *api.Template {
+	begin, end := skipItems(skip)
 	return &api.Template{
-		EmbeddedTmpl: new(fmt.Sprintf(`{{ with nomadVar %q }}{{ range .Tuples }}{{ .K }}={{ printf "%%s" .V | toJSON }}`+"\n"+`{{ end }}{{ end }}`,
-			BackupVariablePath(jobID))),
+		EmbeddedTmpl: new(fmt.Sprintf(`{{ with nomadVar %q }}{{ range .Tuples }}%s{{ .K }}={{ printf "%%s" .V | toJSON }}`+"\n"+`%s{{ end }}{{ end }}`,
+			BackupVariablePath(jobID), begin, end)),
 		DestPath:   new("secrets/backup.env"),
 		Envvars:    new(true),
 		ChangeMode: new("noop"),

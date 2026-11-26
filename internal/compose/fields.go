@@ -49,6 +49,9 @@ var supported = concat(
 		"services.*.restart", "services.*.container_name", "services.*.hostname",
 		"services.*.pull_policy", "services.*.stop_grace_period",
 		"services.*.networks", "services.*.networks.*",
+		"services.*.configs", "services.*.configs.*",
+		"services.*.configs.*.source", "services.*.configs.*.target", "services.*.configs.*.uid",
+		"services.*.configs.*.gid", "services.*.configs.*.mode",
 	),
 	subtree("services.*.volumes.*.bind"),
 	subtree("services.*.volumes.*.tmpfs"),
@@ -61,6 +64,11 @@ var supported = concat(
 	// driver (checkDrivers refuses any other). Aspire writes the drivers.
 	paths("volumes", "volumes.*", "volumes.*.name", "volumes.*.driver"),
 	paths("networks", "networks.*", "networks.*.name", "networks.*.driver"),
+
+	// Top-level configs: inline content only. A file, an environment variable or an external config is
+	// listed so that checkConfigs refuses it by name, with what to do instead.
+	paths("configs", "configs.*", "configs.*.name", "configs.*.content", "configs.*.file", "configs.*.environment",
+		"configs.*.external", "configs.*.external.name"),
 )
 
 func paths(ps ...string) []tree.Path {
@@ -90,7 +98,6 @@ var hints = map[string]string{
 	"build":        "Caravana deploys prebuilt images: push the image to a registry and use image:",
 	"env_file":     "Caravana doesn't read files from your disk: put the values in environment:, or send secret values in the request's secrets",
 	"secrets":      "Caravana doesn't read files from your disk: send secret values in the request's services.<name>.secrets",
-	"configs":      "Caravana doesn't read files from your disk: bake the file into the image",
 	"include":      "Caravana doesn't read other files: put every service in one file",
 	"extends":      "Caravana doesn't read other files: write the service out in full",
 	"profiles":     "every service of the file is deployed: remove the services you don't want, or the profiles",

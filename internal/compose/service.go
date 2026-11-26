@@ -51,6 +51,9 @@ func service(p *types.Project, sc types.ServiceConfig, ov Overlay) (app.Service,
 	if svc.Sysctls, err = sysctls(field, sc, warn); err != nil {
 		return app.Service{}, nil, err
 	}
+	if svc.Files, err = configFiles(field, p, sc); err != nil {
+		return app.Service{}, nil, err
+	}
 	if len(sc.Command) > 0 {
 		svc.Command, svc.Args = sc.Command[0], slices.Clone(sc.Command[1:])
 	}
@@ -273,6 +276,11 @@ func applyOverlay(field string, svc *app.Service, sc types.ServiceConfig, ov Ove
 
 	svc.Secrets, svc.Backup, svc.Identities = ov.Secrets, ov.Backup, ov.Identities
 	svc.Placement, svc.Scale, svc.Disconnect = ov.Placement, ov.Scale, ov.Disconnect
+	files, err := overlayFiles(field, ov, svc.Files)
+	if err != nil {
+		return err
+	}
+	svc.Files = files
 	return nil
 }
 

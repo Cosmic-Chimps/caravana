@@ -381,3 +381,44 @@ func TestDomainInputs(t *testing.T) {
 		t.Errorf("DomainInputs = %v, want %v", got, want)
 	}
 }
+
+// An overlay file's text is plain: it gets the plain inputs, and what a file names as its secret is the
+// secret's name, so the value stays in the secret. The template itself is never written to.
+func TestRenderOverlayFiles(t *testing.T) {
+	tpl := goodTemplate()
+	ov := tpl.Services["web"]
+	ov.Files = []app.File{
+		{Path: "/etc/demo.conf", Content: "public_url: https://{{domain}}\nbucket: {{bucket}}\n", Mode: "0640"},
+		{Path: "/certs/key.pem", Secret: "API_KEY", Mode: "0400"},
+	}
+	tpl.Services["web"] = ov
+
+	inputs, err := tpl.CheckInputs(map[string]string{"domain": "Demo.Example.com", "admin": "you@example.com", "api_key": "k-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{"db_password": "DBPASS"}
+	for k, v := range inputs {
+		values[k] = v
+	}
+	req, err := tpl.Render(values)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	files := req.Services["web"].Files
+	if len(files) != 2 || files[0].Content != "public_url: https://demo.example.com\nbucket: demo-bucket\n" || files[0].Mode != "0640" ||
+		files[1].Secret != "API_KEY" || files[1].Content != "" {
+		t.Errorf("files = %+v", files)
+	}
+	if tpl.Services["web"].Files[0].Content != "public_url: https://{{domain}}\nbucket: {{bucket}}\n" {
+		t.Error("rendering wrote to the template's file")
+	}
+	files[0].Content = "changed"
+	if tpl.Services["web"].Files[0].Content == "changed" {
+		t.Error("the request shares a file with the template")
+	}
+	// The whole template checks: the Compose file and the overlay, files included, make an app.
+	if _, err := ParseCatalog(bundleOf(t, "2026.11.12", tpl)); err != nil {
+		t.Errorf("the template with files doesn't parse: %v", err)
+	}
+}

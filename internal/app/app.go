@@ -101,6 +101,9 @@ type Service struct {
 	// "net.ipv4.tcp_keepalive_time" (feature 060). Anything else is refused: it
 	// would change the server.
 	Sysctls map[string]string `json:"sysctls,omitempty"`
+	// Files are config files and secret files mounted read-only in every copy
+	// (feature 060). None by default.
+	Files []File `json:"files,omitempty"`
 	// Placement says on which servers the copies may run, by the labels and
 	// names of the servers (feature 042). nil means any server that takes
 	// work.

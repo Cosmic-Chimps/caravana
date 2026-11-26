@@ -499,9 +499,13 @@ func SecretsPath(appID, service string) string {
 // exactly JSON's escapes in double quotes, so any UTF-8 value arrives byte
 // for byte (research R2). "noop" means a changed variable never touches a
 // running copy: new values reach copies only through a deploy's rollout.
-func secretsTemplate(appID, service string) *api.Template {
+//
+// skip names the secrets that go to files instead (the service's FileSecrets):
+// they never reach the environment.
+func secretsTemplate(appID, service string, skip []string) *api.Template {
+	begin, end := skipItems(skip)
 	tmpl := `{{ with nomadVar "` + SecretsPath(appID, service) + `" }}` +
-		`{{ range .Tuples }}{{ .K }}={{ printf "%s" .V | toJSON }}` + "\n" + `{{ end }}{{ end }}`
+		`{{ range .Tuples }}` + begin + `{{ .K }}={{ printf "%s" .V | toJSON }}` + "\n" + end + `{{ end }}{{ end }}`
 	return &api.Template{
 		EmbeddedTmpl: new(tmpl),
 		DestPath:     new("secrets/caravana.env"),
@@ -594,6 +598,9 @@ func task(appID string, svc app.Service, image string, s Settings, private map[s
 		config["auth"] = auth
 	}
 	config = withLimits(config, svc)
+	if mounts := fileMounts(svc); len(mounts) > 0 {
+		config["mount"] = mounts
+	}
 	if len(svc.Entrypoint) > 0 {
 		config["entrypoint"] = slices.Clone(svc.Entrypoint)
 	}
@@ -627,8 +634,9 @@ func task(appID string, svc app.Service, image string, s Settings, private map[s
 	}
 	// The job names the variable, never a value: values stay in the store.
 	if len(svc.Secrets) > 0 {
-		t.Templates = []*api.Template{secretsTemplate(appID, svc.Name)}
+		t.Templates = []*api.Template{secretsTemplate(appID, svc.Name, svc.FileSecrets())}
 	}
+	t.Templates = append(t.Templates, fileTemplates(SecretsPath(appID, svc.Name), svc)...)
 	if isPrivate {
 		t.Templates = append(t.Templates, pullCredentialsTemplate(appID, svc.Name))
 	}

@@ -595,10 +595,28 @@ func limitRows(svc app.Service) []defRow {
 	return rows
 }
 
+// fileRows are the service's files, read-only, one value per file: "/etc/app.yml · 0640 · 1.2 KB" for
+// content, "/certs/node.key · 0400 · from secret TLS_KEY" for a secret. The content itself is not drawn (it
+// may be long; the Compose file or the API has it). None when the service has none.
+func fileRows(svc app.Service) []defRow {
+	if len(svc.Files) == 0 {
+		return nil
+	}
+	var values []string
+	for _, f := range svc.Files {
+		what := humanBytes(int64(len(f.Content)))
+		if f.Secret != "" {
+			what = "from secret " + f.Secret
+		}
+		values = append(values, f.Path+" · "+f.Perms()+" · "+what)
+	}
+	return []defRow{{Label: "Files", Values: values}}
+}
+
 // alsoSet lists the facts of a service the form can't change and a save keeps,
 // for the grid's "Also set" panel: the entrypoint, the command and its
 // arguments, the volumes (mount → name), the backup, and the ports and health
-// check port the form has no input for, and the DNS settings, ulimits and sysctls. Nothing when
+// check port the form has no input for, and the DNS settings, ulimits, sysctls and files. Nothing when
 // none is set.
 func alsoSet(svc app.Service, s editService, host string) []defRow {
 	var rows []defRow
@@ -607,6 +625,7 @@ func alsoSet(svc app.Service, s editService, host string) []defRow {
 	}
 	rows = append(rows, dnsRows(svc)...)
 	rows = append(rows, limitRows(svc)...)
+	rows = append(rows, fileRows(svc)...)
 	rows = append(rows, publishedRows(svc, host)...)
 	if svc.Command != "" {
 		rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})
@@ -680,6 +699,7 @@ func servicePanels(a app.App, host string) []defPanel {
 		}
 		rows = append(rows, dnsRows(svc)...)
 		rows = append(rows, limitRows(svc)...)
+		rows = append(rows, fileRows(svc)...)
 		rows = append(rows, publishedRows(svc, host)...)
 		if svc.Command != "" {
 			rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})

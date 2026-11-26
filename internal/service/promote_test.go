@@ -896,6 +896,61 @@ func TestPromotedTakesTheSourcesLimits(t *testing.T) {
 	}
 }
 
+// A promotion takes the source's files, says so when they differ, and a file that names a secret the target
+// doesn't have fails validation at the file's field.
+func TestPromotedTakesTheSourcesFiles(t *testing.T) {
+	source, target := staging(), production()
+	source.Services[0].Files = []app.File{
+		{Path: "/etc/app.yml", Content: "a: 1\n", Mode: "0640", UID: new(1000)},
+		{Path: "/certs/db.key", Secret: "DB_URL"},
+	}
+
+	got, changes, _, err := promoted(target, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Services[0].Files, source.Services[0].Files) {
+		t.Errorf("files = %+v, want the source's", got.Services[0].Files)
+	}
+	got.Services[0].Files[0].Content = "changed"
+	if source.Services[0].Files[0].Content != "a: 1\n" {
+		t.Error("the target shares the source's files; they must be copies")
+	}
+	if !slices.Contains(changes[0].Changed, "files") {
+		t.Errorf("changes = %+v, want files listed", changes)
+	}
+	if err := app.ValidateApp(got); err != nil {
+		t.Errorf("the promoted app doesn't validate: %v", err)
+	}
+
+	// The same files (a mode written two ways) change nothing; a source with none clears the target's.
+	target.Services[0].Files = []app.File{
+		{Path: "/etc/app.yml", Content: "a: 1\n", Mode: "640", UID: new(1000)},
+		{Path: "/certs/db.key", Secret: "DB_URL", Mode: "0644"},
+	}
+	_, changes, _, _ = promoted(target, source)
+	if slices.Contains(changes[0].Changed, "files") {
+		t.Errorf("changes = %+v, the files are the same", changes)
+	}
+	source.Services[0].Files = nil
+	got, changes, _, _ = promoted(target, source)
+	if got.Services[0].Files != nil || !slices.Contains(changes[0].Changed, "files") {
+		t.Errorf("files = %+v, changes = %+v, want the target's cleared and files listed", got.Services[0].Files, changes)
+	}
+
+	// A file whose secret the target lacks is refused at the file's field.
+	source, target = staging(), production()
+	source.Services[0].Files = []app.File{{Path: "/certs/other.key", Secret: "OTHER_KEY"}}
+	got, _, _, err = promoted(target, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fe *app.FieldError
+	if err := app.ValidateApp(got); !errors.As(err, &fe) || fe.Field != "services[0].files[0].secret" {
+		t.Errorf("ValidateApp = %v, want a field error on services[0].files[0].secret", err)
+	}
+}
+
 // Spec 038: an identity's audience belongs to an environment, like a secret, so
 // a promotion keeps the target's identities and never takes the source's; a
 // service new to the target comes with its own.

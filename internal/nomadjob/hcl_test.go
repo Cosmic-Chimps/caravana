@@ -68,7 +68,7 @@ var hclCovers = []string{
 	"TaskGroups[].Tasks[].Lifecycle.Hook", "TaskGroups[].Tasks[].Lifecycle.Sidecar",
 	"TaskGroups[].Tasks[].Config.image", "TaskGroups[].Tasks[].Config.command", "TaskGroups[].Tasks[].Config.args",
 	"TaskGroups[].Tasks[].Config.entrypoint", "TaskGroups[].Tasks[].Config.auth",
-	"TaskGroups[].Tasks[].Config.ulimit", "TaskGroups[].Tasks[].Config.sysctl",
+	"TaskGroups[].Tasks[].Config.ulimit", "TaskGroups[].Tasks[].Config.sysctl", "TaskGroups[].Tasks[].Config.mount",
 	"TaskGroups[].Tasks[].Env",
 	"TaskGroups[].Tasks[].Resources.CPU", "TaskGroups[].Tasks[].Resources.MemoryMB", "TaskGroups[].Tasks[].Resources.MemoryMaxMB",
 	"TaskGroups[].Tasks[].Identities[].Name", "TaskGroups[].Tasks[].Identities[].Audience",
@@ -76,6 +76,8 @@ var hclCovers = []string{
 	"TaskGroups[].Tasks[].VolumeMounts[].Volume", "TaskGroups[].Tasks[].VolumeMounts[].Destination", "TaskGroups[].Tasks[].VolumeMounts[].ReadOnly",
 	"TaskGroups[].Tasks[].Templates[].EmbeddedTmpl", "TaskGroups[].Tasks[].Templates[].DestPath",
 	"TaskGroups[].Tasks[].Templates[].Envvars", "TaskGroups[].Tasks[].Templates[].ChangeMode",
+	"TaskGroups[].Tasks[].Templates[].Perms", "TaskGroups[].Tasks[].Templates[].Uid", "TaskGroups[].Tasks[].Templates[].Gid",
+	"TaskGroups[].Tasks[].Templates[].LeftDelim", "TaskGroups[].Tasks[].Templates[].RightDelim",
 	"TaskGroups[].Tasks[].Templates[].ChangeScript.Command", "TaskGroups[].Tasks[].Templates[].ChangeScript.Args",
 	"TaskGroups[].Tasks[].Templates[].ChangeScript.Timeout", "TaskGroups[].Tasks[].Templates[].ChangeScript.FailOnError",
 }

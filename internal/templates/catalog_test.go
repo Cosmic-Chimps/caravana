@@ -93,6 +93,21 @@ func TestParseCatalogRefusals(t *testing.T) {
 			ov.Health = &compose.Health{Path: "/{{nope}}"}
 			x.Services["web"] = ov
 		}, "demo: services.web.health.path:"},
+		{"a secret in a file's content", func(x *Template) {
+			ov := x.Services["web"]
+			ov.Files = []app.File{{Path: "/etc/demo.conf", Content: "password={{db_password}}\n"}}
+			x.Services["web"] = ov
+		}, "demo: services.web.files[0].content:"},
+		{"a secret input in a file's path", func(x *Template) {
+			ov := x.Services["web"]
+			ov.Files = []app.File{{Path: "/etc/{{api_key}}", Content: "x"}}
+			x.Services["web"] = ov
+		}, "demo: services.web.files[0].path:"},
+		{"unknown placeholder in a file's content", func(x *Template) {
+			ov := x.Services["web"]
+			ov.Files = []app.File{{Path: "/etc/demo.conf", Content: "{{nope}}"}}
+			x.Services["web"] = ov
+		}, "demo: services.web.files[0].content:"},
 		{"an input never used", func(x *Template) {
 			x.Inputs = append(x.Inputs, Input{Name: "extra", Label: "Extra", Type: TypeDomain, Example: "x.example.com"})
 		}, "demo: inputs.extra:"},

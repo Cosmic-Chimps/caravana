@@ -95,7 +95,7 @@ func TestApplyEditKeepsWhatTheFormDoesNotShow(t *testing.T) {
 		if svc.Name != want.Name || svc.Command != want.Command || !reflect.DeepEqual(svc.Args, want.Args) ||
 			!reflect.DeepEqual(svc.Env, want.Env) || !reflect.DeepEqual(svc.Domains, want.Domains) ||
 			!reflect.DeepEqual(svc.Entrypoint, want.Entrypoint) || !reflect.DeepEqual(svc.DNS, want.DNS) ||
-			!reflect.DeepEqual(svc.Ulimits, want.Ulimits) || !reflect.DeepEqual(svc.Sysctls, want.Sysctls) ||
+			!reflect.DeepEqual(svc.Ulimits, want.Ulimits) || !reflect.DeepEqual(svc.Sysctls, want.Sysctls) || !reflect.DeepEqual(svc.Files, want.Files) ||
 			!reflect.DeepEqual(svc.Secrets, want.Secrets) || !reflect.DeepEqual(svc.Volumes, want.Volumes) ||
 			!reflect.DeepEqual(svc.Backup, want.Backup) || svc.StopTimeout != want.StopTimeout {
 			t.Errorf("service %s lost something the form doesn't show:\n got: %+v\nwant: %+v", want.Name, svc, want)

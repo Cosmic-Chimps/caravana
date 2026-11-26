@@ -754,6 +754,15 @@ func overlayStrings(ov *compose.Overlay) []stringRef {
 			refs = append(refs, stringRef{field: fmt.Sprintf("secrets[%d].value", i), s: sec.Value, secretValue: true})
 		}
 	}
+	// A file's text is plain, never a secret value: a placeholder of a secret is refused here, like in any
+	// other plain string. (A file that holds a secret names it: its content is the secret's value.)
+	for i := range ov.Files {
+		f := &ov.Files[i]
+		refs = append(refs,
+			stringRef{field: fmt.Sprintf("files[%d].path", i), s: &f.Path},
+			stringRef{field: fmt.Sprintf("files[%d].content", i), s: &f.Content},
+			stringRef{field: fmt.Sprintf("files[%d].secret", i), s: &f.Secret})
+	}
 	if ov.Backup != nil {
 		refs = append(refs,
 			stringRef{field: "backup.file", s: &ov.Backup.File},

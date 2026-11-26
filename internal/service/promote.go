@@ -50,7 +50,7 @@ type ServiceChange struct {
 	ImageTo, DigestTo string
 	// Changed names the parts of the service's shape the promotion replaces
 	// with the source's and that differ: any of "entrypoint", "command", "args", "ports",
-	// "health", "volumes", "stopTimeout", "dns", "ulimits", "sysctls", "placement", "disconnect" and "build".
+	// "health", "volumes", "stopTimeout", "dns", "ulimits", "sysctls", "files", "placement", "disconnect" and "build".
 	Changed []string
 }
 
@@ -282,7 +282,7 @@ func (s *Service) planPromotion(ctx context.Context, appID, to string) (promotio
 // promoted builds the target as a promotion leaves it, from the target as
 // stored and the source as its newest deployment deployed it (research R4):
 // for each service both have, the source's image, build source, entrypoint, command, arguments, ports,
-// health check, volume mounts, stop timeout, DNS, ulimits and sysctls (they are the image's configuration, like
+// health check, volume mounts, stop timeout, DNS, ulimits, sysctls and files (they are the image's configuration, like
 // its entrypoint) and placement rules (they name servers and labels, which
 // belong to the cluster, not to an environment), and the target's everything else (identities
 // included: an audience belongs to an environment, like a secret). A service
@@ -340,6 +340,9 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		if !maps.Equal(t.Sysctls, s.Sysctls) {
 			change.Changed = append(change.Changed, "sysctls")
 		}
+		if !slices.EqualFunc(t.Files, s.Files, sameFile) {
+			change.Changed = append(change.Changed, "files")
+		}
 		if !samePlacement(t.Placement, s.Placement) {
 			change.Changed = append(change.Changed, "placement")
 		}
@@ -359,6 +362,7 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		t.StopTimeout = s.StopTimeout
 		t.DNS = cloneDNS(s.DNS)
 		t.Ulimits, t.Sysctls = maps.Clone(s.Ulimits), maps.Clone(s.Sysctls)
+		t.Files = slices.Clone(s.Files)
 		t.Placement = clonePlacement(s.Placement)
 		t.Disconnect = cloneDisconnect(s.Disconnect)
 		t.Build = cloneBuild(s.Build)
@@ -438,6 +442,20 @@ func sameDNS(a, b *app.DNS) bool {
 		y = *b
 	}
 	return slices.Equal(x.Servers, y.Servers) && slices.Equal(x.Searches, y.Searches) && slices.Equal(x.Options, y.Options)
+}
+
+// sameFile reports whether two files are the same: path, content, secret, mode (so "640" and "0640" are),
+// owner.
+func sameFile(a, b app.File) bool {
+	return a.Path == b.Path && a.Content == b.Content && a.Secret == b.Secret && a.Perms() == b.Perms() &&
+		sameOwner(a.UID, b.UID) && sameOwner(a.GID, b.GID)
+}
+
+func sameOwner(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // samePlacement reports whether two services' placement rules are the same; none and an empty one are the

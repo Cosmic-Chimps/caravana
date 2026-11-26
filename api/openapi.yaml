@@ -8439,6 +8439,19 @@ components:
             soft and hard). A promotion takes the source's.
           additionalProperties:
             $ref: "#/components/schemas/ServiceUlimit"
+        files:
+          type: array
+          maxItems: 16
+          description: |
+            Files mounted read-only in every copy (feature 060): a config file whose content is here, or a
+            file whose content is one of the service's own `secrets` (a certificate's key). A refusal names
+            `services[i].files[k].path`, `.content`, `.secret`, `.mode`, `.uid` or `.gid`; the content of all
+            the app's files is at most 256 KiB. A secret a file names is written to the file and not to the
+            environment; it is still write-only, may be a reference or a template, and is kept when sent
+            without a value. Compose's inline `configs` and the overlay's `files` set them. A promotion
+            takes the source's.
+          items:
+            $ref: "#/components/schemas/ServiceFile"
         sysctls:
           type: object
           maxProperties: 16
@@ -8693,6 +8706,16 @@ components:
           $ref: "#/components/schemas/ServiceScale"
         disconnect:
           $ref: "#/components/schemas/ServiceDisconnect"
+        files:
+          type: array
+          maxItems: 16
+          description: |
+            The service's files, with the meaning `Service.files` has. They are added to the files the
+            Compose file's `configs` make; a `path` in both is `invalid_field` on
+            `services.<service>.files[k].path`. A file that holds a secret names one of the overlay's
+            `secrets`.
+          items:
+            $ref: "#/components/schemas/ServiceFile"
         publish:
           type: array
           description: |
@@ -9120,6 +9143,36 @@ components:
           minimum: 60
           maximum: 86400
           description: Seconds the copies of an unreachable server are kept before they are called lost.
+
+    ServiceFile:
+      type: object
+      additionalProperties: false
+      required: [path]
+      description: |
+        One file of a service (feature 060). Exactly one of `content` and `secret` is set. The content is part of
+        the stored app and of its exports: nothing secret goes there.
+      properties:
+        path:
+          type: string
+          maxLength: 1024
+          description: |
+            Where the file is in the container: absolute, clean (no `//`, `.` or `..`, no trailing `/`), printable
+            without spaces, not `/`, not in `/proc`, `/sys`, `/dev`, `/alloc`, `/local` or `/secrets`, not
+            `/etc/hosts`, `/etc/hostname` or `/etc/resolv.conf`, not a volume's mount path (inside one is fine),
+            and once in the service.
+        content:
+          type: string
+          maxLength: 65536
+          description: The file's text, valid UTF-8 without NUL, at most 64 KiB.
+        secret:
+          type: string
+          description: The name of one of the service's `secrets`, whose value is the file's content.
+        mode:
+          type: string
+          pattern: "^0?[0-7]{3}$"
+          description: The file's permissions in octal. Absent means `0644`.
+        uid: {type: integer, minimum: 0, maximum: 65535}
+        gid: {type: integer, minimum: 0, maximum: 65535}
 
     ServiceUlimit:
       type: object
@@ -10341,6 +10394,10 @@ components:
         publish:
           type: array
           items: {$ref: "#/components/schemas/TemplateOverlayItem"}
+        files:
+          type: array
+          description: As `ComposeOverlay.files`; `path`, `content` and `secret` may hold `{{placeholders}}` of plain inputs.
+          items: {$ref: "#/components/schemas/ServiceFile"}
 
     TemplateOverlayItem:
       type: object
@@ -15117,7 +15174,7 @@ components:
             target's now.
           items:
             type: string
-            enum: [entrypoint, command, args, ports, health, volumes, stopTimeout, dns, ulimits, sysctls, placement, disconnect, build]
+            enum: [entrypoint, command, args, ports, health, volumes, stopTimeout, dns, ulimits, sysctls, files, placement, disconnect, build]
 
     PromotionPreview:
       type: object

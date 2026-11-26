@@ -70,6 +70,9 @@ func ScheduleRunJob(a app.App, runID string, svc app.Service, image string, comm
 	config = withPullAuth(config, image, private)
 	// A run has the limits its service's copies have.
 	config = withLimits(config, svc)
+	if mounts := fileMounts(svc); len(mounts) > 0 {
+		config["mount"] = mounts
+	}
 
 	var env map[string]string // nil when there are none, so the job has no Env
 	if len(svc.Env) > 0 {
@@ -91,7 +94,7 @@ func ScheduleRunJob(a app.App, runID string, svc app.Service, image string, comm
 			MemoryMaxMB: new(max(memoryMB, ceiling)),
 		},
 		Identities:  workloadIdentities(svc),
-		Templates:   []*api.Template{variableTemplate(id)},
+		Templates:   append([]*api.Template{runVariableTemplate(id, svc.FileSecrets())}, fileTemplates(ScheduleRunVariablePath(id), svc)...),
 		KillTimeout: new(scheduleKillTimeout),
 		LogConfig:   &api.LogConfig{MaxFiles: new(scheduleLogFiles), MaxFileSizeMB: new(scheduleLogFileMB)},
 	}

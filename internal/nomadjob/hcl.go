@@ -244,6 +244,11 @@ func (w *hclWriter) template(t *api.Template) {
 		w.optString("destination", t.DestPath)
 		w.optBool("env", t.Envvars)
 		w.optString("change_mode", t.ChangeMode)
+		w.optString("perms", t.Perms)
+		w.optInt("uid", t.Uid)
+		w.optInt("gid", t.Gid)
+		w.optString("left_delimiter", t.LeftDelim)
+		w.optString("right_delimiter", t.RightDelim)
 		if cs := t.ChangeScript; cs != nil {
 			w.block("change_script", nil, func() {
 				w.optString("command", cs.Command)
@@ -358,14 +363,16 @@ func identifierKeys(m map[string]any) bool {
 	return true
 }
 
-// configValue writes a docker driver option: Translate sets strings and lists
-// of strings only.
+// configValue writes a docker driver option: Translate sets strings, lists of
+// strings and booleans (a mount's readonly) only.
 func configValue(v any) string {
 	switch v := v.(type) {
 	case string:
 		return quote(v)
 	case []string:
 		return quoteList(v)
+	case bool:
+		return strconv.FormatBool(v)
 	default:
 		// The coverage test catches a new type before it reaches an export.
 		return quote(fmt.Sprint(v))
@@ -376,7 +383,8 @@ func configValue(v any) string {
 // newline (a heredoc always does), so it stays readable; otherwise quoted.
 // Only "${" and "%{" need escaping in a heredoc.
 func templateData(s string) string {
-	if !strings.HasSuffix(s, "\n") {
+	// A carriage return would not survive a heredoc, whose lines end in \n.
+	if !strings.HasSuffix(s, "\n") || strings.Contains(s, "\r") {
 		return quote(s)
 	}
 	marker := "EOT"

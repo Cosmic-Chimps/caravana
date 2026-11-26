@@ -299,6 +299,73 @@ func TestValidate(t *testing.T) {
 			}
 		}, "services[1].sysctls"},
 
+		// Files (feature 060).
+		{"valid files", func(a *App, d *Deployment) {
+			a.Services[1].Secrets = []Secret{{Name: "TLS_KEY"}}
+			a.Services[1].Files = []File{
+				{Path: "/usr/share/opensearch/config/opensearch.yml", Content: "cluster.name: x\n", Mode: "0640", UID: new(1000), GID: new(0)},
+				{Path: "/certs/node.key", Secret: "TLS_KEY", Mode: "400"},
+				{Path: "/certs/node2.key", Secret: "TLS_KEY"},
+			}
+		}, ""},
+		{"valid file inside a volume", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Files = []File{{Path: "/data/conf/app.yml", Content: "a: 1"}}
+		}, ""},
+		{"file path relative", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "etc/app.yml", Content: "a"}} }, "services[1].files[0].path"},
+		{"file path empty", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Content: "a"}} }, "services[1].files[0].path"},
+		{"file path root", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/", Content: "a"}} }, "services[1].files[0].path"},
+		{"file path unclean", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/etc/../app.yml", Content: "a"}} }, "services[1].files[0].path"},
+		{"file path trailing slash", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/etc/app/", Content: "a"}} }, "services[1].files[0].path"},
+		{"file path with a space", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/etc/my app.yml", Content: "a"}} }, "services[1].files[0].path"},
+		{"file path in proc", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/proc/x", Content: "a"}} }, "services[1].files[0].path"},
+		{"file path in secrets", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/secrets/x", Content: "a"}} }, "services[1].files[0].path"},
+		{"file path hosts", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/etc/hosts", Content: "a"}} }, "services[1].files[0].path"},
+		{"file path a volume's mount", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Files = []File{{Path: "/data", Content: "a"}}
+		}, "services[1].files[0].path"},
+		{"file path twice", func(a *App, d *Deployment) {
+			a.Services[1].Files = []File{{Path: "/a", Content: "a"}, {Path: "/a", Content: "b"}}
+		}, "services[1].files[1].path"},
+		{"file with neither", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/a"}} }, "services[1].files[0]"},
+		{"file with both", func(a *App, d *Deployment) {
+			a.Services[1].Secrets = []Secret{{Name: "K"}}
+			a.Services[1].Files = []File{{Path: "/a", Content: "x", Secret: "K"}}
+		}, "services[1].files[0]"},
+		{"file secret not the service's", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "K"}}
+			a.Services[1].Files = []File{{Path: "/a", Secret: "K"}}
+		}, "services[1].files[0].secret"},
+		{"file content with NUL", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/a", Content: "a\x00b"}} }, "services[1].files[0].content"},
+		{"file content not UTF-8", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/a", Content: "a\xffb"}} }, "services[1].files[0].content"},
+		{"file content too large", func(a *App, d *Deployment) {
+			a.Services[1].Files = []File{{Path: "/a", Content: strings.Repeat("x", 64<<10+1)}}
+		}, "services[1].files[0].content"},
+		{"files too large together", func(a *App, d *Deployment) {
+			for i := 0; i < 5; i++ {
+				a.Services[1].Files = append(a.Services[1].Files, File{Path: fmt.Sprintf("/f%d", i), Content: strings.Repeat("x", 60<<10)})
+			}
+		}, "services[1].files[4].content"},
+		{"files too large across services", func(a *App, d *Deployment) {
+			for i := 0; i < 4; i++ {
+				a.Services[0].Files = append(a.Services[0].Files, File{Path: fmt.Sprintf("/f%d", i), Content: strings.Repeat("x", 60<<10)})
+			}
+			a.Services[1].Files = []File{{Path: "/g", Content: strings.Repeat("x", 60<<10)}}
+		}, "services[1].files[0].content"},
+		{"file mode a word", func(a *App, d *Deployment) {
+			a.Services[1].Files = []File{{Path: "/a", Content: "a", Mode: "rw-r--r--"}}
+		}, "services[1].files[0].mode"},
+		{"file mode 8", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/a", Content: "a", Mode: "0680"}} }, "services[1].files[0].mode"},
+		{"file mode too long", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/a", Content: "a", Mode: "00644"}} }, "services[1].files[0].mode"},
+		{"file uid negative", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/a", Content: "a", UID: new(-1)}} }, "services[1].files[0].uid"},
+		{"file gid too large", func(a *App, d *Deployment) { a.Services[1].Files = []File{{Path: "/a", Content: "a", GID: new(65536)}} }, "services[1].files[0].gid"},
+		{"seventeen files", func(a *App, d *Deployment) {
+			for i := 0; i < 17; i++ {
+				a.Services[1].Files = append(a.Services[1].Files, File{Path: fmt.Sprintf("/f%d", i), Content: "a"})
+			}
+		}, "services[1].files"},
+
 		// Env.
 		{"env name empty", func(a *App, d *Deployment) { a.Services[0].Env = []EnvVar{{Name: "", Value: "x"}} }, "services[0].env[0].name"},
 		{"env name with =", func(a *App, d *Deployment) { a.Services[0].Env = []EnvVar{{Name: "A=B"}} }, "services[0].env[0].name"},
@@ -1227,6 +1294,27 @@ func TestLimitsOmittedFromJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(b), "ulimits") || strings.Contains(string(b), "sysctls") {
+		t.Errorf("JSON = %s", b)
+	}
+}
+
+// A file's mode as Nomad's template takes it, and its secrets in order.
+func TestFilePermsAndSecrets(t *testing.T) {
+	for mode, want := range map[string]string{"": "0644", "640": "0640", "0600": "0600", "400": "0400"} {
+		if got := (File{Mode: mode}).Perms(); got != want {
+			t.Errorf("Perms(%q) = %q, want %q", mode, got, want)
+		}
+	}
+	svc := Service{Files: []File{{Path: "/a", Secret: "B"}, {Path: "/b", Content: "x"}, {Path: "/c", Secret: "A"}, {Path: "/d", Secret: "B"}}}
+	if got := svc.FileSecrets(); len(got) != 2 || got[0] != "B" || got[1] != "A" {
+		t.Errorf("FileSecrets = %v", got)
+	}
+}
+
+// A service without files stores the same JSON as before the feature.
+func TestFilesOmittedFromJSON(t *testing.T) {
+	b, _ := json.Marshal(Service{Name: "web", Image: "x"})
+	if strings.Contains(string(b), "files") {
 		t.Errorf("JSON = %s", b)
 	}
 }

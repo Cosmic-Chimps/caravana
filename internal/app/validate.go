@@ -57,7 +57,8 @@ const (
 // The order is fixed, so the same input always reports the same error:
 //  1. id, name, source.kind, services (at least one)
 //  2. each service in order: name, image, build, replicas, resources, env, secrets,
-//     identities, dns, ulimits, sysctls, placement, scale, ports, domains, health, disconnect, then volumes;
+//     identities, dns, ulimits, sysctls, placement, scale, ports, domains, health, disconnect, then volumes
+//     and files;
 //     a second built service is refused after the service that comes first
 //  3. deployment: id, trigger, a digest for each service in order, then any
 //     extra digest keys in sorted order
@@ -93,6 +94,7 @@ func ValidateApp(a App) error {
 	published := map[int]string{} // across the whole app: one published port, one claim
 	volumes := map[string]bool{}  // across the whole app: one volume, one service
 	built := -1                   // the first built service: an app has one
+	fileBytes := 0                // across the whole app: the plain content of every file
 	for i, svc := range a.Services {
 		if err := validateService(a.ID, i, svc, names, hosts, published); err != nil {
 			return err
@@ -104,6 +106,10 @@ func ValidateApp(a App) error {
 			built = i
 		}
 		if err := validateVolumes(fmt.Sprintf("services[%d]", i), svc, volumes); err != nil {
+			return err
+		}
+		var err error
+		if fileBytes, err = validateFiles(fmt.Sprintf("services[%d]", i), svc, fileBytes); err != nil {
 			return err
 		}
 		if err := validateBackup(fmt.Sprintf("services[%d].backup", i), svc); err != nil {

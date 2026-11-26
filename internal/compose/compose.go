@@ -90,6 +90,10 @@ type Overlay struct {
 	// server stops answering, as in app.Service (network blips). nil means
 	// the default.
 	Disconnect *app.Disconnect `json:"disconnect,omitempty"`
+	// Files are config files and secret files mounted read-only in every
+	// copy, as in app.Service (spec 060). They are added to the files the
+	// file's configs make; a path in both is refused.
+	Files []app.File `json:"files,omitempty"`
 	// Publish opens ports of the service on the server's address (spec 041).
 	// The file's own published numbers only warn: an entry here is how the
 	// owner publishes one.
@@ -100,7 +104,8 @@ type Overlay struct {
 // service.
 func (o Overlay) Empty() bool {
 	return len(o.Domains) == 0 && o.Health == nil && len(o.Secrets) == 0 && o.Backup == nil &&
-		len(o.Identities) == 0 && o.Placement == nil && o.Scale == nil && o.Disconnect == nil && len(o.Publish) == 0
+		len(o.Identities) == 0 && o.Placement == nil && o.Scale == nil && o.Disconnect == nil && len(o.Publish) == 0 &&
+		len(o.Files) == 0
 }
 
 // Publish publishes one container port of the service.
@@ -232,6 +237,9 @@ func load(appID, src string) (*types.Project, error) {
 		return nil, refused(unsupported[0])
 	}
 	if err := checkDrivers(p); err != nil {
+		return nil, err
+	}
+	if err := checkConfigs(p); err != nil {
 		return nil, err
 	}
 	return p, nil

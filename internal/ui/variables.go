@@ -92,6 +92,9 @@ type variableRow struct {
 	// holds no secret, but the row says where the pieces come from.
 	Template bool
 	Refs     []refLine
+	// FileNote says a file holds this secret, and where: "written to /certs/node.key, not to the
+	// environment" (feature 060). Empty for any other row. It names paths, never the value.
+	FileNote string
 }
 
 // refLine is one reference of a template secret, for a read-only row.
@@ -150,7 +153,7 @@ func variableRowsOf(a app.App) []variableRow {
 	for _, svc := range a.Services {
 		for _, sec := range svc.Secrets {
 			secretRows = append(secretRows, variableRow{Service: svc.Name, Name: sec.Name, Secret: true, From: sec.From,
-				Template: sec.Template != "", Refs: refLinesOf(sec.Refs)})
+				Template: sec.Template != "", Refs: refLinesOf(sec.Refs), FileNote: fileNote(svc, sec.Name)})
 		}
 		for _, v := range svc.Env {
 			varRows = append(varRows, variableRow{Service: svc.Name, Name: v.Name, Value: v.Value})
@@ -162,6 +165,21 @@ func variableRowsOf(a app.App) []variableRow {
 	slices.SortFunc(secretRows, byName)
 	slices.SortFunc(varRows, byName)
 	return append(secretRows, varRows...)
+}
+
+// fileNote is the row's note for a secret the service's files hold: where it is written, and that it never
+// reaches the environment. "" when no file holds it.
+func fileNote(svc app.Service, secret string) string {
+	var paths []string
+	for _, f := range svc.Files {
+		if f.Secret == secret {
+			paths = append(paths, f.Path)
+		}
+	}
+	if len(paths) == 0 {
+		return ""
+	}
+	return "written to " + strings.Join(paths, ", ") + ", not to the environment"
 }
 
 // variablesExtras is what an answer adds to the page: the Add form as typed with

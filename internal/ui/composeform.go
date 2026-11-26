@@ -49,6 +49,11 @@ type composeDraft struct {
 	// them, so request sends these. Nil for a new app, which has none.
 	keptIdentities map[string][]app.Identity
 
+	// keptFiles is, for an app that exists, each service's files as the
+	// overlay's files list (spec 060). The form has no input for them, so
+	// request sends these. Nil for a new app, which has none.
+	keptFiles map[string][]app.File
+
 	// keptPublish is, for an app that exists, each service's published ports
 	// as the overlay's publish list (spec 041). The form has no input for
 	// them, so request sends these. Nil for a new app, which has none.
@@ -452,6 +457,9 @@ func (d composeDraft) request() compose.Request {
 		if d.keptIdentities != nil {
 			ov.Identities = d.keptIdentities[s.Name]
 		}
+		if d.keptFiles != nil {
+			ov.Files = d.keptFiles[s.Name]
+		}
 		if d.keptPublish != nil {
 			ov.Publish = d.keptPublish[s.Name]
 		}
@@ -566,6 +574,31 @@ func (d *composeDraft) keepIdentities(rec store.AppRecord) {
 			continue
 		}
 		d.keptIdentities[svc.Name] = slices.Clone(identities)
+		if _, ok := d.service(svc.Name); !ok {
+			d.Services = append(d.Services, newDraftService(svc.Name))
+		}
+	}
+	d.sortServices()
+}
+
+// keepFiles makes the draft carry the files the stored app has (spec 060): the
+// form doesn't edit them, so a preview or a deploy from it must not drop one
+// (constitution IV). An app that keeps its file has them in the file's overlay,
+// exactly as written (the files its configs make are in the file); any other app
+// has them on its services, where they are all sent as the overlay's. A service
+// the draft lacks gets its inputs, so its files travel; one the new file doesn't
+// have is dropped with them, as its other settings are.
+func (d *composeDraft) keepFiles(rec store.AppRecord) {
+	d.keptFiles = map[string][]app.File{}
+	for _, svc := range rec.App.Services {
+		files := svc.Files
+		if rec.Compose != nil {
+			files = rec.Compose.Services[svc.Name].Files
+		}
+		if len(files) == 0 {
+			continue
+		}
+		d.keptFiles[svc.Name] = slices.Clone(files)
 		if _, ok := d.service(svc.Name); !ok {
 			d.Services = append(d.Services, newDraftService(svc.Name))
 		}
@@ -752,7 +785,7 @@ func cloneBackup(b *app.Backup) *app.Backup {
 
 // keepAll makes the draft the form of an app that exists: its services are the
 // stored app's, and everything the form has no input for (secrets by name,
-// domains, identities, published ports, placement, scaling, disconnect, health
+// domains, identities, files, published ports, placement, scaling, disconnect, health
 // and backup) comes from the stored record. Anything the post carried for the
 // services is dropped first, so a form drawn before feature 059 can't change
 // what this form no longer shows.
@@ -762,6 +795,7 @@ func (d *composeDraft) keepAll(rec store.AppRecord) {
 	d.keepStored(rec.App)
 	d.keepDomains(rec)
 	d.keepIdentities(rec)
+	d.keepFiles(rec)
 	d.keepPublish(rec)
 	d.keepPlacement(rec)
 	d.keepScale(rec)

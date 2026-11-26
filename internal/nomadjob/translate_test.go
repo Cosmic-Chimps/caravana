@@ -77,6 +77,7 @@ func goldenCases() []goldenCase {
 	cases = append(cases, identityCases()...)
 	cases = append(cases, dnsCases()...)
 	cases = append(cases, limitsCases()...)
+	cases = append(cases, filesCases()...)
 	cases = append(cases, placementCases()...)
 	cases = append(cases, scaleCases()...)
 	cases = append(cases, disconnectCases()...)
@@ -283,6 +284,38 @@ func limitsCases() []goldenCase {
 		"plain":   "ghcr.io/acme/plain@sha256:" + strings.Repeat("f", 64),
 	}}
 	return []goldenCase{{name: "ulimits", app: shop, deployment: dep, settings: labSettings()}}
+}
+
+// filesCases is a service with every kind of file: content with the characters that mean something to
+// Nomad's templates and to HCL, a content that holds the first delimiters, one with a carriage return, one
+// owned by another user, and two secret files, one of them named by two paths; its other secret stays in the
+// environment. A plain service beside it shows nothing else changes.
+func filesCases() []goldenCase {
+	shop := app.App{
+		ID:     "shop",
+		Source: app.Source{Kind: app.SourceImage},
+		Services: []app.Service{
+			{
+				Name:    "indexer",
+				Image:   "opensearchproject/opensearch:2.19.1",
+				Secrets: []app.Secret{{Name: "TLS_KEY"}, {Name: "ADMIN_PASSWORD"}, {Name: "INTERNAL_USERS"}},
+				Files: []app.File{
+					{Path: "/usr/share/opensearch/config/opensearch.yml", Content: "cluster.name: shop\nnote: {{ not a template }} ${HOME} %{x} [[x]]\n"},
+					{Path: "/etc/app/delims.conf", Content: "a [[cv0 b cv0]] c", Mode: "0600"},
+					{Path: "/etc/app/crlf.txt", Content: "one\r\ntwo\r\n", Mode: "640", UID: new(1000), GID: new(0)},
+					{Path: "/certs/node.key", Secret: "TLS_KEY", Mode: "0400"},
+					{Path: "/certs/node-copy.key", Secret: "TLS_KEY", Mode: "0400"},
+					{Path: "/usr/share/opensearch/config/internal_users.yml", Secret: "INTERNAL_USERS", UID: new(1000), GID: new(1000)},
+				},
+			},
+			{Name: "plain", Image: "ghcr.io/acme/plain:main", Secrets: []app.Secret{{Name: "TOKEN"}}},
+		},
+	}
+	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"indexer": "opensearchproject/opensearch@sha256:" + strings.Repeat("d", 64),
+		"plain":   "ghcr.io/acme/plain@sha256:" + strings.Repeat("f", 64),
+	}}
+	return []goldenCase{{name: "files", app: shop, deployment: dep, settings: labSettings()}}
 }
 
 // placementCases is a service of two copies with every kind of placement

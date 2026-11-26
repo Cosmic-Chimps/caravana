@@ -220,6 +220,7 @@ func (t Template) PreviewValues(inputs map[string]string) map[string]string {
 // strings, slices and pointers never changes the original.
 func cloneOverlay(ov compose.Overlay) compose.Overlay {
 	ov.Domains = slices.Clone(ov.Domains)
+	ov.Files = slices.Clone(ov.Files)
 	if ov.Health != nil {
 		h := *ov.Health
 		ov.Health = &h

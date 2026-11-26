@@ -31,6 +31,7 @@ func shopApp() app.App {
 				DNS:       &app.DNS{Servers: []string{"1.1.1.1", "10.0.0.2"}, Searches: []string{"corp.example.com"}},
 				Ulimits:   map[string]app.Ulimit{"nofile": {Soft: 65536, Hard: 65536}, "memlock": {Soft: -1, Hard: -1}},
 				Sysctls:   map[string]string{"net.core.somaxconn": "1024"},
+				Files:     []app.File{{Path: "/etc/shop.yml", Content: "a: 1\n", Mode: "0640"}, {Path: "/etc/other.yml", Content: "b: 2\n"}},
 				Env:       []app.EnvVar{{Name: "LOG_LEVEL", Value: "debug-value-x1"}, {Name: "API_KEY", Value: "s3cr3t-value-9f2"}},
 				Ports:     []app.Port{{Name: "http", ContainerPort: 8080}},
 				Domains:   []app.Domain{{Host: "shop.example.com", Port: "http"}},
@@ -165,7 +166,7 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 		for _, want := range []string{"Copies & size", "Copies", "CPU MHz", "Memory MB", "Ceiling MB",
 			"Health check Path GET", "Every s", "Timeout s",
 			"New copies must pass this check before they take traffic; if they don't, the deploy is reverted.",
-			"Also set", "Entrypoint /entry.sh --strict", "DNS servers 1.1.1.1 10.0.0.2", "DNS search domains corp.example.com", "Ulimits memlock -1:-1 nofile 65536:65536", "Sysctls net.core.somaxconn = 1024", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
+			"Also set", "Entrypoint /entry.sh --strict", "DNS servers 1.1.1.1 10.0.0.2", "DNS search domains corp.example.com", "Ulimits memlock -1:-1 nofile 65536:65536", "Sysctls net.core.somaxconn = 1024", "Files /etc/shop.yml · 0640 · 5 B /etc/other.yml · 0644 · 5 B", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
 			"Placement", "Scaling", "Save and deploy web", "Save and deploy worker"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("Services lacks %q:\n%s", want, got)
@@ -931,5 +932,63 @@ func TestLimitRowsInBothPanels(t *testing.T) {
 	}
 	if got := limits(panelRows(svc)); !reflect.DeepEqual(got, want) {
 		t.Errorf("servicePanels = %v, want %v", got, want)
+	}
+}
+
+// A service's files are shown read-only in both panels: path, mode and the size of the content, or the secret
+// that holds it, and nothing without files. The content itself is never drawn.
+func TestFileRowsInBothPanels(t *testing.T) {
+	files := func(rows []defRow) []defRow {
+		var out []defRow
+		for _, r := range rows {
+			if r.Label == "Files" {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	panelRows := func(svc app.Service) []defRow {
+		var rows []defRow
+		for _, p := range servicePanels(app.App{ID: "shop", Services: []app.Service{svc}}, "") {
+			rows = append(rows, p.Rows...)
+		}
+		return rows
+	}
+
+	svc := app.Service{Name: "web", Image: "x:1"}
+	if got := files(alsoSet(svc, newEditService(svc), "")); len(got) != 0 {
+		t.Errorf("alsoSet without files has %v", got)
+	}
+	if got := files(panelRows(svc)); len(got) != 0 {
+		t.Errorf("servicePanels without files has %v", got)
+	}
+
+	svc.Secrets = []app.Secret{{Name: "TLS_KEY"}}
+	svc.Files = []app.File{
+		{Path: "/etc/app.yml", Content: strings.Repeat("secret-looking-content ", 100), Mode: "640"},
+		{Path: "/certs/key.pem", Secret: "TLS_KEY"},
+	}
+	want := []defRow{{Label: "Files", Values: []string{"/etc/app.yml · 0640 · 2.2 KB", "/certs/key.pem · 0644 · from secret TLS_KEY"}}}
+	if got := files(alsoSet(svc, newEditService(svc), "")); !reflect.DeepEqual(got, want) {
+		t.Errorf("alsoSet = %v, want %v", got, want)
+	}
+	if got := files(panelRows(svc)); !reflect.DeepEqual(got, want) {
+		t.Errorf("servicePanels = %v, want %v", got, want)
+	}
+}
+
+// The Variables page says where a secret that a file holds is written.
+func TestVariableRowsMarkSecretsInFiles(t *testing.T) {
+	a := app.App{ID: "shop", Services: []app.Service{{
+		Name: "web", Image: "x:1",
+		Secrets: []app.Secret{{Name: "TLS_KEY"}, {Name: "API_KEY"}},
+		Files:   []app.File{{Path: "/certs/a.key", Secret: "TLS_KEY"}, {Path: "/certs/b.key", Secret: "TLS_KEY"}, {Path: "/etc/x", Content: "x"}},
+	}}}
+	notes := map[string]string{}
+	for _, r := range variableRowsOf(a) {
+		notes[r.Name] = r.FileNote
+	}
+	if notes["TLS_KEY"] != "written to /certs/a.key, /certs/b.key, not to the environment" || notes["API_KEY"] != "" {
+		t.Errorf("notes = %v", notes)
 	}
 }
