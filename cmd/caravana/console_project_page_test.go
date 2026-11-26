@@ -248,7 +248,7 @@ func (c *console) projectPage(t *testing.T) {
 	}
 
 	// 6. The sidebar's order.
-	want := []string{"/apps", "/projects", "/logs", "/monitoring", "/schedules", "/domains", "/settings"}
+	want := []string{"/apps", "/projects", "/previews", "/logs", "/requests", "/monitoring", "/schedules", "/domains", "/settings"}
 	for _, path := range []string{"/apps", "/projects/default", "/projects/" + project + "/settings"} {
 		_, body := c.get(t, path)
 		aside := sidebarAside.FindString(body)
