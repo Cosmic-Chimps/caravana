@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.65.1
+  version: 0.66.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -13455,7 +13455,7 @@ components:
         `null` when it has none, never 0.
       required: [id, name, index, pool, state, managed, first, ingress, controlPlane, nomadServer, acceptsWork, address,
         privateAddress, createdAt, joinedAt, readyAt, seenAt, expiresAt, checks, agent, certificateExpiresAt, memory,
-        cpu, disks, copies, unreachable, labels, labelsApplied, move]
+        cpu, disks, copies, unreachable, labels, labelsApplied, move, vmMaxMapCount]
       properties:
         id:
           type: string
@@ -13520,6 +13520,14 @@ components:
             - type: "null"
           description: What the agent said about the machine; `null` before it did.
         certificateExpiresAt: {type: string, description: "When the server's Nomad certificate ends."}
+        vmMaxMapCount:
+          oneOf:
+            - type: integer
+              minimum: 1
+            - type: "null"
+          description: |
+            The kernel's `vm.max_map_count` as the agent read it (feature 060); `null` before it did, and for an agent
+            older than the feature. OpenSearch and Elasticsearch need at least 262144, which the installer sets.
         memory:
           oneOf:
             - type: object
@@ -14209,6 +14217,10 @@ components:
             id: {type: string, pattern: "^[0-9a-f]{32}$"}
             state: {type: string, enum: [applied, failed, refused, running]}
             reason: {type: string, maxLength: 300, description: One printable line.}
+        vmMaxMapCount:
+          type: integer
+          minimum: 1
+          description: The kernel's `vm.max_map_count` (feature 060). Left out when /proc can't say, and by an agent older than the feature.
         traefikStore:
           type: boolean
           description: |

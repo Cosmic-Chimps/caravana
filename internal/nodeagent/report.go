@@ -60,6 +60,10 @@ type Report struct {
 	// when there was none.
 	TraefikStore    bool                    `json:"traefikStore,omitempty"`
 	CertificateDrop *CertificateDropOutcome `json:"certificateDrop,omitempty"`
+	// VMMaxMapCount is the kernel's vm.max_map_count (feature 060): OpenSearch and Elasticsearch need at
+	// least 262144 and the installer sets that. Left out (0) when /proc can't say, and for an agent older
+	// than the feature.
+	VMMaxMapCount int64 `json:"vmMaxMapCount,omitempty"`
 }
 
 // Facts are what a join tells the console about a new server (api.md §4, POST /v1/join).
@@ -109,6 +113,7 @@ func (a *Agent) Report(ctx context.Context, st State) Report {
 		DiskFreeMB: f.DiskFreeMB, DiskTotalMB: f.DiskTotalMB, MemoryMB: f.MemoryMB, Kernel: f.Kernel,
 		Role: st.Role, Issuer: st.Issuer, Reach: []Reach{}, ConsoleAddress: st.ConsoleAddress.reported(),
 		TraefikStore: a.HasTraefikStore(), CertificateDrop: st.CertificateDrop,
+		VMMaxMapCount: a.vmMaxMapCount(),
 	}
 	if b, ok, err := readIfExists(a.path(agentCert)); err == nil && ok {
 		if end, err := clusterca.NotAfter(b); err == nil {

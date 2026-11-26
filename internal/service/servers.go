@@ -135,6 +135,9 @@ type NodeReport struct {
 	// it. CertificateDrop is how the last drop request this agent handled went; nil when it handled none.
 	TraefikStore    bool                    `json:"traefikStore,omitempty"`
 	CertificateDrop *NodeCertificateOutcome `json:"certificateDrop,omitempty"`
+	// VMMaxMapCount is the kernel's vm.max_map_count on this server (feature 060); 0 when the agent
+	// doesn't say.
+	VMMaxMapCount int64 `json:"vmMaxMapCount,omitempty"`
 }
 
 // JoinRequest is the body of POST /v1/join.
@@ -243,6 +246,8 @@ type ServerView struct {
 	LabelsApplied bool
 	// Move is the server's newest move of work off it, nil when it never had one.
 	Move *MoveView
+	// VMMaxMapCount is the kernel's vm.max_map_count the agent read (feature 060); 0 when unknown.
+	VMMaxMapCount int64
 }
 
 // ClusterView is the cluster as a whole.
@@ -673,7 +678,7 @@ func validateReport(r NodeReport) error {
 	for _, c := range []struct {
 		field string
 		value int64
-	}{{"diskFreeMb", r.DiskFreeMB}, {"diskTotalMb", r.DiskTotalMB}, {"memoryMb", r.MemoryMB}} {
+	}{{"diskFreeMb", r.DiskFreeMB}, {"diskTotalMb", r.DiskTotalMB}, {"memoryMb", r.MemoryMB}, {"vmMaxMapCount", r.VMMaxMapCount}} {
 		if c.value < 0 || c.value > 1<<40 {
 			return app.NewFieldError(c.field, "is out of range")
 		}
@@ -937,6 +942,7 @@ func (s *Service) rowView(ctx context.Context, r store.Server, rows []store.Serv
 	report, hasReport := parseReport(r.Report)
 	if hasReport {
 		v.Agent = &ServerAgent{Caravana: report.Agent, Nomad: report.Nomad, Docker: report.Docker, Kernel: report.Kernel}
+		v.VMMaxMapCount = report.VMMaxMapCount
 		for _, x := range report.Reach {
 			if !x.OK && names[x.Index] != "" {
 				v.Unreachable = append(v.Unreachable, names[x.Index])

@@ -528,6 +528,24 @@ check_host_io() {
   [ "$(jsonq '0 <= d["io"]["disk"]["busyPercent"] <= 100' <<<"$out")" = True ] || die "the disk's busy share isn't 0 to 100:\n$(jsonq 'd["io"]' <<<"$out")"
 }
 
+# check_map_count: feature 060. The installer leaves a floor of 262144 memory maps (OpenSearch's need): the file
+# is there, the running value is at least that, and within four minutes the first server's agent has reported it
+# (GET /v1/servers has vmMaxMapCount, a number and not below 262144). Needs TOKEN.
+check_map_count() {
+  local v end got
+  vm sudo test -f /etc/sysctl.d/05-caravana-map-count.conf || die "/etc/sysctl.d/05-caravana-map-count.conf is missing"
+  v="$(vm sudo sysctl -n vm.max_map_count | tr -d '[:space:]')"
+  [ "${v:-0}" -ge 262144 ] || die "vm.max_map_count is $v, not at least 262144"
+  end=$((SECONDS + 240))
+  while :; do
+    got="$(api -fsS "https://$DOMAIN/v1/servers" | jsonq 'd["servers"][0].get("vmMaxMapCount")')" || die "GET /v1/servers failed"
+    [ "$got" != None ] && break
+    [ "$SECONDS" -lt "$end" ] || die "the first server's vm.max_map_count is still unreported after 4 minutes"
+    sleep 10
+  done
+  [ "$got" -ge 262144 ] || die "the agent reports vm.max_map_count $got, not at least 262144"
+}
+
 # identity_claims EXPR: EXPR over the claims of the workload identity token of idapp's copy, read
 # inside its container. The token never leaves this function's pipe and is never printed.
 identity_claims() {
@@ -1490,6 +1508,8 @@ PY
 
   say "network and disk rates from the agent's counters (feature 055)"
   check_host_io
+  say "vm.max_map_count is a floor of 262144 and the agent reports it (feature 060)"
+  check_map_count
   say "Traefik's policy, an uploaded certificate served on 443, and a covered ACME certificate dropped by a rerun (feature 034)"
   check_certificates_host "$v1"
 

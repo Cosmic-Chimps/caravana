@@ -521,6 +521,17 @@ EOF
     sysctl --system >/dev/null
   fi
 
+  # OpenSearch and Elasticsearch (Wazuh's indexer) map a file per shard and refuse to start under
+  # 262144 memory maps; Linux's default is 65530. It is a limit, not a reservation, so every server
+  # gets it. The file name sorts before the distros' (Ubuntu's 10-map-count.conf sets more and wins),
+  # so this is only a floor. Set the running value now when it is lower: no reboot, no sysctl --system.
+  write_if_changed /etc/sysctl.d/05-caravana-map-count.conf 0644 map-count <<'EOF' || true
+vm.max_map_count = 262144
+EOF
+  if [ "$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)" -lt 262144 ]; then
+    sysctl -w vm.max_map_count=262144 >/dev/null
+  fi
+
   # A container's interface keeps the MAC address it was made with. systemd's default link policy
   # gives a new veth a "persistent" address a moment after the network plugin made it and wrote its
   # address down. Nomad checks each copy's network when its agent restarts, finds an address it

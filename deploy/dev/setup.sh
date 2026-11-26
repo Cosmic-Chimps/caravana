@@ -54,6 +54,13 @@ net.bridge.bridge-nf-call-iptables = 1
 EOF
 sysctl --system >/dev/null
 
+# OpenSearch (the gate's `opensearch` step, spec 060) needs 262144 memory maps; Linux's default is
+# 65530. The installer writes the same file on every host.
+echo 'vm.max_map_count = 262144' >/etc/sysctl.d/05-caravana-map-count.conf
+if [ "$(sysctl -n vm.max_map_count)" -lt 262144 ]; then
+  sysctl -w vm.max_map_count=262144 >/dev/null
+fi
+
 # A container's interface keeps the MAC address it was made with. Ubuntu's default link policy
 # (MACAddressPolicy=persistent) gives a new veth another address a moment after the CNI bridge
 # plugin made it and wrote its address down. When Nomad's agent restarts it checks each copy's

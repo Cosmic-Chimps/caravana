@@ -49,6 +49,11 @@ sync_nomad_config() {
   return 1
 }
 
+# The installer sets vm.max_map_count for OpenSearch (spec 060); a lab made before that has the default.
+sync_map_count() {
+  limactl shell --workdir / "$NAME" sudo sh -c "echo 'vm.max_map_count = 262144' >/etc/sysctl.d/05-caravana-map-count.conf; if [ \"\$(sysctl -n vm.max_map_count)\" -lt 262144 ]; then sysctl -w vm.max_map_count=262144; fi" >/dev/null
+}
+
 cmd_up() {
   if exists; then
     limactl start "$NAME"
@@ -57,6 +62,7 @@ cmd_up() {
   fi
   write_env
   sync_nomad_config
+  sync_map_count
 
   # Services may burst past their memory reservation up to their ceiling, as on an installed
   # host (deploy/install/install.sh).

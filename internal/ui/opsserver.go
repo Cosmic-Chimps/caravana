@@ -1176,7 +1176,25 @@ func withManagedFacts(now time.Time, facts []srvFact, v service.ServerView) []sr
 		at = 1
 	}
 	out = slices.Insert(out, at, own...)
+	out = append(out, mapCountFact(v)...)
 	return append(out, certificateFact(now, v)...)
+}
+
+// minMapCount is the vm.max_map_count OpenSearch and Elasticsearch need (feature 060); the installer sets it.
+const minMapCount = 262144
+
+// mapCountFact is the "vm.max_map_count" row, only when the agent said it: the number, and in the warning
+// colour with what to do when it is under what OpenSearch needs.
+func mapCountFact(v service.ServerView) []srvFact {
+	if v.VMMaxMapCount <= 0 {
+		return nil
+	}
+	f := srvFact{Key: "vm.max_map_count", Value: strconv.FormatInt(v.VMMaxMapCount, 10)}
+	if v.VMMaxMapCount < minMapCount {
+		f.Mark, f.Strong = "warning", true
+		f.Note = "OpenSearch and Elasticsearch need at least " + strconv.Itoa(minMapCount) + ": rerun the installer"
+	}
+	return []srvFact{f}
 }
 
 // remoteFacts are the facts of a server Caravana doesn't run on: only what its agent and the cluster told.
@@ -1198,6 +1216,7 @@ func remoteFacts(now time.Time, v service.ServerView) []srvFact {
 			out = append(out, srvFact{Key: "agent", Items: itemsOf(items)})
 		}
 	}
+	out = append(out, mapCountFact(v)...)
 	if !v.SeenAt.IsZero() {
 		f := srvFact{Key: "last seen"}
 		if v.State == "down" || v.State == "disconnected" {

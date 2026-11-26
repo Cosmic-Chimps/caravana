@@ -135,6 +135,7 @@ type serverJSON struct {
 	ExpiresAt            string            `json:"expiresAt"`
 	Checks               []serverCheckJSON `json:"checks"`
 	Agent                *serverAgentJSON  `json:"agent"`
+	VMMaxMapCount        *int64            `json:"vmMaxMapCount"`
 	CertificateExpiresAt string            `json:"certificateExpiresAt"`
 	Memory               *serverMemoryJSON `json:"memory"`
 	CPU                  *serverCPUJSON    `json:"cpu"`
@@ -170,6 +171,9 @@ func toServerJSON(v service.ServerView) serverJSON {
 	}
 	if v.Agent != nil {
 		out.Agent = &serverAgentJSON{Caravana: v.Agent.Caravana, Nomad: v.Agent.Nomad, Docker: v.Agent.Docker, Kernel: v.Agent.Kernel}
+	}
+	if v.VMMaxMapCount > 0 {
+		out.VMMaxMapCount = &v.VMMaxMapCount
 	}
 	if v.Memory != nil {
 		out.Memory = &serverMemoryJSON{Used: v.Memory.Used, Reserved: v.Memory.Reserved, Total: v.Memory.Total}
