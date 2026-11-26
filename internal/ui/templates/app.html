@@ -1387,7 +1387,7 @@
       {{range .}}
       <div class="cv-also-row">
         <dt class="cv-label">{{.Label}}</dt>
-        <dd>{{range .Values}}<span class="cv-also-val">{{.}}</span> {{end}}{{range .Lines}}<span class="cv-also-line">{{template "sentence" .}}</span> {{end}}</dd>
+        <dd>{{range .Values}}<span class="cv-also-val">{{.}}</span> {{end}}{{range .Lines}}<span class="cv-def-line">{{template "sentence" .}}</span> {{end}}</dd>
       </div>
       {{end}}
     </dl>
