@@ -327,6 +327,43 @@ func TestInstallTemplateFailedDeployKeepsTemplate(t *testing.T) {
 	}
 }
 
+// A template installed on a host that can't read its image yet (a private image
+// without registry credentials) keeps the generated password and the typed
+// secret, so deploying again, once the image resolves, works with them.
+func TestInstallTemplateWithUnresolvableImageKeepsItsSecrets(t *testing.T) {
+	ctx := context.Background()
+	l := newTemplateLab(t)
+	missing := whoamiTemplate()
+	missing.Compose = strings.Replace(missing.Compose, "traefik/whoami:latest", "acme/missing:1.0", 1)
+	l.useCatalog(t, futureCatVer, missing)
+
+	_, err := l.svc.InstallTemplate(ctx, "demo", "demo", map[string]string{"domain": "a.example.com", "api_key": "typed-key"}, TemplateInstallOptions{}, app.TriggerManual)
+	if err == nil {
+		t.Fatal("a missing image deployed")
+	}
+	if _, getErr := l.svc.GetApp(ctx, "demo"); getErr != nil {
+		t.Fatalf("the app: %v", getErr)
+	}
+	live := l.secrets.Live("demo")["web"]
+	if len(live["DB_PASSWORD"]) != 32 || live["API_KEY"] != "typed-key" {
+		t.Fatalf("live secrets after the failed install = %d names (db password %d characters), want both values kept", len(live), len(live["DB_PASSWORD"]))
+	}
+	password := live["DB_PASSWORD"]
+
+	// The image becomes resolvable; an empty-body redeploy deploys the app.
+	l.registry.AddIndex("acme/missing", "1.0", whoamiDigest)
+	res, err := l.svc.Redeploy(ctx, "demo", app.TriggerManual)
+	if err != nil {
+		t.Fatalf("Redeploy: %v", err)
+	}
+	if final := waitFinal(t, l.store, res.Deployment.ID); final.Status != store.StatusHealthy {
+		t.Fatalf("redeploy = %s (%s), want healthy", final.Status, final.Error)
+	}
+	if got := l.secrets.Live("demo")["web"]["DB_PASSWORD"]; got != password {
+		t.Error("the generated password changed across the redeploy")
+	}
+}
+
 // sentinelReader yields the bytes that make the alphabet's characters spell
 // the sentinel, so a generated secret has a value a test can look for.
 type sentinelReader struct {

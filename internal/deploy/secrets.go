@@ -108,10 +108,26 @@ func (v *Variables) Restore(ctx context.Context, appID, deploymentID string) err
 	if err != nil {
 		return err
 	}
-	if err := v.makeLive(ctx, appID, current, keptSets(kept)); err != nil {
+	if err := v.makeLive(ctx, appID, current, restoredSets(current, keptSets(kept))); err != nil {
 		return err
 	}
 	return v.delete(ctx, keptPath(appID))
+}
+
+// restoredSets is what Restore makes live: the kept sets, except that a
+// service with no kept values (it had none before the deploy) keeps the values
+// it has now, so a failed first deploy can be deployed again.
+func restoredSets(current, kept secrets.Sets) secrets.Sets {
+	out := secrets.Sets{}
+	for service, set := range kept {
+		out[service] = set
+	}
+	for service, set := range current {
+		if len(out[service]) == 0 {
+			out[service] = set
+		}
+	}
+	return out
 }
 
 // Delete implements secrets.Provider.

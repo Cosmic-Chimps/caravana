@@ -505,6 +505,7 @@ func (s *Service) deployRecorded(ctx context.Context, state *appState, rec store
 	if pin != nil {
 		digests = pin.digests
 	} else if digests, warnings, err = s.deployer.ResolveWith(ctx, a, built.prepinned()); err != nil {
+		s.keepNewSecrets(ctx, a, dep.ID)
 		return asResult(s.fail(rec, err))
 	}
 	if latest := s.latestOf(a.ID); latest != dep.ID {
@@ -523,6 +524,7 @@ func (s *Service) deployRecorded(ctx context.Context, state *appState, rec store
 	// couldn't be checked is a warning.
 	gateWarnings, err := s.gateImages(ctx, a, digests)
 	if err != nil {
+		s.keepNewSecrets(ctx, a, dep.ID)
 		return asResult(s.fail(rec, err))
 	}
 	warnings = append(warnings, gateWarnings...)

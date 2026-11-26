@@ -124,7 +124,13 @@ func (s *Store) Restore(ctx context.Context, appID, deploymentID string) error {
 		return err
 	}
 	if k, ok := s.kept[appID]; ok && k.owner == deploymentID {
-		s.live[appID] = k.sets
+		restored := clone(k.sets)
+		for service, set := range s.live[appID] {
+			if len(restored[service]) == 0 { // it had no values before: keep these
+				restored[service] = maps.Clone(set)
+			}
+		}
+		s.live[appID] = restored
 		delete(s.kept, appID)
 	}
 	return nil

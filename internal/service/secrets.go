@@ -57,6 +57,44 @@ func (s *Service) restoreSecrets(appID, deploymentID string) {
 	}
 }
 
+// keepNewSecrets is for a deploy that fails before it replaced the secrets (the
+// image couldn't be resolved, or the scanner's gate refused it). A service that
+// had no values before, a new app's, would be left with none: its stored
+// definition names secrets, so "deploy again" is refused for want of values
+// (and a template's generated password is gone for good). So the values this
+// deploy would have made live are written and put back at once, and Restore's
+// rule (a service with nothing earlier to put back keeps what it has) leaves
+// exactly those services with their new values, and every other service as it
+// was. The caller holds the app's lock. It is best effort: any failure is
+// logged, and the caller returns the deploy's own error.
+func (s *Service) keepNewSecrets(ctx context.Context, a app.App, deploymentID string) {
+	// A newer deploy owns the secrets now (the lock isn't first-come, first-served,
+	// so it may even have finished): this one's values must not outlive it.
+	if s.latestOf(a.ID) != deploymentID {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	resolved, err := s.resolveReferences(ctx, a)
+	if err != nil {
+		s.log.Warn("keep the secrets of a deploy that failed before registering: references not read", "app", a.ID, "deployment", deploymentID)
+		return
+	}
+	sets, err := s.buildSecrets(ctx, a, resolved)
+	if err != nil {
+		s.log.Warn("keep the secrets of a deploy that failed before registering: not built", "app", a.ID, "deployment", deploymentID)
+		return
+	}
+	if err := s.secrets.Replace(ctx, a.ID, deploymentID, sets); err != nil {
+		s.log.Error("keep the secrets of a deploy that failed before registering: not written", "app", a.ID, "deployment", deploymentID, "error", err)
+		s.restoreSecrets(a.ID, deploymentID) // Replace may have written some of them
+		return
+	}
+	if err := s.secrets.Restore(ctx, a.ID, deploymentID); err != nil {
+		s.log.Error("keep the secrets of a deploy that failed before registering: not settled", "app", a.ID, "deployment", deploymentID, "error", err)
+	}
+}
+
 // settleSecrets tells the store how a deployment ended: a healthy one's
 // secrets are the running ones now (Commit), a failed or reverted one's
 // never ran, so the previous ones go back (Restore). A superseded one does

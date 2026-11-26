@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -63,8 +64,13 @@ func TestGateRefusesAFixableCriticalBeforeAnythingIsRegistered(t *testing.T) {
 	if e.nomad.Job("whoami") != nil {
 		t.Error("the refused deploy reached Nomad")
 	}
-	if e.secrets.Replaces() != 0 {
-		t.Error("the refused deploy touched the secrets")
+	// The app is new, so nothing earlier can be put back: its value stays, and
+	// deploying again (with a fixed image) needs no retyping.
+	if got := e.secrets.Live("whoami"); !got.Equal(secrets.Sets{"web": {"TOKEN": "v1"}}) {
+		t.Errorf("live secrets after the refused first deploy = %v, want the value sent", got)
+	}
+	if owner, _ := e.secrets.Kept("whoami"); owner != "" {
+		t.Errorf("kept copy still owned by %q", owner)
 	}
 	if n := len(player.PlayedOf(vuln.Image)); n != 1 {
 		t.Errorf("scans of the image = %d, want 1", n)

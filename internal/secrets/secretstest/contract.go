@@ -59,6 +59,34 @@ func TestProvider(t *testing.T, p secrets.Provider) {
 		mustRead(t, "c-restore", v1)
 	})
 
+	t.Run("restore of a first deploy keeps its sets", func(t *testing.T) {
+		must(t, p.Replace(ctx, "c-first", "d1", v1))
+		must(t, p.Restore(ctx, "c-first", "d1"))
+		mustRead(t, "c-first", v1)
+		// The copy is gone: a later Restore of the same deployment changes nothing.
+		must(t, p.Restore(ctx, "c-first", "d1"))
+		mustRead(t, "c-first", v1)
+		// And nothing stays behind to put back: the next deploy replaces and
+		// restores to these sets.
+		must(t, p.Replace(ctx, "c-first", "d2", v2))
+		must(t, p.Restore(ctx, "c-first", "d2"))
+		mustRead(t, "c-first", v1)
+	})
+
+	t.Run("restore puts back a service that had values and keeps one that had none", func(t *testing.T) {
+		before := secrets.Sets{"web": {"API_KEY": "old"}}
+		after := secrets.Sets{"web": {"API_KEY": "new"}, "db": {"PASSWORD": "fresh"}}
+		must(t, p.Replace(ctx, "c-mixed", "d1", before))
+		must(t, p.Commit(ctx, "c-mixed", "d1"))
+		must(t, p.Replace(ctx, "c-mixed", "d2", after))
+		must(t, p.Restore(ctx, "c-mixed", "d2"))
+		mustRead(t, "c-mixed", secrets.Sets{"web": {"API_KEY": "old"}, "db": {"PASSWORD": "fresh"}})
+		// The copy is gone: restoring again, or a Commit, changes nothing.
+		must(t, p.Restore(ctx, "c-mixed", "d2"))
+		must(t, p.Commit(ctx, "c-mixed", "d2"))
+		mustRead(t, "c-mixed", secrets.Sets{"web": {"API_KEY": "old"}, "db": {"PASSWORD": "fresh"}})
+	})
+
 	t.Run("commit forgets the previous sets", func(t *testing.T) {
 		must(t, p.Replace(ctx, "c-commit", "d1", v1))
 		must(t, p.Commit(ctx, "c-commit", "d1"))
