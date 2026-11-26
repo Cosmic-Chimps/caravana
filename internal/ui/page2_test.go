@@ -1251,7 +1251,7 @@ func TestFailedRunRowLeadsWithTheCause(t *testing.T) {
 }
 
 // The summary row, accessibly and with its facts from the newest run: no row or cell roles, a leading
-// sr-only state, "· failed" in the failed hue, and a size only from a run that has one. After a failed
+// sr-only state, "failed ·" in the failed hue before the time (so the local time stays last), and a size only from a run that has one. After a failed
 // run "Restore from …" is secondary and "Back up now" primary; the head counts the failing.
 func TestBackupsFailedRow(t *testing.T) {
 	e := volumeBackupsEnv(t)
@@ -1274,7 +1274,7 @@ func TestBackupsFailedRow(t *testing.T) {
 	body := e.pageOf(t, "/apps/kuma/backups")
 	got := text(body)
 	// The run times are clock times (feature 022): "14:05 UTC" today.
-	for _, want := range []string{"1 backed up · 1 failing · 0 not · stored in backups", "uptime-kuma, last backup failed.", bad.Format("15:04") + " UTC · failed",
+	for _, want := range []string{"1 backed up · 1 failing · 0 not · stored in backups", "uptime-kuma, last backup failed.", "failed · " + bad.Format("15:04") + " UTC",
 		"Restore from " + good.Format("15:04") + " UTC", "The last backup failed 25 minutes ago."} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, got)
@@ -1287,7 +1287,7 @@ func TestBackupsFailedRow(t *testing.T) {
 			t.Errorf("the summary has %s", gone)
 		}
 	}
-	if !strings.Contains(sum, `<span class="sr-only">uptime-kuma, last backup failed. </span>`) || !strings.Contains(sum, `<span class="cv-blast-failed">· failed</span>`) {
+	if !strings.Contains(sum, `<span class="sr-only">uptime-kuma, last backup failed. </span>`) || !strings.Contains(sum, `<span class="cv-blast-when" data-local-line><span class="cv-blast-failed">failed ·</span> <time class="cv-clock"`) {
 		t.Errorf("the summary's leading state or its failed word:\n%s", sum)
 	}
 	// The newest run failed, so the summary shows no size: that of an older run would be of another time.

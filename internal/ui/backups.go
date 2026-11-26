@@ -139,7 +139,8 @@ type backupSvcRow struct {
 	LastClock clockTime
 	LastNow   bool
 	LastNever bool
-	// LastFailed says the newest run failed: its time is followed by "· failed".
+	// LastFailed says the newest run failed: its time is led by "failed ·", so the local time
+	// localtime.js puts on its own line under it stays the cell's last line.
 	LastFailed bool
 	Took       string
 	Stopped    string

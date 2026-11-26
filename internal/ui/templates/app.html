@@ -521,7 +521,7 @@
       <span class="cv-blast">
         {{if .LastNow}}<span class="cv-blast-now">running now</span>
         {{else if .LastNever}}<span class="cv-blast-never">never</span>
-        {{else}}<span class="cv-blast-when" data-local-line>{{template "clock" .LastClock}}{{if .LastFailed}} <span class="cv-blast-failed">· failed</span>{{end}}</span>{{end}}
+        {{else}}<span class="cv-blast-when" data-local-line>{{if .LastFailed}}<span class="cv-blast-failed">failed ·</span> {{end}}{{template "clock" .LastClock}}</span>{{end}}
         {{if .Took}}<span class="cv-bmeta">took {{.Took}}{{with .Stopped}} · {{.}}{{end}}</span>{{end}}
       </span>
       <span class="cv-bsize">
