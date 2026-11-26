@@ -26,7 +26,7 @@ Nomad.
   store, never in the app definition, the history or the logs. They can also come from a secret
   provider.
 - **Volumes and backups.** Directories that keep their data across deploys, and scheduled backups of
-  Postgres, MySQL, MariaDB, MongoDB and SQLite databases and of whole volumes, to an S3-compatible
+  Postgres, MySQL, MariaDB, MongoDB and SQLite databases, of OpenSearch and Elasticsearch clusters and of whole volumes, to an S3-compatible
   bucket.
 - **Logs, requests and monitoring.** Live output of every copy, the HTTP requests each app served,
   and memory, traffic and error charts against the same hour of the previous week.
