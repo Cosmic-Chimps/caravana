@@ -56,10 +56,34 @@ In the definition a service looks like this:
 ## Apps that keep a Compose file
 
 For an app that keeps its Compose file (see [From a Compose file](../deploy/compose.md#the-file-is-kept)), **Configure ›
-Services** shows each service's copies and size as text with the note *Set in the Compose file.*, and its placement and
-scaling with *Set through the API, in the Compose settings.* Change copies and size in the file on **Configure › Source**;
-placement and scaling of such an app are set through the API. The
-health check is still a form on Services: it is written into the app's Compose settings, beside the file.
+Services** has the same form per service, and **Save and deploy** is one deploy for everything on it.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../images/app-configure-services-compose-dark.png">
+  <img alt="Configure › Services for the blog app, which keeps its Compose file: the web service with Copies 2, Memory empty, Ceiling 512 MB and a health check on /healthz, and its placement and scaling below as text." src="../../images/app-configure-services-compose-light.png" width="760">
+</picture>
+
+- **Copies**, **Memory** and **Ceiling** are written into the Compose file. A value the file already has is changed
+  where it is, in its own quoting. A value it does not have is added at the top of the service: `mem_limit` and
+  `mem_reservation`, and `replicas` under `deploy:` (at the top of that mapping, or in a new one if the service has
+  none). A value the file states twice
+  (`scale` and `deploy.replicas`, or `mem_limit` and `deploy.resources.limits.memory`) is changed in both places. Memory
+  is written in MB with Compose's `m`, such as `mem_limit: 600m`. Only what you changed is written, so a size the file
+  spells its own way (`1g`) stays as typed. The file's comments and layout stay as they were, and it remains the kept file.
+- The health check is written into the app's Compose settings, beside the file, as before.
+- **CPU** is read-only here, and so are **Placement** and **Scaling**, which say *Set through the API, in the Compose
+  settings.* Change CPU in the file on **Configure › Source**. A service that scales shows **Copies** as *Set by scaling*,
+  and a service with a volume or a published port runs one copy.
+- If the file says a size in a way that can't be rewritten without guessing (a value that is an alias, has an anchor, a
+  tag, a variable (`$`) or spans several lines; a service or mapping that is an alias, has an anchor or a merge key
+  `<<`; a key that would have to be added to a mapping written as `{...}`, or to an empty one), the service's copies and
+  size stay read-only text, and the page says *Set in the Compose file. It can't be written from here: at
+  services.web.mem_limit, the value is an alias. Change it on Source.* with the path and reason that apply. The health
+  check is still a form.
+- **Memory** and **Ceiling** can't go back to the default from here, since that means taking the key out of the file.
+  Emptying one is refused at its input: *Ceiling can't go back to the default from here: that means taking the key out of
+  the file. Change it on Source.* (**Memory** says the same with its own name). Nothing is deployed. Raising **Memory**
+  above **Ceiling** is refused at **Memory**, as for any app.
 
 ## Copies
 

@@ -171,8 +171,9 @@ deployment. Secret values are removed from the kept copy and never shown on any 
 edits from now on:
 
 - **Configure › Source** of that app shows the kept file in the same form, under the head **Compose file**. Change it,
-  press **Preview**, then **Deploy**. The page says *This app is edited through its Compose file.* Its copies and
-  size are the file's, and its health check is still edited on **Configure › Services**: see [Apps that keep a Compose
+  press **Preview**, then **Deploy**. The page says *This app is edited through its Compose file.* Copies and memory
+  can also be edited on **Configure › Services**, which writes them into the file and keeps it, comments and layout
+  included; the health check goes into the app's Compose settings. See [Apps that keep a Compose
   file](../configure/resources.md#apps-that-keep-a-compose-file).
 - Each entry in the **Deployments** history that was made from a file offers **Download Compose file**.
 - **Redeploy this version** (see [How a deploy works](rollback.md)) makes that version's file the kept one.

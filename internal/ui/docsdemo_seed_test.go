@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -44,8 +45,15 @@ type demoDeploy struct {
 // history stores a (as the app now is) and its deployments, oldest first.
 func (d *docsDemo) history(t *testing.T, a app.App, ds ...demoDeploy) {
 	t.Helper()
+	d.historyOf(t, a, nil, ds...)
+}
+
+// historyOf is history for an app that keeps a Compose file: the file is stored with the app and
+// with each deployment, as a deploy from Compose through the service leaves it.
+func (d *docsDemo) historyOf(t *testing.T, a app.App, file *compose.Request, ds ...demoDeploy) {
+	t.Helper()
 	ctx := context.Background()
-	if _, err := d.Store.SaveApp(ctx, a, nil); err != nil {
+	if _, err := d.Store.SaveApp(ctx, a, file); err != nil {
 		t.Fatalf("SaveApp(%s): %v", a.ID, err)
 	}
 	for _, x := range ds {
@@ -69,7 +77,7 @@ func (d *docsDemo) history(t *testing.T, a app.App, ds ...demoDeploy) {
 		}
 		d.at(started, func() {
 			dep := app.Deployment{ID: x.ID, Trigger: x.Trigger, Digests: digests, Origin: x.Origin, TokenName: x.Token, Actor: x.Actor}
-			if _, err := d.Store.CreateDeployment(ctx, a.ID, dep, &def, nil, ""); err != nil {
+			if _, err := d.Store.CreateDeployment(ctx, a.ID, dep, &def, file, ""); err != nil {
 				t.Fatalf("CreateDeployment(%s): %v", x.ID, err)
 			}
 		})
@@ -118,6 +126,14 @@ func reserveMB(svc string) int64 {
 // runningCopies puts n running copies of a service at version into the fake Nomad, started since
 // the deploy, with the use a small web app has (CPU in MHz, memory in MB), and returns their IDs.
 func (d *docsDemo) runningCopies(jobID, svc string, version uint64, n int, since time.Duration, cpuTicks float64, memMB uint64, nodes ...int) []string {
+	stubs, ids := d.copyStubs(jobID, svc, version, n, since, cpuTicks, memMB, nodes...)
+	d.Nomad.SetCopies(jobID, stubs...)
+	return ids
+}
+
+// copyStubs is runningCopies without the call to the fake Nomad, for a job with several services
+// (SetCopies replaces all of a job's copies at once).
+func (d *docsDemo) copyStubs(jobID, svc string, version uint64, n int, since time.Duration, cpuTicks float64, memMB uint64, nodes ...int) ([]api.AllocationListStub, []string) {
 	if len(nodes) == 0 {
 		nodes = []int{0}
 	}
@@ -142,8 +158,7 @@ func (d *docsDemo) runningCopies(jobID, svc string, version uint64, n int, since
 			MemoryStats: &api.MemoryStats{Usage: (memMB + uint64(i*9)) << 20, Measured: []string{"Usage"}},
 		}}}})
 	}
-	d.Nomad.SetCopies(jobID, stubs...)
-	return ids
+	return stubs, ids
 }
 
 func shopID(environment, name string) string {
@@ -227,4 +242,48 @@ func seedDocsApps(t *testing.T, d *docsDemo) {
 		demoDeploy{ID: "db-p1", Ago: 18 * 24 * time.Hour, Took: 36 * time.Second, Trigger: app.TriggerConsole, Actor: docsDemoEmail, Status: store.StatusHealthy, Version: 1},
 	)
 	d.runningCopies(db.ID, "db", 1, 1, 18*24*time.Hour, 24, 214)
+
+	d.seedKeptFileApp(t)
+}
+
+// blogCompose is the file of the staging app blog, kept as typed, comments included. Its web
+// service says its copies and memory in the file, which Configure › Services writes back into it.
+const blogCompose = `# The blog and its database.
+services:
+  web:
+    image: ghcr.io/acme/blog:2.3
+    expose: ["3000"]
+    environment:
+      DATABASE_HOST: db
+    # Two copies, so a deploy never takes the blog down.
+    deploy:
+      replicas: 2
+    mem_limit: 512m
+  db:
+    image: postgres:16.4
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata: {}
+`
+
+// seedKeptFileApp makes the app blog of the staging environment, made from a Compose file that
+// Caravana keeps, so Configure › Services draws its copies and memory as inputs.
+func (d *docsDemo) seedKeptFileApp(t *testing.T) {
+	t.Helper()
+	req := compose.Request{Compose: blogCompose, Services: map[string]compose.Overlay{
+		"web": {Health: &compose.Health{Path: "/healthz"}},
+	}}
+	id := shopID("staging", "blog")
+	a, _, err := compose.Translate(id, req)
+	if err != nil {
+		t.Fatalf("Translate(%s): %v", id, err)
+	}
+	d.historyOf(t, a, &req,
+		demoDeploy{ID: "blog-s1", Ago: 29 * time.Hour, Took: 44 * time.Second, Trigger: app.TriggerConsole, Actor: docsDemoEmail, Status: store.StatusHealthy, Version: 1},
+		demoDeploy{ID: "blog-s2", Ago: 5 * time.Hour, Took: 41 * time.Second, Trigger: app.TriggerConsole, Actor: docsDemoEmail, Status: store.StatusHealthy, Version: 2},
+	)
+	web, _ := d.copyStubs(id, "web", 2, 2, 5*time.Hour, 34, 121, 0, 1)
+	db, _ := d.copyStubs(id, "db", 2, 1, 5*time.Hour, 18, 164)
+	d.Nomad.SetCopies(id, append(web, db...)...)
 }

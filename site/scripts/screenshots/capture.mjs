@@ -39,6 +39,7 @@ const WEB = 'shop--production--web';
 const WEB_STAGING = 'shop--staging--web';
 const API = 'shop--production--api';
 const DB = 'shop--production--db';
+const BLOG = 'shop--staging--blog';
 const SHOP = 'project=shop&environment=production';
 
 // ---------------------------------------------------------------------------
@@ -65,6 +66,7 @@ const SCREENS = {
   'app-configure': { path: `/apps/${WEB}/configure`, ready: 'main', h: 1200 },
   'app-configure-source': { path: `/apps/${WEB}/configure/source`, ready: 'main', h: 900 },
   'app-configure-services': { path: `/apps/${WEB}/configure/services`, ready: 'main', h: 1000 },
+  'app-configure-services-compose': { path: `/apps/${BLOG}/configure/services`, ready: 'main', h: 1300, clip: ['#service-web'] },
   'app-configure-integrations': { path: `/apps/${WEB}/configure/integrations`, ready: 'main', h: 900 },
   'app-variables': { path: `/apps/${API}/variables`, ready: 'main', h: 1000 },
   'app-domains': { path: `/apps/${WEB}/domains`, ready: 'main', h: 1000 },
