@@ -166,7 +166,7 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 		for _, want := range []string{"Copies & size", "Copies", "CPU MHz", "Memory MB", "Ceiling MB",
 			"Health check Path GET", "Every s", "Timeout s",
 			"New copies must pass this check before they take traffic; if they don't, the deploy is reverted.",
-			"Also set", "Entrypoint /entry.sh --strict", "DNS servers 1.1.1.1 10.0.0.2", "DNS search domains corp.example.com", "Ulimits memlock -1:-1 nofile 65536:65536", "Sysctls net.core.somaxconn = 1024", "Files /etc/shop.yml · 0640 · 5 B /etc/other.yml · 0644 · 5 B", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
+			"Also set", "Entrypoint /entry.sh --strict", "DNS servers 1.1.1.1 10.0.0.2", "DNS search domains corp.example.com", "Limits memlock unlimited nofile 65536", "Kernel settings net.core.somaxconn = 1024", "Files /etc/shop.yml · mode 0640 · 5 B /etc/other.yml · mode 0644 · 5 B", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
 			"Placement", "Scaling", "Save and deploy web", "Save and deploy worker"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("Services lacks %q:\n%s", want, got)
@@ -899,7 +899,7 @@ func TestLimitRowsInBothPanels(t *testing.T) {
 	limits := func(rows []defRow) map[string][]string {
 		m := map[string][]string{}
 		for _, r := range rows {
-			if r.Label == "Ulimits" || r.Label == "Sysctls" {
+			if r.Label == "Limits" || r.Label == "Kernel settings" {
 				m[r.Label] = r.Values
 			}
 		}
@@ -921,11 +921,11 @@ func TestLimitRowsInBothPanels(t *testing.T) {
 		t.Errorf("servicePanels without limits has %v", got)
 	}
 
-	svc.Ulimits = map[string]app.Ulimit{"nofile": {Soft: 1024, Hard: 65536}, "memlock": {Soft: -1, Hard: -1}}
+	svc.Ulimits = map[string]app.Ulimit{"nofile": {Soft: 1024, Hard: 65536}, "memlock": {Soft: -1, Hard: -1}, "core": {Soft: 4096, Hard: -1}}
 	svc.Sysctls = map[string]string{"net.ipv4.tcp_keepalive_time": "600", "net.core.somaxconn": "1024"}
 	want := map[string][]string{
-		"Ulimits": {"memlock -1:-1", "nofile 1024:65536"},
-		"Sysctls": {"net.core.somaxconn = 1024", "net.ipv4.tcp_keepalive_time = 600"},
+		"Limits":          {"core 4096 (soft) · unlimited (hard)", "memlock unlimited", "nofile 1024 (soft) · 65536 (hard)"},
+		"Kernel settings": {"net.core.somaxconn = 1024", "net.ipv4.tcp_keepalive_time = 600"},
 	}
 	if got := limits(alsoSet(svc, newEditService(svc), "")); !reflect.DeepEqual(got, want) {
 		t.Errorf("alsoSet = %v, want %v", got, want)
@@ -968,12 +968,51 @@ func TestFileRowsInBothPanels(t *testing.T) {
 		{Path: "/etc/app.yml", Content: strings.Repeat("secret-looking-content ", 100), Mode: "640"},
 		{Path: "/certs/key.pem", Secret: "TLS_KEY"},
 	}
-	want := []defRow{{Label: "Files", Values: []string{"/etc/app.yml · 0640 · 2.2 KB", "/certs/key.pem · 0644 · from secret TLS_KEY"}}}
-	if got := files(alsoSet(svc, newEditService(svc), "")); !reflect.DeepEqual(got, want) {
-		t.Errorf("alsoSet = %v, want %v", got, want)
+	text := func(rows []defRow) []string {
+		var out []string
+		for _, r := range rows {
+			for _, l := range r.Lines {
+				out = append(out, l.String())
+			}
+		}
+		return out
 	}
-	if got := files(panelRows(svc)); !reflect.DeepEqual(got, want) {
-		t.Errorf("servicePanels = %v, want %v", got, want)
+	want := []string{"/etc/app.yml · mode 0640 · 2.2 KB", "/certs/key.pem · mode 0644 · from secret TLS_KEY"}
+	for name, got := range map[string][]defRow{"alsoSet": files(alsoSet(svc, newEditService(svc), "")), "servicePanels": files(panelRows(svc))} {
+		if len(got) != 1 || len(got[0].Values) != 0 || !reflect.DeepEqual(text(got), want) {
+			t.Errorf("%s = %+v, want the lines %q", name, got, want)
+		}
+	}
+	// The path and the name are mono, the words between them plain.
+	line := files(panelRows(svc))[0].Lines[1]
+	if len(line) != 4 || !line[0].Mono || line[0].Text != "/certs/key.pem" || line[1].Mono || line[2].Mono || !line[3].Mono || line[3].Text != "TLS_KEY" {
+		t.Errorf("the secret's line = %+v", line)
+	}
+	if line := files(panelRows(svc))[0].Lines[0]; len(line) != 3 || !line[0].Mono || line[1].Mono || line[2].Mono {
+		t.Errorf("the content's line = %+v", line)
+	}
+}
+
+// A service with an entrypoint and files draws Files once: on the Services page's form (Also set) and, for an
+// app made from a Compose file, in its read-only panel, never in both.
+func TestFilesAreDrawnOnce(t *testing.T) {
+	svc := app.Service{Name: "web", Image: "x:1", Entrypoint: []string{"/entry.sh"}, Files: []app.File{{Path: "/etc/a.yml", Content: "a"}}}
+	count := func(rows []defRow) int {
+		n := 0
+		for _, r := range rows {
+			if r.Label == "Files" {
+				n++
+			}
+		}
+		return n
+	}
+	if n := count(alsoSet(svc, newEditService(svc), "")); n != 1 {
+		t.Errorf("Also set has %d Files rows", n)
+	}
+	for _, p := range servicePanels(app.App{ID: "shop", Services: []app.Service{svc}}, "") {
+		if n := count(p.Rows); n != 1 {
+			t.Errorf("the panel has %d Files rows", n)
+		}
 	}
 }
 
@@ -984,11 +1023,23 @@ func TestVariableRowsMarkSecretsInFiles(t *testing.T) {
 		Secrets: []app.Secret{{Name: "TLS_KEY"}, {Name: "API_KEY"}},
 		Files:   []app.File{{Path: "/certs/a.key", Secret: "TLS_KEY"}, {Path: "/certs/b.key", Secret: "TLS_KEY"}, {Path: "/etc/x", Content: "x"}},
 	}}}
-	notes := map[string]string{}
+	notes := map[string]sentence{}
 	for _, r := range variableRowsOf(a) {
 		notes[r.Name] = r.FileNote
 	}
-	if notes["TLS_KEY"] != "written to /certs/a.key, /certs/b.key, not to the environment" || notes["API_KEY"] != "" {
+	if got := notes["TLS_KEY"].String(); got != "Written to /certs/a.key and /certs/b.key, not to the environment." || notes["API_KEY"] != nil {
 		t.Errorf("notes = %v", notes)
+	}
+	if n := notes["TLS_KEY"]; len(n) != 5 || !n[1].Mono || !n[3].Mono || n[0].Mono || n[2].Mono {
+		t.Errorf("the paths aren't the only mono parts: %+v", n)
+	}
+	// One path, and three.
+	a.Services[0].Files = []app.File{{Path: "/a", Secret: "TLS_KEY"}}
+	if got := fileNote(a.Services[0], "TLS_KEY").String(); got != "Written to /a, not to the environment." {
+		t.Errorf("one path: %q", got)
+	}
+	a.Services[0].Files = []app.File{{Path: "/a", Secret: "TLS_KEY"}, {Path: "/b", Secret: "TLS_KEY"}, {Path: "/c", Secret: "TLS_KEY"}}
+	if got := fileNote(a.Services[0], "TLS_KEY").String(); got != "Written to /a, /b and /c, not to the environment." {
+		t.Errorf("three paths: %q", got)
 	}
 }

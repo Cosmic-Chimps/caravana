@@ -170,7 +170,8 @@ entrypoint, the console shows these read-only.
 ## Ulimits, sysctls and files
 
 A service may set `ulimits` (`memlock` and `nofile`), network `sysctls` and read-only `files`, for apps such as
-OpenSearch. Like the DNS settings, the console shows them read-only under **Also set**. See [Limits, sysctls and
+OpenSearch. Like the DNS settings, the console shows them read-only under **Also set**, as **Limits**, **Kernel
+settings** and **Files**. See [Limits, sysctls and
 files](../../opensearch-apps.md).
 
 ## Stopping

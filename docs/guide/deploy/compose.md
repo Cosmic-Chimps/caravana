@@ -107,6 +107,7 @@ ones a future version of Compose adds.
 | Attribute | What the warning says |
 | --- | --- |
 | `cpus`, `deploy.resources.limits.cpus` | Used, as MHz (1 CPU is 1000 MHz): Nomad shares CPU by MHz, not by cores. |
+| `sysctls` of `vm.max_map_count` at 262144 or less | Dropped: every server already has it, and a container can't set it. A larger value is refused. |
 | `ports` with a host port (`"8080:80"`, `host_ip`, `mode: host`) | The host port is not opened. Other services reach the container port by the service's name, and the internet reaches it through the service's domains. To open it on the server's address, add it to the overlay's `publish` list. |
 | `healthcheck` | Not run: Nomad's checks are HTTP or TCP and cannot run commands. The service gets the overlay's health check, or a TCP check on its first port. A service with no port gets no check. |
 | `depends_on` | Services start together. Nomad restarts a service that fails until what it needs answers. |

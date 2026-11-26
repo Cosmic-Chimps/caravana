@@ -19,7 +19,7 @@ func TestMapCountFact(t *testing.T) {
 	}
 	low := mapCountFact(service.ServerView{VMMaxMapCount: 65530})
 	if len(low) != 1 || low[0].Value != "65530" || low[0].Mark != "warning" ||
-		low[0].Note != "OpenSearch and Elasticsearch need at least 262144: rerun the installer" {
+		low[0].Note != "262144 is the least OpenSearch and Elasticsearch need. Run the installer on this server again." {
 		t.Errorf("a low value = %+v", low)
 	}
 	// Both lists of facts carry it.

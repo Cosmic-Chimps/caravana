@@ -92,9 +92,9 @@ type variableRow struct {
 	// holds no secret, but the row says where the pieces come from.
 	Template bool
 	Refs     []refLine
-	// FileNote says a file holds this secret, and where: "written to /certs/node.key, not to the
-	// environment" (feature 060). Empty for any other row. It names paths, never the value.
-	FileNote string
+	// FileNote says a file holds this secret, and where: "Written to /certs/node.key, not to the
+	// environment." (feature 060), the paths in mono. Empty for any other row. It names paths, never the value.
+	FileNote sentence
 }
 
 // refLine is one reference of a template secret, for a read-only row.
@@ -168,8 +168,8 @@ func variableRowsOf(a app.App) []variableRow {
 }
 
 // fileNote is the row's note for a secret the service's files hold: where it is written, and that it never
-// reaches the environment. "" when no file holds it.
-func fileNote(svc app.Service, secret string) string {
+// reaches the environment, as a sentence with the paths in mono. Nil when no file holds it.
+func fileNote(svc app.Service, secret string) sentence {
 	var paths []string
 	for _, f := range svc.Files {
 		if f.Secret == secret {
@@ -177,9 +177,20 @@ func fileNote(svc app.Service, secret string) string {
 		}
 	}
 	if len(paths) == 0 {
-		return ""
+		return nil
 	}
-	return "written to " + strings.Join(paths, ", ") + ", not to the environment"
+	out := sentence{plain("Written to ")}
+	for i, p := range paths {
+		switch {
+		case i == 0:
+		case i == len(paths)-1:
+			out = append(out, plain(" and "))
+		default:
+			out = append(out, plain(", "))
+		}
+		out = append(out, mono(p))
+	}
+	return append(out, plain(", not to the environment."))
 }
 
 // variablesExtras is what an answer adds to the page: the Add form as typed with

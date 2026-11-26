@@ -111,3 +111,14 @@ func TestOverlayFiles(t *testing.T) {
 		t.Error("an overlay with files is empty")
 	}
 }
+
+// Two configs where one target is inside the other are refused at the later one, named as the file writes it.
+func TestConfigInsideAnotherConfig(t *testing.T) {
+	svc := "    configs:\n      - source: c\n        target: /etc/app\n      - source: d\n        target: /etc/app/x.conf\n"
+	top := "configs:\n  c:\n    content: x\n  d:\n    content: y\n"
+	_, _, err := translateConfigs(t, svc, top, nil)
+	fe, ok := err.(*app.FieldError)
+	if !ok || fe.Field != "services.web.files[1].path" || !strings.Contains(fe.Message, "/etc/app/x.conf is inside /etc/app, which is a file") {
+		t.Errorf("Translate = %v, want a field error on the later file's path", err)
+	}
+}

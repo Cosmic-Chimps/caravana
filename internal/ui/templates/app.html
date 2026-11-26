@@ -1333,7 +1333,8 @@
       <dt class="cv-label">{{.Label}}</dt>
       <dd>
         <ul class="cv-def-values">{{range .Values}}
-          <li class="cv-data text-fg-1">{{.}}</li>{{end}}
+          <li class="cv-data text-fg-1">{{.}}</li>{{end}}{{range .Lines}}
+          <li class="cv-def-line">{{template "sentence" .}}</li>{{end}}
         </ul>
       </dd>
     </div>
@@ -1401,7 +1402,7 @@
       {{range .}}
       <div class="cv-also-row">
         <dt class="cv-label">{{.Label}}</dt>
-        <dd>{{range .Values}}<span class="cv-also-val">{{.}}</span> {{end}}</dd>
+        <dd>{{range .Values}}<span class="cv-also-val">{{.}}</span> {{end}}{{range .Lines}}<span class="cv-def-line">{{template "sentence" .}}</span> {{end}}</dd>
       </div>
       {{end}}
     </dl>
@@ -1525,7 +1526,7 @@
   {{range .Rows}}
   <div class="cv-vrow cv-confirm-row" role="row">
     <div role="cell" class="cv-vname">{{if .Secret}}{{icon "lock" 13}}<span class="sr-only">secret </span>{{else}}<span class="cv-vblank" aria-hidden="true"></span>{{end}}<span class="cv-vname-text">{{.Name}}</span></div>
-    <div role="cell" class="cv-vvalue">{{if and .Secret .From}}<span class="cv-vfrom">from <span class="cv-inline-mono">{{.From.Provider}}</span> · <span class="cv-inline-mono">{{.From.Path}}</span></span>{{else if and .Secret .Template}}<span class="cv-vfrom">template with {{len .Refs}} {{if eq (len .Refs) 1}}reference{{else}}references{{end}}: {{range $i, $r := .Refs}}{{if $i}}, {{end}}<span class="cv-inline-mono">{{$r.Provider}}/{{$r.Path}}</span>{{end}}</span>{{else if .Secret}}<span class="cv-dots" aria-hidden="true">••••••••••</span><span class="sr-only">hidden</span>{{else}}<span title="{{.Value}}">{{.Value}}</span>{{end}}{{with .FileNote}} <span class="cv-vfrom">{{.}}</span>{{end}}</div>
+    <div role="cell" class="cv-vvalue">{{if and .Secret .From}}<span class="cv-vfrom">from <span class="cv-inline-mono">{{.From.Provider}}</span> · <span class="cv-inline-mono">{{.From.Path}}</span></span>{{else if and .Secret .Template}}<span class="cv-vfrom">template with {{len .Refs}} {{if eq (len .Refs) 1}}reference{{else}}references{{end}}: {{range $i, $r := .Refs}}{{if $i}}, {{end}}<span class="cv-inline-mono">{{$r.Provider}}/{{$r.Path}}</span>{{end}}</span>{{else if .Secret}}<span class="cv-dots" aria-hidden="true">••••••••••</span><span class="sr-only">hidden</span>{{else}}<span title="{{.Value}}">{{.Value}}</span>{{end}}{{with .FileNote}} <span class="cv-vfrom">{{template "sentence" .}}</span>{{end}}</div>
     {{if $.Many}}<div role="cell" class="cv-vused">{{.Service}}</div>{{end}}
     <div role="cell" class="cv-vact">
       {{if and .Secret $.CanRemove}}
