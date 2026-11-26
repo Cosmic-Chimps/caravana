@@ -139,3 +139,23 @@ func TestFailedDeployPutsBackTheValuesOfAServiceThatHadSome(t *testing.T) {
 		}
 	})
 }
+
+// A deploy that fails after a newer one was requested leaves the secrets to
+// that newer deploy: its values must not outlive it.
+func TestKeepNewSecretsLeavesThemToANewerDeploy(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	a := withSecrets(set("API_KEY", "old-deploy"))
+
+	e.svc.markLatest(a.ID, "newer")
+	e.svc.keepNewSecrets(ctx, a, "older")
+	if got := e.secrets.Live(a.ID); len(got) != 0 {
+		t.Errorf("live after a superseded deploy's keep = %v, want nothing", got)
+	}
+
+	e.svc.markLatest(a.ID, "older")
+	e.svc.keepNewSecrets(ctx, a, "older")
+	if got := e.secrets.Live(a.ID); !got.Equal(secrets.Sets{"web": {"API_KEY": "old-deploy"}}) {
+		t.Errorf("live after the newest deploy's keep = %v, want its values", got)
+	}
+}

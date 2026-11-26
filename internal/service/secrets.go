@@ -68,6 +68,11 @@ func (s *Service) restoreSecrets(appID, deploymentID string) {
 // was. The caller holds the app's lock. It is best effort: any failure is
 // logged, and the caller returns the deploy's own error.
 func (s *Service) keepNewSecrets(ctx context.Context, a app.App, deploymentID string) {
+	// A newer deploy owns the secrets now (the lock isn't first-come, first-served,
+	// so it may even have finished): this one's values must not outlive it.
+	if s.latestOf(a.ID) != deploymentID {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	resolved, err := s.resolveReferences(ctx, a)
