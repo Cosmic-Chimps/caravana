@@ -547,6 +547,14 @@
   .cv-btnrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   /* An open confirmation grows down from its button; the buttons beside it stay on the first line. */
   .cv-btnrow:has(> details[open]) { align-items: flex-start; }
+  /* A row of several confirmations (the Backups tab's actions): an open panel spans the row, on its
+     own line under every button, and no button moves. The <details> boxes drop out of the layout
+     (display: contents), so each summary is a flex item where its details stood and the open body
+     (or, where the browser has it, the ::details-content slot that holds it) is ordered after them. */
+  .cv-actrow > .cv-confirm { display: contents; }
+  .cv-actrow > .cv-confirm:not([open])::details-content { display: none; }
+  .cv-actrow > .cv-confirm[open]::details-content { flex-basis: 100%; order: 1; }
+  .cv-actrow > .cv-confirm[open] > .cv-confirm-body { flex-basis: 100%; order: 1; margin-top: 0; }
   .cv-spacer { flex: 1; }
   .cv-stack { display: flex; flex-direction: column; gap: 16px; }
   .cv-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -771,7 +779,16 @@
   .cv-ovsvc-image { overflow-wrap: anywhere; }
   .cv-ovsvc:first-child { border-top: 0; padding-top: 0; }
   .cv-ovsvc-name { color: var(--color-fg-1); font-weight: 500; }
-  @container (max-width: 720px) { .cv-ovsvc { grid-template-columns: minmax(0, 1fr); } }
+  /* Under 720px the name keeps its column and image, copies and check each take a line beside it;
+     under 480px everything stacks. */
+  @container (max-width: 719.98px) {
+    .cv-ovsvc { grid-template-columns: 110px minmax(0, 1fr); }
+    .cv-ovsvc > :not(.cv-ovsvc-name) { grid-column: 2; }
+  }
+  @container (max-width: 479.98px) {
+    .cv-ovsvc { grid-template-columns: minmax(0, 1fr); }
+    .cv-ovsvc > :not(.cv-ovsvc-name) { grid-column: 1; }
+  }
   .cv-ovbackup { display: flex; flex-direction: column; gap: 2px; }
   .cv-ovbackup-name { font-family: var(--font-mono); font-weight: 500; color: var(--color-fg-1); }
   .cv-svcpanel { display: flex; flex-direction: column; gap: 18px; padding: 18px; }
