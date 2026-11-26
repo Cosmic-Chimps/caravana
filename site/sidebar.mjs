@@ -43,6 +43,7 @@ export const sidebar = [
       { label: 'Copies, memory and health', slug: 'configure/resources' },
       { label: 'Autoscaling', slug: 'configure/autoscaling' },
       { label: 'Published ports', slug: 'configure/published-ports' },
+      { label: 'Limits, sysctls and files', slug: 'configure/opensearch-apps' },
       { label: 'Workload identity', slug: 'configure/workload-identity' },
     ],
   },

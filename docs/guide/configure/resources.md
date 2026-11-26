@@ -167,6 +167,12 @@ domains and up to 8 resolver options such as `ndots:2`. They go in `dns` (`serve
 in Compose as `dns`, `dns_search` and `dns_opt`. Services of one app still reach each other by name. Like the
 entrypoint, the console shows these read-only.
 
+## Ulimits, sysctls and files
+
+A service may set `ulimits` (`memlock` and `nofile`), network `sysctls` and read-only `files`, for apps such as
+OpenSearch. Like the DNS settings, the console shows them read-only under **Also set**. See [Limits, sysctls and
+files](../../opensearch-apps.md).
+
 ## Stopping
 
 A copy gets a stop signal and `stopTimeout` seconds to finish before it is killed, on a deploy, a restart and
@@ -179,4 +185,5 @@ cleanly. Raise it for a slow shutdown, up to 30. Compose's `stop_grace_period` s
 - [Autoscaling](../../autoscaling.md)
 - [Placement and moving work between servers](../../placement-and-drain.md)
 - [Published ports](../../published-ports.md)
+- [Limits, sysctls and files](../../opensearch-apps.md)
 - [Stop, start, restart, Run a command, Terminal](../operate/commands.md)

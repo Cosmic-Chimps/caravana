@@ -37,6 +37,7 @@ export const pages = [
   ['configure/resources', 'docs/guide/configure/resources.md'],
   ['configure/autoscaling', 'docs/autoscaling.md'],
   ['configure/published-ports', 'docs/published-ports.md'],
+  ['configure/opensearch-apps', 'docs/opensearch-apps.md'],
   ['configure/workload-identity', 'docs/workload-identity.md'],
 
   // Day to day

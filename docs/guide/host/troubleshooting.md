@@ -63,6 +63,13 @@ Choose **Raise memory** on the item, or set **Memory** (the reservation) and **C
 
 The list says "1 copy of Shop › staging › web/web keeps restarting." It appears when restarts and failed copies in the last hour reach 3. Open **View logs**: the last lines before each death are usually the cause (a bad setting, a missing variable or secret, a database that isn't reachable). If a copy restarts because of memory, you'll also see the out-of-memory item. A failing health check doesn't restart a copy by itself: during a deploy it fails the deploy, and later the list says "1 copy of Shop › staging › web/web is failing its health check." If the check is too strict for a slow app, lengthen **Every** or **Timeout** on **Configure › Services**.
 
+## OpenSearch or Elasticsearch won't start
+
+The copy exits and its logs say `max virtual memory areas vm.max_map_count [65530] is too low`. The server's limit is
+under 262144. **Operator › Servers › the server** shows `vm.max_map_count` in the warning colour; rerun the installer
+(it sets 262144 and needs no reboot), or run `sudo sysctl -w vm.max_map_count=262144` for now. If the logs complain about
+open files or locked memory, set the service's `ulimits`. See [Limits, sysctls and files](../../opensearch-apps.md).
+
 ## "Nomad refused" and "run the installer again"
 
 After an upgrade, a feature may need a new permission or host setting that only the installer can apply. Until then the console says so plainly and everything else keeps working. For example: "Nomad refused the command: Caravana's token can't run commands yet. Run the installer again on the host to update its policy." Rerun the installer of the version you run. See [Keeping Caravana up to date](upgrade.md) and the **Upgrade** part of each release in [Release notes](../../../CHANGELOG.md).

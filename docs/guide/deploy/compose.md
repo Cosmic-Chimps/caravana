@@ -68,7 +68,7 @@ environment values are shown in the app's Variables.
 
 The overlay has more keys that only the API sets: `domains` options (`path`, `wwwRedirect`, `teamOnly`), `publish` (open a
 port on the server's address, see [Published ports](../../published-ports.md)), `identities`
-([Workload identity](../../workload-identity.md)), `placement` ([Placement](../../placement-and-drain.md)), `scale`
+([Workload identity](../../workload-identity.md)), `files` ([Limits, sysctls and files](../../opensearch-apps.md)), `placement` ([Placement](../../placement-and-drain.md)), `scale`
 ([Autoscaling](../../autoscaling.md)) and `disconnect` ([Network blips](../../network-blips.md)), and secrets
 that come from a provider ([Secret providers](../../secret-providers.md)). The console form carries these through
 unchanged when you deploy a file to an app that already has them, but it has no inputs to set them. The request is described in
@@ -94,6 +94,9 @@ ones a future version of Compose adds.
 | `mem_reservation`, `deploy.resources.reservations.memory` | The memory reserved for the service. A reservation above the ceiling is refused. See [Copies, memory and health checks](../configure/resources.md). |
 | `stop_grace_period` | How long a copy has to stop, rounded up to whole seconds. At most 30 s; a longer period is refused rather than shortened. |
 | `dns`, `dns_search`, `dns_opt` | The service's resolvers. See [Copies, memory and health checks](../configure/resources.md). |
+| `ulimits` | `memlock` and `nofile`, as a number or `soft` and `hard`. Any other name is refused. |
+| `sysctls` | Network settings (`net.…`), as a map or a list. Others are refused; `vm.max_map_count` is answered by the server, see below. |
+| `configs`, top-level `configs` | Files mounted in the service, when the config has inline `content:`. See below. |
 | `restart: always`, `unless-stopped` | Nothing to translate: Caravana restarts a service that exits. |
 | `name`, `version` (top level) | Accepted and ignored: the app's name is the one you give Caravana. |
 | `networks` (on a service) | Accepted by name only, with no warning; deeper keys such as `aliases` are refused. |
@@ -120,7 +123,8 @@ ones a future version of Compose adds.
 | Attribute | Why |
 | --- | --- |
 | `build` | Caravana deploys prebuilt images: push the image to a registry and use `image:`, or use [Build from Git](../../building-from-git.md). |
-| `env_file`, `secrets`, `configs` | Caravana does not read files from your disk. Put values in `environment:`, send secrets in the overlay, or bake a file into the image. |
+| `env_file`, `secrets` | Caravana does not read files from your disk. Put values in `environment:`, or send secrets in the overlay. |
+| A config with `file`, `environment` or `external` | Refused at `configs.<name>.<attribute>`: paste the content inline (`content: \|`) or send the file in the overlay's `files`. |
 | `include`, `extends` | Caravana does not read other files. Put every service in one file. |
 | `profiles` | Every service of the file is deployed. Remove the services you do not want. |
 | `privileged`, `cap_add`, `devices` | Apps run without extra privileges and without host devices. |
@@ -156,6 +160,14 @@ deploys, and it is deleted when you delete the app. See [Volumes](../configure/v
 one copy, and its deploys stop the old copy before starting the new one, so there is a short gap. A volume name is
 lowercase letters, digits, dashes and underscores (no dots: Aspire names its volumes with dots, and the publisher renames them), and may not start
 with `caravana-`.
+
+### Files, ulimits and sysctls
+
+A `configs` entry with inline `content:` becomes a read-only file in the service, at its `target` (`/<name>` for the short
+form), with its `mode`, `uid` and `gid`. Keys and other secret files go in the overlay's `files`. `ulimits` and
+`sysctls` map to the service's own. A `sysctls` entry of `vm.max_map_count` at 262144 or less is dropped with a warning,
+since every server already has it; a larger one is refused. All of it, with examples, is in [Limits, sysctls and
+files](../../opensearch-apps.md).
 
 ### Published ports and UDP
 

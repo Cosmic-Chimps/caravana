@@ -39,6 +39,9 @@ Two things to know about where values live:
   is an ordinary environment variable inside its container, so someone who may run a command or open a
   terminal in a copy can print it. Changing variables needs the maintain role; see
   [People and roles](../../people.md).
+- A secret can also be a **file** instead: a key, a certificate. A service's `files` name a secret, and Caravana
+  writes its value to that file and not to the environment. The row says *written to /path, not to the environment*.
+  See [Limits, sysctls and files](../../opensearch-apps.md#files).
 
 ## Set, replace and remove
 
