@@ -105,7 +105,7 @@ func (s *Service) startOpenSearchBackup(ctx context.Context, appID, service, tri
 	return rec, nil
 }
 
-// driveOpenSearchBackup cleans, snapshots and uploads, then records how the run
+// driveOpenSearchBackup prepares the repository, cleans, snapshots and uploads, then records how the run
 // ended, gives the lock back and tells the open pages. When Caravana is shutting
 // down it leaves the record running: the next start settles it.
 func (s *Service) driveOpenSearchBackup(run openSearchRun, rec store.BackupRecord) {
@@ -122,13 +122,18 @@ func (s *Service) driveOpenSearchBackup(run openSearchRun, rec store.BackupRecor
 		}
 	}
 
-	if err := s.deployer.OpenSearchClean(ctx, run.copyID, run.svc, true); err != nil {
+	owner, err := s.deployer.OpenSearchPrepare(ctx, run.copyID, run.svc)
+	if err != nil {
+		fail(err)
+		return
+	}
+	if err := s.deployer.OpenSearchClean(ctx, run.copyID, run.svc, owner, true); err != nil {
 		fail(err)
 		return
 	}
 	if _, err := s.deployer.OpenSearchSnapshot(ctx, run.copyID, run.svc, run.req.ID, run.req.TS, run.login); err != nil {
 		// The upload would have removed the folder; nothing will.
-		s.cleanOpenSearchFolder(base, run)
+		s.cleanOpenSearchFolder(base, run, owner)
 		fail(err)
 		return
 	}
@@ -144,13 +149,13 @@ func (s *Service) driveOpenSearchBackup(run openSearchRun, rec store.BackupRecor
 // once a run is over. It has a minute of its own, since the run's time may be
 // spent, and does nothing when Caravana is shutting down: the next run's first
 // step cleans. A failure is logged and no worse than it sounds.
-func (s *Service) cleanOpenSearchFolder(base context.Context, run openSearchRun) {
+func (s *Service) cleanOpenSearchFolder(base context.Context, run openSearchRun, owner string) {
 	if base.Err() != nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(base, time.Minute)
 	defer cancel()
-	if err := s.deployer.OpenSearchClean(ctx, run.copyID, run.svc, false); err != nil {
+	if err := s.deployer.OpenSearchClean(ctx, run.copyID, run.svc, owner, false); err != nil {
 		s.log.Warn("clean the opensearch snapshot folder; the next run does", "app", run.app.ID, "service", run.svc.Name, "error", err)
 	}
 }
@@ -181,7 +186,7 @@ func (s *Service) startOpenSearchRestore(ctx context.Context, appID string, b st
 	return rec, nil
 }
 
-// driveOpenSearchRestore cleans, downloads the backup into a fresh folder and
+// driveOpenSearchRestore prepares the repository, cleans, downloads the backup into a fresh folder and
 // restores it into the cluster, then removes the folder whatever happened. It
 // records how the run ended, gives the lock back and tells the open pages. When
 // Caravana is shutting down it leaves the record running: the next start settles
@@ -201,16 +206,21 @@ func (s *Service) driveOpenSearchRestore(run openSearchRun, rec store.RestoreRec
 	defer cancel()
 	failed := func(err error) { settle(failedOutcome(s.sidecarFailure(ctx, run.sidecarRun, err), nil)) }
 
-	if err := s.deployer.OpenSearchClean(ctx, run.copyID, run.svc, true); err != nil {
+	owner, err := s.deployer.OpenSearchPrepare(ctx, run.copyID, run.svc)
+	if err != nil {
+		failed(err)
+		return
+	}
+	if err := s.deployer.OpenSearchClean(ctx, run.copyID, run.svc, owner, true); err != nil {
 		failed(err)
 		return
 	}
 	// From here the folder is removed whatever happens, before the record says how it ended.
 	finish := func(out volumeOutcome) {
-		s.cleanOpenSearchFolder(base, run)
+		s.cleanOpenSearchFolder(base, run, owner)
 		settle(out)
 	}
-	if _, err := s.deployer.OpenSearchDownload(ctx, run.copyID, run.req.ID, run.req.Object, run.svc, run.dest); err != nil {
+	if _, err := s.deployer.OpenSearchDownload(ctx, run.copyID, run.req.ID, run.req.Object, run.svc, run.dest, owner); err != nil {
 		finish(failedOutcome(s.sidecarFailure(ctx, run.sidecarRun, err), nil))
 		return
 	}

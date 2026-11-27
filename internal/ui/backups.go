@@ -96,7 +96,7 @@ type placesPosted struct {
 
 // changePosted is what the "Change the policy" form was given, drawn again after a refusal.
 type changePosted struct {
-	Engine, File, Schedule, Keep string
+	Engine, File, Repository, Schedule, Keep string
 }
 
 // Not is how many services could be backed up and aren't.
@@ -124,8 +124,11 @@ type backupSvcRow struct {
 	// SQLite says the service backs up one SQLite file (feature 029): it keeps
 	// running during a backup, and stops briefly for a restore.
 	SQLite bool
-	Open   bool
-	What   string // "PostgreSQL", "MariaDB", "MongoDB", "Volume · /data, /cache"
+	// OpenSearch says the service backs up an OpenSearch or Elasticsearch cluster (feature 061): it
+	// keeps running during a backup and a restore.
+	OpenSearch bool
+	Open       bool
+	What       string // "PostgreSQL", "MariaDB", "MongoDB", "Volume · /data, /cache"
 	// Mark is the row's mark: rolling while a run is going, failed when the
 	// newest failed, healthy otherwise, idle when it never ran.
 	Mark string
@@ -199,12 +202,18 @@ type backupSvcRow struct {
 	ChangeEngines   []backupPlaceChoice
 	ChangeSchedules []backupPlaceChoice
 	ChangeFile      string
+	ChangeRepo      string
 	ChangeKeep      string
 	ChangeField     string
 	ChangeErr       sentence
 	// ChangeHasFile says the engine select has the SQLite choice, so the form has its Database file input.
 	ChangeHasFile bool
+	// ChangeHasRepo says the engine select has the OpenSearch choice, so the form has its Snapshot folder input.
+	ChangeHasRepo bool
 }
+
+// KeepsRunning says a backup of the service doesn't stop it.
+func (r backupSvcRow) KeepsRunning() bool { return r.SQLite || r.OpenSearch }
 
 // backupPlaceChoice is one option of the destination select or one "Also copy to" checkbox.
 type backupPlaceChoice struct {
@@ -224,6 +233,7 @@ type backupRun struct {
 	CanRestore bool
 	Volume     bool
 	SQLite     bool
+	OpenSearch bool
 	// File is the database a sqlite restore replaces, as the service sees it.
 	File string
 	// ByYou says the owner started the run (Back up now), not its schedule; By says who, when it was
@@ -374,10 +384,14 @@ func backupEngineFor(svc app.Service) (engine string, ok bool) {
 }
 
 // engineText is a policy's engine as Configure lists it: the engine, and for
-// a sqlite backup its file ("sqlite /data/app.db").
+// a sqlite backup its file ("sqlite /data/app.db"), for an opensearch one its
+// snapshot folder ("opensearch /usr/share/opensearch/snapshots").
 func engineText(b app.Backup) string {
-	if b.Engine == app.BackupSQLite && b.File != "" {
+	switch {
+	case b.Engine == app.BackupSQLite && b.File != "":
 		return b.Engine + " " + b.File
+	case b.Engine == app.BackupOpenSearch && b.Repository != "":
+		return b.Engine + " " + b.Repository
 	}
 	return b.Engine
 }
@@ -577,7 +591,7 @@ func causeOf(message string) string {
 func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.BackupRecord, restores []store.RestoreRecord,
 	volumes []service.VolumeView, tab backupsTab) backupSvcRow {
 	b := svc.Backup
-	row := backupSvcRow{Name: svc.Name, Volume: b.Engine == app.BackupVolume, SQLite: b.Engine == app.BackupSQLite, Mark: "idle", LastNever: true,
+	row := backupSvcRow{Name: svc.Name, Volume: b.Engine == app.BackupVolume, SQLite: b.Engine == app.BackupSQLite, OpenSearch: b.Engine == app.BackupOpenSearch, Mark: "idle", LastNever: true,
 		Schedule: upperFirst(scheduleText(b.ScheduleOrDefault())), Keep: plural(b.KeepOrDefault(), "backup"),
 		CanBackUp: tab.Destination && !tab.Stopped}
 	if row.Volume {
@@ -597,6 +611,8 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 		}
 	} else if row.SQLite {
 		row.What = "SQLite · " + b.File
+	} else if row.OpenSearch {
+		row.What = "OpenSearch · " + b.Repository
 	} else {
 		row.What = dumpName(b.Engine, svc.Image)
 	}
@@ -615,7 +631,7 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 	for i, r := range runs {
 		run := backupRun{ID: r.ID, Service: r.Service, Status: r.Status, Mark: runMark(r.Status), Message: r.Message,
 			When: whenOf(now, &r.StartedAt, ""), Clock: clockOf(now, r.StartedAt), Volume: r.Engine == app.BackupVolume,
-			SQLite: r.Engine == app.BackupSQLite, File: b.File,
+			SQLite: r.Engine == app.BackupSQLite, OpenSearch: r.Engine == app.BackupOpenSearch, File: b.File,
 			CanRestore: r.Status == store.BackupSucceeded && tab.Destination && !tab.Stopped && !tab.NoMaintain,
 			ByYou:      r.Trigger == store.BackupTriggerOwner && (r.Actor == "" || r.Actor == tab.Viewer),
 			By:         otherActor(r.Actor, tab.Viewer),
@@ -779,15 +795,15 @@ func changeOf(row *backupSvcRow, svc app.Service, tab backupsTab) {
 		return
 	}
 	b := svc.Backup
-	engine, schedule, file, keep := b.Engine, b.ScheduleOrDefault(), b.File, strconv.Itoa(b.KeepOrDefault())
+	engine, schedule, file, repo, keep := b.Engine, b.ScheduleOrDefault(), b.File, b.Repository, strconv.Itoa(b.KeepOrDefault())
 	if b.Schedule != "" && b.Schedule != app.DefaultBackupSchedule && b.Schedule != app.BackupScheduleNever {
 		schedule = b.Schedule
 	}
 	if p := tab.ChangePosted; p != nil && tab.ChangeFor == svc.Name {
-		engine, schedule, file, keep = p.Engine, p.Schedule, p.File, p.Keep
+		engine, schedule, file, repo, keep = p.Engine, p.Schedule, p.File, p.Repository, p.Keep
 		row.ChangeField, row.ChangeErr = tab.ChangeField, tab.ChangeErr
 	}
-	row.ChangeFile, row.ChangeKeep = file, keep
+	row.ChangeFile, row.ChangeRepo, row.ChangeKeep = file, repo, keep
 
 	engines := []string{b.Engine}
 	if recommended, ok := backupEngineFor(svc); ok {
@@ -798,6 +814,9 @@ func changeOf(row *backupSvcRow, svc app.Service, tab backupsTab) {
 	}
 	if slices.ContainsFunc(svc.Volumes, func(v app.Volume) bool { return !v.ReadOnly }) {
 		engines = append(engines, app.BackupSQLite)
+		if len(svc.Ports) > 0 {
+			engines = append(engines, app.BackupOpenSearch) // the cluster is reached over a port
+		}
 	}
 	seen := map[string]bool{}
 	for _, e := range engines {
@@ -807,6 +826,7 @@ func changeOf(row *backupSvcRow, svc app.Service, tab backupsTab) {
 		seen[e] = true
 		row.ChangeEngines = append(row.ChangeEngines, backupPlaceChoice{Value: e, Label: engineChoiceLabel(e), On: e == engine})
 		row.ChangeHasFile = row.ChangeHasFile || e == app.BackupSQLite
+		row.ChangeHasRepo = row.ChangeHasRepo || e == app.BackupOpenSearch
 	}
 
 	row.ChangeSchedules = []backupPlaceChoice{
@@ -831,6 +851,8 @@ func engineChoiceLabel(engine string) string {
 		return "Volume (stops the service while it runs)"
 	case app.BackupSQLite:
 		return "SQLite file (the service keeps running)"
+	case app.BackupOpenSearch:
+		return "OpenSearch or Elasticsearch snapshot (the service keeps running)"
 	}
 	return engine
 }
@@ -1429,7 +1451,7 @@ func (s *server) changeBackupPolicy(w http.ResponseWriter, r *http.Request, sess
 		return
 	}
 
-	posted := &changePosted{Engine: strings.TrimSpace(r.PostForm.Get("engine")), File: strings.TrimSpace(r.PostForm.Get("file")),
+	posted := &changePosted{Engine: strings.TrimSpace(r.PostForm.Get("engine")), File: strings.TrimSpace(r.PostForm.Get("file")), Repository: strings.TrimSpace(r.PostForm.Get("repository")),
 		Schedule: strings.TrimSpace(r.PostForm.Get("schedule")), Keep: strings.TrimSpace(r.PostForm.Get("keep"))}
 	refuse := func(status int, field, text string) {
 		s.backupsPage(w, r, status, id, backupsTab{ChangeFor: name, ChangeField: field, ChangeErr: sentence{plain(text)}, ChangePosted: posted})
@@ -1443,12 +1465,15 @@ func (s *server) changeBackupPolicy(w http.ResponseWriter, r *http.Request, sess
 		}
 		keep = n
 	}
-	file := ""
+	file, repository := "", ""
 	if posted.Engine == app.BackupSQLite {
 		file = posted.File // the file belongs to the SQLite engine alone
 	}
+	if posted.Engine == app.BackupOpenSearch {
+		repository = posted.Repository // and the snapshot folder to the OpenSearch one
+	}
 
-	deployment, err := s.svc.ChangeBackupPolicy(ctx, id, name, posted.Engine, file, posted.Schedule, keep, service.Condition{IfRevision: revision}, app.TriggerConsole)
+	deployment, err := s.svc.ChangeBackupPolicy(ctx, id, name, posted.Engine, file, repository, posted.Schedule, keep, service.Condition{IfRevision: revision}, app.TriggerConsole)
 	if err == nil {
 		http.Redirect(w, r, "/apps/"+id+"/deployments#deployment-"+deployment.Deployment.ID, http.StatusSeeOther)
 		return
@@ -1465,7 +1490,7 @@ func (s *server) changeBackupPolicy(w http.ResponseWriter, r *http.Request, sess
 		s.backupsPage(w, r, http.StatusConflict, id, backupsTab{Notice: sentence{plain(fieldErr.Message + ". Reload the page.")}})
 	case errors.As(err, &fieldErr) && strings.Contains(fieldErr.Field, ".backup"):
 		field := ""
-		for _, f := range []string{"engine", "file", "schedule", "keep"} {
+		for _, f := range []string{"engine", "file", "repository", "schedule", "keep"} {
 			if strings.HasSuffix(fieldErr.Field, ".backup."+f) {
 				field = f
 			}

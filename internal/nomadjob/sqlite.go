@@ -550,6 +550,9 @@ type SQLiteOutput struct {
 	// Indices is how many indices an opensearch snapshot or restore holds, and
 	// Files how many files an opensearch download extracted (feature 061).
 	Indices, Files int
+	// Owner is the "uid:gid" the opensearch prepare step ran as, digits only
+	// (feature 061).
+	Owner string
 }
 
 // ParseSQLiteOutput reads the markers of a script's standard output. Lines
@@ -590,6 +593,10 @@ func ParseSQLiteOutput(stdout string) SQLiteOutput {
 			if n, ok := countOf(rest, "files="); ok {
 				out.Files = n
 			}
+		case opensearchOwnerMarker:
+			if owner, ok := ownerOf(rest); ok {
+				out.Owner = owner
+			}
 		case sqliteWarningMarker:
 			out.Warning = rest
 		}
@@ -605,6 +612,39 @@ func countOf(s, key string) (int, bool) {
 	}
 	n, err := strconv.Atoi(v)
 	return n, err == nil && n >= 0
+}
+
+// ownerOf reads "uid=<n> gid=<n>" into "<n>:<n>". Anything but digits is refused:
+// the value is handed to chown.
+func ownerOf(s string) (string, bool) {
+	uid, gid, ok := strings.Cut(s, " ")
+	if !ok {
+		return "", false
+	}
+	u, okU := strings.CutPrefix(uid, "uid=")
+	g, okG := strings.CutPrefix(gid, "gid=")
+	if !okU || !okG || !allDigits(u) || !allDigits(g) {
+		return "", false
+	}
+	return u + ":" + g, true
+}
+
+// ValidOwner reports whether s is "<uid>:<gid>", two numbers.
+func ValidOwner(s string) bool {
+	u, g, ok := strings.Cut(s, ":")
+	return ok && allDigits(u) && allDigits(g)
+}
+
+func allDigits(s string) bool {
+	if s == "" || len(s) > 10 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // bytesOf reads "bytes=<n>".

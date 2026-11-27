@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -99,6 +100,7 @@ func TestOpenSearchPaths(t *testing.T) {
 // The scripts use $VAR and $(...) only: Nomad interpolates "${...}" in task config.
 func TestOpenSearchScriptsAvoidNomadInterpolation(t *testing.T) {
 	for name, text := range map[string]string{
+		"OpenSearchPrepareScript":  OpenSearchPrepareScript,
 		"OpenSearchCleanScript":    OpenSearchCleanScript,
 		"OpenSearchSnapshotScript": OpenSearchSnapshotScript,
 		"OpenSearchRestoreScript":  OpenSearchRestoreScript,
@@ -219,6 +221,17 @@ esac
 exec REALTAR "$@"
 `
 
+// fakeOSChown records what it was asked to do, as a test that isn't root can't
+// chown. FAKE_FAIL_CHOWN makes it fail with that sentence.
+const fakeOSChown = `#!/bin/sh
+echo "chown $*" >> "$FAKE_LOG"
+if [ -n "$FAKE_FAIL_CHOWN" ]; then echo "chown: $FAKE_FAIL_CHOWN" >&2; exit 1; fi
+exit 0
+`
+
+// osOwner is the service's user as the prepare step reports it.
+const osOwner = "1000:1001"
+
 var (
 	osTools     sync.Once
 	osToolsPath string
@@ -246,6 +259,7 @@ func openSearchToolsDir(t *testing.T) string {
 			"rclone":  fakeSQLiteRclone,
 			"curl":    fakeCurl,
 			"tar":     strings.ReplaceAll(fakeOSTar, "REALTAR", realTar),
+			"chown":   fakeOSChown,
 		} {
 			if osToolsErr = os.WriteFile(filepath.Join(osToolsPath, name), []byte(text), 0o755); osToolsErr != nil {
 				return
@@ -336,6 +350,100 @@ func (r *osRun) snapshotFolder(request string) string {
 	return folder
 }
 
+func TestOpenSearchPrepareScript(t *testing.T) {
+	t.Run("makes a missing repository folder and prints the user", func(t *testing.T) {
+		r := newOpenSearchRun(t)
+		repo := filepath.Join(r.dir, "snaps", "deep", "repo")
+		res := r.run(OpenSearchPrepareScript, "", nil, repo)
+		if res.code != 0 {
+			t.Fatalf("exit %d: %s", res.code, res.stderr)
+		}
+		info, err := os.Stat(repo)
+		if err != nil || !info.IsDir() {
+			t.Fatalf("repository folder = %v, %v", info, err)
+		}
+		if info.Mode().Perm()&0o002 != 0 {
+			t.Errorf("the folder is world-writable: %v", info.Mode().Perm())
+		}
+		want := "caravana-opensearch-owner uid=" + strconv.Itoa(os.Getuid()) + " gid=" + strconv.Itoa(os.Getgid())
+		if got := strings.TrimSpace(res.stdout); got != want {
+			t.Errorf("stdout = %q, want %q", got, want)
+		}
+		if out := ParseSQLiteOutput(res.stdout); out.Owner != strconv.Itoa(os.Getuid())+":"+strconv.Itoa(os.Getgid()) {
+			t.Errorf("parsed owner = %q", out.Owner)
+		}
+		if exists(r.work+"/x") || len(r.workFiles()) != 0 {
+			t.Errorf("prepare wrote into the work directory: %v", r.workFiles())
+		}
+	})
+	t.Run("an existing folder is left as it is", func(t *testing.T) {
+		r := newOpenSearchRun(t)
+		r.write(filepath.Join(r.repoDir(), "mine"), "keep")
+		if res := r.run(OpenSearchPrepareScript, "", nil, r.repoDir()); res.code != 0 {
+			t.Fatalf("exit %d: %s", res.code, res.stderr)
+		}
+		if got := r.read(filepath.Join(r.repoDir(), "mine")); got != "keep" {
+			t.Errorf("file = %q", got)
+		}
+	})
+	t.Run("a path that isn't absolute is refused", func(t *testing.T) {
+		r := newOpenSearchRun(t)
+		res := r.run(OpenSearchPrepareScript, "", nil, "relative/path")
+		if res.code == 0 || res.lastLine() != "prepare: the repository's path is not usable" {
+			t.Errorf("exit %d, last line %q", res.code, res.lastLine())
+		}
+		if exists(filepath.Join(r.dir, "relative")) {
+			t.Error("a relative folder was made")
+		}
+	})
+	t.Run("a folder it can't make is a prepare failure", func(t *testing.T) {
+		r := newOpenSearchRun(t)
+		r.write(filepath.Join(r.dir, "afile"), "x")
+		res := r.run(OpenSearchPrepareScript, "", nil, filepath.Join(r.dir, "afile", "repo"))
+		if res.code == 0 || !strings.HasPrefix(res.lastLine(), "prepare: could not make the repository folder ") {
+			t.Errorf("exit %d, last line %q", res.code, res.lastLine())
+		}
+	})
+	t.Run("a folder it can't write to is refused", func(t *testing.T) {
+		if os.Getuid() == 0 {
+			t.Skip("root can write anywhere")
+		}
+		r := newOpenSearchRun(t)
+		locked := filepath.Join(r.dir, "locked")
+		if err := os.MkdirAll(locked, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		defer os.Chmod(locked, 0o755)
+		res := r.run(OpenSearchPrepareScript, "", nil, locked)
+		if res.code == 0 || !strings.HasPrefix(res.lastLine(), "prepare: the repository folder ") || !strings.HasSuffix(res.lastLine(), " is not writable by the service's user") {
+			t.Errorf("exit %d, last line %q", res.code, res.lastLine())
+		}
+	})
+}
+
+func TestParseOpenSearchOwner(t *testing.T) {
+	for in, want := range map[string]string{
+		"caravana-opensearch-owner uid=1000 gid=0\n":           "1000:0",
+		"junk\ncaravana-opensearch-owner uid=0 gid=0\r\n":      "0:0",
+		"caravana-opensearch-owner uid=1000\n":                 "",
+		"caravana-opensearch-owner uid=1000 gid=$(id)\n":       "",
+		"caravana-opensearch-owner uid=-1 gid=5\n":             "",
+		"caravana-opensearch-owner uid= gid=5\n":               "",
+		"caravana-opensearch-owner uid=1000 gid=12345678901\n": "",
+		"caravana-opensearch-owner gid=5 uid=1000\n":           "",
+		"caravana-opensearch-owner uid=1000 gid=5 extra\n":     "",
+	} {
+		if got := ParseSQLiteOutput(in).Owner; got != want {
+			t.Errorf("Owner(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for s, ok := range map[string]bool{"1000:1000": true, "0:0": true, "": false, "1000": false, "a:b": false, "1:2:3": false, "1: 2": false} {
+		if ValidOwner(s) != ok {
+			t.Errorf("ValidOwner(%q) = %v", s, !ok)
+		}
+	}
+}
+
 func TestOpenSearchCleanScript(t *testing.T) {
 	t.Run("removes the folders of earlier runs, only those", func(t *testing.T) {
 		r := newOpenSearchRun(t)
@@ -347,7 +455,7 @@ func TestOpenSearchCleanScript(t *testing.T) {
 		if err := os.Symlink(filepath.Join(repo, "mine"), filepath.Join(repo, "caravana-link")); err != nil {
 			t.Fatal(err)
 		}
-		res := r.run(OpenSearchCleanScript, "", nil, repo, r.work, "fresh")
+		res := r.run(OpenSearchCleanScript, "", nil, repo, r.work, "fresh", osOwner)
 		if res.code != 0 {
 			t.Fatalf("exit %d: %s", res.code, res.stderr)
 		}
@@ -369,11 +477,11 @@ func TestOpenSearchCleanScript(t *testing.T) {
 		r := newOpenSearchRun(t)
 		r.write(filepath.Join(r.work, "old.snapshot.result"), "x")
 		r.write(filepath.Join(r.work, "old.upload.result.work", "tar.err"), "x")
-		r.run(OpenSearchCleanScript, "", nil, r.repoDir(), r.work, "keep")
+		r.run(OpenSearchCleanScript, "", nil, r.repoDir(), r.work, "keep", osOwner)
 		if got := r.workFiles(); len(got) != 2 {
 			t.Fatalf("work after a keep clean = %v, want both kept", got)
 		}
-		res := r.run(OpenSearchCleanScript, "", nil, r.repoDir(), r.work, "fresh")
+		res := r.run(OpenSearchCleanScript, "", nil, r.repoDir(), r.work, "fresh", osOwner)
 		if res.code != 0 {
 			t.Fatalf("exit %d: %s", res.code, res.stderr)
 		}
@@ -381,21 +489,60 @@ func TestOpenSearchCleanScript(t *testing.T) {
 			t.Errorf("work after a fresh clean = %v, want empty", got)
 		}
 	})
-	t.Run("makes the work directory writable by the service's user, and a missing repository is fine", func(t *testing.T) {
+	t.Run("the work directory is the service's user's, mode 0770, and no repository folder is made", func(t *testing.T) {
 		r := newOpenSearchRun(t)
 		fresh := filepath.Join(r.dir, "new", "work")
-		res := r.run(OpenSearchCleanScript, "", nil, filepath.Join(r.dir, "no-such-repo"), fresh, "fresh")
+		repo := filepath.Join(r.dir, "no-such-repo", "snapshots")
+		res := r.run(OpenSearchCleanScript, "", nil, repo, fresh, "fresh", osOwner)
 		if res.code != 0 {
 			t.Fatalf("exit %d: %s", res.code, res.stderr)
 		}
 		info, err := os.Stat(fresh)
-		if err != nil || info.Mode().Perm() != 0o777 {
-			t.Errorf("work dir = %v, %v; want mode 0777", info, err)
+		if err != nil || info.Mode().Perm() != 0o770 {
+			t.Errorf("%s = %v, %v; want mode 0770", fresh, info, err)
+		}
+		if want := "chown " + osOwner + " " + fresh; !strings.Contains(r.callLog(), want+"\n") {
+			t.Errorf("chown was not asked for %q; log:\n%s", want, r.callLog())
+		}
+		if exists(repo) {
+			t.Error("clean made the repository folder; prepare does")
+		}
+	})
+	t.Run("an existing world-writable work directory is closed", func(t *testing.T) {
+		r := newOpenSearchRun(t)
+		if err := os.Chmod(r.work, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		if res := r.run(OpenSearchCleanScript, "", nil, r.repoDir(), r.work, "keep", osOwner); res.code != 0 {
+			t.Fatalf("exit %d: %s", res.code, res.stderr)
+		}
+		if info, err := os.Stat(r.work); err != nil || info.Mode().Perm() != 0o770 {
+			t.Errorf("%s = %v, %v; want mode 0770", r.work, info, err)
+		}
+	})
+	t.Run("an owner that isn't two numbers is refused before anything is touched", func(t *testing.T) {
+		for _, owner := range []string{"", "1000", "root:root", "1000:", ":1000", "1000:1000:0", "1000:$(id)", "-1:5", "1000;touch PWNED:1"} {
+			r := newOpenSearchRun(t)
+			fresh := filepath.Join(r.dir, "new", "work")
+			res := r.run(OpenSearchCleanScript, "", nil, r.repoDir(), fresh, "fresh", owner)
+			if res.code == 0 || !strings.HasPrefix(res.lastLine(), "clean: ") {
+				t.Errorf("owner %q: exit %d, last line %q", owner, res.code, res.lastLine())
+			}
+			if exists(fresh) || strings.Contains(r.callLog(), "chown") {
+				t.Errorf("owner %q: the script went on (work made: %v, log %q)", owner, exists(fresh), r.callLog())
+			}
+		}
+	})
+	t.Run("a chown that fails fails the step", func(t *testing.T) {
+		r := newOpenSearchRun(t)
+		res := r.run(OpenSearchCleanScript, "", []string{"FAKE_FAIL_CHOWN=Operation not permitted"}, r.repoDir(), r.work, "fresh", osOwner)
+		if res.code == 0 || !strings.HasPrefix(res.lastLine(), "clean: could not give ") {
+			t.Errorf("exit %d, last line %q", res.code, res.lastLine())
 		}
 	})
 	t.Run("a path that isn't absolute is refused", func(t *testing.T) {
 		r := newOpenSearchRun(t)
-		if res := r.run(OpenSearchCleanScript, "", nil, "relative", r.work, "fresh"); res.code == 0 || !strings.HasPrefix(res.lastLine(), "clean: ") {
+		if res := r.run(OpenSearchCleanScript, "", nil, "relative", r.work, "fresh", osOwner); res.code == 0 || !strings.HasPrefix(res.lastLine(), "clean: ") {
 			t.Errorf("exit %d, last line %q", res.code, res.lastLine())
 		}
 	})
@@ -769,7 +916,7 @@ func (r *osRun) upload(folder, ts, keep, pinned string, env ...string) execResul
 
 func (r *osRun) download(object, folder string, env ...string) execResult {
 	env = append(slices.Clone(env), "FAKE_SECRET="+osKey)
-	return r.run(OpenSearchDownloadScript, osDest(), env, object, folder, "600", filepath.Join(r.work, "indexer-2.download.result"))
+	return r.run(OpenSearchDownloadScript, osDest(), env, object, folder, "600", filepath.Join(r.work, "indexer-2.download.result"), osOwner)
 }
 
 func TestOpenSearchUploadScript(t *testing.T) {
@@ -980,6 +1127,41 @@ func TestOpenSearchDownloadScript(t *testing.T) {
 		}
 	})
 
+	t.Run("gives the folder and what is in it to the service's user", func(t *testing.T) {
+		r, object := made(t)
+		folder := filepath.Join(r.repoDir(), "caravana-indexer-2")
+		if res := r.download(object, folder); res.code != 0 {
+			t.Fatalf("exit %d: %s", res.code, res.stderr)
+		}
+		if want := "chown -R " + osOwner + " " + folder; !strings.Contains(r.callLog(), want+"\n") {
+			t.Errorf("chown -R was not asked for %q; log:\n%s", want, r.callLog())
+		}
+	})
+
+	t.Run("a chown that fails removes the folder and fails the step", func(t *testing.T) {
+		r, object := made(t)
+		folder := filepath.Join(r.repoDir(), "caravana-indexer-2")
+		res := r.download(object, folder, "FAKE_FAIL_CHOWN=Operation not permitted")
+		if res.code == 0 || res.lastLine() != "download: could not give the snapshot folder to the service's user" {
+			t.Errorf("exit %d, last line %q", res.code, res.lastLine())
+		}
+		if exists(folder) {
+			t.Error("the folder is still there")
+		}
+	})
+
+	t.Run("an owner that isn't two numbers is refused before anything runs", func(t *testing.T) {
+		r, object := made(t)
+		folder := filepath.Join(r.repoDir(), "caravana-indexer-2")
+		for _, owner := range []string{"", "root", "1000:", "1:2:3", "1000:$(id)"} {
+			res := r.run(OpenSearchDownloadScript, osDest(), []string{"FAKE_SECRET=" + osKey}, object, folder, "600",
+				filepath.Join(r.work, "indexer-2.download.result"), owner)
+			if res.code == 0 || !strings.HasPrefix(res.lastLine(), "download: ") || exists(folder) {
+				t.Errorf("owner %q: exit %d, last line %q, folder made: %v", owner, res.code, res.lastLine(), exists(folder))
+			}
+		}
+	})
+
 	t.Run("a failed fetch removes the folder", func(t *testing.T) {
 		r, object := made(t)
 		folder := filepath.Join(r.repoDir(), "caravana-indexer-2")
@@ -1041,7 +1223,11 @@ func TestOpenSearchDownloadScript(t *testing.T) {
 // script is given the same folder name it would find.
 func TestOpenSearchRoundTrip(t *testing.T) {
 	r := newOpenSearchRun(t)
-	if res := r.run(OpenSearchCleanScript, "", nil, r.repoDir(), r.work, "fresh"); res.code != 0 {
+	prepared := r.run(OpenSearchPrepareScript, "", nil, r.repoDir())
+	if prepared.code != 0 || ParseSQLiteOutput(prepared.stdout).Owner == "" {
+		t.Fatalf("prepare: exit %d: %s%s", prepared.code, prepared.stdout, prepared.stderr)
+	}
+	if res := r.run(OpenSearchCleanScript, "", nil, r.repoDir(), r.work, "fresh", ParseSQLiteOutput(prepared.stdout).Owner); res.code != 0 {
 		t.Fatalf("clean: exit %d: %s", res.code, res.stderr)
 	}
 	// The fake cluster makes the folder at the path it is told, which in a copy is the
@@ -1053,12 +1239,12 @@ func TestOpenSearchRoundTrip(t *testing.T) {
 	if res := r.upload(filepath.Join(r.repoDir(), "caravana-indexer-1"), "1791", "3", ""); res.code != 0 {
 		t.Fatalf("upload: exit %d: %s", res.code, res.stderr)
 	}
-	if res := r.run(OpenSearchCleanScript, "", nil, r.repoDir(), r.work, "keep"); res.code != 0 {
+	if res := r.run(OpenSearchCleanScript, "", nil, r.repoDir(), r.work, "keep", osOwner); res.code != 0 {
 		t.Fatalf("clean: exit %d: %s", res.code, res.stderr)
 	}
 	folder := filepath.Join(r.repoDir(), "caravana-indexer-1")
 	if res := r.run(OpenSearchDownloadScript, osDest(), []string{"FAKE_SECRET=" + osKey}, "b/logs/indexer/1791.opensearch.tar.gz", folder, "600",
-		filepath.Join(r.work, "indexer-1.download.result")); res.code != 0 {
+		filepath.Join(r.work, "indexer-1.download.result"), osOwner); res.code != 0 {
 		t.Fatalf("download: exit %d: %s", res.code, res.stderr)
 	}
 	if res := r.run(OpenSearchRestoreScript, "", nil, r.repoDir(), "indexer-1", "9200", "600", filepath.Join(r.work, "indexer-1.restore.result")); res.code != 0 {
@@ -1067,7 +1253,7 @@ func TestOpenSearchRoundTrip(t *testing.T) {
 	if got := r.read(filepath.Join(folder, "indices", "abc", "0", "__1")); got != "shard\n" {
 		t.Errorf("the extracted shard file = %q", got)
 	}
-	if res := r.run(OpenSearchCleanScript, "", nil, r.repoDir(), r.work, "keep"); res.code != 0 || exists(folder) {
+	if res := r.run(OpenSearchCleanScript, "", nil, r.repoDir(), r.work, "keep", osOwner); res.code != 0 || exists(folder) {
 		t.Errorf("the last clean left the folder (exit %d)", res.code)
 	}
 }

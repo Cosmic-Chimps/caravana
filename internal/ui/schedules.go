@@ -283,7 +283,7 @@ func commandLine(words []string) string {
 }
 
 // builtinCommand is a built-in schedule's command in words: "pg_dump →
-// backups", "mysqldump → backups", "mongodump → backups", "volumes → backups", "sqlite copy → backups"; bucket is the backup destination's ("" when
+// backups", "mysqldump → backups", "mongodump → backups", "volumes → backups", "sqlite copy → backups", "opensearch snapshot → backups"; bucket is the backup destination's ("" when
 // none is set).
 func builtinCommand(engine, bucket string) string {
 	what := "pg_dump"
@@ -296,6 +296,8 @@ func builtinCommand(engine, bucket string) string {
 		what = "volumes"
 	case app.BackupSQLite:
 		what = "sqlite copy"
+	case app.BackupOpenSearch:
+		what = "opensearch snapshot"
 	}
 	if bucket == "" {
 		return what + ", no destination set"

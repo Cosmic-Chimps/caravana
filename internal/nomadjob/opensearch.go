@@ -12,11 +12,15 @@ import (
 //
 // Two places run commands, both with Nomad's alloc exec:
 //
-//   - the service's own task runs the API calls (snapshot and restore): its
-//     image has sh, curl, grep and sed, and the cluster is on 127.0.0.1;
+//   - the service's own task runs the API calls (snapshot and restore) and the
+//     prepare step, which makes the repository folder as the cluster's own user
+//     and tells which user that is: its image has sh, curl, grep and sed, and
+//     the cluster is on 127.0.0.1;
 //   - caravana-upload, the backup image, which for this engine mounts the
 //     snapshot folder's volume (uploadTask), removes old folders, and archives
-//     and extracts the folder (clean, upload and download).
+//     and extracts the folder (clean, upload and download). It runs as root, so
+//     what it makes it gives to the user prepare reported; nothing is
+//     world-writable.
 //
 // The scripts share the sqlite ones' shape and helpers (SQLiteCommand,
 // sqliteCommon, sqliteDestination, uploadRetention): positional arguments, a
@@ -83,34 +87,82 @@ const (
 	opensearchRestoreMarker = "caravana-opensearch-restore"
 	// opensearchDownloadMarker starts "caravana-opensearch-download files=<n>".
 	opensearchDownloadMarker = "caravana-opensearch-download"
+	// opensearchOwnerMarker starts "caravana-opensearch-owner uid=<n> gid=<n>".
+	opensearchOwnerMarker = "caravana-opensearch-owner"
 )
 
 // OpenSearchLoginRefused is the reason of a run that OpenSearch answered 401. It
 // names the variables app.FindDumpLogin reads (a test keeps the two equal).
 const OpenSearchLoginRefused = "OpenSearch refused the login: set OPENSEARCH_INITIAL_ADMIN_PASSWORD, INDEXER_PASSWORD or ELASTIC_PASSWORD"
 
-// openSearchCleanScript is run in caravana-upload as
+// OpenSearchPrepareScript is run in the service's own task as
 //
-//	sh -c <script> sh <repository> <work dir> <fresh|keep>
+//	sh -c <script> sh <repository>
 //
-// It makes the work dir (world-writable: the service's own task, which runs as
-// another user, writes its result files there), empties it when the mode is
+// as the cluster's own user, which is the point: it makes the repository folder
+// when it is missing (mkdir -p, so the folder belongs to that user and nothing on
+// the host can write into it but the cluster and root), requires it to be
+// writable, and prints "caravana-opensearch-owner uid=<n> gid=<n>", the user it
+// ran as. The steps that run as root in caravana-upload (clean and download) give
+// what they make to that user instead of making it world-writable. It writes no
+// result file: the work directory doesn't exist yet.
+const OpenSearchPrepareScript = `repo=$1
+` + sqliteCommon + `
+case "$repo" in /?*) ;; *) fail "prepare: the repository's path is not usable" ;; esac
+mkdir -p "$repo" 2>/dev/null || fail "prepare: could not make the repository folder $repo"
+if [ ! -w "$repo" ] || [ ! -x "$repo" ]; then
+  fail "prepare: the repository folder $repo is not writable by the service's user"
+fi
+uid=$(id -u 2>/dev/null)
+gid=$(id -g 2>/dev/null)
+case "$uid" in ''|*[!0-9]*) fail "prepare: could not read the service's user" ;; esac
+case "$gid" in ''|*[!0-9]*) fail "prepare: could not read the service's group" ;; esac
+echo "` + opensearchOwnerMarker + ` uid=$uid gid=$gid"
+# Nomad's exec can report the exit of a command that ends at once before its
+# output arrives (lab, 2026-11-27: a restore's prepare came back empty twice), and
+# this step has no result file to fall back on, so it lingers a second.
+sleep 1
+`
+
+// openSearchOwner is the helper that clean and download share: split_owner
+// <step> <uid:gid> sets OWNER_UID and OWNER_GID from the owner the prepare step
+// printed, and refuses anything but two numbers. The values reach chown only.
+const openSearchOwner = `
+split_owner() {
+  case "$2" in *:*) ;; *) fail "$1: the service's user is not usable" ;; esac
+  OWNER_UID=$(printf '%s' "$2" | cut -d: -f1)
+  OWNER_GID=$(printf '%s' "$2" | cut -d: -f2-)
+  case "$OWNER_UID" in ''|*[!0-9]*) fail "$1: the service's user is not usable" ;; esac
+  case "$OWNER_GID" in ''|*[!0-9]*) fail "$1: the service's group is not usable" ;; esac
+}
+`
+
+// OpenSearchCleanScript is run in caravana-upload as
+//
+//	sh -c <script> sh <repository> <work dir> <fresh|keep> <uid:gid>
+//
+// <uid:gid> is the service's user, from the prepare step. It makes the work dir,
+// owned by that user with mode 0770 (the service's own task writes its result
+// files there, and nobody else on the host may), empties it when the mode is
 // "fresh" (the first clean of a run), and removes the "caravana-*" folders
 // earlier runs left in the repository. Only those: a folder of another name,
-// and a link, is never touched.
+// and a link, is never touched. It doesn't make the repository folder; a
+// missing one has nothing to remove.
 const OpenSearchCleanScript = `repo=$1
 work=$2
 mode=$3
-` + sqliteCommon + `
+owner=$4
+` + sqliteCommon + openSearchOwner + `
 case "$repo" in /?*) ;; *) fail "clean: the repository's path is not usable" ;; esac
 case "$work" in /?*) ;; *) fail "clean: the work directory's path is not usable" ;; esac
+split_owner clean "$owner"
 mkdir -p "$work" || fail "clean: could not prepare $work"
-chmod 777 "$work" 2>/dev/null
+chown "$OWNER_UID:$OWNER_GID" "$work" || fail "clean: could not give $work to the service's user"
+chmod 770 "$work" || fail "clean: could not set the mode of $work"
 if [ "$mode" = fresh ]; then
   rm -f "$work"/*.result
   rm -rf "$work"/*.work
 fi
-[ -d "$repo" ] || exit 0
 for old in "$repo"/caravana-*; do
   [ -d "$old" ] || continue
   [ ! -L "$old" ] || continue
@@ -481,20 +533,24 @@ exit 0
 
 // OpenSearchDownloadScript is run in caravana-upload as
 //
-//	sh -c <script> sh <object> <folder> <seconds> <result>
+//	sh -c <script> sh <object> <folder> <seconds> <result> <uid:gid>
 //
 // with the destination's credentials on its standard input. It streams the
 // backup into tar, which extracts it to <folder> (emptied first), with both
 // exit codes checked, and requires the folder to hold a snapshot
-// (index.latest). On success it prints "caravana-opensearch-download files=<n>".
+// (index.latest). The folder and everything in it are then given to <uid:gid>,
+// the service's user (the prepare step's), so nothing in the repository is
+// root's: the cluster reads it, and can remove it later. On success it prints "caravana-opensearch-download files=<n>".
 // A failed download removes the folder.
 const OpenSearchDownloadScript = `object=$1
 folder=$2
 LIMIT=$3
 RESULT=$4
-` + sqliteCommon + sqliteDestination + `
+owner=$5
+` + sqliteCommon + sqliteDestination + openSearchOwner + `
 set_deadline
 [ -n "$RESULT" ] || fail "download: the request names no result file"
+split_owner download "$owner"
 read_destination
 [ -n "$object" ] || fail "download: the request names no backup to restore"
 case "$(basename "$folder")" in caravana-?*) ;; *) fail "download: the snapshot folder's path is not usable" ;; esac
@@ -523,6 +579,10 @@ fi
 if [ ! -f "$folder/index.latest" ]; then
   rm -rf "$folder"
   fail "download: the backup holds no OpenSearch snapshot"
+fi
+if ! chown -R "$OWNER_UID:$OWNER_GID" "$folder"; then
+  rm -rf "$folder"
+  fail "download: could not give the snapshot folder to the service's user"
 fi
 say "` + opensearchDownloadMarker + ` files=$(find "$folder" -type f | wc -l | tr -d ' ')"
 `

@@ -2512,6 +2512,65 @@ API 0.66.0, no migration, no new module, no policy change, constitution unchange
   else) passed on 2026-11-26 (31 s, `-run 'TestLab/^(api-needs-token|opensearch)$'`). The image appends to `opensearch.yml`
   when `DISABLE_SECURITY_PLUGIN` is set, which a read-only file refuses, so that setting goes in the file.
 
+Feature 061 (`specs/061-opensearch-snapshots`, CodeAlta task `pcqt`, worktree branch `alta/polar-zanzibar-p5fm`, stacked on 060, phases A to
+C): `backup: {engine: opensearch, repository: <folder>}` backs up an OpenSearch (or fork, or Elasticsearch 7/8) cluster while it runs.
+`plan.md` D1–D11 are the decisions, R1–R6 the lab facts (no `repository-s3` in the official images, so the cluster writes a shared-filesystem
+snapshot and Caravana archives the folder); operator doc: the "OpenSearch and Elasticsearch snapshots" section of `docs/database-backups.md`.
+Migration 0048, API 0.67.0, no new module, no policy change, constitution unchanged (the sidecar is 029's `caravana-upload`).
+- Model: `app.BackupOpenSearch`, `Backup.Repository` (`omitempty`), not a dump engine (`DumpEngine` stays false): it runs in the copy on
+  Caravana's own schedule like `volume` and `sqlite`. `repository` is an absolute path as the service sees it, equal to or inside one of
+  its writable volumes (`Service.OpenSearchRepository()` gives the volume and the path in it; refused naming
+  `services[i].backup.repository`); the service needs a port. `FindDumpLogin` has the opensearch case: `OPENSEARCH_INITIAL_ADMIN_PASSWORD`
+  (user `admin`), else `INDEXER_PASSWORD` with `INDEXER_USERNAME`, else `ELASTIC_PASSWORD` (user `elastic`); none means a cluster with the
+  security plugin off and is no refusal. A deploy warns on `services[i].backup.repository` when the service has no env named `path.repo`
+  and no file whose content contains it (`OpenSearchRepositoryWarnings`).
+- Scripts (`nomadjob/opensearch.go`, pure, run under a real `sh` with fake `curl` and `rclone` in the tests) and where each runs. The API
+  calls (`snapshot`, `restore`, and `prepare`, the first step) run with alloc exec in the **service's own task** against `127.0.0.1:<first container port>`, https then
+  http, `curl -k`; the folder work (`clean`, `upload`, `download`) runs in the `caravana-upload` sidecar, which for this engine mounts the
+  repository's volume writable at `/caravana-volumes/<volume>` (no `caravana-sqlite` task). Each backup uses a fresh folder
+  `<repository>/caravana-<request>` and the object is `<BACKUP_PATH>/<ts>.opensearch.tar.gz`, a full snapshot: nothing is incremental, so
+  retention, pins, copies and restore from any place need nothing new. A run's first step removes the `caravana-*` folders an earlier run
+  left (only those). A backup is `*,-.*` without global state (dot indices, templates, settings and data streams are not in it: restoring
+  `.opendistro_security` as admin is refused); a restore closes each index of the snapshot that exists, restores over it (`wait_for_completion`),
+  and on a failure after the close tries to open them again; indices made since stay. Every script prints markers and writes them to a
+  result file under `/alloc/data/caravana/opensearch/` (029's exec-output race).
+- The login goes on the exec's standard input only (`OPENSEARCH_USER=` and `OPENSEARCH_PASSWORD=` lines, read into shell variables and fed to
+  each curl as a config on its stdin with `printf`, a builtin), never an argument, file, variable or job; the destination's keys go the same
+  way (`destinationLines`). `deploy/opensearchrun.go` and `service/opensearchbackup.go` sit beside the sqlite ones and share 016/029's claim,
+  request IDs, scheduler, limits, `backupBusy`, pins and records; at start a running run is failed with "Caravana restarted during the run"
+  (a restore adds that the closed indices may still be closed), asking Nomad nothing. Record job ID `<app>_<service>_opensearch/<ts>`.
+- Migration 0048 widens the engine CHECK of `backups` and `restores` and runs with **foreign keys off** (`-- caravana: foreign_keys off` as its
+  first line; the runner turns the pragma off around that migration's transaction, on one connection): `backup_copies` (052) references
+  `backups` with `ON DELETE CASCADE`, so 0036's rebuild would delete every copy's row now that foreign keys are enforced (054), and a
+  `backups` row whose app is gone could not even be copied. `TestUpgradeTo0048` checks the copy rows, an orphan of each table and the cascade.
+  The sqlite engine's shared pieces lost "sqlite" from their names (`sidecarRun`, `prepareSidecarRun`, `settleSidecarBackup`).
+- API 0.67.0: `opensearch` in every engine enum (policy, backup, restore, overlay) and `BackupPolicy.repository`; no route or code.
+- Console (phase B; no designer pass, existing parts): the Compose form's engine select ("OpenSearch or Elasticsearch snapshot (the service keeps
+  running)") with the **Snapshot folder** input (`backupRepository`, beside Database file; a folder with another engine is refused at it, the
+  model's field errors `backup.repository` come back on it, and a kept draft carries it through `cloneBackup`); the Backups tab's rows say
+  "OpenSearch · <folder>" and "The service keeps running." (`backupSvcRow.OpenSearch`, `KeepsRunning`), its restore confirmation describes closing
+  and replacing the indices with the button "Restore the indices" and never says the service stops; "Change the policy…" offers the engine to a
+  service with a port and a writable volume, with the Snapshot folder input, which `Service.ChangeBackupPolicy` (now takes `repository`) writes
+  only for this engine, as `file` is for sqlite; built-in schedules read "opensearch snapshot → <bucket>"; Configure's Overview line says
+  "OpenSearch snapshot of <folder>, …" and the Services panel's `engineText` names the engine and folder. A sentinel test
+  (`TestOpenSearchBackupsShowNoPassword`) searches every page and the log for a secret `OPENSEARCH_INITIAL_ADMIN_PASSWORD` and, apart from
+  Configure, a plain one.
+- Tests: scripts under `sh`, goldens `opensearch-backup`, `service` (`opensearchbackup_test.go`: runs, restore, schedules, resume, pins, sentinel),
+  `store` (0048), `ui` (`opensearchbackups_test.go`). The gate step `opensearch-snapshot` (`gate_opensearch_snapshot_test.go`: the
+  repository refusals, OpenSearch 2.19.1 with its security plugin on, Back up now and a restore with the same copy, no restart, the same job
+  version and no run folder left, the document back and an index made since kept, a pinned backup outliving `keep: 1`, the admin password in
+  no answer, log, job, export or data file) passed in the lab on 2026-11-26 (127 s, `-run 'TestLab/^(api-needs-token|opensearch-snapshot)$'`),
+  and `sqlite-backup-restore` passed again after the shared code's refactor (279 s). Nothing is world-writable (review, plan "Deviations (review)"): a first
+  step, `prepare`, runs in the service's own task, makes the repository folder as the cluster's user (`mkdir -p`) and prints
+  `caravana-opensearch-owner uid=<n> gid=<n>` (`SQLiteOutput.Owner`, `Deployer.OpenSearchPrepare`; the script lingers a second after its marker
+  and is asked up to three times, since an exec that ends at once can come back without its output); the root sidecar's clean (work directory, mode 0770) and download (`chown -R` of the run folder) take that
+  `uid:gid` as an argument and give what they make to it. The volume root's owner wasn't usable: the mkdir plugin makes it root, 0777. The Wazuh template's indexer
+  (`92b4c09` on `wazuh-template` of `../caravana-templates`, not pushed) has an `indexer-snapshots` volume, `path.repo` in its
+  `opensearch.yml`, `OPENSEARCH_INITIAL_ADMIN_PASSWORD` (not `INDEXER_PASSWORD`, which Wazuh's entrypoint writes into a keystore) and a
+  daily opensearch backup; it passes `caravana template check`, and a run against Wazuh's images is still the maintainer's.
+- Not in 061: an S3 repository, incremental snapshots, the cluster's global state or dot indices, data streams, a multi-node cluster's per-node
+  folders (every node needs the same shared `path.repo`), an Elasticsearch image check by script beyond the hand check on 8.17.
+
 The documentation site (branch `docs-site`, 2026-11-26): the user guide is the Markdown under `docs/` (new
 pages in `docs/guide/`, the per-feature docs in `docs/*.md`), published to GitHub Pages
 (`https://cosmic-chimps.github.io/caravana/`) by `.github/workflows/pages.yml` from the Astro Starlight

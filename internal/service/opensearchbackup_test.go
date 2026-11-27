@@ -47,7 +47,7 @@ func newOpenSearchLab(t *testing.T) *volumeLab {
 
 // openSearchReplies are what the steps' commands do.
 type openSearchReplies struct {
-	clean, snapshot, upload, download, restore deploytest.ExecReply
+	prepare, clean, snapshot, upload, download, restore deploytest.ExecReply
 }
 
 func (l *volumeLab) onOpenSearch(r openSearchReplies) {
@@ -57,6 +57,8 @@ func (l *volumeLab) onOpenSearch(r openSearchReplies) {
 			script = req.Command[2]
 		}
 		switch script {
+		case nomadjob.OpenSearchPrepareScript:
+			return r.prepare
 		case nomadjob.OpenSearchCleanScript:
 			return r.clean
 		case nomadjob.OpenSearchSnapshotScript:
@@ -75,6 +77,7 @@ func (l *volumeLab) onOpenSearch(r openSearchReplies) {
 func (l *volumeLab) openSearchOK(id string) openSearchReplies {
 	ts := strings.TrimPrefix(id, "web-")
 	return openSearchReplies{
+		prepare:  deploytest.ExecReply{Stdout: "caravana-opensearch-owner uid=1000 gid=1001\n"},
 		snapshot: deploytest.ExecReply{Stdout: "caravana-opensearch-snapshot indices=2\n"},
 		upload: deploytest.ExecReply{Stdout: "caravana-backup key=backups/caravana/whoami/web/" + ts + ".opensearch.tar.gz bytes=5000\n" +
 			"caravana-expired 1700000000.opensearch.tar.gz\n"},
@@ -88,6 +91,7 @@ func (l *volumeLab) osScripts() []string {
 	var out []string
 	for _, e := range l.nomad.Execs() {
 		name := map[string]string{
+			nomadjob.OpenSearchPrepareScript:  "prepare",
 			nomadjob.OpenSearchCleanScript:    "clean",
 			nomadjob.OpenSearchSnapshotScript: "snapshot",
 			nomadjob.OpenSearchUploadScript:   "upload",
@@ -134,7 +138,7 @@ func TestOpenSearchBackupRun(t *testing.T) {
 		if rs := l.nomad.Restarts(); len(rs) != 0 {
 			t.Errorf("restarts = %v, want none: the service keeps running", rs)
 		}
-		if got, want := strings.Join(l.osScripts(), " "), "clean@caravana-upload snapshot@web upload@caravana-upload"; got != want {
+		if got, want := strings.Join(l.osScripts(), " "), "prepare@web clean@caravana-upload snapshot@web upload@caravana-upload"; got != want {
 			t.Errorf("commands = %s, want %s", got, want)
 		}
 		for _, e := range l.nomad.Execs() {
@@ -155,6 +159,13 @@ func TestOpenSearchBackupRun(t *testing.T) {
 			case nomadjob.OpenSearchCleanScript:
 				if e.Stdin != "" {
 					t.Errorf("clean got a standard input: %q", e.Stdin)
+				}
+				if owner := e.Command[len(e.Command)-1]; owner != "1000:1001" {
+					t.Errorf("clean's owner = %q, want the one prepare reported", owner)
+				}
+			case nomadjob.OpenSearchPrepareScript:
+				if e.Stdin != "" || e.Command[4] != "/data/snaps" {
+					t.Errorf("prepare exec = args %q, stdin %q", e.Command[4:], e.Stdin)
 				}
 			}
 			if strings.Contains(strings.Join(e.Command, " "), osSentinel) || strings.Contains(strings.Join(e.Command, " "), marker) {
@@ -212,19 +223,22 @@ func TestOpenSearchBackupRun(t *testing.T) {
 		{"the folder is outside path.repo", func(r *openSearchReplies) {
 			r.snapshot = deploytest.ExecReply{ExitCode: 1, Stderr: "snapshot: [caravana] location [/data/snaps/caravana-x] doesn't match any of the locations specified by path.repo\n"}
 		}, "snapshot: [caravana] location [/data/snaps/caravana-x] doesn't match any of the locations specified by path.repo",
-			"clean@caravana-upload snapshot@web clean@caravana-upload"},
+			"prepare@web clean@caravana-upload snapshot@web clean@caravana-upload"},
 		{"the login is refused", func(r *openSearchReplies) {
 			r.snapshot = deploytest.ExecReply{ExitCode: 1, Stderr: "snapshot: " + nomadjob.OpenSearchLoginRefused + "\n"}
-		}, "snapshot: " + nomadjob.OpenSearchLoginRefused, "clean@caravana-upload snapshot@web clean@caravana-upload"},
+		}, "snapshot: " + nomadjob.OpenSearchLoginRefused, "prepare@web clean@caravana-upload snapshot@web clean@caravana-upload"},
 		{"the clean fails", func(r *openSearchReplies) {
 			r.clean = deploytest.ExecReply{ExitCode: 1, Stderr: "clean: could not remove /caravana-volumes/data/snaps/caravana-old\n"}
-		}, "clean: could not remove /caravana-volumes/data/snaps/caravana-old", "clean@caravana-upload"},
+		}, "clean: could not remove /caravana-volumes/data/snaps/caravana-old", "prepare@web clean@caravana-upload"},
+		{"the prepare fails", func(r *openSearchReplies) {
+			r.prepare = deploytest.ExecReply{ExitCode: 1, Stderr: "prepare: could not make the repository folder /data/snaps\n"}
+		}, "prepare: could not make the repository folder /data/snaps", "prepare@web"},
 		{"the upload fails", func(r *openSearchReplies) {
 			r.upload = deploytest.ExecReply{ExitCode: 1, Stderr: "upload: 403 Forbidden\n"}
-		}, "upload: 403 Forbidden", "clean@caravana-upload snapshot@web upload@caravana-upload"},
+		}, "upload: 403 Forbidden", "prepare@web clean@caravana-upload snapshot@web upload@caravana-upload"},
 		{"Nomad can't start the command", func(r *openSearchReplies) {
 			r.snapshot = deploytest.ExecReply{Fail: "task not running"}
-		}, "", "clean@caravana-upload snapshot@web clean@caravana-upload"},
+		}, "", "prepare@web clean@caravana-upload snapshot@web clean@caravana-upload"},
 	}
 	for _, tt := range failures {
 		t.Run(tt.name, func(t *testing.T) {
@@ -351,7 +365,7 @@ func TestOpenSearchRestoreRun(t *testing.T) {
 			t.Errorf("record = %+v, want succeeded with no stop time, read from main", got)
 		}
 		l.released()
-		if got, want := strings.Join(l.osScripts(), " "), "clean@caravana-upload download@caravana-upload restore@web clean@caravana-upload"; got != want {
+		if got, want := strings.Join(l.osScripts(), " "), "prepare@web clean@caravana-upload download@caravana-upload restore@web clean@caravana-upload"; got != want {
 			t.Errorf("commands = %s, want %s", got, want)
 		}
 		if rs := l.nomad.Restarts(); len(rs) != 0 {
@@ -363,6 +377,11 @@ func TestOpenSearchRestoreRun(t *testing.T) {
 		for _, e := range l.nomad.Execs() {
 			if e.Command[2] == nomadjob.OpenSearchDownloadScript && (e.Command[4] != b.Object || !strings.Contains(e.Stdin, marker)) {
 				t.Errorf("the download = %v (stdin has the key: %v)", e.Command[4:], strings.Contains(e.Stdin, marker))
+			}
+			if e.Command[2] == nomadjob.OpenSearchDownloadScript || e.Command[2] == nomadjob.OpenSearchCleanScript {
+				if owner := e.Command[len(e.Command)-1]; owner != "1000:1001" {
+					t.Errorf("%s's owner = %q, want the one prepare reported", e.Task, owner)
+				}
 			}
 			if e.Command[2] == nomadjob.OpenSearchRestoreScript && !strings.Contains(e.Stdin, "OPENSEARCH_PASSWORD="+osSentinel) {
 				t.Errorf("the restore's standard input lacks the login: %q", e.Stdin)
@@ -376,12 +395,15 @@ func TestOpenSearchRestoreRun(t *testing.T) {
 		wantMsg string
 		steps   string
 	}{
+		{"a prepare that fails", func(r *openSearchReplies) {
+			r.prepare = deploytest.ExecReply{ExitCode: 1, Stderr: "prepare: the repository folder /data/snaps is not writable by the service's user\n"}
+		}, "prepare: the repository folder /data/snaps is not writable by the service's user", "prepare@web"},
 		{"a download that fails", func(r *openSearchReplies) {
 			r.download = deploytest.ExecReply{ExitCode: 1, Stderr: "download: the backup holds no OpenSearch snapshot\n"}
-		}, "download: the backup holds no OpenSearch snapshot", "clean@caravana-upload download@caravana-upload clean@caravana-upload"},
+		}, "download: the backup holds no OpenSearch snapshot", "prepare@web clean@caravana-upload download@caravana-upload clean@caravana-upload"},
 		{"a restore that fails", func(r *openSearchReplies) {
 			r.restore = deploytest.ExecReply{ExitCode: 1, Stderr: "restore: boom; the indices it closed were opened again\n"}
-		}, "restore: boom; the indices it closed were opened again", "clean@caravana-upload download@caravana-upload restore@web clean@caravana-upload"},
+		}, "restore: boom; the indices it closed were opened again", "prepare@web clean@caravana-upload download@caravana-upload restore@web clean@caravana-upload"},
 	} {
 		t.Run(tt.name+" ends the restore, with the folder cleaned", func(t *testing.T) {
 			l := newOpenSearchLab(t)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
@@ -59,11 +60,49 @@ func openSearchRepository(svc app.Service) (volume app.Volume, inVolume string, 
 	return vol, in, svc.Ports[0].ContainerPort, nil
 }
 
+// OpenSearchPrepare makes the snapshot repository folder in the service's own
+// task, as the cluster's own user, and returns that user as "uid:gid" (digits
+// only). The steps that run as root in caravana-upload give what they make to
+// it, so no folder on the volume is world-writable (feature 061, plan
+// "Deviations (review)"). Nomad's exec stream can report the exit before the
+// output has arrived, and there is no result file at this point (the work
+// directory doesn't exist yet), so an answer without the user is asked for once
+// more; the script is idempotent.
+func (d *Deployer) OpenSearchPrepare(ctx context.Context, copyID string, svc app.Service) (string, error) {
+	if _, _, _, err := openSearchRepository(svc); err != nil {
+		return "", err
+	}
+	cmd := nomadjob.OpenSearchCommand(nomadjob.OpenSearchPrepareScript, svc.Backup.Repository)
+	// The script waits a second after its marker, so the exec's output arrives
+	// before its exit; an answer that still came back empty is asked again.
+	for try := range 3 {
+		if try > 0 {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(time.Second):
+			}
+		}
+		out, err := d.runStep(ctx, copyID, svc.Name, "prepare", cmd, nil, nil)
+		if err != nil {
+			return "", err
+		}
+		if out.Owner != "" {
+			return out.Owner, nil
+		}
+	}
+	return "", &SQLiteError{Message: "prepare: the service's user could not be read"}
+}
+
 // OpenSearchClean empties the "caravana-*" folders earlier runs left in the
-// snapshot repository, in the copy's caravana-upload task. fresh is the first
+// snapshot repository, in the copy's caravana-upload task, and gives the work
+// directory to owner, the user OpenSearchPrepare reported. fresh is the first
 // clean of a run, which also empties the work directory of its result files;
 // the last clean of a restore passes false so the results stay readable.
-func (d *Deployer) OpenSearchClean(ctx context.Context, copyID string, svc app.Service, fresh bool) error {
+func (d *Deployer) OpenSearchClean(ctx context.Context, copyID string, svc app.Service, owner string, fresh bool) error {
+	if !nomadjob.ValidOwner(owner) {
+		return &SQLiteError{Message: "clean: the service's user is not usable"}
+	}
 	vol, in, _, err := openSearchRepository(svc)
 	if err != nil {
 		return err
@@ -72,7 +111,7 @@ func (d *Deployer) OpenSearchClean(ctx context.Context, copyID string, svc app.S
 	if fresh {
 		mode = "fresh"
 	}
-	cmd := nomadjob.OpenSearchCommand(nomadjob.OpenSearchCleanScript, nomadjob.OpenSearchRepositoryDir(vol.Name, in), nomadjob.OpenSearchWorkDir, mode)
+	cmd := nomadjob.OpenSearchCommand(nomadjob.OpenSearchCleanScript, nomadjob.OpenSearchRepositoryDir(vol.Name, in), nomadjob.OpenSearchWorkDir, mode, owner)
 	_, err = d.runStep(ctx, copyID, app.UploadTaskName, "clean", cmd, nil, nil)
 	return err
 }
@@ -135,8 +174,11 @@ func (d *Deployer) OpenSearchUpload(ctx context.Context, copyID, request, appID 
 // OpenSearchDownload downloads the backup at object (its key in the
 // destination, as OpenSearchUpload reported it) in the copy's caravana-upload
 // task and extracts it to <repository>/caravana-<request>, which must hold a
-// snapshot. The output has the number of files.
-func (d *Deployer) OpenSearchDownload(ctx context.Context, copyID, request, object string, svc app.Service, dest BackupDestination) (nomadjob.SQLiteOutput, error) {
+// snapshot and is given to owner. The output has the number of files.
+func (d *Deployer) OpenSearchDownload(ctx context.Context, copyID, request, object string, svc app.Service, dest BackupDestination, owner string) (nomadjob.SQLiteOutput, error) {
+	if !nomadjob.ValidOwner(owner) {
+		return nomadjob.SQLiteOutput{}, &SQLiteError{Message: "download: the service's user is not usable"}
+	}
 	vol, in, _, err := openSearchRepository(svc)
 	if err != nil {
 		return nomadjob.SQLiteOutput{}, err
@@ -147,7 +189,7 @@ func (d *Deployer) OpenSearchDownload(ctx context.Context, copyID, request, obje
 	}
 	folder := nomadjob.OpenSearchRepositoryDir(vol.Name, in) + "/" + nomadjob.OpenSearchFolderName(request)
 	cmd := nomadjob.OpenSearchCommand(nomadjob.OpenSearchDownloadScript, object, folder, seconds(ctx),
-		nomadjob.OpenSearchResultPath(request, "download"))
+		nomadjob.OpenSearchResultPath(request, "download"), owner)
 	out, err := d.runStep(ctx, copyID, app.UploadTaskName, "download", cmd, strings.NewReader(stdin), destSecrets(&dest))
 	if err != nil {
 		return out, err
