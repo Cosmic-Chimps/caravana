@@ -1001,11 +1001,17 @@ reach the owner, but the page leads with what is happening, so findings are quie
   exploited", **Open findings**) and no package rows: the app's Security panel has those. An admin's head links to
   Operator › Security. The API and the notifications keep one item per package.
 - **Not trouble.** The headline and the state filter don't count an app whose only items are findings; a last clause
-  says "3 have fixable critical vulnerabilities." Apps in it are named by their name, never their ID.
+  names the findings, not a set of apps (an app with an outage can have findings too), and judges each app by its own
+  worst level: "Fixable critical vulnerabilities in 6 apps." when they share one, else "Fixable vulnerabilities in 6
+  apps: critical in 5, high in 1." Apps named in the headline are named by their name, never their ID.
 - **A tag, never a second pill.** An app with findings has a second line in its Status cell, 4px under the pill: the
-  worst level's mark and count in mono 12px in that level's hue ("■ 9 critical", "◆ 4 high"), no ground and no border,
-  a link to the app's Security panel (a plain span where the whole row is already a link, as on the project page).
-  Nothing is drawn without findings: no "0".
+  worst level's mark and count in mono 12px ("■ 9 critical", "◆ 4 high"): the mark in the level's hue, the text in
+  Body Text, so the colour carries the level and a finding never reads like "not running". No ground and no border; a
+  link to the app's Security panel (a plain span where the whole row is already a link, as on the project page).
+  Nothing is drawn without findings: no "0". In the Operator table a row with a tag has 6px of block padding.
+- **One count.** The group, the tag and the headline count the packages of the needs-you items the page already
+  reads, not the scans (`ImageScans`): those items have the notify level, stopped apps and the viewer's visibility
+  applied, so every place counts the same packages with no extra read.
 
 ### The project page (feature 027.5)
 Values from `specs/027.5-project-page/contracts/project-screen.md`, the handoff's `ProjectScreen`. A

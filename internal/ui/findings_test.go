@@ -98,6 +98,13 @@ func TestSecurityGroup(t *testing.T) {
 			vulnItem("shop--staging--web", "shop", "staging", "web", "zlib", true, false)},
 			false, "failed", "3 apps have fixable vulnerabilities: 2 critical packages, 2 high packages.",
 			[]string{"a | 1 critical, 1 high", "Shop › staging › web | 1 critical", "b | 1 high"}, false},
+		{"known exploited first, then critical, then high, then the label as it reads", []service.AttentionItem{
+			vulnItem("zed", "", "", "", "zlib", true, false), vulnItem("zed", "", "", "", "curl", true, false),
+			vulnItem("kev", "", "", "", "zlib", true, true),
+			vulnItem("shop--staging--web", "shop", "staging", "web", "zlib", true, false),
+			vulnItem("alpha", "", "", "", "zlib", true, false), vulnItem("low", "", "", "", "zlib", false, false)},
+			false, "failed", "5 apps have fixable vulnerabilities: 5 critical packages, 1 high package, 1 known exploited.",
+			[]string{"kev | 1 critical, 1 known exploited", "zed | 2 critical", "alpha | 1 critical", "Shop › staging › web | 1 critical", "low | 1 high"}, false},
 		{"only high is a warning, a package is singular", []service.AttentionItem{vulnItem("a", "", "", "", "zlib", false, false)},
 			false, "warning", "a has fixable vulnerabilities: 1 high package.", []string{"a | 1 high"}, false},
 	}
@@ -113,12 +120,12 @@ func TestSecurityGroup(t *testing.T) {
 			if g == nil {
 				t.Fatal("no group")
 			}
-			if head := g.Lead.String() + g.Rest; head != tc.wantHead || g.Mark != tc.wantMark {
+			if head := g.Lead.String() + g.Rest(); head != tc.wantHead || g.Mark != tc.wantMark {
 				t.Errorf("head = %q (%s), want %q (%s)", head, g.Mark, tc.wantHead, tc.wantMark)
 			}
 			var lines []string
 			for _, l := range g.Apps {
-				lines = append(lines, l.Label.String()+" | "+l.Counts)
+				lines = append(lines, l.Label.String()+" | "+strings.Join(l.Counts, " "))
 				if want := "/deployments#security"; !strings.HasSuffix(l.Href, want) {
 					t.Errorf("link = %q, want one ending %s", l.Href, want)
 				}
@@ -168,18 +175,19 @@ func TestHeadlineKeepsFindingsOutOfTrouble(t *testing.T) {
 	}{
 		{"only findings: the apps are healthy, and a clause says how many have them",
 			[]service.AppSummary{ok("a"), ok("b"), ok("c"), ok("d"), ok("e"), ok("f"), ok("g"), ok("h"), ok("i"), ok("j"), ok("k")}, flag("a", "b", "c"),
-			"11 apps healthy. 3 have fixable critical vulnerabilities."},
-		{"one", []service.AppSummary{ok("a"), ok("b")}, flag("a"), "2 apps healthy. 1 has fixable critical vulnerabilities."},
+			"11 apps healthy. Fixable critical vulnerabilities in 3 apps."},
+		{"one", []service.AppSummary{ok("a"), ok("b")}, flag("a"), "2 apps healthy. Fixable critical vulnerabilities in 1 app."},
 		{"the worst across the apps is high", []service.AppSummary{ok("a"), ok("b")}, []service.AttentionItem{high("a"), high("b")},
-			"2 apps healthy. 2 have fixable high vulnerabilities."},
-		{"one critical among highs says critical", []service.AppSummary{ok("a"), ok("b")}, []service.AttentionItem{high("a"), flag("b")[0]},
-			"2 apps healthy. 2 have fixable critical vulnerabilities."},
+			"2 apps healthy. Fixable high vulnerabilities in 2 apps."},
+		{"mixed levels: each app by its own worst", []service.AppSummary{ok("a"), ok("b"), ok("c")},
+			[]service.AttentionItem{high("a"), flag("b")[0], high("b"), flag("c")[0]},
+			"3 apps healthy. Fixable vulnerabilities in 3 apps: critical in 2, high in 1."},
 		{"after trouble, and the troubled app's findings count in the clause", []service.AppSummary{degraded("api"), ok("a")},
 			append(flag("api", "a"), service.AttentionItem{Kind: service.AttentionRestarting, AppID: "api"}),
-			"1 app needs you: api has 1 of 2 copies healthy. 1 app healthy. 2 have fixable critical vulnerabilities."},
+			"1 app needs you: api has 1 of 2 copies healthy. 1 app healthy. Fixable critical vulnerabilities in 2 apps."},
 		{"findings never hide an item that is trouble, in whichever order the list has them", []service.AppSummary{ok("a")},
 			[]service.AttentionItem{flag("a")[0], {Kind: service.AttentionBackupFailed, AppID: "a"}},
-			"1 app needs you: a has a failed backup. 1 has fixable critical vulnerabilities."},
+			"1 app needs you: a has a failed backup. Fixable critical vulnerabilities in 1 app."},
 		{"nothing is said without any", []service.AppSummary{ok("a")}, nil, "1 app healthy."},
 		{"a finding of an app not in the list is nobody's", []service.AppSummary{ok("a")}, flag("gone"), "1 app healthy."},
 	}
@@ -191,11 +199,11 @@ func TestHeadlineKeepsFindingsOutOfTrouble(t *testing.T) {
 		})
 	}
 
-	// With no sentence of counts before it the clause says "apps".
-	if got := findingsClause([]service.AppSummary{ok("a"), ok("b")}, flag("a", "b"), false).String(); got != "2 apps have fixable critical vulnerabilities." {
+	// The clause alone, for one app and for several.
+	if got := findingsClause([]service.AppSummary{ok("a"), ok("b")}, flag("a", "b")).String(); got != "Fixable critical vulnerabilities in 2 apps." {
 		t.Errorf("clause = %q", got)
 	}
-	if got := findingsClause([]service.AppSummary{ok("a")}, flag("a"), false).String(); got != "1 app has fixable critical vulnerabilities." {
+	if got := findingsClause([]service.AppSummary{ok("a")}, flag("a")).String(); got != "Fixable critical vulnerabilities in 1 app." {
 		t.Errorf("clause = %q", got)
 	}
 }
@@ -251,5 +259,27 @@ func TestFindingsCounts(t *testing.T) {
 	}
 	if got := (findings{}).counts(true); got != "" {
 		t.Errorf("counts of none = %q", got)
+	}
+	// The phrases a narrow line may break between: the comma stays with its count.
+	if got := f.phrases(false); strings.Join(got, "|") != "14 critical,|1 high,|2 known exploited" {
+		t.Errorf("phrases = %q", got)
+	}
+	if got := (findings{}).phrases(true); got != nil {
+		t.Errorf("phrases of none = %q", got)
+	}
+}
+
+// Each count phrase is drawn whole, in the head and in an app's line, so "1 known exploited" never breaks.
+func TestSecurityGroupKeepsEachCountWhole(t *testing.T) {
+	g := securityGroupOf([]service.AttentionItem{vulnItem("a", "", "", "", "zlib", true, true)}, places{}, false)
+	var b strings.Builder
+	if err := newTestServer(t, newUIEnv(t, true, "")).pages["apps"].ExecuteTemplate(&b, "security-group", g); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`<span class="cv-nowrap">1 critical package,</span>`, `<span class="cv-nowrap">1 known exploited</span>.`,
+		`<span class="cv-nowrap">1 critical,</span> <span class="cv-nowrap">1 known exploited</span>`} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("the group lacks %s:\n%s", want, b.String())
+		}
 	}
 }
