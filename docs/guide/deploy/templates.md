@@ -44,6 +44,11 @@ the number of the template's own revision.
 This is the catalog built into this version of Caravana. A newer catalog can be fetched, as described below, so the grid
 on your installation may have more.
 
+The templates live in their own repository, [Cosmic-Chimps/caravana-templates](https://github.com/Cosmic-Chimps/caravana-templates):
+each one is a folder under `templates/` with its manifest and its Compose file, so you can read exactly what a template
+deploys before you install it. The newest list of templates is there, and it is the place to propose a new template or
+report a problem with one.
+
 ## Questions, passwords and choices
 
 Each template asks for what it cannot decide for you. The kinds of question are:
@@ -84,7 +89,7 @@ backups on later.
 
 At the bottom of the grid the page says which catalog is in use: *Catalog 2026.11.12, built in*, or *Catalog …,
 fetched Nov 12 09:30 UTC*. Caravana checks for a newer one about a minute after it starts and then once a day. It asks
-the catalog's release page on GitHub for a checksum file first, downloads the catalog only if its checksum changed,
+the release page of the [templates repository](https://github.com/Cosmic-Chimps/caravana-templates/releases) for a checksum file first, downloads the catalog only if its checksum changed,
 verifies it, and runs every template through the same checks the built-in ones pass. The request carries Caravana's
 user agent and nothing about your server. A catalog that fails any check is not used, and the page says that the last
 check failed.
