@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.66.0
+  version: 0.67.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -6306,10 +6306,10 @@ paths:
       description: |
         Starts a backup of a service with a backup policy. It runs in the background: list the
         backups to follow it. 409 `backup_running` while a backup or restore of that service
-        runs (for a `volume` or `sqlite` backup, also while one runs for another service of
+        runs (for a `volume`, `sqlite` or `opensearch` backup, also while one runs for another service of
         the app); 409 `no_backup_destination` when none is set; 409 `no_running_copy` when a
-        `volume` or `sqlite` backup finds no running copy. A `volume` backup stops the service
-        for the time it takes and starts it again; a `sqlite` backup runs beside the service,
+        `volume`, `sqlite` or `opensearch` backup finds no running copy. A `volume` backup stops the service
+        for the time it takes and starts it again; a `sqlite` or `opensearch` backup runs beside the service,
         which keeps running; the job and its version don't change. If the copy
         never picked up the request, the answer is 202 with a record already `failed`, and
         its `message` says why.
@@ -6366,7 +6366,9 @@ paths:
         again; 409 `no_running_copy` when there is no copy to stop. For a `sqlite` backup,
         downloads and checks the backup while the service runs, then stops it only to put
         the file in place, and starts it again; a backup that can't be downloaded or fails its
-        check stops nothing. It runs in the background: list the backups to follow the restore. One restore per service at a time.
+        check stops nothing. For an `opensearch` backup, downloads the backup into a fresh folder
+        of the snapshot repository while the cluster runs and has the cluster restore it, closing
+        and reopening the indices it replaces (no service is stopped; see `BackupPolicy`). It runs in the background: list the backups to follow the restore. One restore per service at a time.
         A restore started here is recorded with `trigger: owner`; the service's `backup.restore`
         schedule starts the same restore with `trigger: schedule`.
 
@@ -9297,10 +9299,41 @@ components:
         `invalid_field` on `services[i].backup.engine`), its schedule must be a cron
         expression Caravana can run, and no service is named `caravana-sqlite` or
         `caravana-upload`.
+
+        `opensearch` (OpenSearch, its forks such as the Wazuh indexer, and Elasticsearch): the
+        cluster takes a snapshot of itself through its own API while it runs, and Caravana
+        archives it as `<ts>.opensearch.tar.gz`. Nothing is stopped or restarted. `repository` is
+        required: the folder the snapshots are written to, inside one of the service's writable
+        volumes, which the cluster must list in its `path.repo` (an env var named `path.repo`, or
+        a line of `opensearch.yml`; a deploy warns on `services[i].backup.repository` when the
+        service sets none, and the first run fails with the cluster's own sentence otherwise). The
+        service needs a port (the calls go to `127.0.0.1` inside the copy, https first and http when
+        the TLS handshake fails). The login is the first of `OPENSEARCH_INITIAL_ADMIN_PASSWORD`
+        (user `admin`), `INDEXER_PASSWORD` with `INDEXER_USERNAME` (default `admin`) and
+        `ELASTIC_PASSWORD` (user `elastic`) that the service's env or secrets has; none is fine for a
+        cluster whose security plugin is off. Each run uses a fresh folder `caravana-<run>` in the
+        repository and removes it, and removes any such folder an earlier run left; keep the
+        repository for Caravana's folders only, and leave room for one snapshot. A backup holds every
+        index whose name doesn't start with a dot, without the global state: not the security
+        plugin's configuration, index templates, persistent cluster settings, or the plugins' and
+        Dashboards' dot indices; data streams are not covered. A restore closes each index of the
+        snapshot that exists, restores the snapshot over it and lets the restore open it again; indices
+        made since stay. If it fails after the close it opens them again and its `message` says
+        whether that worked. As for `sqlite`, no service is named `caravana-upload`.
       properties:
         engine:
           type: string
-          enum: [postgres, mysql, mongodb, volume, sqlite]
+          enum: [postgres, mysql, mongodb, volume, sqlite, opensearch]
+        repository:
+          type: string
+          maxLength: 1024
+          examples: ["/usr/share/opensearch/snapshots"]
+          description: |
+            `opensearch` only, and required there: the folder the cluster writes its snapshots
+            to, as the service sees it. It is a volume's path or a folder inside one, and that
+            volume must not be `readOnly`; a clean absolute path of letters, digits and
+            `. _ - @ + /`; not under the volume's `.caravana-restore`. Set with another engine,
+            or broken, it is 400 `invalid_field` on `services[i].backup.repository`.
         file:
           type: string
           maxLength: 1024
@@ -9969,7 +10002,7 @@ components:
             run and for a backup recorded before people.
         engine:
           type: string
-          enum: [postgres, mysql, mongodb, volume, sqlite]
+          enum: [postgres, mysql, mongodb, volume, sqlite, opensearch]
         status:
           type: string
           enum: [running, succeeded, failed]
@@ -9983,7 +10016,8 @@ components:
           type: integer
           description: |
             The dump's size; for a `volume` backup the sum of its archives; for a `sqlite`
-            backup the gzipped database's.
+            backup the gzipped database's; for an `opensearch` backup the tarred and gzipped
+            snapshot's.
         message:
           type: string
           description: |
@@ -10155,7 +10189,7 @@ components:
             pinned under the label); `message` says why.
         engine:
           type: string
-          enum: [postgres, mysql, mongodb, volume, sqlite]
+          enum: [postgres, mysql, mongodb, volume, sqlite, opensearch]
         status:
           type: string
           enum: [running, succeeded, failed, skipped]
@@ -15938,7 +15972,7 @@ components:
       description: |
         `backup_running`: a backup or restore of this service is running; try again when it
         ends. `no_backup_destination`: no backup destination is set. `no_running_copy`: a
-        backup or restore of a service with a `volume` or `sqlite` backup, and the service has
+        backup or restore of a service with a `volume`, `sqlite` or `opensearch` backup, and the service has
         no running copy (it was never deployed, is still starting, or has stopped).
         `app_stopped`: the app is stopped (`stopApp`); start it first. `app_busy` (`pinBackup`,
         `unpinBackup`): a deploy or a volume run holds the app; try again when it ends.

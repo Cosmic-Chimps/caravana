@@ -545,6 +545,45 @@ func TestPlainBackupPasswords(t *testing.T) {
 	}
 }
 
+// A service backed up with opensearch warns when nothing tells its cluster about the
+// repository folder (feature 061, D2), and the plain admin password warns like a dump
+// engine's.
+func TestOpenSearchRepositoryWarnings(t *testing.T) {
+	os := &app.Backup{Engine: app.BackupOpenSearch, Repository: "/snapshots"}
+	tests := []struct {
+		name string
+		svc  app.Service
+		want bool
+	}{
+		{"nothing sets path.repo", app.Service{Name: "indexer", Backup: os}, true},
+		{"an env variable", app.Service{Name: "indexer", Backup: os, Env: []app.EnvVar{{Name: "path.repo", Value: "/snapshots"}}}, false},
+		{"a file that mentions it", app.Service{Name: "indexer", Backup: os,
+			Files: []app.File{{Path: "/usr/share/opensearch/config/opensearch.yml", Content: "path.repo: [\"/snapshots\"]\n"}}}, false},
+		{"a file that doesn't", app.Service{Name: "indexer", Backup: os,
+			Files: []app.File{{Path: "/etc/other.yml", Content: "cluster.name: x\n"}}}, true},
+		{"another engine", app.Service{Name: "db", Backup: &app.Backup{Engine: app.BackupVolume}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := OpenSearchRepositoryWarnings(app.App{Services: []app.Service{tt.svc}})
+			if !tt.want {
+				if len(got) != 0 {
+					t.Errorf("got %+v, want none", got)
+				}
+				return
+			}
+			if len(got) != 1 || got[0].Field != "services[0].backup.repository" {
+				t.Fatalf("got %+v, want one warning on services[0].backup.repository", got)
+			}
+		})
+	}
+	plain := app.App{Services: []app.Service{{Name: "indexer", Backup: os,
+		Env: []app.EnvVar{{Name: "OPENSEARCH_INITIAL_ADMIN_PASSWORD", Value: "pw"}}}}}
+	if got := PlainBackupPasswords(plain); len(got) != 1 || got[0].Field != "services[0].env[0]" {
+		t.Errorf("plain admin password warnings = %+v, want one on services[0].env[0]", got)
+	}
+}
+
 func TestRemovedSecrets(t *testing.T) {
 	svc := func(name string, secrets ...string) app.Service {
 		s := app.Service{Name: name}

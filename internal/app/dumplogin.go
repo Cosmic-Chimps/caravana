@@ -25,7 +25,11 @@ type DumpLogin struct {
 // (the user). MySQL: the root password the image sets (MARIADB_ROOT_PASSWORD,
 // then MYSQL_ROOT_PASSWORD) and user root, else a MARIADB_USER or MYSQL_USER
 // with its password. MongoDB: MONGO_INITDB_ROOT_USERNAME and
-// MONGO_INITDB_ROOT_PASSWORD.
+// MONGO_INITDB_ROOT_PASSWORD. OpenSearch and Elasticsearch (feature 061):
+// OPENSEARCH_INITIAL_ADMIN_PASSWORD (user admin), else INDEXER_PASSWORD with
+// INDEXER_USERNAME (admin; the Wazuh indexer's), else ELASTIC_PASSWORD (user
+// elastic). A cluster with its security plugin off has none of them, so for
+// this engine "not found" is no login rather than a refusal.
 func FindDumpLogin(engine string, lookup func(name string) (string, bool)) (DumpLogin, bool) {
 	switch engine {
 	case BackupPostgres:
@@ -54,6 +58,20 @@ func FindDumpLogin(engine string, lookup func(name string) (string, bool)) (Dump
 				return DumpLogin{User: user, Password: password}, true
 			}
 		}
+	case BackupOpenSearch:
+		if password, ok := lookup("OPENSEARCH_INITIAL_ADMIN_PASSWORD"); ok {
+			return DumpLogin{User: "admin", Password: password}, true
+		}
+		if password, ok := lookup("INDEXER_PASSWORD"); ok {
+			user := "admin"
+			if v, found := lookup("INDEXER_USERNAME"); found {
+				user = v
+			}
+			return DumpLogin{User: user, Password: password}, true
+		}
+		if password, ok := lookup("ELASTIC_PASSWORD"); ok {
+			return DumpLogin{User: "elastic", Password: password}, true
+		}
 	case BackupMongoDB:
 		user, userOK := lookup("MONGO_INITDB_ROOT_USERNAME")
 		password, passwordOK := lookup("MONGO_INITDB_ROOT_PASSWORD")
@@ -72,6 +90,8 @@ func DumpLoginHint(engine string) string {
 		return "logs in as root with MARIADB_ROOT_PASSWORD or MYSQL_ROOT_PASSWORD, or with MARIADB_USER and MARIADB_PASSWORD (or MYSQL_USER and MYSQL_PASSWORD)"
 	case BackupMongoDB:
 		return "logs in with MONGO_INITDB_ROOT_USERNAME and MONGO_INITDB_ROOT_PASSWORD"
+	case BackupOpenSearch:
+		return "logs in with OPENSEARCH_INITIAL_ADMIN_PASSWORD, INDEXER_PASSWORD or ELASTIC_PASSWORD"
 	default:
 		return "logs in with POSTGRES_PASSWORD"
 	}
@@ -89,6 +109,8 @@ func BackupPasswordNames(engine string) []string {
 		return []string{"MARIADB_ROOT_PASSWORD", "MYSQL_ROOT_PASSWORD", "MARIADB_PASSWORD", "MYSQL_PASSWORD"}
 	case BackupMongoDB:
 		return []string{"MONGO_INITDB_ROOT_PASSWORD"}
+	case BackupOpenSearch:
+		return []string{"OPENSEARCH_INITIAL_ADMIN_PASSWORD", "INDEXER_PASSWORD", "ELASTIC_PASSWORD"}
 	}
 	return nil
 }

@@ -5,7 +5,7 @@ import "testing"
 func TestDumpEngine(t *testing.T) {
 	for engine, want := range map[string]bool{
 		BackupPostgres: true, BackupMySQL: true, BackupMongoDB: true,
-		BackupVolume: false, BackupSQLite: false, "": false, "redis": false,
+		BackupVolume: false, BackupSQLite: false, BackupOpenSearch: false, "": false, "redis": false,
 	} {
 		if got := DumpEngine(engine); got != want {
 			t.Errorf("DumpEngine(%q) = %v, want %v", engine, got, want)
@@ -43,6 +43,12 @@ func TestFindDumpLogin(t *testing.T) {
 		{"mysql with only a user", BackupMySQL, map[string]string{"MYSQL_USER": "u"}, DumpLogin{}, false},
 		{"mongodb", BackupMongoDB, map[string]string{"MONGO_INITDB_ROOT_USERNAME": "root", "MONGO_INITDB_ROOT_PASSWORD": "pw"}, DumpLogin{User: "root", Password: "pw"}, true},
 		{"mongodb without the user", BackupMongoDB, map[string]string{"MONGO_INITDB_ROOT_PASSWORD": "pw"}, DumpLogin{}, false},
+		{"opensearch initial admin", BackupOpenSearch, map[string]string{"OPENSEARCH_INITIAL_ADMIN_PASSWORD": "pw"}, DumpLogin{User: "admin", Password: "pw"}, true},
+		{"opensearch initial admin wins", BackupOpenSearch, map[string]string{"OPENSEARCH_INITIAL_ADMIN_PASSWORD": "a", "INDEXER_PASSWORD": "b", "ELASTIC_PASSWORD": "c"}, DumpLogin{User: "admin", Password: "a"}, true},
+		{"wazuh indexer default user", BackupOpenSearch, map[string]string{"INDEXER_PASSWORD": "pw"}, DumpLogin{User: "admin", Password: "pw"}, true},
+		{"wazuh indexer user", BackupOpenSearch, map[string]string{"INDEXER_PASSWORD": "pw", "INDEXER_USERNAME": "ops"}, DumpLogin{User: "ops", Password: "pw"}, true},
+		{"elastic", BackupOpenSearch, map[string]string{"ELASTIC_PASSWORD": "pw"}, DumpLogin{User: "elastic", Password: "pw"}, true},
+		{"opensearch security off", BackupOpenSearch, map[string]string{"discovery.type": "single-node"}, DumpLogin{}, false},
 		{"volume has no login", BackupVolume, map[string]string{"POSTGRES_PASSWORD": "pw"}, DumpLogin{}, false},
 	}
 	for _, tc := range tests {
@@ -58,7 +64,7 @@ func TestFindDumpLogin(t *testing.T) {
 // BackupPasswordNames lists every name FindDumpLogin reads as a password, and
 // no other.
 func TestBackupPasswordNames(t *testing.T) {
-	for _, engine := range []string{BackupPostgres, BackupMySQL, BackupMongoDB} {
+	for _, engine := range []string{BackupPostgres, BackupMySQL, BackupMongoDB, BackupOpenSearch} {
 		names := BackupPasswordNames(engine)
 		if len(names) == 0 {
 			t.Errorf("%s has no password names", engine)

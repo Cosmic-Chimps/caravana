@@ -126,12 +126,15 @@ func validateBackup(field string, svc Service) error {
 	if b == nil {
 		return nil
 	}
-	if !b.Dumps() && b.Engine != BackupVolume && b.Engine != BackupSQLite {
-		return NewFieldError(field+".engine", "%q is not supported; it is %q, %q, %q, %q or %q",
-			b.Engine, BackupPostgres, BackupMySQL, BackupMongoDB, BackupVolume, BackupSQLite)
+	if !b.Dumps() && b.Engine != BackupVolume && b.Engine != BackupSQLite && b.Engine != BackupOpenSearch {
+		return NewFieldError(field+".engine", "%q is not supported; it is %q, %q, %q, %q, %q or %q",
+			b.Engine, BackupPostgres, BackupMySQL, BackupMongoDB, BackupVolume, BackupSQLite, BackupOpenSearch)
 	}
 	if b.File != "" && b.Engine != BackupSQLite {
 		return NewFieldError(field+".file", "only the %q engine names a file", BackupSQLite)
+	}
+	if b.Repository != "" && b.Engine != BackupOpenSearch {
+		return NewFieldError(field+".repository", "only the %q engine names a repository folder", BackupOpenSearch)
 	}
 	if b.Keep < 0 || b.Keep > 100 {
 		return NewFieldError(field+".keep", "must be between 1 and 100 (leave it out for %d), got %d", DefaultBackupKeep, b.Keep)
@@ -152,6 +155,8 @@ func validateBackup(field string, svc Service) error {
 		return validateVolumeBackup(field, svc)
 	case BackupSQLite:
 		return validateSQLiteBackup(field, svc)
+	case BackupOpenSearch:
+		return validateOpenSearchBackup(field, svc)
 	}
 	if len(svc.Ports) == 0 {
 		return NewFieldError(field, "the backup reaches the database over its port, and the service has none")
@@ -307,6 +312,51 @@ func validateSQLiteBackup(field string, svc Service) error {
 	}
 	if inVolume == RestoreDir || strings.HasPrefix(inVolume, RestoreDir+"/") {
 		return NewFieldError(fileField, "%q is under %s, where Caravana stages restores", file, RestoreDir)
+	}
+	return nil
+}
+
+// Limits of an opensearch backup's repository folder.
+const maxOpenSearchRepositoryBytes = 1024
+
+// validateOpenSearchBackup checks what only an opensearch backup needs (feature
+// 061, D2): the service has a port (the API calls reach the cluster over it),
+// the repository folder is named, and it is equal to or inside one of the
+// service's writable volumes. The login is optional: a cluster with its
+// security plugin off has none.
+func validateOpenSearchBackup(field string, svc Service) error {
+	if len(svc.Ports) == 0 {
+		return NewFieldError(field, "the backup reaches the cluster over its port, and the service has none")
+	}
+	if len(svc.Volumes) == 0 {
+		return NewFieldError(field+".engine", "the snapshot folder must be on a volume, and the service has none")
+	}
+	if err := validateBackupCron(field, svc.Backup); err != nil {
+		return err
+	}
+	repo := svc.Backup.Repository
+	repoField := field + ".repository"
+	switch {
+	case repo == "":
+		return NewFieldError(repoField, "is required: the snapshot folder inside the service, a volume's path or a folder in it, e.g. /usr/share/opensearch/snapshots")
+	case len(repo) > maxOpenSearchRepositoryBytes:
+		return NewFieldError(repoField, "is %d bytes; at most %d are allowed", len(repo), maxOpenSearchRepositoryBytes)
+	case !path.IsAbs(repo) || path.Clean(repo) != repo || !sqliteFileRE.MatchString(repo):
+		return NewFieldError(repoField, "%q must be a clean absolute path of letters, digits and . _ - @ + /", repo)
+	}
+	vol, inVolume, ok := svc.OpenSearchRepository()
+	if !ok {
+		names := make([]string, len(svc.Volumes))
+		for i, v := range svc.Volumes {
+			names[i] = v.Path
+		}
+		return NewFieldError(repoField, "%q must be a service's volume or a folder inside one (%s)", repo, strings.Join(names, ", "))
+	}
+	if vol.ReadOnly {
+		return NewFieldError(repoField, "%q is on the read-only volume %q: the cluster can't write snapshots there, and a restore couldn't either", repo, vol.Name)
+	}
+	if inVolume == RestoreDir || strings.HasPrefix(inVolume, RestoreDir+"/") {
+		return NewFieldError(repoField, "%q is under %s, where Caravana stages restores", repo, RestoreDir)
 	}
 	return nil
 }

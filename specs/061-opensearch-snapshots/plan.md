@@ -105,9 +105,36 @@ runs, and Caravana archives it to the backup destination with retention, pins, c
 
 ## Phases
 
-- [ ] **A — backend**: model and validation (D1, D2, D6), `nomadjob/opensearch.go` (scripts, sidecar, markers, parser) with script
+- [x] **A — backend**: model and validation (D1, D2, D6), `nomadjob/opensearch.go` (scripts, sidecar, markers, parser) with script
   tests and goldens, `deploy/opensearchrun.go`, `service/opensearchbackup.go` wired into Back up now, the scheduler, restore,
   restore schedules, resume, pins; migration 0048; `api/openapi.yaml` 0.67.0; the deploy warning; sentinel tests.
 - [ ] **B — console and docs**: D9, `docs/database-backups.md` (or a section in `docs/opensearch-apps.md`), the guide's backups page,
   `changelog.d/opensearch-snapshots.md`, `CLAUDE.md`.
 - [ ] **C — lab and template**: D11 gate step passing in the lab, D10 template change.
+
+## Deviations (phase A)
+
+- **Migration 0048 runs with foreign keys off.** `backup_copies` (052) references `backups` with `ON DELETE CASCADE`, so the
+  rebuild 0036 did would delete every copy's row now that foreign keys are enforced (054), and a `backups` row whose app is
+  gone (kept from before enforcement) could not even be copied. The runner (`migrate.go`, `apply`) now reads a first line
+  `-- caravana: foreign_keys off` and runs that migration on one connection with the pragma off around its transaction, as
+  SQLite's guide for rebuilding a table says; `backup_copies` keeps its reference by name. `TestUpgradeTo0048` checks the copy
+  rows, an orphan of each table and the cascade after it; `TestOrphansFromBeforeForeignKeysAreKept` still passes unchanged.
+- **Names.** The sqlite engine's shared pieces lost "sqlite" from their names because opensearch uses them too: `sidecarRun`,
+  `prepareSidecarRun` (it takes the engine), `settleSidecarBackup`, `sidecarFailure`. `nomadjob.SQLiteOutput` gained `Indices`
+  and `Files` and `ParseSQLiteOutput` reads the opensearch markers and both objects' extensions, instead of a second type;
+  `deploy.runSQLite` delegates to `runStep`, which takes any list of secrets to keep out of error text.
+- **Retention is shared.** `uploadRetention` in `sqlite.go` (the `retain` function, parameterized by `$ext`) serves both upload
+  scripts; the sqlite goldens and tests are unchanged.
+- **Scripts.** The clean script takes a mode (`fresh` empties the work directory of old results, `keep` doesn't: the last clean of
+  a restore, and the clean after a failed snapshot, run when results of the run are still wanted) and makes the work directory
+  world-writable, since the service's own task (another user) writes its result files there (a result it can't write is not an
+  error: the markers are on stdout). The snapshot and restore scripts also unregister a repository an earlier run left
+  (`DELETE _snapshot/caravana` first, its answer ignored) and again on exit. The restore script refuses an index name outside
+  `[A-Za-z0-9._+@,-]` rather than put it in a URL unencoded. The upload script refuses a folder with no `index.latest`, and every
+  script that removes or empties a folder refuses one whose last segment doesn't start with `caravana-`.
+- **Record messages.** A restore that succeeds has no message. After a restart a running backup is failed with
+  `restartedMessage` ("Caravana restarted during the run") and a restore with the same plus "; the indices it closed may still be
+  closed", with nothing asked of Nomad (`settleOpenSearchRuns`, called by `resumeVolumeRuns` before the volume and sqlite ones).
+- **Not done (phase B and C):** the console (Compose form engine select, Repository input, Backups tab rows and built-in schedule
+  words), docs, changelog note, CLAUDE.md, the gate step, the template change.
