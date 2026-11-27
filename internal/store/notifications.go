@@ -252,6 +252,12 @@ type ProblemCheck struct {
 	// does.
 	Dropped    []string
 	Deliveries []Delivery // queued, all pending
+	// Quiet lists kinds whose problems leave no problem event of their own when they open, get worse or
+	// resolve: Events tells their story instead (image_vulnerable has one per package, and the feed one
+	// line per app).
+	Quiet []string
+	// Events are problem events the check writes as they are, beside those of its problems.
+	Events []ProblemEvent
 }
 
 // ApplyProblemCheck records one check in a single transaction, so the table of
@@ -261,8 +267,9 @@ type ProblemCheck struct {
 // check works the same changes out again.
 //
 // The same transaction appends a problem event (feature 027's history of the
-// needs-you list) for each problem opened, made worse and resolved, and prunes
-// that table to the newest 200.
+// needs-you list) for each problem opened, made worse and resolved but those of
+// the Quiet kinds, then the check's own Events, and prunes that table to the
+// newest 200.
 func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -285,9 +292,21 @@ func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 			p.Key, p.Kind, p.AppID, p.Service, formatTime(p.OpenedAt), formatTime(p.LastSeenAt), p.Summary, p.Level, p.Sentence); err != nil {
 			return fmt.Errorf("record a problem check: save problem %q: %w", p.Key, err)
 		}
+		if slices.Contains(c.Quiet, p.Kind) {
+			continue
+		}
 		if err := appendProblemEvent(ctx, tx, ProblemEvent{Key: p.Key, Kind: p.Kind, AppID: p.AppID,
 			Change: ProblemOpened, At: p.OpenedAt, Summary: p.Summary, Sentence: p.Sentence}); err != nil {
 			return fmt.Errorf("record a problem check: event for problem %q: %w", p.Key, err)
+		}
+		events++
+	}
+	for _, e := range c.Events {
+		if e.At.IsZero() {
+			e.At = at
+		}
+		if err := appendProblemEvent(ctx, tx, e); err != nil {
+			return fmt.Errorf("record a problem check: event %q: %w", e.Key, err)
 		}
 		events++
 	}
@@ -302,7 +321,7 @@ func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 				return fmt.Errorf("record a problem check: set the sentence of problem %q: %w", key, err)
 			}
 		}
-		wrote, err := appendStoredProblemEvent(ctx, tx, key, ProblemWorsened, at)
+		wrote, err := appendStoredProblemEvent(ctx, tx, key, ProblemWorsened, at, c.Quiet)
 		if err != nil {
 			return fmt.Errorf("record a problem check: event for problem %q: %w", key, err)
 		}
@@ -315,7 +334,7 @@ func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 	}
 	for _, key := range c.Removed {
 		if !slices.Contains(c.Dropped, key) {
-			wrote, err := appendStoredProblemEvent(ctx, tx, key, ProblemResolved, at)
+			wrote, err := appendStoredProblemEvent(ctx, tx, key, ProblemResolved, at, c.Quiet)
 			if err != nil {
 				return fmt.Errorf("record a problem check: event for problem %q: %w", key, err)
 			}
@@ -348,8 +367,8 @@ func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 
 // appendStoredProblemEvent records a change of a problem the table of sent
 // problems already has, taking its kind, app and sentence from that row. A key
-// with no row records nothing and returns false.
-func appendStoredProblemEvent(ctx context.Context, tx *sql.Tx, key, change string, at time.Time) (bool, error) {
+// with no row, or of a quiet kind, records nothing and returns false.
+func appendStoredProblemEvent(ctx context.Context, tx *sql.Tx, key, change string, at time.Time, quiet []string) (bool, error) {
 	e := ProblemEvent{Key: key, Change: change, At: at}
 	err := tx.QueryRowContext(ctx, "SELECT kind, app_id, summary, sentence FROM sent_problems WHERE key = ?", key).
 		Scan(&e.Kind, &e.AppID, &e.Summary, &e.Sentence)
@@ -358,6 +377,9 @@ func appendStoredProblemEvent(ctx context.Context, tx *sql.Tx, key, change strin
 	}
 	if err != nil {
 		return false, err
+	}
+	if slices.Contains(quiet, e.Kind) {
+		return false, nil
 	}
 	return true, appendProblemEvent(ctx, tx, e)
 }

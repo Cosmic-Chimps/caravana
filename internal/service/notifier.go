@@ -668,6 +668,9 @@ func (s *Service) checkProblems(ctx context.Context) error {
 		resolved = append(resolved, inPlace(resolvedEvent(p, s.PublicURL(), now), places[p.AppID]))
 		check.Removed = append(check.Removed, p.Key)
 	}
+	// The feed tells image findings per app, not per package (findingsfeed.go).
+	check.Quiet = []string{string(AttentionImageVulnerable)}
+	check.Events = findingEvents(prev, changes, places, display, now)
 
 	events := append(summarize(opened, "new problems", notify.EventProblemOpened, s.PublicURL(), now), worsened...)
 	events = append(events, summarize(resolved, "problems resolved", notify.EventProblemResolved, s.PublicURL(), now)...)

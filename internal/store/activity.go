@@ -55,6 +55,14 @@ var OpenedProblemKinds = []string{
 	"backup_copy_failed", // a copy of a backup isn't a row of the feed (feature 052)
 }
 
+// ImageFindingsKey is the key of the feed's events about an app's image findings: one when the
+// app's first fixable finding appears, one when its last goes. The needs-you items and the
+// notifications stay one per package (image_vulnerable|<app>|<service>|<package>); the feed lists
+// only these.
+func ImageFindingsKey(appID string) string {
+	return ProblemImageVulnerable + "|" + appID + "||"
+}
+
 // ActivityRow is one row of the feed. Which fields are filled depends on
 // Source; the others are empty.
 type ActivityRow struct {
@@ -94,7 +102,8 @@ type ActivityRow struct {
 // activitySQL is the feed: one UNION ALL over the sources, each cut to
 // ?1 (a stored time; empty means no cut) and, with ?2 = 1, to what concerns the
 // server. ?3 is the limit. Problem events are listed when they resolve a problem
-// of any kind, and when they open or worsen one of OpenedProblemKinds only. Every branch has the same twelve columns.
+// of any kind, and when they open or worsen one of OpenedProblemKinds only; an
+// image_vulnerable event only when it is about a whole app (ImageFindingsKey). Every branch has the same twelve columns.
 const activitySQL = `
 SELECT u.source, u.row_id, u.phase, u.at, u.app_id, COALESCE(a.project, ''), COALESCE(a.environment, ''), COALESCE(a.app_name, ''),
        u.service, u.status, u.trigger, u.label, u.program, u.exit_code, u.version, u.error, u.detail
@@ -134,6 +143,8 @@ FROM (
          '', change, '', kind, key, NULL, NULL,
          '', COALESCE(NULLIF(sentence, ''), json_array(json_object('text', summary, 'mono', json('false'))))
   FROM problem_events WHERE (?2 = 0 OR kind IN (%s)) AND (change = 'resolved' OR kind IN (%s)) AND (?1 = '' OR at < ?1)
+    -- image findings are one line per app (key image_vulnerable|<app>||), never one per package (an older event's key ends in the package)
+    AND NOT (kind = 'image_vulnerable' AND key NOT LIKE '%%||')
   UNION ALL
   SELECT 'host_events', CAST(id AS TEXT), '', at, '',
          '', '', '', kind, '', NULL, NULL,

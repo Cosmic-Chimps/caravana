@@ -1009,6 +1009,10 @@ reach the owner, but the page leads with what is happening, so findings are quie
   Body Text, so the colour carries the level and a finding never reads like "not running". No ground and no border; a
   link to the app's Security panel (a plain span where the whole row is already a link, as on the project page).
   Nothing is drawn without findings: no "0". In the Operator table a row with a tag has 6px of block padding.
+- **One line per app in the feed.** Live activity says an app's findings twice at most: when its first appear
+  ("`uptime-kuma`: 9 fixable critical vulnerabilities found.", or "16 fixable vulnerabilities found: 12 critical, 4
+  high.") and when its last goes ("Resolved: fixable vulnerabilities in `uptime-kuma`."). A package that appears or
+  goes while the app already has findings adds no line, and no line names a package (task 9h5g).
 - **One count.** The group, the tag and the headline count the packages of the needs-you items the page already
   reads, not the scans (`ImageScans`): those items have the notify level, stopped apps and the viewer's visibility
   applied, so every place counts the same packages with no extra read.
