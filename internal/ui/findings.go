@@ -216,9 +216,14 @@ func securityGroupOf(items []service.AttentionItem, pl places, admin bool) *secu
 // appLabel is where an app is, as the needs-you sentences say it: its ID in Default › production, else
 // "<project> › <environment> › <name>" with the place muted (withoutPlace takes it away).
 func appLabel(it service.AttentionItem, pl places) sentence {
-	place := app.Place{Project: it.Project, Environment: it.Environment, Name: it.AppName}
-	if atHome(place) || it.AppName == "" {
-		return sentence{mono(it.AppID)}
+	return placeLabel(it.AppID, app.Place{Project: it.Project, Environment: it.Environment, Name: it.AppName}, pl)
+}
+
+// placeLabel is appLabel for an app known by its ID and place: the ID at home, or when the place
+// isn't known (no name: an app deleted meanwhile), else the place with the project and environment muted.
+func placeLabel(id string, place app.Place, pl places) sentence {
+	if atHome(place) || place.Name == "" {
+		return sentence{mono(id)}
 	}
 	return sentence{
 		{Text: pl.display(place.Project) + " › ", Muted: true},
