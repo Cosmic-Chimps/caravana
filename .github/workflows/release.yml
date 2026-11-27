@@ -1,4 +1,7 @@
 name: release
+# The run's title in the Actions list: "Release 0.6.0" from Run workflow (the version typed), and
+# "Release v0.6.0" from a pushed tag (the tag's name).
+run-name: Release ${{ inputs.version || github.ref_name }}
 
 # Publishes a release: the installer, one tarball per architecture and their checksums, built by
 # tools/release.sh. deploy/install/README.md says how users install it.
