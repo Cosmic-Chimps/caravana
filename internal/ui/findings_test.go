@@ -120,12 +120,12 @@ func TestSecurityGroup(t *testing.T) {
 			if g == nil {
 				t.Fatal("no group")
 			}
-			if head := g.Lead.String() + g.Rest; head != tc.wantHead || g.Mark != tc.wantMark {
+			if head := g.Lead.String() + g.Rest(); head != tc.wantHead || g.Mark != tc.wantMark {
 				t.Errorf("head = %q (%s), want %q (%s)", head, g.Mark, tc.wantHead, tc.wantMark)
 			}
 			var lines []string
 			for _, l := range g.Apps {
-				lines = append(lines, l.Label.String()+" | "+l.Counts)
+				lines = append(lines, l.Label.String()+" | "+strings.Join(l.Counts, " "))
 				if want := "/deployments#security"; !strings.HasSuffix(l.Href, want) {
 					t.Errorf("link = %q, want one ending %s", l.Href, want)
 				}
@@ -258,5 +258,27 @@ func TestFindingsCounts(t *testing.T) {
 	}
 	if got := (findings{}).counts(true); got != "" {
 		t.Errorf("counts of none = %q", got)
+	}
+	// The phrases a narrow line may break between: the comma stays with its count.
+	if got := f.phrases(false); strings.Join(got, "|") != "14 critical,|1 high,|2 known exploited" {
+		t.Errorf("phrases = %q", got)
+	}
+	if got := (findings{}).phrases(true); got != nil {
+		t.Errorf("phrases of none = %q", got)
+	}
+}
+
+// Each count phrase is drawn whole, in the head and in an app's line, so "1 known exploited" never breaks.
+func TestSecurityGroupKeepsEachCountWhole(t *testing.T) {
+	g := securityGroupOf([]service.AttentionItem{vulnItem("a", "", "", "", "zlib", true, true)}, places{}, false)
+	var b strings.Builder
+	if err := newTestServer(t, newUIEnv(t, true, "")).pages["apps"].ExecuteTemplate(&b, "security-group", g); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`<span class="cv-nowrap">1 critical package,</span>`, `<span class="cv-nowrap">1 known exploited</span>.`,
+		`<span class="cv-nowrap">1 critical,</span> <span class="cv-nowrap">1 known exploited</span>`} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("the group lacks %s:\n%s", want, b.String())
+		}
 	}
 }

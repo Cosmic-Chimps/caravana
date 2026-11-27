@@ -93,6 +93,19 @@ func (f findings) counts(packages bool) string {
 	return strings.Join(words, ", ")
 }
 
+// phrases is counts cut into the phrases a line may break between: "9 critical," and "1 known exploited",
+// each drawn whole, so a narrow line never splits "1 known" from "exploited".
+func (f findings) phrases(packages bool) []string {
+	out := strings.Split(f.counts(packages), ", ")
+	if len(out) == 1 && out[0] == "" {
+		return nil
+	}
+	for i := range out[:len(out)-1] {
+		out[i] += ","
+	}
+	return out
+}
+
 // findingsTag is the line under an app's status pill: the worst level's mark and its count, a link to
 // the app's Security panel. It is nil for an app with no findings.
 type findingsTag struct {
@@ -133,16 +146,21 @@ func tagsOf(found map[string]findings) map[string]*findingsTag {
 type securityGroup struct {
 	Mark string   // failed when any finding is critical, else warning
 	Lead sentence // "3 apps", or the app's name: set bold
-	Rest string   // " have fixable vulnerabilities: 14 critical packages, 2 known exploited."
-	Apps []securityApp
+	Verb string   // " have fixable vulnerabilities:"
+	// Counts are the phrases after Verb, each drawn whole: "14 critical packages," "2 known exploited".
+	Counts []string
+	Apps   []securityApp
 	// OperatorHref is Operator › Security, for the installation's admins; "" for everyone else.
 	OperatorHref string
 }
 
+// Rest is the head's words after Lead, as one line of text.
+func (g securityGroup) Rest() string { return g.Verb + " " + strings.Join(g.Counts, " ") + "." }
+
 // securityApp is one app's line inside the group.
 type securityApp struct {
 	Label  sentence // the app's place label, as the needs-you sentences write it
-	Counts string   // "9 critical, 1 known exploited"
+	Counts []string // "9 critical," "1 known exploited": phrases drawn whole
 	Href   string
 }
 
@@ -175,7 +193,7 @@ func securityGroupOf(items []service.AttentionItem, pl places, admin bool) *secu
 	var sum findings
 	for _, id := range order {
 		sum = sum.add(found[id])
-		g.Apps = append(g.Apps, securityApp{Label: appLabel(first[id], pl), Counts: found[id].counts(false),
+		g.Apps = append(g.Apps, securityApp{Label: appLabel(first[id], pl), Counts: found[id].phrases(false),
 			Href: "/apps/" + url.PathEscape(id) + "/deployments#security"})
 	}
 	if sum.Critical > 0 {
@@ -183,11 +201,12 @@ func securityGroupOf(items []service.AttentionItem, pl places, admin bool) *secu
 	}
 	if len(order) == 1 {
 		g.Lead = appLabel(first[order[0]], pl)
-		g.Rest = " has fixable vulnerabilities: " + sum.counts(true) + "."
+		g.Verb = " has fixable vulnerabilities:"
 	} else {
 		g.Lead = sentence{plain(fmt.Sprintf("%d apps", len(order)))}
-		g.Rest = " have fixable vulnerabilities: " + sum.counts(true) + "."
+		g.Verb = " have fixable vulnerabilities:"
 	}
+	g.Counts = sum.phrases(true)
 	if admin {
 		g.OperatorHref = "/ops/security"
 	}

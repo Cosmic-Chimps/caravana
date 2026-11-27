@@ -136,14 +136,14 @@
 {{define "security-group"}}
 <details class="cv-need-group" id="needs-security">
   <summary class="cv-row cv-need cv-need-sum">
-    <span class="cv-need-text"><span class="cv-bchev" aria-hidden="true"><span class="cv-chev-closed">{{icon "chevron-right" 12}}</span><span class="cv-chev-open">{{icon "chevron-down" 12}}</span></span>{{template "status-mark" .Mark}}<span><span class="cv-need-lead">{{template "sentence" .Lead}}</span>{{.Rest}}</span></span>
+    <span class="cv-need-text"><span class="cv-bchev" aria-hidden="true"><span class="cv-chev-closed">{{icon "chevron-right" 12}}</span><span class="cv-chev-open">{{icon "chevron-down" 12}}</span></span>{{template "status-mark" .Mark}}<span><span class="cv-need-lead">{{template "sentence" .Lead}}</span>{{.Verb}}{{range .Counts}} <span class="cv-nowrap">{{.}}</span>{{end}}.</span></span>
     {{with .OperatorHref}}<span class="cv-need-act"><a href="{{.}}" class="cv-need-ops">Operator › Security</a></span>{{end}}
   </summary>
   <div class="cv-need-apps">
     {{range .Apps}}
     <div class="cv-row cv-need-app">
       <span class="cv-need-name" title="{{.Label.String}}">{{template "sentence" .Label}}</span>
-      <span class="cv-need-counts">{{.Counts}}</span>
+      <span class="cv-need-counts">{{range $i, $c := .Counts}}{{if $i}} {{end}}<span class="cv-nowrap">{{$c}}</span>{{end}}</span>
       <span class="cv-need-act"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Open findings</a></span>
     </div>
     {{end}}
