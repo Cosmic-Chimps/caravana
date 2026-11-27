@@ -161,7 +161,7 @@ func TestSecurityPageListsImagesAndRuns(t *testing.T) {
 	}
 	words := text(body)
 	for _, want := range []string{
-		"traefik/whoami@sha256:", `<a href="/apps/whoami/deployments#security" class="cv-inline-mono">whoami</a>`, "/web",
+		"traefik/whoami@sha256:", `<a href="/apps/whoami/deployments#security"><span class="cv-inline-mono text-fg-1">whoami</span></a>`,
 		"1 critical", "1 high", "1 medium", "1 fixable", "1 known exploited",
 		"database of Nov 19", "Scanned", "daily", "the registry", "took 42s", "0.117.0",
 	} {
@@ -176,6 +176,63 @@ func TestSecurityPageListsImagesAndRuns(t *testing.T) {
 	// The settings are the stored ones, with their selected options.
 	if !strings.Contains(body, `<option value="critical" selected>`) || !strings.Contains(body, `<option value="4" selected>04:00 UTC</option>`) {
 		t.Errorf("the form doesn't show the defaults:\n%s", words)
+	}
+}
+
+// imagesTable is the Images section of the Security page, from its title to the recent runs.
+func imagesTable(t *testing.T, page string) string {
+	t.Helper()
+	start := strings.Index(page, `id="sec-images-title"`)
+	end := strings.Index(page, `id="sec-runs-title"`)
+	if start < 0 || end < start {
+		t.Fatalf("no Images section in:\n%s", page)
+	}
+	return page[start:end]
+}
+
+// An app is named in the Images table as everywhere else: by its place label, never by its ID outside
+// Default › production, and with its service only when it has more than one (task bt3f).
+func TestSecurityImagesNameAppsByTheirPlace(t *testing.T) {
+	e := newConsoleEnv(t)
+	ctx := context.Background()
+	e.Clock.Set(secTime(t, "2026-11-19T12:00:00Z"))
+	if _, err := e.Svc.CreateProject(ctx, "shop", "Shop"); err != nil {
+		t.Fatal(err)
+	}
+	e.flagged(t, "whoami")                // one service, at home
+	e.flagged(t, "shop--production--web") // one service, in Shop › production
+	two := blogApp()                      // two services, in Shop › production
+	two.ID = "shop--production--blog"
+	two.Services[0].Domains[0].Host = "blog.shop.example.com"
+	e.seed(t, two, seedDeploy{ID: "d-blog", Trigger: app.TriggerConsole, Status: store.StatusHealthy, Version: 7})
+	e.copies(two.ID, "web", 7, 1, 0)
+	e.scanFixableCritical(t)
+
+	resp, body := e.get(t, "/ops/security")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /ops/security = %d", resp.StatusCode)
+	}
+	table := imagesTable(t, body)
+	words := text(table)
+	for _, want := range []string{
+		`<a href="/apps/whoami/deployments#security"><span class="cv-inline-mono text-fg-1">whoami</span></a> `,
+		`<a href="/apps/shop--production--web/deployments#security"><span class="text-fg-3">Shop › </span>` +
+			`<span class="cv-inline-mono text-fg-3">production</span><span class="text-fg-3"> › </span>` +
+			`<span class="cv-inline-mono text-fg-1">web</span></a> `,
+		`<a href="/apps/shop--production--blog/deployments#security">`,
+		`<span class="cv-inline-mono text-fg-1">blog</span></a><span class="cv-inline-mono text-fg-2">/web</span>`,
+		`<span class="cv-inline-mono text-fg-1">blog</span></a><span class="cv-inline-mono text-fg-2">/worker</span>`,
+	} {
+		if !strings.Contains(table, want) {
+			t.Errorf("the Images table lacks %q:\n%s", want, table)
+		}
+	}
+	if strings.Contains(words, "--") {
+		t.Errorf("the Images table names an app by its ID:\n%s", words)
+	}
+	// Only the two-service app names its services.
+	if n := strings.Count(table, `<span class="cv-inline-mono text-fg-2">/`); n != 2 {
+		t.Errorf("the Images table names %d services, want 2 (blog's):\n%s", n, words)
 	}
 }
 

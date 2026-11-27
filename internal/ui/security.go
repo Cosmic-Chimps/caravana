@@ -54,9 +54,38 @@ func secImageOf(ref string) secImage {
 	return secImage{Repo: repo, Short: shortDigest(ref), Full: ref}
 }
 
-// secUse is one service that runs an image, linked to its app.
+// secUse is one service that runs an image, linked to its app: the app by its place label (never its
+// ID outside Default › production), and the service only when the app has more than one.
 type secUse struct {
-	App, Service, Href string
+	App           sentence
+	Service, Href string
+}
+
+// secUses names the services that run an image, reading each app once per page.
+type secUses struct {
+	s    *server
+	pl   places
+	apps map[string]*store.AppRecord // nil: the app can't be read (deleted meanwhile)
+}
+
+func (u secUses) of(ctx context.Context, use service.ScanUse) secUse {
+	rec, ok := u.apps[use.App]
+	if !ok {
+		if r, err := u.s.svc.GetApp(ctx, use.App); err == nil {
+			rec = &r
+		}
+		u.apps[use.App] = rec
+	}
+	out := secUse{App: sentence{mono(use.App)}, Href: "/apps/" + url.PathEscape(use.App) + "/deployments#security"}
+	if rec == nil {
+		out.Service = use.Service // nothing says it has one service: name it
+		return out
+	}
+	out.App = placeLabel(use.App, rec.Place, u.pl)
+	if len(rec.App.Services) > 1 {
+		out.Service = use.Service
+	}
+	return out
 }
 
 // secImageRow is a row of the images table.
@@ -413,10 +442,15 @@ func (s *server) loadSecurity(ctx context.Context) (secData, error) {
 	if err != nil {
 		return secData{}, err
 	}
+	pl, err := s.loadPlaces(ctx)
+	if err != nil {
+		return secData{}, err
+	}
+	use := secUses{s: s, pl: pl, apps: map[string]*store.AppRecord{}}
 	for _, sum := range images {
 		row := secImageRow{Image: secImageOf(sum.Image)}
 		for _, u := range sum.UsedBy {
-			row.UsedBy = append(row.UsedBy, secUse{App: u.App, Service: u.Service, Href: "/apps/" + u.App + "/deployments#security"})
+			row.UsedBy = append(row.UsedBy, use.of(ctx, u))
 		}
 		row.Status, row.Reason = secStatusOf(sum.Scan, sum.Open)
 		if sum.Open != nil {

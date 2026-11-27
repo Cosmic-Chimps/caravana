@@ -77,7 +77,7 @@
       {{range .Images}}
       <tr>
         <td>{{template "sec-image" .Image}}</td>
-        <td>{{range .UsedBy}}<a href="{{.Href}}" class="cv-inline-mono">{{.App}}</a><span class="cv-inline-mono text-fg-2">/{{.Service}}</span> {{end}}</td>
+        <td>{{range .UsedBy}}<a href="{{.Href}}">{{template "sentence" .App}}</a>{{with .Service}}<span class="cv-inline-mono text-fg-2">/{{.}}</span>{{end}} {{end}}</td>
         <td>{{if .HasResult}}{{if .Clean}}<span class="cv-sevchip cv-sevchip-plain">no known vulnerabilities</span>{{else}}{{template "sec-chips" .Chips}}{{end}}{{else}}<span class="text-fg-2">—</span>{{end}}</td>
         <td>{{with .Scanned}}{{template "clock" .}}{{else}}<span class="text-fg-2">never</span>{{end}}{{if .Database}}<br><span class="cv-secmeta">database of {{.Database}}</span>{{end}}</td>
         <td>{{template "status-quiet" .Status}}{{with .Reason}}<br><span class="cv-secmeta">{{.}}</span>{{end}}</td>
