@@ -10,6 +10,12 @@
 {{/* status-quiet: the same without the tinted ground, for dense tables. Takes a statusView. */}}
 {{define "status-quiet"}}<span class="cv-pill cv-pill-{{.Kind}} cv-pill-quiet"><span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span>{{.Word}}</span>{{end}}
 
+{{/* findings-tag: the second line of an app's Status cell, under the run-state pill: the worst image finding's mark
+     and its package count, in the level's hue, a link to the app's Security panel (feature 044; nothing when the app
+     has none). Takes a *findingsTag. Where the whole row is already a link, draw findings-tag-plain. */}}
+{{define "findings-tag"}}{{with .}}<a href="{{.Href}}" class="cv-find cv-find-{{.Level}}" title="Open findings"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span>{{.Count}} {{.Level}}<span class="sr-only"> {{.Words}}</span></a>{{end}}{{end}}
+{{define "findings-tag-plain"}}{{with .}}<span class="cv-find cv-find-{{.Level}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span>{{.Count}} {{.Level}}<span class="sr-only"> {{.Words}}</span></span>{{end}}{{end}}
+
 {{/* sentence: prose with its names and versions set in mono. Takes a sentence (a list of parts, see view.go). */}}
 {{define "sentence"}}{{range .}}{{if .Mono}}<span class="cv-inline-mono {{if .Muted}}text-fg-3{{else}}text-fg-1{{end}}{{if .Nowrap}} cv-nowrap{{end}}">{{.Text}}</span>{{else if .Muted}}<span class="text-fg-3">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -220,20 +221,22 @@ func copyMarksOf(sum service.AppSummary) markCell {
 }
 
 // screenRowOf is an app's row of the project's table.
-func (s *server) screenRowOf(now time.Time, sum service.AppSummary) screenRow {
+func (s *server) screenRowOf(now time.Time, sum service.AppSummary, tags map[string]*findingsTag) screenRow {
 	row := screenRow{appRow: s.appRow(now, sum, false), Marks: copyMarksOf(sum)}
+	row.Findings = tags[sum.App.ID]
 	if len(row.Domains) > 0 {
 		row.Address, row.More = row.Domains[0].Host, len(row.Domains)-1
 	}
 	return row
 }
 
-// projectAppsOf builds the apps region: the environment's rows, problems first.
-func (s *server) projectAppsOf(ctx context.Context, d projectData) projectApps {
+// projectAppsOf builds the apps region: the environment's rows, problems first. tags are the apps'
+// image findings by app ID (envTags, or what the rail read).
+func (s *server) projectAppsOf(ctx context.Context, d projectData, tags map[string]*findingsTag) projectApps {
 	now := s.now()
 	region := projectApps{Env: d.Env, AddEnvHref: "/projects/" + url.PathEscape(d.Project.ID) + "/settings#add-environment"}
 	for _, sum := range d.InEnv {
-		region.Rows = append(region.Rows, s.screenRowOf(now, sum))
+		region.Rows = append(region.Rows, s.screenRowOf(now, sum, tags))
 	}
 	sortProblemsFirst(region.Rows, func(row screenRow) string { return row.Sort })
 	region.Count = len(region.Rows)
@@ -287,28 +290,57 @@ func promoteRowsOf(d projectData) []promoteRow {
 	return rows
 }
 
+// inEnv keeps the needs-you items of one environment's apps. Items with no app (a missing backup
+// destination, a full disk) are the host's.
+func inEnv(project, env string) func(service.AttentionItem) bool {
+	return func(it service.AttentionItem) bool {
+		return it.AppID != "" && it.Project == project && it.Environment == env
+	}
+}
+
+// envTags reads the environment's apps' image findings, for the apps region when it is drawn alone.
+func (s *server) envTags(r *http.Request, d projectData) (map[string]*findingsTag, error) {
+	if d.Env == "" {
+		return nil, nil
+	}
+	att, err := s.svc.Attention(r.Context())
+	if err != nil {
+		return nil, fmt.Errorf("read what needs you in %s/%s: %w", d.Project.ID, d.Env, err)
+	}
+	keep := inEnv(d.Project.ID, d.Env)
+	return tagsOf(findingsOf(slices.DeleteFunc(slices.Clone(att.Items), func(it service.AttentionItem) bool { return !keep(it) }))), nil
+}
+
 // projectRailOf builds the rail: the environment's needs-you items, the Environment
-// panel and its newest deployments.
-func (s *server) projectRailOf(r *http.Request, d projectData) (projectRail, error) {
+// panel and its newest deployments. It also returns the apps' finding tags, from the
+// items it read, for the apps region of the same page.
+func (s *server) projectRailOf(r *http.Request, d projectData) (projectRail, map[string]*findingsTag, error) {
 	rail := projectRail{Env: d.Env}
 	if d.Env == "" {
-		return rail, nil
+		return rail, nil, nil
 	}
 	ctx := r.Context()
 	project, env := d.Project.ID, d.Env
-	// Items with no app (a missing backup destination, a full disk) are the host's.
-	region, _, err := s.loadAttentionWhere(r, d.Places, d.InEnv, func(it service.AttentionItem) bool {
-		return it.AppID != "" && it.Project == project && it.Environment == env
-	})
+	region, items, err := s.loadAttentionWhere(r, d.Places, d.InEnv, inEnv(project, env))
 	if err != nil {
-		return projectRail{}, fmt.Errorf("read what needs you in %s/%s: %w", project, env, err)
+		return projectRail{}, nil, fmt.Errorf("read what needs you in %s/%s: %w", project, env, err)
 	}
+	// The rail's label already says where, so the sentences and the group's lines leave the place out.
 	for i := range region.Rows {
 		region.Rows[i].Text = withoutPlace(region.Rows[i].Text)
 	}
-	if len(region.Rows) > 0 {
+	if g := region.Security; g != nil {
+		for i := range g.Apps {
+			g.Apps[i].Label = withoutPlace(g.Apps[i].Label)
+		}
+		if len(g.Apps) == 1 {
+			g.Lead = withoutPlace(g.Lead)
+		}
+	}
+	if region.Count() > 0 {
 		rail.Attention = region
 	}
+	tags := tagsOf(findingsOf(items))
 
 	if n := addressCount(d.InEnv); n > 0 {
 		rail.Addresses = fmt.Sprintf("%d", n)
@@ -319,7 +351,7 @@ func (s *server) projectRailOf(r *http.Request, d projectData) (projectRail, err
 
 	recs, err := s.svc.RecentDeploymentsIn(ctx, project, env, projectDeploysLimit)
 	if err != nil {
-		return projectRail{}, fmt.Errorf("list recent deployments of %s/%s: %w", project, env, err)
+		return projectRail{}, nil, fmt.Errorf("list recent deployments of %s/%s: %w", project, env, err)
 	}
 	now := s.now()
 	if len(recs) > 0 {
@@ -332,7 +364,7 @@ func (s *server) projectRailOf(r *http.Request, d projectData) (projectRail, err
 		row.App = cmp.Or(rec.Place.Name, rec.AppID) // the label says where: no Where prefix
 		rail.Activity = append(rail.Activity, row)
 	}
-	return rail, nil
+	return rail, tags, nil
 }
 
 // withoutPlace is a needs-you sentence without the place before the app's name
@@ -350,7 +382,7 @@ func withoutPlace(s sentence) sentence {
 
 // projectScreenOf is the whole page.
 func (s *server) projectScreenOf(r *http.Request, d projectData) (*projectScreen, error) {
-	rail, err := s.projectRailOf(r, d)
+	rail, tags, err := s.projectRailOf(r, d)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +390,7 @@ func (s *server) projectScreenOf(r *http.Request, d projectData) (*projectScreen
 	base := "/projects/" + url.PathEscape(id)
 	v := &projectScreen{ID: id, Display: d.Project.DisplayName, Env: d.Env,
 		SettingsHref: base + "/settings", AddEnvHref: base + "/settings#add-environment",
-		Apps: s.projectAppsOf(r.Context(), d), Rail: rail}
+		Apps: s.projectAppsOf(r.Context(), d, tags), Rail: rail}
 	// The slot holds the project's name when the display name says something else (Default
 	// is "default" in other letters: nothing to add).
 	if !strings.EqualFold(d.Project.DisplayName, id) {
@@ -412,7 +444,13 @@ func (s *server) partProjectApps(w http.ResponseWriter, r *http.Request, session
 	if !ok {
 		return
 	}
-	s.renderPart(w, "projects", "project-apps-region", s.projectAppsOf(r.Context(), d))
+	tags, err := s.envTags(r, d)
+	if err != nil {
+		s.log.Error("read the apps' findings", "project", d.Project.ID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	s.renderPart(w, "projects", "project-apps-region", s.projectAppsOf(r.Context(), d, tags))
 }
 
 // partProjectRail answers GET /parts/projects/{project}/rail?env=: the rail region.
@@ -421,7 +459,7 @@ func (s *server) partProjectRail(w http.ResponseWriter, r *http.Request, session
 	if !ok {
 		return
 	}
-	rail, err := s.projectRailOf(r, d)
+	rail, _, err := s.projectRailOf(r, d)
 	if err != nil {
 		s.log.Error("build the project rail", "project", d.Project.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

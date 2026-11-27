@@ -15,7 +15,7 @@
   </div>
   {{range .}}
   <div class="cv-row cv-apps-row" role="row">
-    <div role="cell" class="cv-c-status">{{template "status-quiet" .Status}}</div>
+    <div role="cell" class="cv-c-status">{{template "status-quiet" .Status}} {{template "findings-tag" .Findings}}</div>
     <div role="cell" class="cv-c-name cv-namecell" title="{{.Name}}"><a href="{{.Href}}" class="cv-app-name">{{.Name}}</a>{{with .Kind}}<span class="cv-kind">{{.}}</span>{{end}}</div>
     <div role="cell" class="cv-c-version" data-label="Version">{{if .Version}}<span class="cv-data text-fg-1">{{.Version}}</span>{{else}}<span class="cv-data-muted">none</span>{{end}}{{with .Next}} <span class="cv-data text-fg-3"><span aria-hidden="true">→ </span><span class="sr-only">rolling out </span>{{.}}</span>{{end}}</div>
     <div role="cell" class="cv-c-image cv-lines" data-label="Image">{{range .Images}}<span class="cv-data" title="{{.Image}}">{{with .Service}}<span class="text-fg-3">{{.}} </span>{{end}}{{.Image}}</span>{{end}}</div>
@@ -113,7 +113,7 @@
   <span>Copies couldn't be checked: Nomad can't be reached.</span>
 </div>
 {{end}}
-{{if .Rows}}
+{{if or .Rows .Security}}
 <div class="cv-panel" role="list" aria-label="Needs you">
   {{range .Rows}}
   <div class="cv-row cv-need" role="listitem">
@@ -122,10 +122,32 @@
     <span class="cv-need-act"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Action}}</a></span>
   </div>
   {{end}}
+  {{with .Security}}<div class="cv-need-item" role="listitem">{{template "security-group" .}}</div>{{end}}
 </div>
 {{else if not .Unknown}}
 <p class="cv-need-none">Nothing needs you.</p>
 {{end}}
+{{end}}
+
+{{/* security-group: every image finding as one row of the needs-you list, after every other item. A native
+     <details> (it opens without script; console.js keeps it open or closed across a refresh by its id), closed
+     by default; its summary is the row, its body one line per app and no package rows (the app's Security panel
+     has those). Takes a securityGroup. */}}
+{{define "security-group"}}
+<details class="cv-need-group" id="needs-security">
+  <summary class="cv-row cv-need cv-need-sum">
+    <span class="cv-need-text"><span class="cv-bchev" aria-hidden="true"><span class="cv-chev-closed">{{icon "chevron-right" 12}}</span><span class="cv-chev-open">{{icon "chevron-down" 12}}</span></span>{{template "status-mark" .Mark}}<span><span class="cv-need-lead">{{template "sentence" .Lead}}</span>{{.Rest}}</span></span>
+    {{with .OperatorHref}}<span class="cv-need-act"><a href="{{.}}" class="cv-need-ops">Operator › Security</a></span>{{end}}
+  </summary>
+  <div class="cv-need-apps">
+    {{range .Apps}}
+    <div class="cv-row cv-need cv-need-app">
+      <span class="cv-need-text"><span>{{template "sentence" .Label}}</span><span class="cv-need-counts">{{.Counts}}</span></span>
+      <span class="cv-need-act"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Open findings</a></span>
+    </div>
+    {{end}}
+  </div>
+</details>
 {{end}}
 
 {{/* platform-region: the rail's "This host" panel (feature 025): whether the host can be read, the memory

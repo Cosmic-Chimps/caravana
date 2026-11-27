@@ -991,6 +991,22 @@ Deploying now, the filter, the groups.
   one with a recorded definition and pinned images (the one Nomad's message names, when the history has
   it). When none matches, the wording stays "v3".
 
+### Image findings (feature 044, at a glance)
+**The Findings-Are-Debt Rule.** An outage is something happening now; a finding is debt with a known fix. Both
+reach the owner, but the page leads with what is happening, so findings are quiet in three places and never a state.
+- **One group, last.** Every `image_vulnerable` item is one **Security** row at the end of the needs-you list, after
+  every other item whatever its level: a native `<details>` with a stable id (`needs-security`), closed, the worst
+  mark (failed when any is critical, else warning) and one sentence ("**3 apps** have fixable vulnerabilities: 14
+  critical packages, 2 known exploited."). Opened it has one line per app (its place label, "9 critical, 1 known
+  exploited", **Open findings**) and no package rows: the app's Security panel has those. An admin's head links to
+  Operator › Security. The API and the notifications keep one item per package.
+- **Not trouble.** The headline and the state filter don't count an app whose only items are findings; a last clause
+  says "3 have fixable critical vulnerabilities." Apps in it are named by their name, never their ID.
+- **A tag, never a second pill.** An app with findings has a second line in its Status cell, 4px under the pill: the
+  worst level's mark and count in mono 12px in that level's hue ("■ 9 critical", "◆ 4 high"), no ground and no border,
+  a link to the app's Security panel (a plain span where the whole row is already a link, as on the project page).
+  Nothing is drawn without findings: no "0".
+
 ### The project page (feature 027.5)
 Values from `specs/027.5-project-page/contracts/project-screen.md`, the handoff's `ProjectScreen`. A
 project's page, `/projects/{project}` (`?env=<environment>`), leads with the apps; the forms that used to be it

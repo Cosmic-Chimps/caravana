@@ -22,13 +22,22 @@ type attentionRow struct {
 	Href   string
 }
 
-// attentionRegion is what the "attention" region draws: the items, or one
-// line saying nothing needs the owner. Unknown is set when Nomad couldn't be
-// read, so the copy items may be missing and "nothing needs you" would be a
+// attentionRegion is what the "attention" region draws: the items, then the one Security group that
+// holds every image finding (findings.go), or one line saying nothing needs the owner. Unknown is set
+// when Nomad couldn't be read, so the copy items may be missing and "nothing needs you" would be a
 // guess.
 type attentionRegion struct {
-	Rows    []attentionRow
-	Unknown bool
+	Rows     []attentionRow
+	Security *securityGroup // nil without findings
+	Unknown  bool
+}
+
+// Count is how many rows the list draws: the items and the Security group as one.
+func (r attentionRegion) Count() int {
+	if r.Security != nil {
+		return len(r.Rows) + 1
+	}
+	return len(r.Rows)
 }
 
 // loadAttention reads the needs-you list and turns it into the region. The
@@ -54,6 +63,9 @@ func (s *server) loadAttentionWhere(r *http.Request, pl places, sums []service.A
 	}
 	region := attentionRegion{Unknown: att.CopiesUnknown}
 	for _, it := range att.Items {
+		if it.Kind == service.AttentionImageVulnerable {
+			continue // the Security group below holds these
+		}
 		var again *uint64
 		if sum, ok := byID[it.AppID]; ok && it.Kind == service.AttentionDeployFailed && sum.LastDeployment != nil &&
 			sum.LastDeployment.Deployment.ID == it.Deployment {
@@ -62,6 +74,9 @@ func (s *server) loadAttentionWhere(r *http.Request, pl places, sums []service.A
 		}
 		region.Rows = append(region.Rows, s.attentionRowAgain(now, it, pl, byID, again))
 	}
+	// Findings are debt with a fix, not something happening now: one group after every other item.
+	who, signedIn := service.PrincipalFrom(r.Context())
+	region.Security = securityGroupOf(att.Items, pl, !signedIn || who.Admin())
 	return region, att.Items, nil
 }
 
@@ -248,8 +263,6 @@ func headlineWords(it service.AttentionItem) string {
 		return "has copies that can't be placed"
 	case service.AttentionScaleAtMax:
 		return "has a service at its maximum copies and still over its target"
-	case service.AttentionImageVulnerable:
-		return "runs an image with a vulnerability that has a fix"
 	}
 	return fmt.Sprintf("needs you (%s)", it.Kind)
 }

@@ -281,14 +281,10 @@ func (s *server) loadOps(r *http.Request) (opsData, attentionRegion, error) {
 	down := copiesErr != nil || nomadUnread(host)
 	now := s.now()
 
-	listed := map[string]bool{}
-	for _, it := range items {
-		listed[it.AppID] = true
-	}
-	rows := s.opsRows(ctx, now, pl, host, sums, listed, copies, copiesErr)
+	rows := s.opsRows(ctx, now, pl, host, sums, listedApps(items), tagsOf(findingsOf(items)), copies, copiesErr)
 
 	d := opsData{
-		Head:   opsHead{Headline: headlineOf(sums, items), Stats: opsStats(host, len(sums), copies, copiesErr, len(items))},
+		Head:   opsHead{Headline: headlineOf(sums, items), Stats: opsStats(host, len(sums), copies, copiesErr, needs.Count())},
 		Apps:   opsAppsOf(rows, sums, copies, copiesErr),
 		Server: opsServerRegion{NomadDown: down, Room: roomOf(host), Node: s.opsNode(host, rows, copies, down)},
 	}
@@ -299,7 +295,7 @@ func (s *server) loadOps(r *http.Request) (opsData, attentionRegion, error) {
 			d.Server.Panels = s.opsPanels(ctx, now, list, rows)
 		}
 	}
-	switch n := len(items); n {
+	switch n := needs.Count(); n {
 	case 0:
 		d.NeedsMeta = "nothing"
 	default:
@@ -368,11 +364,12 @@ func runningCopies(byApp map[string][]service.Copy) int {
 
 // opsRows builds the apps table's rows, problems first, then by name.
 func (s *server) opsRows(ctx context.Context, now time.Time, pl places, host service.HostView, sums []service.AppSummary, listed map[string]bool,
-	copies map[string][]service.Copy, copiesErr error) []opsAppRow {
+	tags map[string]*findingsTag, copies map[string][]service.Copy, copiesErr error) []opsAppRow {
 	usage := s.opsUsage(ctx, pl, host, sums)
 	rows := make([]opsAppRow, 0, len(sums))
 	for _, sum := range sums {
 		base := s.appRow(now, sum, needsYouOf(sum, listed[sum.App.ID]))
+		base.Findings = tags[sum.App.ID]
 		row := opsAppRow{appRow: base, LinkID: "ops-app-" + sum.App.ID}
 		if !atHome(sum.Place) {
 			row.Where = pl.display(sum.Place.Project) + " › " + sum.Place.Environment + " ›"
