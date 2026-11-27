@@ -58,7 +58,8 @@ var OpenedProblemKinds = []string{
 // ImageFindingsKey is the key of the feed's events about an app's image findings: one when the
 // app's first fixable finding appears, one when its last goes. The needs-you items and the
 // notifications stay one per package (image_vulnerable|<app>|<service>|<package>); the feed lists
-// only these.
+// only these. The feed's query tells them apart by the key's end ("||"), which holds because a per-package
+// key never has an empty service or package: every image_vulnerable item names both.
 func ImageFindingsKey(appID string) string {
 	return ProblemImageVulnerable + "|" + appID + "||"
 }
