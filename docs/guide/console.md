@@ -62,7 +62,7 @@ read, so a problem leaves it when it is fixed. [Monitoring](operate/monitoring.m
 The sentence at the top names an app by its name (`api`), not by its ID. It counts outages: an app
 whose only items are image findings counts as healthy. If you installed the [image
 scanner](../image-scanning.md), a last sentence says how many apps have fixable vulnerabilities, for
-example "2 have fixable critical vulnerabilities." Those findings are not a row each in the list: they are
+example "Fixable vulnerabilities in 2 apps: critical in 1, high in 1." Those findings are not a row each in the list: they are
 one closed row at its end, and an app that has some shows a small tag such as "■ 2 critical" under
 its status in the table. [Monitoring](operate/monitoring.md#image-findings) and [Image
 scanning](../image-scanning.md#what-you-see) say more.

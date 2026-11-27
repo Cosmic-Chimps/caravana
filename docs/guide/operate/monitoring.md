@@ -109,7 +109,7 @@ If you installed the [image scanner](../../image-scanning.md), its findings are 
 
 > **2 apps** have fixable vulnerabilities: 2 critical packages, 3 high packages, 1 known exploited.
 
-The row is red when any package is critical and amber when they are all high. It counts the packages that have a vulnerability with a fix, at or above the level you chose in **Operator › Security** (critical by default; critical and high is a setting), in the apps you haven't stopped. Open the row for one line per app, the one with the most critical packages first: the app, its counts ("2 critical", or "3 high, 1 known exploited"), and **Open findings**, which leads to the Security panel on the app's **Deployments** tab. Owners and admins also get a link to **Operator › Security** in the row. A list that has only this row doesn't say "Nothing needs you.": it shows the row.
+The row is red when any package is critical and amber when they are all high. It counts the packages that have a vulnerability with a fix, at or above the level you chose in **Operator › Security** (critical by default; critical and high is a setting), in the apps you haven't stopped. Open the row for one line per app, apps with a known exploited vulnerability first, then those with critical packages, then high: the app, its counts ("2 critical", or "3 high, 1 known exploited"), and **Open findings**, which leads to the Security panel on the app's **Deployments** tab. Owners and admins also get a link to **Operator › Security** in the row. A list that has only this row doesn't say "Nothing needs you.": it shows the row.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../images/apps-home-security-dark.png">

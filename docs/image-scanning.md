@@ -76,7 +76,8 @@ through the scan job's own Nomad Variable, which is deleted with the job; no pag
   An app with none has no tag. The tag links to the Security panel, except on the project's page, where the whole
   row is a link.
 - **The Apps page's top sentence** counts outages, not findings: an app whose only items are findings counts as
-  healthy. A last sentence says how many apps have them, for example "3 have fixable critical vulnerabilities."
+  healthy. A last sentence says how many apps have them, judging each app by its worst level: "Fixable critical
+  vulnerabilities in 3 apps.", or, when the apps differ, "Fixable vulnerabilities in 6 apps: critical in 5, high in 1."
 - **Your notification channels** get one message for each app, service and package with a fixable vulnerability at
   or above the notify level, like every other item: it names the package, its version, the advisory and the fixed
   version. `GET /v1/attention` lists them the same way, one item each.
