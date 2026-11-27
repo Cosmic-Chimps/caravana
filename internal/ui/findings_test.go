@@ -175,18 +175,19 @@ func TestHeadlineKeepsFindingsOutOfTrouble(t *testing.T) {
 	}{
 		{"only findings: the apps are healthy, and a clause says how many have them",
 			[]service.AppSummary{ok("a"), ok("b"), ok("c"), ok("d"), ok("e"), ok("f"), ok("g"), ok("h"), ok("i"), ok("j"), ok("k")}, flag("a", "b", "c"),
-			"11 apps healthy. 3 apps have fixable critical vulnerabilities."},
-		{"one", []service.AppSummary{ok("a"), ok("b")}, flag("a"), "2 apps healthy. 1 app has fixable critical vulnerabilities."},
+			"11 apps healthy. Fixable critical vulnerabilities in 3 apps."},
+		{"one", []service.AppSummary{ok("a"), ok("b")}, flag("a"), "2 apps healthy. Fixable critical vulnerabilities in 1 app."},
 		{"the worst across the apps is high", []service.AppSummary{ok("a"), ok("b")}, []service.AttentionItem{high("a"), high("b")},
-			"2 apps healthy. 2 apps have fixable high vulnerabilities."},
-		{"one critical among highs says critical", []service.AppSummary{ok("a"), ok("b")}, []service.AttentionItem{high("a"), flag("b")[0]},
-			"2 apps healthy. 2 apps have fixable critical vulnerabilities."},
+			"2 apps healthy. Fixable high vulnerabilities in 2 apps."},
+		{"mixed levels: each app by its own worst", []service.AppSummary{ok("a"), ok("b"), ok("c")},
+			[]service.AttentionItem{high("a"), flag("b")[0], high("b"), flag("c")[0]},
+			"3 apps healthy. Fixable vulnerabilities in 3 apps: critical in 2, high in 1."},
 		{"after trouble, and the troubled app's findings count in the clause", []service.AppSummary{degraded("api"), ok("a")},
 			append(flag("api", "a"), service.AttentionItem{Kind: service.AttentionRestarting, AppID: "api"}),
-			"1 app needs you: api has 1 of 2 copies healthy. 1 app healthy. 2 apps have fixable critical vulnerabilities."},
+			"1 app needs you: api has 1 of 2 copies healthy. 1 app healthy. Fixable critical vulnerabilities in 2 apps."},
 		{"findings never hide an item that is trouble, in whichever order the list has them", []service.AppSummary{ok("a")},
 			[]service.AttentionItem{flag("a")[0], {Kind: service.AttentionBackupFailed, AppID: "a"}},
-			"1 app needs you: a has a failed backup. 1 app has fixable critical vulnerabilities."},
+			"1 app needs you: a has a failed backup. Fixable critical vulnerabilities in 1 app."},
 		{"nothing is said without any", []service.AppSummary{ok("a")}, nil, "1 app healthy."},
 		{"a finding of an app not in the list is nobody's", []service.AppSummary{ok("a")}, flag("gone"), "1 app healthy."},
 	}
@@ -198,11 +199,11 @@ func TestHeadlineKeepsFindingsOutOfTrouble(t *testing.T) {
 		})
 	}
 
-	// With no sentence of counts before it the clause says "apps".
-	if got := findingsClause([]service.AppSummary{ok("a"), ok("b")}, flag("a", "b")).String(); got != "2 apps have fixable critical vulnerabilities." {
+	// The clause alone, for one app and for several.
+	if got := findingsClause([]service.AppSummary{ok("a"), ok("b")}, flag("a", "b")).String(); got != "Fixable critical vulnerabilities in 2 apps." {
 		t.Errorf("clause = %q", got)
 	}
-	if got := findingsClause([]service.AppSummary{ok("a")}, flag("a")).String(); got != "1 app has fixable critical vulnerabilities." {
+	if got := findingsClause([]service.AppSummary{ok("a")}, flag("a")).String(); got != "Fixable critical vulnerabilities in 1 app." {
 		t.Errorf("clause = %q", got)
 	}
 }

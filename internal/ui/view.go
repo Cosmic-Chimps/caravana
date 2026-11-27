@@ -463,28 +463,31 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 	return append(out, clause...)
 }
 
-// findingsClause is the headline's last sentence, "3 apps have fixable critical vulnerabilities.": how
-// many of the apps have fixable findings and how bad the worst is. It is empty without any. It always
-// says "apps": after "5 apps healthy." a bare "6 have" would read as some of the healthy ones.
+// findingsClause is the headline's last sentence. It names the findings, not a set of apps (an app with
+// an outage can have findings too, so "of the healthy ones" would be untrue), and judges each app by its
+// own worst level: "Fixable critical vulnerabilities in 6 apps." when all share one level, else
+// "Fixable vulnerabilities in 6 apps: critical in 5, high in 1." It is empty without any.
 func findingsClause(sums []service.AppSummary, items []service.AttentionItem) sentence {
 	found := findingsOf(items)
-	n, worst := 0, "high"
+	var critical, high int
 	for _, sum := range sums {
-		if f, ok := found[sum.App.ID]; ok {
-			n++
-			if f.Critical > 0 {
-				worst = "critical"
-			}
+		switch found[sum.App.ID].worst() {
+		case "critical":
+			critical++
+		case "high":
+			high++
 		}
 	}
-	if n == 0 {
+	switch n := critical + high; {
+	case n == 0:
 		return nil
+	case high == 0:
+		return sentence{plain("Fixable critical vulnerabilities in " + appCount(n) + ".")}
+	case critical == 0:
+		return sentence{plain("Fixable high vulnerabilities in " + appCount(n) + ".")}
+	default:
+		return sentence{plain(fmt.Sprintf("Fixable vulnerabilities in %s: critical in %d, high in %d.", appCount(n), critical, high))}
 	}
-	verb := "have"
-	if n == 1 {
-		verb = "has"
-	}
-	return sentence{plain(appCount(n) + " " + verb + " fixable " + worst + " vulnerabilities.")}
 }
 
 // neverDeployed says whether the app was created and has no deployment at all:

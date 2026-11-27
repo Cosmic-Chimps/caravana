@@ -98,7 +98,7 @@ func TestSecurityGroupComesLastAndClosed(t *testing.T) {
 		t.Errorf("the owner's group lacks the Operator › Security link:\n%s", got)
 	}
 	// Findings aren't trouble: only the failed deploy is, and the five count as healthy.
-	if got, want := h1Text(t, page), "1 app needs you: blog isn't running, and its last deploy failed. 5 apps healthy. 5 apps have fixable critical vulnerabilities."; got != want {
+	if got, want := h1Text(t, page), "1 app needs you: blog isn't running, and its last deploy failed. 5 apps healthy. Fixable critical vulnerabilities in 5 apps."; got != want {
 		t.Errorf("headline = %q, want %q", got, want)
 	}
 
@@ -125,7 +125,7 @@ func TestSecurityGroupAloneIsNotNothing(t *testing.T) {
 	if got := text(needsRegion(t, page)); !strings.Contains(got, "app-a has fixable vulnerabilities: 1 critical package.") {
 		t.Errorf("the group's sentence:\n%s", got)
 	}
-	if got, want := h1Text(t, page), "1 app healthy. 1 app has fixable critical vulnerabilities."; got != want {
+	if got, want := h1Text(t, page), "1 app healthy. Fixable critical vulnerabilities in 1 app."; got != want {
 		t.Errorf("headline = %q, want %q", got, want)
 	}
 }
@@ -283,7 +283,7 @@ func TestFindingsOnTheOperatorOverview(t *testing.T) {
 		t.Error(`the Operator Overview says "Nothing needs you." with a group`)
 	}
 	// Findings aren't trouble: the state filter's rows and the headline.
-	if got := h1Text(t, page); !strings.Contains(got, "2 apps healthy. 2 apps have fixable critical vulnerabilities.") {
+	if got := h1Text(t, page); !strings.Contains(got, "2 apps healthy. Fixable critical vulnerabilities in 2 apps.") {
 		t.Errorf("headline = %q", got)
 	}
 }
