@@ -1006,6 +1006,9 @@ reach the owner, but the page leads with what is happening, so findings are quie
   worst level's mark and count in mono 12px in that level's hue ("■ 9 critical", "◆ 4 high"), no ground and no border,
   a link to the app's Security panel (a plain span where the whole row is already a link, as on the project page).
   Nothing is drawn without findings: no "0".
+- **One count.** The group, the tag and the headline count the packages of the needs-you items the page already
+  reads, not the scans (`ImageScans`): those items have the notify level, stopped apps and the viewer's visibility
+  applied, so every place counts the same packages with no extra read.
 
 ### The project page (feature 027.5)
 Values from `specs/027.5-project-page/contracts/project-screen.md`, the handoff's `ProjectScreen`. A
