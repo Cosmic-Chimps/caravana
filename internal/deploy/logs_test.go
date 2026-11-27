@@ -236,6 +236,21 @@ func TestLogsFollow(t *testing.T) {
 		if l := r.next(); l.Text != "after" {
 			t.Errorf("line = %q, want after (nothing from before the call)", l.Text)
 		}
+		reqs := nomad.LogRequests()
+		if last := reqs[len(reqs)-1]; last.Origin != "end" || last.Offset != 1 || !last.Follow {
+			t.Errorf("request = %+v, want a follow from the last byte (offset 0 is the whole file to Nomad)", last)
+		}
+	})
+
+	t.Run("without a tail, a line begun before the call is left out", func(t *testing.T) {
+		d, nomad := logsEnv(t)
+		nomad.WriteLog("c1", "stdout", "before\npar")
+		r := startLogs(t, d, "c1", LogStdout, 0, true)
+		waitOpen(t, nomad, 1)
+		nomad.WriteLog("c1", "stdout", "tial\nafter\n")
+		if l := r.next(); l.Text != "after" {
+			t.Errorf("line = %q, want after (not the cut-off end of a line from before)", l.Text)
+		}
 	})
 
 	t.Run("cancelling the context returns, and lets go of the connection", func(t *testing.T) {

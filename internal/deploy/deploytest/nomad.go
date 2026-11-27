@@ -1653,8 +1653,8 @@ const logHeartbeat = 50 * time.Millisecond
 
 // serveLogs answers GET /v1/client/fs/logs/{id}: Nomad's frame stream. The
 // query says which task and stream (type), where to start (origin "end" with
-// an offset means "that many bytes before the end", "start" an absolute
-// position) and whether to follow. Without follow the stream ends at the end
+// an offset means "that many bytes before the end", but offset 0 the whole
+// file; "start" an absolute position) and whether to follow. Without follow the stream ends at the end
 // of the output; with it, new output is sent as it is written. Each frame
 // carries the file's name and the offset after its data, as Nomad's do (the
 // offset is where the NEXT byte is, not where this data began).
@@ -1687,6 +1687,12 @@ func (n *Nomad) serveLogs(w http.ResponseWriter, r *http.Request, id string) {
 	switch req.Origin {
 	case "end":
 		pos = max(size-int(req.Offset), 0)
+		if req.Offset == 0 {
+			// Nomad, at origin end, takes offset 0 as the whole newest file, not
+			// as "nothing": the fake has one file, so all of it (lab, observed
+			// 2026-11-27 on Nomad 2.0.7, with and without follow).
+			pos = 0
+		}
 	case "start":
 		pos = min(int(req.Offset), size)
 	default:

@@ -190,6 +190,14 @@ func TestLogsFrameStream(t *testing.T) {
 			t.Errorf("data = %q, want all of it when the offset passes the start", data)
 		}
 	})
+	t.Run("origin end at offset 0 is the whole file, as Nomad answers it", func(t *testing.T) {
+		if data, _ := read(false, "end", 0, "stdout"); data != "hello\nworld\n" {
+			t.Errorf("data = %q, want the whole file", data)
+		}
+		if data, _ := read(true, "end", 0, "stdout"); data != "hello\nworld\n" {
+			t.Errorf("followed data = %q, want the whole file first", data)
+		}
+	})
 	t.Run("the streams are separate", func(t *testing.T) {
 		if data, _ := read(false, "start", 0, "stderr"); data != "oops\n" {
 			t.Errorf("stderr = %q", data)
@@ -205,19 +213,20 @@ func TestLogsFrameStream(t *testing.T) {
 	})
 	t.Run("following sends what is written next, and counts the open streams", func(t *testing.T) {
 		cancel := make(chan struct{})
-		ch, _ := c.AllocFS().Logs(alloc, true, "web", "stdout", "end", 0, cancel, nil)
+		ch, _ := c.AllocFS().Logs(alloc, true, "web", "stdout", "end", 1, cancel, nil)
 		deadline := time.Now().Add(2 * time.Second)
 		for n.OpenLogStreams() != 1 && time.Now().Before(deadline) {
 			time.Sleep(5 * time.Millisecond)
 		}
 		n.WriteLog("c1", "stdout", "later\n")
-		select {
-		case f := <-ch:
-			if string(f.Data) != "later\n" {
-				t.Errorf("frame data = %q, want only the new output", f.Data)
+		var data string
+		for data != "\nlater\n" {
+			select {
+			case f := <-ch:
+				data += string(f.Data)
+			case <-time.After(2 * time.Second):
+				t.Fatalf("data = %q, want the last byte, then only the new output", data)
 			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("no frame after a write")
 		}
 		close(cancel)
 	})

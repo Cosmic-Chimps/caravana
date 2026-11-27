@@ -76,11 +76,11 @@ func (d *Deployer) readLogs(ctx context.Context, copyID, task string, stream Log
 
 	// One byte more than the tail asks for, to see what comes before it: when
 	// that byte is a newline, the tail starts on a line; when not, its first
-	// line is cut.
-	offset := tailBytes
-	if tailBytes > 0 {
-		offset++
-	}
+	// line is cut. Without a tail this is the one byte, which is dropped: Nomad
+	// answers origin end with offset 0 by sending the whole newest file, so a
+	// follow from there would send the output again (lab, observed 2026-11-27).
+	// A stream whose file is that one byte still sends it.
+	offset := tailBytes + 1
 	cancel := make(chan struct{})
 	frames, errCh := d.nomad.AllocFS().Logs(alloc, follow, task, string(stream), "end", offset, cancel, q)
 	if frames == nil { // the request itself failed
@@ -134,9 +134,11 @@ func (d *Deployer) readLogs(ctx context.Context, copyID, task string, stream Log
 			data := f.Data
 			if first {
 				first = false
-				// A frame's offset is where its data ends. A tail that starts
-				// after the beginning of the file starts inside some line.
-				split.skipToLine = tailBytes > 0 && f.Offset-int64(len(data)) > 0
+				// A frame's offset is where its data ends. Data that starts
+				// after the beginning of the file starts with the byte before
+				// the tail (or before the follow): up to its first newline it
+				// is the end of a line already written.
+				split.skipToLine = f.Offset-int64(len(data)) > 0
 				if cut != nil {
 					*cut = split.skipToLine
 				}
