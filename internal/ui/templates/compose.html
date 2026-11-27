@@ -149,6 +149,7 @@
               <option value="mongodb"{{if eq .BackupEngine.Value "mongodb"}} selected{{end}}>MongoDB (the service keeps running)</option>
               <option value="volume"{{if eq .BackupEngine.Value "volume"}} selected{{end}}>Volume (stops the service while it runs)</option>
               <option value="sqlite"{{if eq .BackupEngine.Value "sqlite"}} selected{{end}}>SQLite file (the service keeps running)</option>
+              <option value="opensearch"{{if eq .BackupEngine.Value "opensearch"}} selected{{end}}>OpenSearch or Elasticsearch snapshot (the service keeps running)</option>
             </select>
             {{template "field-error" .BackupEngine}}
           </label>

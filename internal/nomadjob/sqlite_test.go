@@ -69,7 +69,8 @@ func TestSQLiteTasks(t *testing.T) {
 					names = append(names, task.Name)
 				}
 				has := slices.Contains(names, app.SQLiteTaskName)
-				if has != hasSQLiteBackup(svc) || slices.Contains(names, app.UploadTaskName) != hasSQLiteBackup(svc) {
+				// An opensearch backup has the upload sidecar too, and no sqlite one.
+				if has != hasSQLiteBackup(svc) || slices.Contains(names, app.UploadTaskName) != (hasSQLiteBackup(svc) || hasOpenSearchBackup(svc)) {
 					t.Errorf("service %s: tasks %v, sqlite backup = %v", svc.Name, names, hasSQLiteBackup(svc))
 				}
 			}

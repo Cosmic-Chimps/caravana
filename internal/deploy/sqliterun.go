@@ -31,9 +31,10 @@ import (
 // The scripts print a line or two.
 const sqliteOutputLimit = 16 << 10
 
-// SQLiteError is a step of a sqlite run that failed: the script ran and said
+// SQLiteError is a step of a sqlite (or opensearch) run that failed: the script ran and said
 // why. Its text is "<step>: <reason>", as the script put it on the last line
-// of its standard error (the step is copy, check, upload, download or stage),
+// of its standard error (the step is copy, check, upload, download, stage,
+// clean, snapshot or restore),
 // shortened and free of control characters and of the destination's secret
 // key. Anything else that goes wrong (the copy isn't there, Nomad refuses the
 // exec) is the error Exec gives: ErrCopyNotFound, ErrCopyNotRunning,
@@ -146,9 +147,24 @@ func (d *Deployer) SQLiteStage(ctx context.Context, copyID string, svc app.Servi
 // call, never a success. dest, when not nil, is the destination to keep out of
 // the error text.
 func (d *Deployer) runSQLite(ctx context.Context, copyID, task, step string, cmd []string, dest *BackupDestination, stdin io.Reader) (nomadjob.SQLiteOutput, error) {
+	return d.runStep(ctx, copyID, task, step, cmd, stdin, destSecrets(dest))
+}
+
+// destSecrets is the secret a destination keeps out of error text.
+func destSecrets(dest *BackupDestination) []string {
+	if dest == nil || dest.SecretAccessKey == "" {
+		return nil
+	}
+	return []string{dest.SecretAccessKey}
+}
+
+// runStep is runSQLite for any script of the sqlite and opensearch engines:
+// secrets are the values (a destination's key, a cluster's password) that must
+// not reach an error text, whatever a tool printed.
+func (d *Deployer) runStep(ctx context.Context, copyID, task, step string, cmd []string, stdin io.Reader, secrets []string) (nomadjob.SQLiteOutput, error) {
 	res, err := d.Exec(ctx, copyID, task, cmd, stdin, sqliteOutputLimit)
 	if err != nil {
-		return nomadjob.SQLiteOutput{}, redactError(err, dest)
+		return nomadjob.SQLiteOutput{}, redactErrorOf(err, secrets)
 	}
 	if res.TimedOut {
 		return nomadjob.SQLiteOutput{}, &SQLiteError{Message: step + ": timed out"}
@@ -157,7 +173,7 @@ func (d *Deployer) runSQLite(ctx context.Context, copyID, task, step string, cmd
 		return nomadjob.SQLiteOutput{}, fmt.Errorf("%w: %s: Nomad gave no exit status", ErrExecFailed, step)
 	}
 	if *res.ExitCode != 0 {
-		return nomadjob.SQLiteOutput{}, &SQLiteError{Message: sqliteReason(step, res, *res.ExitCode, dest)}
+		return nomadjob.SQLiteOutput{}, &SQLiteError{Message: sqliteReason(step, res, *res.ExitCode, secrets)}
 	}
 	return nomadjob.ParseSQLiteOutput(string(res.Stdout)), nil
 }
@@ -184,16 +200,18 @@ func (d *Deployer) sqliteResult(ctx context.Context, copyID, file string, stdout
 	return stdout, nil
 }
 
-func hasBytes(out nomadjob.SQLiteOutput) bool  { return out.Bytes > 0 }
-func hasObject(out nomadjob.SQLiteOutput) bool { return out.Object != "" }
+func hasBytes(out nomadjob.SQLiteOutput) bool   { return out.Bytes > 0 }
+func hasObject(out nomadjob.SQLiteOutput) bool  { return out.Object != "" }
+func hasIndices(out nomadjob.SQLiteOutput) bool { return out.Indices > 0 }
+func hasFiles(out nomadjob.SQLiteOutput) bool   { return out.Files > 0 }
 
 // sqliteSteps are the steps the scripts name at the start of a failure's line.
-var sqliteSteps = []string{"copy", "check", "upload", "download", "stage"}
+var sqliteSteps = []string{"copy", "check", "upload", "download", "stage", "clean", "prepare", "snapshot", "restore"}
 
 // sqliteReason is the text of a failed step: the last line of the script's
 // standard error, which already starts with the step ("copy: ..."). A script
 // that said nothing, or whose line isn't usable, gets the exit status.
-func sqliteReason(step string, res ExecResult, code int, dest *BackupDestination) string {
+func sqliteReason(step string, res ExecResult, code int, secrets []string) string {
 	lines := strings.Split(strings.TrimRight(string(res.Stderr), "\r\n"), "\n")
 	line := strings.TrimSpace(lines[len(lines)-1])
 	// Control characters are dropped: the text goes to records and pages.
@@ -203,8 +221,8 @@ func sqliteReason(step string, res ExecResult, code int, dest *BackupDestination
 		}
 		return r
 	}, line)
-	if dest != nil {
-		line = redact(line, dest)
+	for _, secret := range secrets {
+		line = strings.ReplaceAll(line, secret, "***")
 	}
 	if line == "" {
 		return fmt.Sprintf("%s: failed (exit status %d)", step, code)
@@ -227,6 +245,24 @@ func redact(text string, dest *BackupDestination) string {
 		return text
 	}
 	return strings.ReplaceAll(text, dest.SecretAccessKey, "***")
+}
+
+// redactErrorOf returns err as it is, unless its text holds one of secrets: then
+// it is an error with the same text without them (and without the chain, which
+// could carry them too).
+func redactErrorOf(err error, secrets []string) error {
+	text := err.Error()
+	hit := false
+	for _, secret := range secrets {
+		if strings.Contains(text, secret) {
+			hit = true
+			text = strings.ReplaceAll(text, secret, "***")
+		}
+	}
+	if !hit {
+		return err
+	}
+	return errors.New(text)
 }
 
 // redactError returns err as it is, unless its text holds the secret key:

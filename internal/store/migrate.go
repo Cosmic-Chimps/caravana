@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"slices"
@@ -104,15 +105,42 @@ func appliedVersions(ctx context.Context, db *sql.DB) (map[int]bool, error) {
 	return applied, rows.Err()
 }
 
+// foreignKeysOff is the first line of a migration that runs with foreign key
+// enforcement off: one that rebuilds a table that others reference with ON DELETE
+// CASCADE (dropping the old one would delete their rows), or that may hold rows
+// whose parent is gone (kept from before 054 turned enforcement on). SQLite can't
+// change the setting inside a transaction, so apply does it around the
+// transaction, on the one connection both use, as SQLite's own guide for
+// rebuilding a table says. Such a migration must say in its header why.
+const foreignKeysOff = "-- caravana: foreign_keys off"
+
 // apply runs one migration and records it, both in one transaction, so a
 // failure leaves the store at the previous version.
-func apply(ctx context.Context, db *sql.DB, fsys fs.FS, m migration) error {
+func apply(ctx context.Context, db *sql.DB, fsys fs.FS, m migration) (err error) {
 	body, err := fs.ReadFile(fsys, m.file)
 	if err != nil {
 		return fmt.Errorf("migration %s: %w", m.file, err)
 	}
 
-	tx, err := db.BeginTx(ctx, nil)
+	// One connection for the whole migration: the pragma belongs to it.
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("migration %s: %w", m.file, err)
+	}
+	defer conn.Close()
+	if strings.HasPrefix(string(body), foreignKeysOff) {
+		if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+			return fmt.Errorf("migration %s: turn foreign keys off: %w", m.file, err)
+		}
+		defer func() {
+			// Back on even when the migration failed or ctx ended: the connection returns to the pool.
+			if _, onErr := conn.ExecContext(context.WithoutCancel(ctx), "PRAGMA foreign_keys = ON"); onErr != nil {
+				err = errors.Join(err, fmt.Errorf("migration %s: turn foreign keys back on: %w", m.file, onErr))
+			}
+		}()
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("migration %s: %w", m.file, err)
 	}

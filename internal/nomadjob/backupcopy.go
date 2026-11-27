@@ -47,7 +47,7 @@ const (
 )
 
 // ObjectExt is the extension of the object a backup of the engine leaves in a
-// destination (".dump", ".sql.gz", ".archive.gz", ".sqlite.gz"), and "" for a
+// destination (".dump", ".sql.gz", ".archive.gz", ".sqlite.gz", ".opensearch.tar.gz"), and "" for a
 // volume backup, which leaves a directory.
 func ObjectExt(engine string) string {
 	switch engine {
@@ -55,6 +55,8 @@ func ObjectExt(engine string) string {
 		return ""
 	case app.BackupSQLite:
 		return ".sqlite.gz"
+	case app.BackupOpenSearch:
+		return OpenSearchObjectExt
 	}
 	return recipeFor(engine).ext
 }

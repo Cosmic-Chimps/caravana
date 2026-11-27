@@ -32,10 +32,10 @@ func hasSQLiteBackup(svc app.Service) bool {
 }
 
 // runsInCopy reports whether svc's backups run inside its own copy, on
-// Caravana's schedule (the volume and sqlite engines), rather than as a Nomad
-// periodic job (Postgres).
+// Caravana's schedule (the volume, sqlite and opensearch engines), rather than as a Nomad
+// periodic job (the dump engines).
 func runsInCopy(svc app.Service) bool {
-	return hasVolumeBackup(svc) || hasSQLiteBackup(svc)
+	return hasVolumeBackup(svc) || hasSQLiteBackup(svc) || hasOpenSearchBackup(svc)
 }
 
 // sqliteJobID is the record's job_id for a sqlite run: no Nomad job has it,
@@ -44,9 +44,9 @@ func sqliteJobID(appID, service, ts string) string {
 	return fmt.Sprintf("%s_%s_sqlite/%s", appID, service, ts)
 }
 
-// sqliteRun is a claimed sqlite backup or restore: what the goroutine that
-// carries it to its end needs.
-type sqliteRun struct {
+// sidecarRun is a claimed sqlite or opensearch backup or restore: what the
+// goroutine that carries it to its end needs.
+type sidecarRun struct {
 	app     app.App
 	svc     app.Service
 	copyID  string
@@ -57,18 +57,18 @@ type sqliteRun struct {
 	release func() // the app's deploy lock and claim; the owner of the run calls it
 }
 
-// prepareSQLiteRun claims the app and checks what may have changed since the
+// prepareSidecarRun claims the app and checks what may have changed since the
 // caller looked, as prepareVolumeRun does: the service is still backed up with
-// sqlite, the app isn't stopped, there is a destination, nothing else runs, and
+// engine (sqlite, or opensearch, feature 061), the app isn't stopped, there is a destination, nothing else runs, and
 // a copy is running. Nothing is asked of the copy yet. action and object (a
 // restore only) go into the request, whose ID names the run.
 //
 // On an error the claim is given back; on success the caller owns it, and
 // run.release gives it back.
-func (s *Service) prepareSQLiteRun(ctx context.Context, appID, service, action, object, from string) (sqliteRun, error) {
+func (s *Service) prepareSidecarRun(ctx context.Context, engine, appID, service, action, object, from string) (sidecarRun, error) {
 	release, err := s.claimVolumeRun(appID)
 	if err != nil {
-		return sqliteRun{}, err
+		return sidecarRun{}, err
 	}
 	handedOver := false
 	defer func() {
@@ -79,54 +79,54 @@ func (s *Service) prepareSQLiteRun(ctx context.Context, appID, service, action, 
 
 	a, svc, err := s.backedUpService(ctx, appID, service)
 	if err != nil {
-		return sqliteRun{}, err
+		return sidecarRun{}, err
 	}
 	if err := s.refuseIfStopped(ctx, appID); err != nil {
-		return sqliteRun{}, err
+		return sidecarRun{}, err
 	}
-	if !hasSQLiteBackup(svc) {
-		return sqliteRun{}, fmt.Errorf("service %q of %q no longer has a sqlite backup: %w", service, appID, store.ErrNotFound)
+	if svc.Backup.Engine != engine {
+		return sidecarRun{}, fmt.Errorf("service %q of %q no longer has a %s backup: %w", service, appID, engine, store.ErrNotFound)
 	}
 	dest, ok, err := s.runDestination(ctx, appID, *svc.Backup, from)
 	if err != nil {
-		return sqliteRun{}, err
+		return sidecarRun{}, err
 	}
 	if !ok {
-		return sqliteRun{}, ErrNoBackupDestination
+		return sidecarRun{}, ErrNoBackupDestination
 	}
 	if busy, err := s.backupBusy(ctx, appID, svc); err != nil {
-		return sqliteRun{}, err
+		return sidecarRun{}, err
 	} else if busy {
-		return sqliteRun{}, ErrBackupRunning
+		return sidecarRun{}, ErrBackupRunning
 	}
 	copyID, ok, err := s.deployer.RunningCopy(ctx, appID, service)
 	if err != nil {
-		return sqliteRun{}, err
+		return sidecarRun{}, err
 	}
 	if !ok {
-		return sqliteRun{}, ErrNoRunningCopy
+		return sidecarRun{}, ErrNoRunningCopy
 	}
 	req, err := s.freshVolumeRequest(ctx, appID, service, action, object)
 	if err != nil {
-		return sqliteRun{}, err
+		return sidecarRun{}, err
 	}
 	var pinned []string
 	if action == deploy.VolumeBackup {
 		if pinned, err = s.pinStamps(ctx, appID, service); err != nil {
-			return sqliteRun{}, err
+			return sidecarRun{}, err
 		}
 	}
 	handedOver = true
-	return sqliteRun{app: a, svc: svc, copyID: copyID, req: req, pinned: pinned, dest: dest, started: s.clock.Now().UTC(), release: release}, nil
+	return sidecarRun{app: a, svc: svc, copyID: copyID, req: req, pinned: pinned, dest: dest, started: s.clock.Now().UTC(), release: release}, nil
 }
 
 // startSQLiteBackup starts a backup of one service's SQLite database now and
 // returns its record, running. trigger (store.BackupTriggerOwner or Timer) is
-// recorded on the run. The errors are prepareSQLiteRun's.
+// recorded on the run. The errors are prepareSidecarRun's.
 func (s *Service) startSQLiteBackup(ctx context.Context, appID, service, trigger string) (store.BackupRecord, error) {
 	// A browser that goes away must not cancel the run halfway.
 	ctx = context.WithoutCancel(ctx)
-	run, err := s.prepareSQLiteRun(ctx, appID, service, deploy.VolumeBackup, "", "")
+	run, err := s.prepareSidecarRun(ctx, app.BackupSQLite, appID, service, deploy.VolumeBackup, "", "")
 	if err != nil {
 		return store.BackupRecord{}, err
 	}
@@ -150,7 +150,7 @@ func (s *Service) startSQLiteBackup(ctx context.Context, appID, service, trigger
 // driveSQLiteBackup copies, checks and uploads the database, then records how
 // the run ended, gives the lock back and tells the open pages. When Caravana
 // is shutting down it leaves the record running: the next start settles it.
-func (s *Service) driveSQLiteBackup(run sqliteRun, rec store.BackupRecord) {
+func (s *Service) driveSQLiteBackup(run sidecarRun, rec store.BackupRecord) {
 	base := s.watchContext(run.app.ID)
 	defer func() {
 		run.release()
@@ -161,24 +161,24 @@ func (s *Service) driveSQLiteBackup(run sqliteRun, rec store.BackupRecord) {
 
 	if _, err := s.deployer.SQLiteCopy(ctx, run.copyID, run.svc, run.req.ID); err != nil {
 		if base.Err() == nil {
-			s.settleSQLiteBackup(rec, nomadjob.SQLiteOutput{}, s.sqliteFailure(ctx, run, err))
+			s.settleSidecarBackup(rec, nomadjob.SQLiteOutput{}, s.sidecarFailure(ctx, run, err))
 		}
 		return
 	}
 	out, err := s.deployer.SQLiteUpload(ctx, run.copyID, run.req.ID, run.app.ID, run.svc, run.dest, run.req.TS, run.svc.Backup.KeepOrDefault(), run.pinned)
 	if err != nil {
 		if base.Err() == nil {
-			s.settleSQLiteBackup(rec, nomadjob.SQLiteOutput{}, s.sqliteFailure(ctx, run, err))
+			s.settleSidecarBackup(rec, nomadjob.SQLiteOutput{}, s.sidecarFailure(ctx, run, err))
 		}
 		return
 	}
-	s.settleSQLiteBackup(rec, out, "")
+	s.settleSidecarBackup(rec, out, "")
 }
 
-// sqliteFailure is the message of a run whose step failed with err: the
+// sidecarFailure is the message of a run whose step failed with err: the
 // script's own words, or Caravana's for the copy going away and the run's time
 // running out.
-func (s *Service) sqliteFailure(ctx context.Context, run sqliteRun, err error) string {
+func (s *Service) sidecarFailure(ctx context.Context, run sidecarRun, err error) string {
 	var se *deploy.SQLiteError
 	switch {
 	case errors.As(err, &se):
@@ -191,11 +191,11 @@ func (s *Service) sqliteFailure(ctx context.Context, run sqliteRun, err error) s
 	return err.Error()
 }
 
-// settleSQLiteBackup records how a run ended: failed with failure, or
+// settleSidecarBackup records how a run ended: failed with failure, or
 // succeeded with the object, its size and, when retention failed after a good
 // upload, why, as the message. The backups retention removed are marked
 // expired first. The write is retried, as a volume run's is.
-func (s *Service) settleSQLiteBackup(rec store.BackupRecord, out nomadjob.SQLiteOutput, failure string) {
+func (s *Service) settleSidecarBackup(rec store.BackupRecord, out nomadjob.SQLiteOutput, failure string) {
 	now := time.Now().UTC()
 	rec.FinishedAt = &now
 	if failure != "" {
@@ -217,16 +217,16 @@ func (s *Service) settleSQLiteBackup(rec store.BackupRecord, out nomadjob.SQLite
 	if !s.saveOutcome(ctx, "backup", rec.AppID, rec.ID, func(ctx context.Context) error { return s.store.SaveBackup(ctx, rec) }) {
 		return
 	}
-	s.log.Info("sqlite backup finished", "app", rec.AppID, "service", rec.Service, "run", rec.ID, "status", rec.Status, "message", rec.Message)
+	s.log.Info(rec.Engine+" backup finished", "app", rec.AppID, "service", rec.Service, "run", rec.ID, "status", rec.Status, "message", rec.Message)
 	s.queueCopies(ctx, rec)
 }
 
 // startSQLiteRestore starts the restore of the sqlite backup b into the
 // running service and returns the restore's record, running. trigger and label
-// are recorded on it, as for restoreBackup. The errors are prepareSQLiteRun's.
+// are recorded on it, as for restoreBackup. The errors are prepareSidecarRun's.
 func (s *Service) startSQLiteRestore(ctx context.Context, appID string, b store.BackupRecord, place restorePlace, trigger, label string) (store.RestoreRecord, error) {
 	ctx = context.WithoutCancel(ctx)
-	run, err := s.prepareSQLiteRun(ctx, appID, b.Service, deploy.VolumeRestoreSQLite, place.Object, place.Destination)
+	run, err := s.prepareSidecarRun(ctx, app.BackupSQLite, appID, b.Service, deploy.VolumeRestoreSQLite, place.Object, place.Destination)
 	if err != nil {
 		return store.RestoreRecord{}, err
 	}
@@ -255,7 +255,7 @@ func (s *Service) startSQLiteRestore(ctx context.Context, appID string, b store.
 // (when it wrote one), gives the lock back and tells the open pages. When
 // Caravana is shutting down it leaves the record running: the next start
 // settles it (resumeVolumeRuns).
-func (s *Service) driveSQLiteRestore(run sqliteRun, rec store.RestoreRecord) {
+func (s *Service) driveSQLiteRestore(run sidecarRun, rec store.RestoreRecord) {
 	base := s.watchContext(run.app.ID)
 	requested := false
 	defer func() {
@@ -274,11 +274,11 @@ func (s *Service) driveSQLiteRestore(run sqliteRun, rec store.RestoreRecord) {
 	defer cancel()
 
 	if _, err := s.deployer.SQLiteDownload(ctx, run.copyID, run.req.ID, run.req.Object, run.dest); err != nil {
-		settle(failedOutcome(s.sqliteFailure(ctx, run, err), nil))
+		settle(failedOutcome(s.sidecarFailure(ctx, run, err), nil))
 		return
 	}
 	if err := s.deployer.SQLiteStage(ctx, run.copyID, run.svc, run.req.ID); err != nil {
-		settle(failedOutcome(s.sqliteFailure(ctx, run, err), nil))
+		settle(failedOutcome(s.sidecarFailure(ctx, run, err), nil))
 		return
 	}
 

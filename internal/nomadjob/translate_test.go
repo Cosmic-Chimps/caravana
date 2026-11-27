@@ -72,6 +72,7 @@ func goldenCases() []goldenCase {
 	cases = append(cases, goldenCase{name: "letsencrypt", app: w.App, deployment: w.Deployment, settings: letsEncrypt})
 	cases = append(cases, volumeBackupCases()...)
 	cases = append(cases, sqliteBackupCases()...)
+	cases = append(cases, openSearchBackupCases()...)
 	cases = append(cases, entrypointCases()...)
 	cases = append(cases, stopTimeoutCases()...)
 	cases = append(cases, identityCases()...)

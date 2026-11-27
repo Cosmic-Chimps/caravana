@@ -200,6 +200,7 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	}
 	m.dns = plan
 	m.warnings = append(m.warnings, PlainBackupPasswords(a)...)
+	m.warnings = append(m.warnings, OpenSearchRepositoryWarnings(a)...)
 	var oldApp *app.App // the stored app this deploy replaces, nil for a new one
 	m.diff = true
 	if old, err := s.store.GetApp(ctx, a.ID); err == nil {
@@ -358,6 +359,32 @@ func PlainBackupPasswords(a app.App) []app.Warning {
 						"so the password shows in the app's definition, its Nomad job and exports; make it a secret instead", svc.Name, e.Name),
 				})
 			}
+		}
+	}
+	return out
+}
+
+// OpenSearchRepositoryWarnings warns about each service backed up with the
+// opensearch engine whose cluster isn't told to accept the repository folder
+// (feature 061, D2): the service has no environment variable named path.repo
+// and no file whose content mentions it. A snapshot into a folder outside
+// path.repo is refused by OpenSearch itself, so the first run would fail with
+// its sentence; the warning says so at deploy time. It can't read a secret
+// file or an image's own settings, so it is a warning and never a refusal.
+func OpenSearchRepositoryWarnings(a app.App) []app.Warning {
+	var out []app.Warning
+	for i, svc := range a.Services {
+		if svc.Backup == nil || svc.Backup.Engine != app.BackupOpenSearch {
+			continue
+		}
+		named := slices.ContainsFunc(svc.Env, func(e app.EnvVar) bool { return e.Name == "path.repo" }) ||
+			slices.ContainsFunc(svc.Files, func(f app.File) bool { return strings.Contains(f.Content, "path.repo") })
+		if !named {
+			out = append(out, app.Warning{
+				Field: fmt.Sprintf("services[%d].backup.repository", i),
+				Message: fmt.Sprintf("service %q takes snapshots into %s, but sets no path.repo (an environment variable or a line of a file such as opensearch.yml) "+
+					"that includes it; the cluster refuses a snapshot folder outside path.repo, so the backup will fail until it does", svc.Name, svc.Backup.Repository),
+			})
 		}
 	}
 	return out

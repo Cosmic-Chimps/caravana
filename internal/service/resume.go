@@ -92,13 +92,14 @@ func (s *Service) resumeVolumeRuns(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("resume volume runs: %w", err)
 		}
+		s.settleOpenSearchRuns(backups, restores)
 		var running []unsettledRun
 		for _, b := range backups {
 			// A sqlite backup runs commands Caravana was waiting on, which ended
 			// with it: there is nothing to resume, and the copy it left in the
 			// copy's work directory is deleted by the next run.
 			if b.Engine == app.BackupSQLite && b.Status == store.BackupRunning {
-				s.settleSQLiteBackup(b, nomadjob.SQLiteOutput{}, sqliteRestartedMessage)
+				s.settleSidecarBackup(b, nomadjob.SQLiteOutput{}, sqliteRestartedMessage)
 				continue
 			}
 			if b.Engine == app.BackupVolume && b.Status == store.BackupRunning {

@@ -257,6 +257,10 @@ const (
 	// BackupMongoDB is mongodump and mongorestore, with the service running
 	// (feature 046).
 	BackupMongoDB = "mongodb"
+	// BackupOpenSearch is a snapshot the cluster takes of itself through its
+	// own API into a folder on a volume, archived while the service runs
+	// (feature 061). For OpenSearch, its forks and Elasticsearch.
+	BackupOpenSearch = "opensearch"
 )
 
 // DumpEngine reports whether engine is one that runs as Nomad jobs and reaches
@@ -275,13 +279,19 @@ func (b Backup) Dumps() bool { return DumpEngine(b.Engine) }
 type Backup struct {
 	// Engine is how the service is backed up: a dump engine (BackupPostgres,
 	// BackupMySQL or BackupMongoDB), for a database Caravana reaches over its
-	// port, BackupVolume, for the files of the service's volumes, or
-	// BackupSQLite, for one SQLite file on a volume.
+	// port, BackupVolume, for the files of the service's volumes,
+	// BackupSQLite, for one SQLite file on a volume, or BackupOpenSearch, for
+	// an OpenSearch or Elasticsearch cluster.
 	Engine string `json:"engine"`
 	// File is the SQLite database's absolute path as the service sees it.
 	// Only the sqlite engine takes it, and it is required there: it must lie
 	// inside one of the service's writable volumes.
 	File string `json:"file,omitempty"`
+	// Repository is the folder the cluster writes its snapshots to, as the
+	// service sees it (feature 061): equal to or inside one of the service's
+	// writable volumes, and named in the cluster's path.repo. Only the
+	// opensearch engine takes it, and it is required there.
+	Repository string `json:"repository,omitempty"`
 	// Schedule is a five-field cron expression, in UTC, or BackupScheduleNever
 	// for no automatic backups (Back up now, pinning and restore still work).
 	// Empty means every day at 03:00 (DefaultBackupSchedule).
@@ -382,6 +392,30 @@ func (s Service) SQLiteFile() (volume Volume, inVolume string, ok bool) {
 	}
 	v := s.Volumes[best]
 	return v, s.Backup.File[len(v.Path)+1:], true
+}
+
+// OpenSearchRepository finds where the snapshot folder of an opensearch backup
+// is: the service's volume that holds Backup.Repository (the one with the
+// longest path when volumes are nested) and the folder's path inside it, with
+// no leading "/" ("" for the mount itself, which is allowed here). ok is false
+// when the service has no opensearch backup or no volume holds the folder.
+// Pure: it only reads the model.
+func (s Service) OpenSearchRepository() (volume Volume, inVolume string, ok bool) {
+	if s.Backup == nil || s.Backup.Engine != BackupOpenSearch {
+		return Volume{}, "", false
+	}
+	best := -1
+	for i, v := range s.Volumes {
+		inside := s.Backup.Repository == v.Path || strings.HasPrefix(s.Backup.Repository, v.Path+"/")
+		if inside && (best < 0 || len(v.Path) > len(s.Volumes[best].Path)) {
+			best = i
+		}
+	}
+	if best < 0 {
+		return Volume{}, "", false
+	}
+	v := s.Volumes[best]
+	return v, strings.TrimPrefix(s.Backup.Repository[len(v.Path):], "/"), true
 }
 
 // WithoutSecretValues returns a copy of a whose secrets have names (and

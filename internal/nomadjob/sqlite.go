@@ -144,9 +144,12 @@ func sqliteTask(svc app.Service, s Settings) *api.Task {
 }
 
 // uploadTask is the caravana-upload sidecar: the backup image, which has
-// rclone, gzip and BusyBox, and no volume.
-func uploadTask(s Settings) *api.Task {
-	return &api.Task{
+// rclone, gzip and BusyBox. It has no volume, except in a service with an
+// opensearch backup (feature 061): there it mounts the volume that holds the
+// snapshot folder, writable, to archive a snapshot from it and to extract one
+// into it.
+func uploadTask(svc app.Service, s Settings) *api.Task {
+	t := &api.Task{
 		Name:      app.UploadTaskName,
 		Driver:    "docker",
 		Lifecycle: &api.TaskLifecycle{Hook: "poststart", Sidecar: true},
@@ -162,6 +165,14 @@ func uploadTask(s Settings) *api.Task {
 		},
 		KillTimeout: new(sidecarKillTimeout),
 	}
+	if v, _, ok := svc.OpenSearchRepository(); ok {
+		t.VolumeMounts = []*api.VolumeMount{{
+			Volume:      new(v.Name),
+			Destination: new(SQLiteVolumeDir(v.Name)),
+			ReadOnly:    new(false),
+		}}
+	}
+	return t
 }
 
 // The scripts below are run with SQLiteCommand. They are POSIX sh for BusyBox
@@ -299,6 +310,49 @@ fi
 say "` + sqliteCopyMarker + ` bytes=$(size_of "$out")"
 `
 
+// uploadRetention is the retain function the upload scripts share: it deletes
+// the oldest unpinned backups beyond $keep, as the volume engine does. The
+// script sets ext (the engine's object extension, ".sqlite.gz") before it calls
+// retain, and has path, keep, pinned, ts, tmp, say, left and why.
+const uploadRetention = `
+ext_re=$(printf '%s' "$ext" | sed 's/\./\\./g')
+# retain deletes the oldest unpinned backups beyond KEEP, as the volume engine does.
+retain() {
+  case "$keep" in ''|*[!0-9]*|0) return 0 ;; esac
+  if printf '%s' "$pinned" | grep -q '[^0-9 ]'; then
+    say "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: the list of pinned backups is not valid"
+    return 0
+  fi
+  listing=$(timeout "$(left)" rclone lsf --files-only "dest:$path/" 2> "$tmp/rclone.err")
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    say "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: $(why listing "$tmp/rclone.err" "$status")"
+    return 0
+  fi
+  stamps=$(printf '%s\n' "$listing" | grep -E "^[0-9]+$ext_re\$" | sed "s/$ext_re\$//" | sort -n)
+  candidates=
+  for n in $stamps; do
+    is_pinned=
+    for p in $pinned; do
+      [ "$n" != "$p" ] || is_pinned=1
+    done
+    [ -n "$is_pinned" ] || candidates="$candidates $n"
+  done
+  excess=$(($(echo $candidates | wc -w) - keep))
+  [ "$excess" -gt 0 ] || return 0
+  for n in $(echo $candidates | tr ' ' '\n' | head -n "$excess"); do
+    [ "$n" != "$ts" ] || continue
+    timeout "$(left)" rclone deletefile "dest:$path/$n$ext" > /dev/null 2> "$tmp/rclone.err"
+    status=$?
+    if [ "$status" -ne 0 ]; then
+      say "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: $(why "removing the backup $n" "$tmp/rclone.err" "$status")"
+      return 0
+    fi
+    say "` + BackupExpiredMarker + ` $n$ext"
+  done
+}
+`
+
 // SQLiteUploadScript is run in caravana-upload as
 //
 //	sh -c <script> sh <copy> <backup path> <ts> <keep> <seconds> <pinned> <result>
@@ -338,7 +392,8 @@ case "$ts" in ''|*[!0-9]*) fail "upload: the request has no timestamp" ;; esac
 [ -n "$path" ] || fail "upload: the request has no backup destination"
 [ -f "$copy" ] || fail "upload: there is no copy to upload at $copy"
 mkdir -p "$tmp" || fail "upload: could not prepare $tmp"
-object="$path/$ts.sqlite.gz"
+ext=.sqlite.gz
+object="$path/$ts$ext"
 
 # discard removes what the upload started. It gets its own minute: the run's
 # own time may be spent.
@@ -377,41 +432,7 @@ if [ -z "$bytes" ]; then
 fi
 say "` + BackupDoneMarker + ` key=$object bytes=$bytes"
 
-# retain deletes the oldest unpinned backups beyond KEEP, as the volume engine does.
-retain() {
-  case "$keep" in ''|*[!0-9]*|0) return 0 ;; esac
-  if printf '%s' "$pinned" | grep -q '[^0-9 ]'; then
-    say "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: the list of pinned backups is not valid"
-    return 0
-  fi
-  listing=$(timeout "$(left)" rclone lsf --files-only "dest:$path/" 2> "$tmp/rclone.err")
-  status=$?
-  if [ "$status" -ne 0 ]; then
-    say "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: $(why listing "$tmp/rclone.err" "$status")"
-    return 0
-  fi
-  stamps=$(printf '%s\n' "$listing" | grep -E '^[0-9]+\.sqlite\.gz$' | sed 's/\.sqlite\.gz$//' | sort -n)
-  candidates=
-  for n in $stamps; do
-    is_pinned=
-    for p in $pinned; do
-      [ "$n" != "$p" ] || is_pinned=1
-    done
-    [ -n "$is_pinned" ] || candidates="$candidates $n"
-  done
-  excess=$(($(echo $candidates | wc -w) - keep))
-  [ "$excess" -gt 0 ] || return 0
-  for n in $(echo $candidates | tr ' ' '\n' | head -n "$excess"); do
-    [ "$n" != "$ts" ] || continue
-    timeout "$(left)" rclone deletefile "dest:$path/$n.sqlite.gz" > /dev/null 2> "$tmp/rclone.err"
-    status=$?
-    if [ "$status" -ne 0 ]; then
-      say "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: $(why "removing the backup $n" "$tmp/rclone.err" "$status")"
-      return 0
-    fi
-    say "` + BackupExpiredMarker + ` $n.sqlite.gz"
-  done
-}
+` + uploadRetention + `
 retain
 exit 0
 `
@@ -526,6 +547,12 @@ type SQLiteOutput struct {
 	Expired []string
 	// Warning says why retention failed after a good upload.
 	Warning string
+	// Indices is how many indices an opensearch snapshot or restore holds, and
+	// Files how many files an opensearch download extracted (feature 061).
+	Indices, Files int
+	// Owner is the "uid:gid" the opensearch prepare step ran as, digits only
+	// (feature 061).
+	Owner string
 }
 
 // ParseSQLiteOutput reads the markers of a script's standard output. Lines
@@ -553,14 +580,71 @@ func ParseSQLiteOutput(stdout string) SQLiteOutput {
 				out.Object, out.Bytes = key, n
 			}
 		case BackupExpiredMarker:
-			if ts, ok := strings.CutSuffix(rest, ".sqlite.gz"); ok && ts != "" {
-				out.Expired = append(out.Expired, ts)
+			for _, ext := range []string{".sqlite.gz", OpenSearchObjectExt} {
+				if ts, ok := strings.CutSuffix(rest, ext); ok && ts != "" {
+					out.Expired = append(out.Expired, ts)
+				}
+			}
+		case opensearchSnapshotMarker, opensearchRestoreMarker:
+			if n, ok := countOf(rest, "indices="); ok {
+				out.Indices = n
+			}
+		case opensearchDownloadMarker:
+			if n, ok := countOf(rest, "files="); ok {
+				out.Files = n
+			}
+		case opensearchOwnerMarker:
+			if owner, ok := ownerOf(rest); ok {
+				out.Owner = owner
 			}
 		case sqliteWarningMarker:
 			out.Warning = rest
 		}
 	}
 	return out
+}
+
+// countOf reads "<key><n>".
+func countOf(s, key string) (int, bool) {
+	v, ok := strings.CutPrefix(s, key)
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(v)
+	return n, err == nil && n >= 0
+}
+
+// ownerOf reads "uid=<n> gid=<n>" into "<n>:<n>". Anything but digits is refused:
+// the value is handed to chown.
+func ownerOf(s string) (string, bool) {
+	uid, gid, ok := strings.Cut(s, " ")
+	if !ok {
+		return "", false
+	}
+	u, okU := strings.CutPrefix(uid, "uid=")
+	g, okG := strings.CutPrefix(gid, "gid=")
+	if !okU || !okG || !allDigits(u) || !allDigits(g) {
+		return "", false
+	}
+	return u + ":" + g, true
+}
+
+// ValidOwner reports whether s is "<uid>:<gid>", two numbers.
+func ValidOwner(s string) bool {
+	u, g, ok := strings.Cut(s, ":")
+	return ok && allDigits(u) && allDigits(g)
+}
+
+func allDigits(s string) bool {
+	if s == "" || len(s) > 10 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // bytesOf reads "bytes=<n>".

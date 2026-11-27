@@ -87,7 +87,7 @@ runs, and Caravana archives it to the backup destination with retention, pins, c
   Repository input (beside Database file), the Backups tab's change-policy form, rows and built-in schedules saying "OpenSearch
   snapshot". No designer pass (existing parts).
 - **D10 Wazuh template** (`caravana-templates` branch `wazuh-template`): the indexer gets a volume `indexer-snapshots` at
-  `/var/lib/wazuh-indexer-snapshots`, `path.repo` in its `opensearch.yml`, the secret `INDEXER_PASSWORD` = the admin password,
+  `/var/lib/wazuh-indexer-snapshots`, `path.repo` in its `opensearch.yml`, the secret `OPENSEARCH_INITIAL_ADMIN_PASSWORD` = the admin password (not `INDEXER_PASSWORD`: Wazuh's entrypoint writes that one into a keystore; the image ignores this name),
   and `backup: {engine: opensearch, repository: /var/lib/wazuh-indexer-snapshots}`; the notes lose the "isn't backed up" sentence;
   `requires` follows the release that has 061.
 - **D11 Lab.** Gate step `opensearch-snapshot`: single-node OpenSearch 2.19.1 with the security plugin on
@@ -105,9 +105,79 @@ runs, and Caravana archives it to the backup destination with retention, pins, c
 
 ## Phases
 
-- [ ] **A — backend**: model and validation (D1, D2, D6), `nomadjob/opensearch.go` (scripts, sidecar, markers, parser) with script
+- [x] **A — backend**: model and validation (D1, D2, D6), `nomadjob/opensearch.go` (scripts, sidecar, markers, parser) with script
   tests and goldens, `deploy/opensearchrun.go`, `service/opensearchbackup.go` wired into Back up now, the scheduler, restore,
   restore schedules, resume, pins; migration 0048; `api/openapi.yaml` 0.67.0; the deploy warning; sentinel tests.
-- [ ] **B — console and docs**: D9, `docs/database-backups.md` (or a section in `docs/opensearch-apps.md`), the guide's backups page,
+- [x] **B — console and docs**: D9, `docs/database-backups.md` (or a section in `docs/opensearch-apps.md`), the guide's backups page,
   `changelog.d/opensearch-snapshots.md`, `CLAUDE.md`.
-- [ ] **C — lab and template**: D11 gate step passing in the lab, D10 template change.
+- [x] **C — lab and template**: D11 gate step passing in the lab (2026-11-26, 127 s; `sqlite-backup-restore` again, 279 s), D10
+  template change (`92b4c09` on `wazuh-template` of `caravana-templates`, checked with `caravana template check`, not pushed).
+
+## Deviations (phase A)
+
+- **Migration 0048 runs with foreign keys off.** `backup_copies` (052) references `backups` with `ON DELETE CASCADE`, so the
+  rebuild 0036 did would delete every copy's row now that foreign keys are enforced (054), and a `backups` row whose app is
+  gone (kept from before enforcement) could not even be copied. The runner (`migrate.go`, `apply`) now reads a first line
+  `-- caravana: foreign_keys off` and runs that migration on one connection with the pragma off around its transaction, as
+  SQLite's guide for rebuilding a table says; `backup_copies` keeps its reference by name. `TestUpgradeTo0048` checks the copy
+  rows, an orphan of each table and the cascade after it; `TestOrphansFromBeforeForeignKeysAreKept` still passes unchanged.
+- **Names.** The sqlite engine's shared pieces lost "sqlite" from their names because opensearch uses them too: `sidecarRun`,
+  `prepareSidecarRun` (it takes the engine), `settleSidecarBackup`, `sidecarFailure`. `nomadjob.SQLiteOutput` gained `Indices`
+  and `Files` and `ParseSQLiteOutput` reads the opensearch markers and both objects' extensions, instead of a second type;
+  `deploy.runSQLite` delegates to `runStep`, which takes any list of secrets to keep out of error text.
+- **Retention is shared.** `uploadRetention` in `sqlite.go` (the `retain` function, parameterized by `$ext`) serves both upload
+  scripts; the sqlite goldens and tests are unchanged.
+- **Scripts.** The clean script takes a mode (`fresh` empties the work directory of old results, `keep` doesn't: the last clean of
+  a restore, and the clean after a failed snapshot, run when results of the run are still wanted) and makes the work directory
+  the service's user's (mode 0770; see "Deviations (review)": it was world-writable at first), since the service's own task writes
+  its result files there (a result it can't write is not an error: the markers are on stdout). The snapshot and restore scripts also unregister a repository an earlier run left
+  (`DELETE _snapshot/caravana` first, its answer ignored) and again on exit. The restore script refuses an index name outside
+  `[A-Za-z0-9._+@,-]` rather than put it in a URL unencoded. The upload script refuses a folder with no `index.latest`, and every
+  script that removes or empties a folder refuses one whose last segment doesn't start with `caravana-`.
+- **Record messages.** A restore that succeeds has no message. After a restart a running backup is failed with
+  `restartedMessage` ("Caravana restarted during the run") and a restore with the same plus "; the indices it closed may still be
+  closed", with nothing asked of Nomad (`settleOpenSearchRuns`, called by `resumeVolumeRuns` before the volume and sqlite ones).
+- **Not done (phase B and C):** the console (Compose form engine select, Repository input, Backups tab rows and built-in schedule
+  words), docs, changelog note, CLAUDE.md, the gate step, the template change.
+
+## Deviations (phase B)
+
+- **`Service.ChangeBackupPolicy` takes `repository`** (a one-parameter change to Phase A's backend, since the Backups tab's "Change the
+  policy…" had no other way to set the folder); it is written only with the opensearch engine, as `file` is only with sqlite.
+- **Offer rule.** The change form offers the engine to a service that has a port and a writable volume (the same volume test as sqlite plus the
+  port the cluster is reached over). The "Back up daily" gap on the Backups tab does not offer it (it can't know an image is a search cluster
+  and needs `path.repo` set first), so a service with an OpenSearch image and a volume still gets the volume engine there; the empty-state
+  sentence names the opensearch policy.
+- **Configure's Overview** says "OpenSearch snapshot of <folder>, <schedule>, keeping N" for this engine only; the other engines' lines are as
+  before (the Services panel and the old definition rows already name each engine through `engineText`).
+
+## Deviations (review)
+
+- **No world-writable folders.** The clean script, which runs as root in `caravana-upload`, used to make the work directory
+  (`/alloc/data/caravana/opensearch`) and a missing repository folder mode 0777 (commit ff42fba), because the cluster runs as
+  another user (uid 1000 in OpenSearch and Wazuh; Elasticsearch is uid 1000, gid 0). The review: 0777 on a host volume lets any user
+  or process on the host write into snapshots a restore later loads. Now everything is owned by the cluster's own user:
+  - A new first step, **prepare** (`OpenSearchPrepareScript`, `Deployer.OpenSearchPrepare`), runs with alloc exec in the **service's
+    own task**, so as the cluster's user. It refuses a path that isn't absolute, makes the repository folder with `mkdir -p` when it
+    is missing (so the folder belongs to that user), requires it writable, and prints `caravana-opensearch-owner uid=<n> gid=<n>`
+    from `id -u` and `id -g`. It prints to stdout only: the work directory doesn't exist yet, so there is no result file, and
+    `OpenSearchPrepare` asks once more when an exit 0 came back without the marker (Docker's exec-output race, as for the other
+    steps). `ParseSQLiteOutput` reads the marker into `SQLiteOutput.Owner`, `"uid:gid"`, digits only (anything else is no owner);
+    `nomadjob.ValidOwner` is the same rule for what goes the other way.
+  - **clean** takes the owner as a fourth argument, validated in the script (two numbers) and in Go, makes the work directory,
+    `chown`s it to the owner and `chmod 770`s it, and no longer creates or chmods the repository folder (a missing one has nothing
+    to remove). **download**, also root, takes the owner as a fifth argument and `chown -R`s the run folder it extracted, so
+    nothing in the repository is root's; the cluster reads it and can remove it later, and root's `rm -rf` in upload and clean
+    still works. A chown that fails fails the step (download removes its folder first).
+  - `driveOpenSearchBackup` and `driveOpenSearchRestore` run prepare first and pass its owner to every clean and to the download; a
+    prepare failure fails the run with its sentence ("prepare: ..."), before anything was cleaned or closed.
+  - **Why not the volume root's owner.** The obvious alternative, making the sidecar's folders owned by whoever owns the repository
+    volume's root, doesn't work: the `mkdir` host volume plugin makes the volume root root-owned mode 0777 (016), so it says nothing
+    about the cluster's user. Asking the service's own task is the only place that knows the user without knowing the image.
+  - The tests: scripts under a real `sh` with a fake `chown` that records its arguments (a test that isn't root can't chown), the
+    prepare script's refusals and marker, clean's mode and owner validation, download's `chown -R`, deploy and service tests with
+    the exec fakes. The 0777 test case of ff42fba is gone.
+- **Prepare's output (lab, 2026-11-27).** The first gate run after the ownership change failed: a restore's prepare came back
+  twice with no output (Nomad's exec reports the exit of a command that ends at once before its output arrives), and prepare has
+  no result file to fall back on, since the work directory doesn't exist yet. The script now waits a second after its marker and
+  `OpenSearchPrepare` asks up to three times, a second apart. The gate step `opensearch-snapshot` then passed (97 s).

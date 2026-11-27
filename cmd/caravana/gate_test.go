@@ -165,6 +165,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"compose-app", false, g.composeAppStep},
 		{"service-dns", false, g.serviceDNSStep},
 		{"opensearch", false, g.openSearchStep},
+		{"opensearch-snapshot", false, g.openSearchSnapshotStep},
 		{"backup-restore", false, g.backupRestoreStep},
 		{"volume-backup-restore", false, g.volumeBackupRestoreStep},
 		{"sqlite-backup-restore", false, g.sqliteBackupRestoreStep},

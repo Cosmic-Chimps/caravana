@@ -2,7 +2,7 @@
 
 Backups go to an S3-compatible bucket. An installation may keep **several** of them, each with a name, and a service
 may have its backups **copied** to others, so that losing one bucket (or one provider) doesn't lose the backups.
-This works for every engine: `postgres`, `mysql`, `mongodb`, `volume` and `sqlite`.
+This works for every engine: `postgres`, `mysql`, `mongodb`, `opensearch`, `volume` and `sqlite`.
 
 ## Destinations
 
