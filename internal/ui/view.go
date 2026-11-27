@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -457,13 +456,17 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 		}
 		out = append(out, plain(strings.Join(rest, ", ")+"."))
 	}
-	return append(out, findingsClause(sums, items, len(out) > 0)...)
+	clause := findingsClause(sums, items)
+	if len(out) > 0 && len(clause) > 0 {
+		out = append(out, plain(" "))
+	}
+	return append(out, clause...)
 }
 
-// findingsClause is the headline's last sentence, "3 have fixable critical vulnerabilities.": how many
-// of the apps have fixable findings and how bad the worst is. It is empty without any. counted says a
-// sentence of counts came before, so "3 have" needs no "apps".
-func findingsClause(sums []service.AppSummary, items []service.AttentionItem, counted bool) sentence {
+// findingsClause is the headline's last sentence, "3 apps have fixable critical vulnerabilities.": how
+// many of the apps have fixable findings and how bad the worst is. It is empty without any. It always
+// says "apps": after "5 apps healthy." a bare "6 have" would read as some of the healthy ones.
+func findingsClause(sums []service.AppSummary, items []service.AttentionItem) sentence {
 	found := findingsOf(items)
 	n, worst := 0, "high"
 	for _, sum := range sums {
@@ -477,18 +480,11 @@ func findingsClause(sums []service.AppSummary, items []service.AttentionItem, co
 	if n == 0 {
 		return nil
 	}
-	who, verb := appCount(n), "have"
+	verb := "have"
 	if n == 1 {
 		verb = "has"
 	}
-	if counted {
-		who = strconv.Itoa(n)
-	}
-	text := who + " " + verb + " fixable " + worst + " vulnerabilities."
-	if counted {
-		text = " " + text
-	}
-	return sentence{plain(text)}
+	return sentence{plain(appCount(n) + " " + verb + " fixable " + worst + " vulnerabilities.")}
 }
 
 // neverDeployed says whether the app was created and has no deployment at all:

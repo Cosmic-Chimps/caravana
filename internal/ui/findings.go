@@ -163,10 +163,13 @@ func securityGroupOf(items []service.AttentionItem, pl places, admin bool) *secu
 			}
 		}
 	}
-	// The worst first, then by ID, so the order doesn't depend on the items'.
+	// The most urgent first: known exploited, then critical, then high; then by the label as it reads
+	// ("Shop › staging › web" under S), so the order doesn't depend on the items'.
+	label := func(id string) string { return strings.ToLower(appLabel(first[id], pl).String()) }
 	slices.SortFunc(order, func(a, b string) int {
 		fa, fb := found[a], found[b]
-		return cmp.Or(cmp.Compare(fb.Critical, fa.Critical), cmp.Compare(fb.High, fa.High), cmp.Compare(a, b))
+		return cmp.Or(cmp.Compare(fb.KEV, fa.KEV), cmp.Compare(fb.Critical, fa.Critical), cmp.Compare(fb.High, fa.High),
+			cmp.Compare(label(a), label(b)))
 	})
 	g := &securityGroup{Mark: "warning"}
 	var sum findings

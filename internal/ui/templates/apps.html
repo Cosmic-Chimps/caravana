@@ -141,8 +141,9 @@
   </summary>
   <div class="cv-need-apps">
     {{range .Apps}}
-    <div class="cv-row cv-need cv-need-app">
-      <span class="cv-need-text"><span>{{template "sentence" .Label}}</span><span class="cv-need-counts">{{.Counts}}</span></span>
+    <div class="cv-row cv-need-app">
+      <span class="cv-need-name" title="{{.Label.String}}">{{template "sentence" .Label}}</span>
+      <span class="cv-need-counts">{{.Counts}}</span>
       <span class="cv-need-act"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Open findings</a></span>
     </div>
     {{end}}
