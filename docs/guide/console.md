@@ -47,7 +47,7 @@ The entries, in order:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../images/apps-home-dark.png">
-  <img alt="The Apps page: a list of apps grouped by project and environment, a needs-you list and an activity list." src="../images/apps-home-light.png" width="760">
+  <img alt="The Apps page: a headline that ends with the number of apps that have fixable vulnerabilities, a needs-you list with one failed schedule run and one closed row for image findings, and the apps grouped by project and environment, two of them with a tag such as 2 critical or 3 high under their status." src="../images/apps-home-light.png" width="760">
 </picture>
 
 The first thing on the page is the sentence that sums everything up, followed by the needs-you
@@ -58,6 +58,14 @@ backup, a domain whose DNS points elsewhere, a certificate about to expire, a di
 more. When there is nothing, it says **Nothing needs you.** The list is worked out again on every
 read, so a problem leaves it when it is fixed. [Monitoring](operate/monitoring.md) lists the kinds, and
 [Notifications](operate/notifications.md) pushes them to you.
+
+The sentence at the top names an app by its name (`api`), not by its ID. It counts outages: an app
+whose only items are image findings counts as healthy. If you installed the [image
+scanner](../image-scanning.md), a last sentence says how many apps have fixable vulnerabilities, for
+example "2 have fixable critical vulnerabilities." Those findings are not a row each in the list: they are
+one closed row at its end, and an app that has some shows a small tag such as "■ 2 critical" under
+its status in the table. [Monitoring](operate/monitoring.md#image-findings) and [Image
+scanning](../image-scanning.md#what-you-see) say more.
 
 Below it, **Deploying now** shows rollouts in progress. Then come the apps, grouped by project and
 environment, with a filter box and a state and kind filter. On the right are **This host**, a small panel
@@ -132,7 +140,7 @@ The Operator sidebar has two groups:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../images/ops-overview-dark.png">
-  <img alt="The Operator Overview page: the server with its memory and disk, the apps running on it, what needs attention and live activity." src="../images/ops-overview-light.png" width="760">
+  <img alt="The Operator Overview page: a headline, the needs-you list with its closed row for image findings, three servers with their memory, CPU and disk, and the apps table with a 2 critical tag under the status of one app." src="../images/ops-overview-light.png" width="760">
 </picture>
 
 ## It updates by itself

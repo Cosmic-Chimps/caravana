@@ -43,6 +43,7 @@ const WEB_STAGING = 'shop--staging--web';
 const API = 'shop--production--api';
 const DB = 'shop--production--db';
 const BLOG = 'shop--staging--blog';
+const SEARCH = 'shop--production--search';
 const SHOP = 'project=shop&environment=production';
 
 // ---------------------------------------------------------------------------
@@ -59,6 +60,13 @@ const SHOP = 'project=shop&environment=production';
 const SCREENS = {
   'sign-in': { path: '/login', ready: 'form', public: true, clip: ['main'] },
   'apps-home': { path: '/apps', ready: '.cv-apps', h: 1100 },
+  'apps-home-security': {
+    path: '/apps', ready: '#needs-security', h: 1100, clip: ['[aria-label="Needs you"]'],
+    steps: async (page) => {
+      await page.locator('#needs-security > summary .cv-need-text').click();
+      await page.locator('#needs-security[open] .cv-need-app').first().waitFor();
+    },
+  },
   'new-app-image': { path: '/apps/new', ready: 'form', h: 1010 },
   'new-app-compose': { path: '/apps/new?from=compose', ready: 'form', h: 920 },
   'new-app-templates': { path: '/apps/new?from=template', ready: 'main' },
@@ -66,16 +74,18 @@ const SCREENS = {
   'new-app-git': { path: '/apps/new?from=git', ready: 'form', h: 1100 },
   'app-running': { path: `/apps/${WEB}`, ready: 'main', h: 960 },
   'app-deployments': { path: `/apps/${WEB}/deployments`, ready: 'main', h: 1180 },
+  'app-deployments-security': { path: `/apps/${WEB}/deployments`, ready: '#security', h: 1180, clip: ['#security'] },
   'app-configure': { path: `/apps/${WEB}/configure`, ready: 'main', h: 1200 },
   'app-configure-source': { path: `/apps/${WEB}/configure/source`, ready: 'main', h: 900 },
   'app-configure-services': { path: `/apps/${WEB}/configure/services`, ready: 'main', h: 1000 },
   'app-configure-services-compose': { path: `/apps/${BLOG}/configure/services`, ready: 'main', h: 1300, clip: ['#service-web'] },
+  'app-configure-services-limits': { path: `/apps/${SEARCH}/configure/services`, ready: 'main', h: 1500, clip: ['#service-search'] },
   'app-configure-integrations': { path: `/apps/${WEB}/configure/integrations`, ready: 'main', h: 900 },
   'app-variables': { path: `/apps/${API}/variables`, ready: 'main', h: 1000 },
   'app-domains': { path: `/apps/${WEB}/domains`, ready: 'main', h: 1000 },
   'app-backups': { path: `/apps/${DB}/backups`, ready: 'main', h: 1120 },
   'app-backups-policy': {
-    path: `/apps/${DB}/backups`, ready: 'main', h: 1560,
+    path: `/apps/${SEARCH}/backups`, ready: 'main', h: 1560,
     steps: async (page) => {
       await page.locator('details.cv-confirm > summary:has-text("Change the policy")').first().click();
       await page.locator('form[action$="/backups/policy/change"]').first().waitFor();
@@ -128,7 +138,7 @@ const SCREENS = {
   'ops-servers': { path: '/ops/servers', ready: 'main' },
   'ops-server': { path: '/ops/servers/hel-1', ready: 'main', h: 1100 },
   'ops-updates': { path: '/ops/updates', ready: 'main', h: 1000 },
-  'ops-security': { path: '/ops/security', ready: 'main' },
+  'ops-security': { path: '/ops/security', ready: 'main', h: 1500 },
 };
 
 // ---------------------------------------------------------------------------

@@ -243,7 +243,67 @@ func seedDocsApps(t *testing.T, d *docsDemo) {
 	)
 	d.runningCopies(db.ID, "db", 1, 1, 18*24*time.Hour, 24, 214)
 
+	d.seedSearchApp(t)
 	d.seedKeptFileApp(t)
+}
+
+// searchConfig is the config file of the search app: content, not a secret.
+const searchConfig = `cluster.name: shop
+network.host: 0.0.0.0
+plugins.security.disabled: true
+`
+
+// seedSearchApp makes the app search of production: one OpenSearch service with a data volume and
+// a snapshot volume, process limits, one kernel setting, a config file and a key file that a secret
+// holds (its name only), and an opensearch backup policy with a snapshot folder. It has no domain: a
+// search node is for the shop's other apps.
+func (d *docsDemo) seedSearchApp(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+	id := shopID("production", "search")
+	a := app.App{ID: id, Name: "search", Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{{
+		Name: "search", Image: "opensearchproject/opensearch:2.19.1",
+		Ports:  []app.Port{{Name: "http", ContainerPort: 9200}},
+		Health: &app.HealthCheck{Path: "/_cluster/health"},
+		Env: []app.EnvVar{
+			{Name: "discovery.type", Value: "single-node"},
+			{Name: "DISABLE_INSTALL_DEMO_CONFIG", Value: "true"},
+			{Name: "OPENSEARCH_JAVA_OPTS", Value: "-Xms512m -Xmx512m"},
+			{Name: "path.repo", Value: "/usr/share/opensearch/snapshots"},
+		},
+		Secrets: []app.Secret{{Name: "TLS_KEY"}},
+		Volumes: []app.Volume{
+			{Name: "data", Path: "/usr/share/opensearch/data"},
+			{Name: "snapshots", Path: "/usr/share/opensearch/snapshots"},
+		},
+		Ulimits: map[string]app.Ulimit{"memlock": {Soft: -1, Hard: -1}, "nofile": {Soft: 65536, Hard: 65536}},
+		Sysctls: map[string]string{"net.ipv4.tcp_keepalive_time": "600"},
+		Files: []app.File{
+			{Path: "/usr/share/opensearch/config/opensearch.yml", Content: searchConfig},
+			{Path: "/certs/node.key", Secret: "TLS_KEY", Mode: "0400", UID: ptr(1000), GID: ptr(1000)},
+		},
+		Backup:    &app.Backup{Engine: app.BackupOpenSearch, Repository: "/usr/share/opensearch/snapshots", Schedule: "0 3 * * *", Keep: 7},
+		Resources: app.Resources{MemoryMB: 768, MemoryMaxMB: 1024},
+	}}}
+	d.history(t, a,
+		demoDeploy{ID: "search-p1", Ago: 12 * 24 * time.Hour, Took: 58 * time.Second, Trigger: app.TriggerConsole, Actor: docsDemoEmail, Status: store.StatusHealthy, Version: 1},
+	)
+	d.searchIDs = d.runningCopies(id, "search", 1, 1, 12*24*time.Hour, 41, 612)
+
+	first := lastAt(d.now, 3)
+	for i := 2; i >= 0; i-- {
+		started := first.AddDate(0, 0, -i)
+		finished := started.Add(time.Duration(52+i) * time.Second)
+		rec := store.BackupRecord{AppID: id, ID: fmt.Sprintf("bk_%012x", 0xb2d4f6c80000+i*6151), Service: "search", JobID: id + "_search_backup",
+			Engine: app.BackupOpenSearch, Status: store.BackupSucceeded,
+			Object: fmt.Sprintf("caravana/%s/search/%s.opensearch.tar.gz", id, started.Format("20060102T150405Z")), Bytes: int64(18_400_000 + (2-i)*310_000),
+			StartedAt: started, FinishedAt: &finished, Trigger: store.BackupTriggerTimer, Destination: "main"}
+		d.at(started, func() {
+			if err := d.Store.SaveBackup(ctx, rec); err != nil {
+				t.Fatalf("SaveBackup(search): %v", err)
+			}
+		})
+	}
 }
 
 // blogCompose is the file of the staging app blog, kept as typed, comments included. Its web

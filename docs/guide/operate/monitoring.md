@@ -4,7 +4,7 @@ Caravana answers two questions without you looking at graphs: is anything wrong 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../images/apps-home-dark.png">
-  <img alt="The Apps page: a short needs-you list above the shop project's apps, all healthy." src="../../images/apps-home-light.png" width="760">
+  <img alt="The Apps page: a needs-you list of two rows, a failed schedule run and a closed row for image findings, above the shop project's apps, all healthy." src="../../images/apps-home-light.png" width="760">
 </picture>
 
 ## The Monitoring page
@@ -100,9 +100,25 @@ A failed (red) mark means something is broken; a warning (amber) mark means it n
 | **server-two: the move-off passed its deadline; 2 copies still run there.** (**Open server**) | "Move work off" didn't finish in time (a warning). | Open the server; see [Placement and moving work](../../placement-and-drain.md). |
 | **Shop › production › web/web: 2 copies can't be placed: no server that accepts work matches its placement rules, or none has room.** (**Open placement**) | A service with placement rules has copies waiting. | Loosen the rules, free memory or add a server. |
 | **Shop › production › web/web: at its maximum of 3 copies and still over its target. Raise the maximum, give it more CPU, or add a server.** (**Open scaling**) | Autoscaling can't add more (a warning). | See [Autoscaling](../../autoscaling.md). |
-| **zlib 1.2.11 in Shop › production › web/web has CVE-2022-37434 (critical), fixed in 1.2.12.** (**Open findings**) | The image scanner, if you installed it, found a fixable vulnerability at or above the level you chose (critical, or high). | See [Image scanning](../../image-scanning.md). |
 
 An app in Default › production is named by its ID alone (`web/web`); every other app is named with its project and environment, as above. The items about OS updates, a server and a disk name the server once you have more than one.
+
+### Image findings
+
+If you installed the [image scanner](../../image-scanning.md), its findings are debt with a known fix, not something happening now, so they don't get a row each. All of them are **one row at the end of the list**, after every other item, closed:
+
+> **2 apps** have fixable vulnerabilities: 2 critical packages, 3 high packages, 1 known exploited.
+
+The row is red when any package is critical and amber when they are all high. It counts the packages that have a vulnerability with a fix, at or above the level you chose in **Operator › Security** (critical by default; critical and high is a setting), in the apps you haven't stopped. Open the row for one line per app, the one with the most critical packages first: the app, its counts ("2 critical", or "3 high, 1 known exploited"), and **Open findings**, which leads to the Security panel on the app's **Deployments** tab. Owners and admins also get a link to **Operator › Security** in the row. A list that has only this row doesn't say "Nothing needs you.": it shows the row.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../images/apps-home-security-dark.png">
+  <img alt="Part of the Apps page: the needs-you list with a failed schedule run, then the row for image findings, opened: 2 apps have fixable vulnerabilities, 2 critical packages, 3 high packages, 1 known exploited, a link to Operator, Security, and one line per app with its counts and an Open findings button." src="../../images/apps-home-security-light.png" width="760">
+</picture>
+
+The same row closes the needs-you list on the Operator **Overview** and in the side panel of the [project's page](projects.md). Each app with findings also has a small tag under its status, such as "■ 2 critical" or "◆ 3 high": see [Image scanning](../../image-scanning.md#what-you-see).
+
+[Notifications](notifications.md) are not grouped: a channel that has Problems ticked gets one message for each app, service and package, such as "zlib 1.2.11-r3 in Shop › production › api/api has CVE-2022-37434 (critical), fixed in 1.2.12-r0.".
 
 ## Related pages
 

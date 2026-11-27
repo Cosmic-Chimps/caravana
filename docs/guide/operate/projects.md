@@ -30,9 +30,15 @@ A project's page has one tab per environment, with the environment's apps as a t
 and its latest deploys. **New app here** makes an app in the environment you are looking at. On **New app**,
 once there is more than one environment, a **Project and environment** select chooses where the app goes.
 
+What needs you is only about the apps of the environment you have open. If you installed the [image
+scanner](../../image-scanning.md), its findings are one closed row at the end of that list, and an app that
+has some shows a tag such as "■ 2 critical" under its status in the table (the row is already a link,
+so the tag is plain text here; open the app's **Deployments** tab for the findings). See
+[Monitoring](monitoring.md#image-findings).
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../images/project-page-dark.png">
-  <img alt="The page of the shop project: tabs for staging and production, the apps of the open environment as a table, and a side panel with what needs you, the Promote to buttons and the latest deploys." src="../../images/project-page-light.png" width="760">
+  <img alt="The page of the shop project: tabs for its environments, the apps of the open environment as a table with a 2 critical and a 3 high tag under two statuses, and a side panel with what needs you (a failed schedule run and a closed row for image findings), the Promote to buttons and the latest deploys." src="../../images/project-page-light.png" width="760">
 </picture>
 
 ## App IDs

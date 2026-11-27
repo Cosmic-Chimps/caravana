@@ -59,6 +59,11 @@ set** as **Limits** (`nofile 65536` and `memlock unlimited` when soft and hard a
 when they differ);
 change them through the API or the Compose file.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/app-configure-services-limits-dark.png">
+  <img alt="Configure, Services, of an OpenSearch service named search: copies, memory and health check, then the Also set panel with the rows Limits (memlock unlimited, nofile 65536), Kernel settings (net.ipv4.tcp_keepalive_time = 600), Files (opensearch.yml with its size, and /certs/node.key from secret TLS_KEY, mode 0400) and Volumes." src="images/app-configure-services-limits-light.png" width="640">
+</picture>
+
 ## Sysctls
 
 A service may set a few kernel settings inside its own copies, as `sysctls`:

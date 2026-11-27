@@ -1,7 +1,8 @@
 package ui
 
 // The rest of the demo installation (TestDocsDemo): logs and requests, backups, schedules, the
-// installation's settings, a preview, a week of monitoring history and the servers. Every number,
+// installation's settings, a preview, the image scanner's results, a week of monitoring history and
+// the servers. Every number,
 // name and line here is made up. Nothing is random between runs except the clock: the generators
 // are seeded, so two runs draw the same pictures a few minutes apart.
 
@@ -9,12 +10,14 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +30,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/metrics"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/vulns"
 )
 
 // ---- Logs and requests ---------------------------------------------------------------------
@@ -101,6 +105,29 @@ func (d *docsDemo) seedDocsLogs(webIDs, apiIDs, stagingIDs []string) {
 		lines, last := d.webLogLines(fmt.Sprintf("stg%d", i), 50*time.Minute)
 		d.Nomad.AddLogFile(id, "stdout", 0, lines, last.Add(5*time.Second))
 	}
+	for i, id := range d.searchIDs {
+		lines, last := d.searchLogLines(fmt.Sprintf("search%d", i), 50*time.Minute)
+		d.Nomad.AddLogFile(id, "stdout", 0, lines, last.Add(5*time.Second))
+	}
+}
+
+// searchLogLines is what a quiet single-node OpenSearch prints: a flush or a refresh every few
+// minutes and one slow query.
+func (d *docsDemo) searchLogLines(seed string, span time.Duration) ([]string, time.Time) {
+	r := rngFor(seed)
+	var lines []string
+	last := d.now
+	for at := d.now.Add(-span); at.Before(d.now.Add(-time.Minute)); at = at.Add(time.Duration(90+r.IntN(90)) * time.Second) {
+		ts := at.Format(demoStamp)
+		if len(lines) == 11 {
+			lines = append(lines, ts+" WARN [o.o.s.query] [products][0] took[1.2s] search_type[QUERY_THEN_FETCH] total_shards[1]")
+		} else {
+			lines = append(lines, fmt.Sprintf("%s INFO [o.o.i.s.IndexShard] [%s][0] %s in %d ms", ts,
+				pick(r, "products", "orders", "customers"), pick(r, "flush completed", "refresh completed", "merge completed"), 9+r.IntN(60)))
+		}
+		last = at
+	}
+	return lines, last
 }
 
 // accessLine is one line of Traefik's access log, as the installer's Traefik writes it.
@@ -463,11 +490,13 @@ func (d *docsDemo) seedDocsMetrics(t *testing.T) {
 		mem      float64
 		copies   int64
 		limit    int64
+		reserved int64 // the memory a service with no address reserves
 	}{
-		{shopID("production", "web"), "web", 95, 96, 2, 512},
-		{shopID("production", "api"), "api", 60, 118, 2, 512},
-		{shopID("staging", "web"), "web", 6, 74, 1, 512},
-		{shopID("production", "db"), "db", 0, 196, 1, 1024},
+		{shopID("production", "web"), "web", 95, 96, 2, 512, 0},
+		{shopID("production", "api"), "api", 60, 118, 2, 512, 0},
+		{shopID("staging", "web"), "web", 6, 74, 1, 512, 0},
+		{shopID("production", "db"), "db", 0, 196, 1, 1024, 512},
+		{shopID("production", "search"), "search", 0, 590, 1, 1024, 768},
 	} {
 		series, err := d.Store.EnsureSeries(ctx, s.app, s.svc)
 		if err != nil {
@@ -481,7 +510,7 @@ func (d *docsDemo) seedDocsMetrics(t *testing.T) {
 				return store.MetricsSample{
 					CPUMHz: new(int64(math.Round((12 + 20*day) * noise))), CPUReservedMHz: new(int64(100)),
 					MemoryMB: new(int64(math.Round(s.mem + 18*day))), MemoryLimitMB: new(s.limit),
-					MemoryReservedMB: new(int64(512)), Copies: &s.copies, Restarts: new(int64(0)),
+					MemoryReservedMB: new(s.reserved), Copies: &s.copies, Restarts: new(int64(0)),
 				}
 			}
 			reqs := int64(math.Round(s.base * day * noise * float64(mins)))
@@ -613,4 +642,74 @@ func fakeTraefikMetrics(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// ---- The image scanner ---------------------------------------------------------------------
+
+// seedDocsScanner installs the image scanner and stores the result of the last scan of every image the
+// apps run, as the daily pass would have left them, without running one. The notify level is "high",
+// so both the critical and the high findings with a fix reach the needs-you list. api has two critical
+// packages, web in production three high ones (one known exploited); every other image is clean. The
+// images are the demo's own (ghcr.io/acme/...), so the findings are as made up as the images.
+// It must run before the service starts. The daily pass is marked as done for today so it never runs.
+func (d *docsDemo) seedDocsScanner(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+	if err := d.Store.SaveAddon(ctx, store.Addon{Name: store.AddonImageScanner, State: store.AddonInstalled, Version: "0.117.0",
+		InstalledAt: d.ago(9 * 24 * time.Hour), UpdatedAt: d.ago(9 * 24 * time.Hour)}); err != nil {
+		t.Fatalf("SaveAddon: %v", err)
+	}
+	if err := d.Store.SaveScanSettings(ctx, store.ScanSettings{NotifyLevel: "high", DailyHour: 4}); err != nil {
+		t.Fatalf("SaveScanSettings: %v", err)
+	}
+	if err := d.Store.SetLastDaily(ctx, d.now); err != nil {
+		t.Fatalf("SetLastDaily: %v", err)
+	}
+
+	webwebp := secFindingFor("a1f3c5e7b9d20416", "CVE-2023-4863", vulns.High, "libwebp", "1.3.1-r0", "1.3.2-r0")
+	webwebp.KEV = true
+	webwebp.EPSS = &vulns.EPSS{Score: 0.94, Percentile: 0.99}
+	findings := map[string][]vulns.Finding{
+		shopID("production", "api"): {
+			secFindingFor("b2e4d6f8a0c31527", "CVE-2022-37434", vulns.Critical, "zlib", "1.2.11-r3", "1.2.12-r0"),
+			secFindingFor("c3f5e7a9b1d42638", "CVE-2022-32221", vulns.Critical, "curl", "7.79.1-r5", "7.86.0-r0"),
+		},
+		shopID("production", "web"): {
+			webwebp,
+			secFindingFor("d40618bac2e53749", "CVE-2022-0778", vulns.High, "openssl", "3.0.1-r0", "3.0.2-r0"),
+			secFindingFor("e51729cbd3f6485a", "CVE-2022-40303", vulns.High, "libxml2", "2.9.14-r0", "2.10.3-r0"),
+		},
+	}
+
+	apps, err := d.Store.ListApps(ctx)
+	if err != nil {
+		t.Fatalf("ListApps: %v", err)
+	}
+	scannedAt, built := lastAt(d.now, 4).Add(7*time.Second), lastAt(d.now, 3)
+	n := 0
+	for _, rec := range apps {
+		dep, err := d.Store.LatestHealthyDeployment(ctx, rec.App.ID)
+		if err != nil {
+			continue // a preview or an app with no healthy deployment has no live image
+		}
+		for _, svc := range slices.Sorted(maps.Keys(dep.Deployment.Digests)) {
+			image := dep.Deployment.Digests[svc]
+			res := vulns.Result{Findings: findings[rec.App.ID], DBBuilt: built, DBSchema: "6", Scanner: "0.117.0"}
+			if err := d.Store.SaveScanResult(ctx, image, res, true, scannedAt.Add(time.Duration(n)*45*time.Second)); err != nil {
+				t.Fatalf("SaveScanResult(%s): %v", image, err)
+			}
+			run := store.ScanRun{ID: fmt.Sprintf("run_demo%02d", n), Image: image, Trigger: store.ScanTriggerDaily, Source: store.ScanSourceSBOM,
+				CreatedAt: scannedAt.Add(time.Duration(n)*45*time.Second - 20*time.Second)}
+			if _, _, err := d.Store.QueueScanRun(ctx, run); err != nil {
+				t.Fatalf("QueueScanRun: %v", err)
+			}
+			if err := d.Store.StartScanRun(ctx, run.ID, store.ScanSourceSBOM, run.CreatedAt.Add(2*time.Second)); err != nil {
+				t.Fatalf("StartScanRun: %v", err)
+			}
+			if err := d.Store.EndScanRun(ctx, run.ID, store.ScanOK, "", "0.117.0", built, run.CreatedAt.Add(time.Duration(14+n%5)*time.Second)); err != nil {
+				t.Fatalf("EndScanRun: %v", err)
+			}
+			n++
+		}
+	}
 }

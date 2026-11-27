@@ -76,7 +76,7 @@ form with:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../images/app-backups-policy-dark.png">
-  <img alt="The Backups tab of the db app with Change the policy… opened: Engine, Database file, Schedule and Backups to keep, and Save and deploy." src="../../images/app-backups-policy-light.png" width="760">
+  <img alt="The Backups tab of the search app, an OpenSearch service, with Change the policy… opened: Engine set to OpenSearch or Elasticsearch snapshot, Database file, Snapshot folder, Schedule and Backups to keep, and Save and deploy." src="../../images/app-backups-policy-light.png" width="760">
 </picture>
 
 **Save and deploy** changes the policy and deploys the app. The service's restore schedule, where its backups go and

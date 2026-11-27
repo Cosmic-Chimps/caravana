@@ -9,7 +9,7 @@ Caravana tells you when something needs you, so you don't have to keep the conso
 
 ## What is sent
 
-- **Problems (opened and resolved).** Every item of the [needs-you list](monitoring.md#the-needs-you-list) is sent once when it appears ("opened") and once when it goes away ("resolved"). A disk that goes from warning to failed sends one more message ("worsened").
+- **Problems (opened and resolved).** Every item of the [needs-you list](monitoring.md#the-needs-you-list) is sent once when it appears ("opened") and once when it goes away ("resolved"). A disk that goes from warning to failed sends one more message ("worsened"). The console sums up all the [image findings](monitoring.md#image-findings) in one row, but a channel is not told about the row: it gets one message for each app, service and package that has a fixable vulnerability.
 - **Failed deploys** and **Successful deploys.** Each deployment that ends is one message, with the outcome (healthy, failed, reverted, superseded) and what started it. If the deploy came from CI, the message says which commit, branch and run.
 - **A new Caravana release.** When a newer release is out, every channel that isn't paused gets one message ("caravana 0.16.0 is out. You run 0.15.0."), whatever it has ticked.
 - **A test**, when you ask for one.

@@ -62,7 +62,7 @@ type docsDemo struct {
 	*consoleEnv
 	now time.Time
 	// The copies of the apps that have output to show.
-	webIDs, apiIDs, stagingIDs []string
+	webIDs, apiIDs, stagingIDs, searchIDs []string
 }
 
 // ago is the time dur before the demo's now.
@@ -242,6 +242,7 @@ func seedDocsDemo(t *testing.T, d *docsDemo) {
 	d.seedDocsBackups(t)
 	d.seedDocsSchedules(t)
 	d.seedDocsSettings(t)
+	d.seedDocsScanner(t)
 	d.seedDocsMetrics(t)
 
 	svcCtx, stop := context.WithCancel(ctx)

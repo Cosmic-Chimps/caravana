@@ -66,11 +66,15 @@ pages instead of the frames, to choose a frame.
 
 The made-up installation the guide is written against: project `shop` (display name "Shop") with the
 environments `staging` and `production` and a preview `pr-31`; the apps `web` (two copies, `shop.example.com`),
-`api` (`api.shop.example.com`, two secrets, two schedules) and `db` (Postgres on a volume, backed up daily)
-in production and `web` in staging, each with a few deployments (the console, a deploy token `shop-ci`
-from CI, one reverted); a second person `ben@example.com`; a registry `ghcr.io/acme`; a backup
-destination; a notification channel; API tokens; three servers; a week of monitoring history; one
-needs-you item (the failed run of `nightly-report`). Every name is made up and ends in `example.com`;
+`api` (`api.shop.example.com`, two secrets, two schedules), `db` (Postgres on a volume, backed up daily) and
+`search` (one OpenSearch service with two volumes, ulimits, a kernel setting, a config file, a key file that
+a secret holds and an `opensearch` backup with a snapshot folder; no address) in production and `web` in
+staging, each with a few deployments (the console, a deploy token `shop-ci` from CI, one reverted); a second
+person `ben@example.com`; a registry `ghcr.io/acme`; a backup destination; a notification channel; API tokens;
+three servers; a week of monitoring history; the image scanner, installed, with the stored result of its last
+scan of every live image (`api` has two critical packages with a fix; `web` in production has three high
+ones, one of them flagged known exploited; the other images are clean), the notify level at high; one needs-you item besides the scanner's (the failed run of `nightly-report`). Every name is
+made up and ends in `example.com`;
 logs and requests are generated, with no secret in them.
 
 It is the console of `internal/ui` over a real service and SQLite store in a temporary directory,
