@@ -79,8 +79,8 @@ through the scan job's own Nomad Variable, which is deleted with the job; no pag
   healthy. A last sentence says how many apps have them, judging each app by its worst level: "Fixable critical
   vulnerabilities in 3 apps.", or, when the apps differ, "Fixable vulnerabilities in 6 apps: critical in 5, high in 1."
 - **The Operator Overview's Live activity** has one line per app: when its first fixable findings appear
-  ("`uptime-kuma`: 9 fixable critical vulnerabilities found.") and when the last of them is gone ("Resolved: fixable
-  vulnerabilities in `uptime-kuma`."). A package that comes or goes while the app still has findings adds no line.
+  ("`uptime-kuma`: 9 fixable critical vulnerabilities found.") and when the last of them is gone ("Resolved: `uptime-kuma` has
+  no fixable vulnerabilities left."). A package that comes or goes while the app still has findings adds no line.
 - **Your notification channels** get one message for each app, service and package with a fixable vulnerability at
   or above the notify level, like every other item: it names the package, its version, the advisory and the fixed
   version. `GET /v1/attention` lists them the same way, one item each.

@@ -105,10 +105,11 @@ func findingsFoundParts(who []TextPart, critical, high int) []TextPart {
 	return parts(who, ": "+words)
 }
 
-// findingsGoneParts is the sentence of the line when an app's last fixable finding is gone; the feed puts
+// findingsGoneParts is the sentence of the line when an app's last fixable finding is gone ("uptime-kuma has no fixable
+// vulnerabilities left."); the feed puts
 // "Resolved: " before it, as for every resolved problem.
 func findingsGoneParts(who []TextPart) []TextPart {
-	return parts("fixable vulnerabilities in ", who, ".")
+	return parts(who, " has no fixable vulnerabilities left.")
 }
 
 // vulnerabilities is "9 fixable critical vulnerabilities", or "1 fixable critical vulnerability".

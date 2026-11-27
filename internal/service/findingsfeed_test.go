@@ -113,7 +113,7 @@ func TestFindingEventsAreOneLinePerApp(t *testing.T) {
 		t.Fatalf("resolved %d, opened %d; want 10 and 1", len(changes.Resolved), len(changes.Opened))
 	}
 	got = eventLines(findingEvents(prev, changes, findingPlaces, shopDisplay, t1))
-	if len(got) != 1 || got[0] != "resolved uptime-kuma: fixable vulnerabilities in uptime-kuma." {
+	if len(got) != 1 || got[0] != "resolved uptime-kuma: uptime-kuma has no fixable vulnerabilities left." {
 		t.Errorf("events = %q, want only uptime-kuma's resolution", got)
 	}
 
