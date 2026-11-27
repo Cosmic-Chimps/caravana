@@ -10,6 +10,81 @@ released sections only. `tools/release.sh unreleased` shows what the next releas
 Each section has the changes that matter to a user, in this order and only as needed: Added,
 Changed, Fixed, Security, then **Upgrade** when an upgrade needs more than rerunning the installer.
 
+## 0.23.3 - 2026-11-27
+
+### Added
+- **A documentation site.** The user guide is at <https://cosmic-chimps.github.io/caravana/>: install,
+  a first app, every way to deploy, configuring an app, day-to-day work, running the host and a
+  reference for the settings, the command line and the API, with screenshots of the console. The pages
+  are the Markdown in `docs/`, so they read the same on GitHub.
+- **Copies and memory of an app edited through a Compose file are editable on Configure › Services.** Copies,
+  Memory and Ceiling are inputs again, and saving writes them into the file you typed: a value already there is
+  changed in place, a missing one is added under the service, and your comments and formatting stay. A file that
+  says them in a way that can't be rewritten safely (an alias or an anchor) keeps them read-only and says why.
+- **Apps that need limits, kernel settings and files, such as OpenSearch and Wazuh.** A service may set `ulimits`
+  (`memlock` and `nofile`), network `sysctls` (`net.…` only) and read-only `files`: a config file whose content is in
+  the app, or a file that holds one of the service's secrets (a key). A secret a file holds is written to the file and
+  never to the environment. Compose's `ulimits`, `sysctls` and inline `configs` map to them, and the overlay takes
+  `files`. Anything else is refused naming the field. Configure shows them read-only, a promotion takes them, and the
+  export writes them. See "Limits, sysctls and files" in the guide.
+- **Every server has `vm.max_map_count` of at least 262144**, which OpenSearch and Elasticsearch need. The installer sets
+  it (a larger value already there is kept), and the server's page shows the value once its agent reports it, in the
+  warning colour when it is lower. A Compose file's own `vm.max_map_count` is answered by the server: 262144 or less is dropped with a warning,
+  more is refused.
+- **Templates can make certificates and password hashes at install** (catalog format 2): `certificates` asks for a
+  certificate authority and the certificates it signs, and `{{password|bcrypt}}` writes the bcrypt hash of a secret.
+  The Wazuh template, which will be in the catalog with this release (it needs 0.24.0), uses both.
+- **Back up an OpenSearch or Elasticsearch cluster without stopping it.** The new backup engine `opensearch`
+  (`backup: {engine: opensearch, repository: /usr/share/opensearch/snapshots}`) has the cluster take a snapshot of itself
+  through its own API while it runs, then archives it to the backup destination. It keeps the newest `keep`, pins,
+  copies to a second destination, restore schedules and records like every other engine. A restore closes and replaces
+  the snapshot's indices while the cluster runs (queries on them fail meanwhile, though the service never stops), makes
+  again an index deleted since, and leaves indices made since. A backup holds the indices whose name doesn't
+  start with a dot (not the cluster's settings, templates, security configuration or Dashboards' objects). The cluster
+  needs the folder in its `path.repo` setting, which a deploy warns about when it is missing, and the login is found
+  in `OPENSEARCH_INITIAL_ADMIN_PASSWORD`, `INDEXER_PASSWORD` or `ELASTIC_PASSWORD`. The service needs a port (the first one is the
+  cluster's HTTP API) and `sh`, `curl`, `grep`, `sed` and `mktemp` in its image. The Compose form of New app offers
+  the engine, and so does **Change the policy…** on the Backups tab for a service that already has a backup policy; a
+  service with none is offered only **Back up daily** with the volume engine, so set the `opensearch` policy through
+  the API or a Compose request. See "OpenSearch and Elasticsearch snapshots" in Database backups.
+
+### Changed
+- **Image findings are quiet, so apps and outages stay in view.** The needs-you list no longer draws a row for
+  every vulnerable package. One **Security** group closes the list, after every other item: "3 apps have fixable
+  vulnerabilities: 14 critical packages, 2 known exploited." Open it for one line per app with **Open findings**.
+  An app with findings shows a small "■ 9 critical" or "◆ 4 high" under its status in the Apps home, the project
+  page and the Operator Overview, and nothing when it has none. Notifications and the API are unchanged.
+- **The Apps headline counts outages, not findings, and names apps by name.** An app whose only items are findings
+  counts as healthy, and a last sentence says "Fixable critical vulnerabilities in 3 apps." (or, when levels
+  differ, "Fixable vulnerabilities in 6 apps: critical in 5, high in 1."). An app outside Default › production
+  is named by its name, not by its ID (`banana`, not `banana--production--banana`); two apps with one name say
+  their environment.
+- **Live activity has one line per app for image findings, never one per package.** The Operator Overview's feed
+  says "`uptime-kuma`: 9 fixable critical vulnerabilities found." when an app's first fixable findings appear and
+  "Resolved: `uptime-kuma` has no fixable vulnerabilities left." when the last one goes, so a scan with dozens of findings no
+  longer pushes everything else down. Lines a scan wrote per package before this release are no longer listed.
+  Notifications and the needs-you items stay one per package.
+- **Operator › Security names apps by where they are.** The Images table's "Used by" says "Shop › production ›
+  web" for an app outside Default › production, as the needs-you list does, instead of its ID
+  (`shop--production--web/web`), and adds "/service" only for an app with more than one service.
+
+### Fixed
+- **Backups tab: a backup's date no longer runs into its size.** A restore point from two to six days ago
+  ("2 d ago · Tue 17:22 UTC") was wider than its column and touched the size beside it.
+- On an app's Backups tab, an open "Change the policy…", "Where backups go…" or "Restore on a schedule…" now opens on
+  its own line under the buttons, and no button moves. On Configure's Overview, a service at medium widths keeps its
+  name in a column beside the image, copies and check instead of stacking all four.
+- **A template with a Team only domain shows its password after Create.** Installing Adminer or PostgreSQL from the
+  console now shows the domain's password once on the page that follows, as the templates' notes say; before, it
+  was never shown and had to be made again with New password on the Domains page.
+
+### Upgrade
+- **Run the installer again on each server** to set `vm.max_map_count`: on the first server, **Update to X…** on
+  Operator › Updates (it runs the installer) or the installer command; on a joined server, its join command again.
+  Setting it needs no reboot and restarts no app.
+- An app that already runs gets what the engine needs (a sidecar that mounts the snapshot folder) at its next deploy,
+  not before; a new policy is a deploy anyway.
+
 ## 0.23.2 - 2026-11-26
 
 ### Added
