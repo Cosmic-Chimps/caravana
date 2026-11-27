@@ -76,14 +76,34 @@ func (u secUses) of(ctx context.Context, use service.ScanUse) secUse {
 		}
 		u.apps[use.App] = rec
 	}
-	out := secUse{App: sentence{mono(use.App)}, Href: "/apps/" + url.PathEscape(use.App) + "/deployments#security"}
+	out := secUse{App: sentence{{Text: use.App, Mono: true, Nowrap: true}}, Href: "/apps/" + url.PathEscape(use.App) + "/deployments#security"}
 	if rec == nil {
 		out.Service = use.Service // nothing says it has one service: name it
 		return out
 	}
-	out.App = placeLabel(use.App, rec.Place, u.pl)
+	out.App = breakAtSeparators(placeLabel(use.App, rec.Place, u.pl))
 	if len(rec.App.Services) > 1 {
 		out.Service = use.Service
+	}
+	return out
+}
+
+// breakAtSeparators keeps every word of a place label on one line, so a long label wraps only at its
+// " › " separators and never inside a project, environment or app name.
+func breakAtSeparators(s sentence) sentence {
+	const sep = " › "
+	var out sentence
+	for _, p := range s {
+		for i, piece := range strings.Split(p.Text, sep) {
+			if i > 0 {
+				out = append(out, part{Text: sep, Muted: p.Muted})
+			}
+			if piece != "" {
+				q := p
+				q.Text, q.Nowrap = piece, true
+				out = append(out, q)
+			}
+		}
 	}
 	return out
 }

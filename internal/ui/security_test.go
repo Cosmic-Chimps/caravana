@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -161,7 +162,7 @@ func TestSecurityPageListsImagesAndRuns(t *testing.T) {
 	}
 	words := text(body)
 	for _, want := range []string{
-		"traefik/whoami@sha256:", `<a href="/apps/whoami/deployments#security"><span class="cv-inline-mono text-fg-1">whoami</span></a>`,
+		"traefik/whoami@sha256:", `<span class="cv-secuse"><a href="/apps/whoami/deployments#security"><span class="cv-inline-mono text-fg-1 cv-nowrap">whoami</span></a></span>`,
 		"1 critical", "1 high", "1 medium", "1 fixable", "1 known exploited",
 		"database of Nov 19", "Scanned", "daily", "the registry", "took 42s", "0.117.0",
 	} {
@@ -215,13 +216,14 @@ func TestSecurityImagesNameAppsByTheirPlace(t *testing.T) {
 	table := imagesTable(t, body)
 	words := text(table)
 	for _, want := range []string{
-		`<a href="/apps/whoami/deployments#security"><span class="cv-inline-mono text-fg-1">whoami</span></a> `,
-		`<a href="/apps/shop--production--web/deployments#security"><span class="text-fg-3">Shop › </span>` +
-			`<span class="cv-inline-mono text-fg-3">production</span><span class="text-fg-3"> › </span>` +
-			`<span class="cv-inline-mono text-fg-1">web</span></a> `,
+		`<span class="cv-secuse"><a href="/apps/whoami/deployments#security"><span class="cv-inline-mono text-fg-1 cv-nowrap">whoami</span></a></span>`,
+		// A place label wraps only at its separators: every word is kept on one line.
+		`<span class="cv-secuse"><a href="/apps/shop--production--web/deployments#security"><span class="text-fg-3 cv-nowrap">Shop</span>` +
+			`<span class="text-fg-3"> › </span><span class="cv-inline-mono text-fg-3 cv-nowrap">production</span>` +
+			`<span class="text-fg-3"> › </span><span class="cv-inline-mono text-fg-1 cv-nowrap">web</span></a></span>`,
 		`<a href="/apps/shop--production--blog/deployments#security">`,
-		`<span class="cv-inline-mono text-fg-1">blog</span></a><span class="cv-inline-mono text-fg-2">/web</span>`,
-		`<span class="cv-inline-mono text-fg-1">blog</span></a><span class="cv-inline-mono text-fg-2">/worker</span>`,
+		`<span class="cv-inline-mono text-fg-1 cv-nowrap">blog</span></a><span class="cv-inline-mono text-fg-2 cv-nowrap">/web</span></span>`,
+		`<span class="cv-inline-mono text-fg-1 cv-nowrap">blog</span></a><span class="cv-inline-mono text-fg-2 cv-nowrap">/worker</span></span>`,
 	} {
 		if !strings.Contains(table, want) {
 			t.Errorf("the Images table lacks %q:\n%s", want, table)
@@ -230,8 +232,20 @@ func TestSecurityImagesNameAppsByTheirPlace(t *testing.T) {
 	if strings.Contains(words, "--") {
 		t.Errorf("the Images table names an app by its ID:\n%s", words)
 	}
+	// The four services run one image, so they share one cell, one line each: a block per use, place
+	// labels among them, nothing between them that would run one into the next.
+	cell := regexp.MustCompile(`<td>(<span class="cv-secuse">.*?)</td>`).FindStringSubmatch(table)
+	if cell == nil {
+		t.Fatalf("no Used by cell in:\n%s", table)
+	}
+	if n := strings.Count(cell[1], `<span class="cv-secuse">`); n != 4 {
+		t.Errorf("the Used by cell has %d uses, want 4:\n%s", n, cell[1])
+	}
+	if !strings.Contains(cell[1], `</span><span class="cv-secuse"><a href="/apps/shop--production--web/`) {
+		t.Errorf("the place label isn't its own block beside the others:\n%s", cell[1])
+	}
 	// Only the two-service app names its services.
-	if n := strings.Count(table, `<span class="cv-inline-mono text-fg-2">/`); n != 2 {
+	if n := strings.Count(table, `<span class="cv-inline-mono text-fg-2 cv-nowrap">/`); n != 2 {
 		t.Errorf("the Images table names %d services, want 2 (blog's):\n%s", n, words)
 	}
 }
