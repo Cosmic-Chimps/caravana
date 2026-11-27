@@ -2562,8 +2562,8 @@ Migration 0048, API 0.67.0, no new module, no policy change, constitution unchan
   no answer, log, job, export or data file) passed in the lab on 2026-11-26 (127 s, `-run 'TestLab/^(api-needs-token|opensearch-snapshot)$'`),
   and `sqlite-backup-restore` passed again after the shared code's refactor (279 s). Nothing is world-writable (review, plan "Deviations (review)"): a first
   step, `prepare`, runs in the service's own task, makes the repository folder as the cluster's user (`mkdir -p`) and prints
-  `caravana-opensearch-owner uid=<n> gid=<n>` (`SQLiteOutput.Owner`, `Deployer.OpenSearchPrepare`, asked again once when the output
-  came back empty); the root sidecar's clean (work directory, mode 0770) and download (`chown -R` of the run folder) take that
+  `caravana-opensearch-owner uid=<n> gid=<n>` (`SQLiteOutput.Owner`, `Deployer.OpenSearchPrepare`; the script lingers a second after its marker
+  and is asked up to three times, since an exec that ends at once can come back without its output); the root sidecar's clean (work directory, mode 0770) and download (`chown -R` of the run folder) take that
   `uid:gid` as an argument and give what they make to it. The volume root's owner wasn't usable: the mkdir plugin makes it root, 0777. The Wazuh template's indexer
   (`92b4c09` on `wazuh-template` of `../caravana-templates`, not pushed) has an `indexer-snapshots` volume, `path.repo` in its
   `opensearch.yml`, `OPENSEARCH_INITIAL_ADMIN_PASSWORD` (not `INDEXER_PASSWORD`, which Wazuh's entrypoint writes into a keystore) and a
