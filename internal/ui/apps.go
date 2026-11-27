@@ -52,6 +52,9 @@ type appRow struct {
 	// app) and State the filter's state of the app (stateNeeds, ...; "").
 	Kind  string
 	State string
+	// Findings is the tag under the status pill: the worst image finding's mark and count, nil when the
+	// app has none (or the scanner isn't installed).
+	Findings *findingsTag
 }
 
 // activityRow is one entry of the activity rail: a deployment of some app.
@@ -238,11 +241,9 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 		return appsRegion{}, err
 	}
 	now := s.now()
-	// The apps the headline names as needing the user: the state filter's "Needs you".
-	listed := map[string]bool{}
-	for _, it := range items {
-		listed[it.AppID] = true
-	}
+	// The apps the headline names as needing the user: the state filter's "Needs you". Findings aren't
+	// trouble; they are the tag under an app's status.
+	listed, tags := listedApps(items), tagsOf(findingsOf(items))
 	needs := map[string]bool{}
 	for _, sum := range sums {
 		needs[sum.App.ID] = needsYouOf(sum, listed[sum.App.ID])
@@ -265,7 +266,9 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 	if pl.single() {
 		rows := make([]appRow, 0, len(sums))
 		for _, sum := range sums {
-			if row := s.appRow(now, sum, needs[sum.App.ID]); filter.matches(sum, row) {
+			row := s.appRow(now, sum, needs[sum.App.ID])
+			row.Findings = tags[sum.App.ID]
+			if filter.matches(sum, row) {
 				rows = append(rows, row)
 			}
 		}
@@ -279,6 +282,7 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 	byEnv := map[app.Place][]appRow{} // keyed by project and environment: the name is left empty
 	for _, sum := range sums {
 		row := s.appRow(now, sum, needs[sum.App.ID])
+		row.Findings = tags[sum.App.ID]
 		if !filter.matches(sum, row) {
 			continue
 		}

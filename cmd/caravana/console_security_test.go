@@ -159,6 +159,36 @@ func (c *console) consoleSecurity(t *testing.T) {
 	if part := get("/parts/apps/" + id + "/security"); !strings.Contains(part, scanAdvisory) {
 		t.Errorf("/parts/apps/%s/security lacks %s", id, scanAdvisory)
 	}
+	// The findings are quiet on the Apps home: one closed Security group at the end of the needs-you list,
+	// one line for the app with an Open findings link, and a tag under the app's status pill.
+	home := get("/apps")
+	groupAt := strings.Index(home, `id="needs-security"`)
+	if groupAt < 0 {
+		t.Fatalf("the Apps home has no Security group:\n%s", pageText(home))
+	}
+	group := home[groupAt:]
+	if end := strings.Index(group, "</details>"); end >= 0 {
+		group = group[:end]
+	}
+	if open := regexp.MustCompile(`<details[^>]*id="needs-security"[^>]*>`).FindString(home); strings.Contains(open, " open") {
+		t.Errorf("the Security group is open: %s", open)
+	}
+	if gt := pageText(group); !strings.Contains(gt, "fixable vulnerabilities") || !strings.Contains(gt, "critical") || !strings.Contains(gt, id) ||
+		!strings.Contains(group, `href="/apps/`+id+`/deployments#security"`) || !strings.Contains(gt, "Open findings") {
+		t.Errorf("the Security group lacks its sentence or the app's line:\n%s", gt)
+	}
+	if strings.Contains(pageText(group), "zlib") {
+		t.Errorf("the Security group has a package row:\n%s", pageText(group))
+	}
+	for _, row := range strings.Split(home, `<div class="cv-row cv-apps-row"`)[1:] {
+		if !strings.Contains(row, `href="/apps/`+id+`"`) {
+			continue
+		}
+		if !strings.Contains(row, `class="cv-find cv-find-critical"`) || !strings.Contains(row, `href="/apps/`+id+`/deployments#security"`) ||
+			!regexp.MustCompile(`\d+ critical`).MatchString(pageText(row)) {
+			t.Errorf("the app's row has no findings tag under its status:\n%s", pageText(row))
+		}
+	}
 	// The images table on Operator › Security lists it with its app.
 	if text := pageText(get("/ops/security")); !strings.Contains(text, id) || !strings.Contains(text, "alpine") {
 		t.Errorf("Operator › Security's images table lacks %s:\n%s", id, text)
@@ -192,6 +222,10 @@ func (c *console) consoleSecurity(t *testing.T) {
 	}
 	if text := pageText(get("/apps/" + id + "/deployments")); !strings.Contains(text, "The image scanner isn't installed") {
 		t.Errorf("the app's panel after the removal doesn't say it isn't installed:\n%s", text)
+	}
+	// With the scanner gone the Apps home draws no group and no tag.
+	if home := get("/apps"); strings.Contains(home, "needs-security") || strings.Contains(home, "cv-find") {
+		t.Errorf("the Apps home still draws findings after the removal:\n%s", pageText(home))
 	}
 	if _, rbody := c.get(t, "/ops/security/remove"); !strings.Contains(pageText(rbody), "isn't installed") {
 		t.Errorf("the confirmation page for a removed scanner doesn't say there is nothing to remove:\n%s", pageText(rbody))

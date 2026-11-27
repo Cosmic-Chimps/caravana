@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
 	"slices"
@@ -355,31 +356,38 @@ func needsYouOf(sum service.AppSummary, listed bool) bool {
 // right now (research R7). Apps that need a human come first, named; the rest
 // are counted. An app needs a human when its status says so, or when the
 // needs-you list has an item for it (items without an app, like a missing
-// backup destination, are in the list but are no app's trouble).
+// backup destination, are in the list but are no app's trouble). Image findings
+// are debt with a fix, not trouble: an app with only those counts by its run
+// state, and one clause at the end says how many apps have them.
 func headlineOf(sums []service.AppSummary, items []service.AttentionItem) sentence {
 	if len(sums) == 0 {
 		return sentence{plain("No apps yet.")}
 	}
 
-	first := map[string]service.AttentionItem{} // each app's newest item
+	first := map[string]service.AttentionItem{} // each app's newest item that is trouble
 	for _, it := range items {
-		if _, ok := first[it.AppID]; !ok && it.AppID != "" {
+		if _, ok := first[it.AppID]; !ok && it.AppID != "" && it.Kind != service.AttentionImageVulnerable {
 			first[it.AppID] = it
 		}
 	}
 
-	type troubled struct{ id, words string }
+	type troubled struct {
+		name, environment, words string
+	}
 	var healthy, rolling, waiting, stopped int
 	var trouble []troubled
+	add := func(sum service.AppSummary, words string) {
+		trouble = append(trouble, troubled{cmp.Or(sum.Place.Name, sum.App.ID), sum.Place.Environment, words})
+	}
 	for _, sum := range sums {
 		item, listed := first[sum.App.ID]
 		switch sum.Status.State {
 		case service.StateHealthy, service.StateRollingOut:
 			// Healthy copies don't clear a deploy that failed: that is still on the user.
 			if lastDeployFailed(sum) {
-				trouble = append(trouble, troubled{sum.App.ID, troubleWords(sum)})
+				add(sum, troubleWords(sum))
 			} else if listed {
-				trouble = append(trouble, troubled{sum.App.ID, headlineWords(item)})
+				add(sum, headlineWords(item))
 			} else if sum.Status.State == service.StateHealthy {
 				healthy++
 			} else {
@@ -390,10 +398,10 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 				// Created without deploying: waiting for its first deploy is what the owner asked for.
 				waiting++
 			} else {
-				trouble = append(trouble, troubled{sum.App.ID, troubleWords(sum)})
+				add(sum, troubleWords(sum))
 			}
 		case service.StateDegraded:
-			trouble = append(trouble, troubled{sum.App.ID, troubleWords(sum)})
+			add(sum, troubleWords(sum))
 		case service.StateStopped:
 			// Stopped on purpose: not trouble, and nothing is expected of it.
 			stopped++
@@ -404,15 +412,24 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 
 	var out sentence
 	if len(trouble) == 1 {
-		out = append(sentence{plain("1 app needs you: "), mono(trouble[0].id)}, plain(" "+trouble[0].words+"."))
+		out = append(sentence{plain("1 app needs you: "), mono(trouble[0].name)}, plain(" "+trouble[0].words+"."))
 	} else if len(trouble) > 1 {
 		out = sentence{plain(fmt.Sprintf("%d apps need you: ", len(trouble)))}
 		const shown = 3
-		for i, t := range trouble[:min(len(trouble), shown)] {
+		named := trouble[:min(len(trouble), shown)]
+		// An app is named, never by its ID; two with one name say their environment.
+		sameName := map[string]int{}
+		for _, t := range named {
+			sameName[t.name]++
+		}
+		for i, t := range named {
 			if i > 0 {
 				out = append(out, plain(", "))
 			}
-			out = append(out, mono(t.id))
+			out = append(out, mono(t.name))
+			if sameName[t.name] > 1 && t.environment != "" {
+				out = append(out, plain(" ("+t.environment+")"))
+			}
 		}
 		if len(trouble) > shown {
 			out = append(out, plain(fmt.Sprintf(" and %d more", len(trouble)-shown)))
@@ -439,7 +456,38 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 		}
 		out = append(out, plain(strings.Join(rest, ", ")+"."))
 	}
-	return out
+	clause := findingsClause(sums, items)
+	if len(out) > 0 && len(clause) > 0 {
+		out = append(out, plain(" "))
+	}
+	return append(out, clause...)
+}
+
+// findingsClause is the headline's last sentence. It names the findings, not a set of apps (an app with
+// an outage can have findings too, so "of the healthy ones" would be untrue), and judges each app by its
+// own worst level: "Fixable critical vulnerabilities in 6 apps." when all share one level, else
+// "Fixable vulnerabilities in 6 apps: critical in 5, high in 1." It is empty without any.
+func findingsClause(sums []service.AppSummary, items []service.AttentionItem) sentence {
+	found := findingsOf(items)
+	var critical, high int
+	for _, sum := range sums {
+		switch found[sum.App.ID].worst() {
+		case "critical":
+			critical++
+		case "high":
+			high++
+		}
+	}
+	switch n := critical + high; {
+	case n == 0:
+		return nil
+	case high == 0:
+		return sentence{plain("Fixable critical vulnerabilities in " + appCount(n) + ".")}
+	case critical == 0:
+		return sentence{plain("Fixable high vulnerabilities in " + appCount(n) + ".")}
+	default:
+		return sentence{plain(fmt.Sprintf("Fixable vulnerabilities in %s: critical in %d, high in %d.", appCount(n), critical, high))}
+	}
 }
 
 // neverDeployed says whether the app was created and has no deployment at all:

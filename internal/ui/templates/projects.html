@@ -11,7 +11,7 @@
   {{range .Rows}}
   <a href="{{.Href}}" class="cv-row cv-pj-row">
     <span class="cv-pj-name cv-namecell" title="{{.Name}}"><span class="cv-app-name">{{.Name}}</span>{{with .Kind}}<span class="cv-kind">{{.}}</span>{{end}}</span>
-    <span class="cv-pj-status"><span class="cv-pill cv-pill-{{.Status.Kind}} cv-pill-quiet cv-pill-sm"><span class="cv-mark cv-mark-{{.Status.Kind}}" aria-hidden="true"></span>{{.Status.Word}}</span></span>
+    <span class="cv-pj-status"><span class="cv-pill cv-pill-{{.Status.Kind}} cv-pill-quiet cv-pill-sm"><span class="cv-mark cv-mark-{{.Status.Kind}}" aria-hidden="true"></span>{{.Status.Word}}</span> {{template "findings-tag-plain" .Findings}}</span>
     <span class="cv-pj-marks">{{with .Marks}}{{if .None}}<span class="cv-pj-none" aria-hidden="true">—</span>{{else if .Count}}<span class="cv-pj-none" aria-hidden="true">{{.Count}}</span>{{else}}<span class="cv-pj-groups" aria-hidden="true">{{range .Groups}}<span class="cv-pj-group"{{with .Service}} title="{{.}}"{{end}}>{{range .Kinds}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span>{{end}}</span>{{end}}</span>{{end}}<span class="sr-only">{{.Words}}</span>{{end}}</span>
     <span class="cv-pj-addr">{{if .Address}}<span class="cv-pj-host" title="{{.Address}}">{{.Address}}</span>{{with .More}}<span class="cv-pj-more"> +{{.}}</span>{{end}}{{else}}<span class="cv-pj-none">no address</span>{{end}}</span>
     <span class="cv-pj-ver">{{if .Deploy}}{{$v := .Version}}{{if $v}}{{$v}}{{end}}{{with .Next}}{{if $v}}<span aria-hidden="true"> → </span>{{end}}<span class="sr-only"> rolling out </span>{{.}}{{end}}{{if or .Version .Next}} · {{end}}{{template "time" .Deploy.When}}{{else}}—{{end}}</span>
@@ -36,7 +36,7 @@
 {{define "project-rail-region"}}
 {{if .Env}}
 <div class="cv-pj-rail">
-  {{if .Attention.Rows}}
+  {{if .Attention.Count}}
   <section class="cv-pj-sec" aria-labelledby="pj-need-title">
     <h2 class="cv-label" id="pj-need-title">Needs you</h2>
     {{template "attention-region" .Attention}}

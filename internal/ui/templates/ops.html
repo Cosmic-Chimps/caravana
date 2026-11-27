@@ -111,9 +111,9 @@
     <span role="columnheader">Last change</span>
   </div>
   {{range .Rows}}
-  <div class="cv-opsrow" role="row">
+  <div class="cv-opsrow" role="row"{{if .Findings}} data-tagged{{end}}>
     <div role="cell" class="cv-opsname" title="{{.Where}} {{.Name}}">{{with .Where}}<span class="cv-opswhere">{{.}}</span> {{end}}<a href="{{.Href}}" id="{{.LinkID}}" class="cv-opsapp">{{.Name}}</a>{{with .Kind}}<span class="cv-kind">{{.}}</span>{{end}}</div>
-    <div role="cell" class="cv-opsstate">{{template "status-quiet" .Status}}</div>
+    <div role="cell" class="cv-opsstate">{{template "status-quiet" .Status}} {{template "findings-tag" .Findings}}</div>
     {{/* The five facts: side by side in the table's columns (the wrapper has no box), and when the table
          folds each is a label over its value, in a grid of its own under the name and the state. Each
          cell has two items, the label (from data-label, drawn only when folded) and one value element. */}}
