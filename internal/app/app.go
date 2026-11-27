@@ -7,7 +7,9 @@
 //
 // The json tags are both the stored document format and the API's field
 // names, and match the field paths in FieldError. Renaming one is a schema
-// change.
+// change. Pointer fields are omitzero, never omitempty, so the API writes a
+// pointer to an empty value back as the store does (a test in internal/api
+// walks the model).
 package app
 
 import (
@@ -65,7 +67,7 @@ type Service struct {
 	// Build says the image is built from a Git repository on the host (feature
 	// 050): Image is then the repository the build pushes to, without a tag or
 	// digest. nil means Image already exists.
-	Build *Build `json:"build,omitempty"`
+	Build *Build `json:"build,omitzero"`
 	// Entrypoint overrides the image's entrypoint: the program and its first
 	// arguments, in full. Empty keeps the image's. Command and Args follow it.
 	Entrypoint []string `json:"entrypoint,omitempty"`
@@ -86,14 +88,14 @@ type Service struct {
 	// Backup makes Caravana back the service up on a schedule to the
 	// installation's backup destination: a Postgres database, or the files of
 	// its volumes. nil means no backups.
-	Backup *Backup `json:"backup,omitempty"`
+	Backup *Backup `json:"backup,omitzero"`
 	// Identities are Nomad workload identities the service asks for: a signed
 	// JWT per identity, written to /secrets/nomad_<name>.jwt in every copy and
 	// renewed by Nomad (spec 038). None by default.
 	Identities []Identity `json:"identities,omitempty"`
 	// DNS sets the resolvers, search domains and options in the resolv.conf
 	// of every copy. nil keeps the node's.
-	DNS *DNS `json:"dns,omitempty"`
+	DNS *DNS `json:"dns,omitzero"`
 	// Ulimits are the container's process limits, by name: only "memlock" and
 	// "nofile" (feature 060). None keeps Docker's.
 	Ulimits map[string]Ulimit `json:"ulimits,omitempty"`
@@ -107,11 +109,11 @@ type Service struct {
 	// Placement says on which servers the copies may run, by the labels and
 	// names of the servers (feature 042). nil means any server that takes
 	// work.
-	Placement *Placement `json:"placement,omitempty"`
+	Placement *Placement `json:"placement,omitzero"`
 	// Disconnect says how long the copies are kept when their server stops
 	// answering, before they are called lost (see Disconnect). nil means
 	// DefaultLostAfter.
-	Disconnect *Disconnect `json:"disconnect,omitempty"`
+	Disconnect *Disconnect `json:"disconnect,omitzero"`
 	// Ports are the container ports the service listens on.
 	Ports []Port `json:"ports,omitempty"`
 	// Domains are public hostnames routed over HTTPS. All of a service's
@@ -120,17 +122,21 @@ type Service struct {
 	// Replicas is how many copies run. nil means 1; a set value must be at
 	// least 1. With Scale it is only the starting count: a deploy registers
 	// the count the service has now (Service.CountFor).
-	Replicas *int `json:"replicas,omitempty"`
+	Replicas *int `json:"replicas,omitzero"`
 	// Scale lets Caravana change the number of copies from the service's own
 	// metrics, between Scale.Min and Scale.Max (feature 043). nil keeps the
 	// count fixed at Replicas.
-	Scale *Scale `json:"scale,omitempty"`
+	Scale *Scale `json:"scale,omitzero"`
 	// Resources are the CPU and memory the service reserves. Zero fields use
 	// the environment's defaults.
 	Resources Resources `json:"resources,omitzero"`
 	// Health is the health check. Required when the service has ports, not
-	// allowed when it has none. nil means no check.
-	Health *HealthCheck `json:"health,omitempty"`
+	// allowed when it has none. nil means no check. omitzero, not omitempty:
+	// the API's encoding/json/v2 leaves out an empty object under omitempty,
+	// and an empty check ({}: TCP on the domains' or the only port) must read
+	// back as one, or an app read and deployed again loses it. encoding/json
+	// (the store) writes it the same either way, so no revision moves.
+	Health *HealthCheck `json:"health,omitzero"`
 	// StopTimeout is how many seconds Nomad waits after the stop signal
 	// before it kills the container, on a deploy, a restart, a stop and a
 	// volume backup. 0 uses the default: VolumeStopTimeout for a service with
@@ -175,12 +181,12 @@ type Secret struct {
 	Name string `json:"name"`
 	// Value is the new value: UTF-8 text without a NUL byte. nil keeps the
 	// value the secret has now. It is never stored and never returned.
-	Value *string `json:"value,omitempty"`
+	Value *string `json:"value,omitzero"`
 	// From says where an outside secret provider keeps the value (feature
 	// 037): a deploy reads it there and writes it into the service's Nomad
 	// Variable like a typed one. A secret has a Value or a From, not both. The
 	// reference is not secret, so it is stored, recorded and shown as written.
-	From *SecretRef `json:"from,omitempty"`
+	From *SecretRef `json:"from,omitzero"`
 	// Template builds the value from text and references (feature 053): `${name}`
 	// inserts the value of Refs[name], `$$` is a literal "$". A secret has a
 	// Value, a From or a Template, only one. The template and its refs hold no
@@ -301,7 +307,7 @@ type Backup struct {
 	Keep int `json:"keep,omitzero"`
 	// Restore, when set, restores the backup pinned under Restore.From on
 	// Restore.Schedule (feature 036). It works for every engine.
-	Restore *RestoreSchedule `json:"restore,omitempty"`
+	Restore *RestoreSchedule `json:"restore,omitzero"`
 	// Destination names the backup destination the backups go to (feature 052).
 	// Empty means the project's default, else the installation's.
 	Destination string `json:"destination,omitempty"`

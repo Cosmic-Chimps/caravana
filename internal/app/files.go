@@ -48,8 +48,8 @@ type File struct {
 	// Mode is the file's permissions in octal, "0640". Empty means DefaultFileMode.
 	Mode string `json:"mode,omitempty"`
 	// UID and GID own the file. nil means Nomad's default (root).
-	UID *int `json:"uid,omitempty"`
-	GID *int `json:"gid,omitempty"`
+	UID *int `json:"uid,omitzero"`
+	GID *int `json:"gid,omitzero"`
 }
 
 // Perms is the mode as Nomad's template takes it: four octal digits.

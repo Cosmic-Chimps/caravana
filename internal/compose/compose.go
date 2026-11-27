@@ -70,26 +70,26 @@ type Overlay struct {
 	Domains []Domain `json:"domains,omitempty"`
 	// Health is the check Nomad runs. nil means a TCP check on the first
 	// port, when the service has ports.
-	Health *Health `json:"health,omitempty"`
+	Health *Health `json:"health,omitzero"`
 	// Secrets are the service's secrets, as in app.Service.
 	Secrets []app.Secret `json:"secrets,omitempty"`
 	// Backup makes the service a database Caravana backs up, as in
 	// app.Service.
-	Backup *app.Backup `json:"backup,omitempty"`
+	Backup *app.Backup `json:"backup,omitzero"`
 	// Identities are the Nomad workload identities the service asks for, as
 	// in app.Service (spec 038).
 	Identities []app.Identity `json:"identities,omitempty"`
 	// Placement says on which servers the service's copies may run, as in
 	// app.Service (spec 042).
-	Placement *app.Placement `json:"placement,omitempty"`
+	Placement *app.Placement `json:"placement,omitzero"`
 	// Scale lets Caravana change how many copies the service runs from its
 	// own metrics, as in app.Service (spec 043). The file's replicas is then
 	// the starting count.
-	Scale *app.Scale `json:"scale,omitempty"`
+	Scale *app.Scale `json:"scale,omitzero"`
 	// Disconnect says how long the service's copies are kept when their
 	// server stops answering, as in app.Service (network blips). nil means
 	// the default.
-	Disconnect *app.Disconnect `json:"disconnect,omitempty"`
+	Disconnect *app.Disconnect `json:"disconnect,omitzero"`
 	// Files are config files and secret files mounted read-only in every
 	// copy, as in app.Service (spec 060). They are added to the files the
 	// file's configs make; a path in both is refused.
