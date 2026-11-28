@@ -238,6 +238,7 @@ func seedDocsDemo(t *testing.T, d *docsDemo) {
 	d.seedDocsPreview(t)
 	d.seedDocsDomains(t)
 	d.seedDocsLogs(d.webIDs, d.apiIDs, d.stagingIDs)
+	d.seedDocsFiles(d.webIDs[0])
 	d.seedDocsRequests()
 	d.seedDocsBackups(t)
 	d.seedDocsSchedules(t)

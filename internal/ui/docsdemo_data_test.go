@@ -111,6 +111,15 @@ func (d *docsDemo) seedDocsLogs(webIDs, apiIDs, stagingIDs []string) {
 	}
 }
 
+// seedDocsFiles gives the first copy of web in production the few files a small web app leaves in the
+// folders Nomad keeps: an empty error log beside the output log (seedDocsLogs), a note in alloc/data,
+// and a config file in the task's local folder. Nothing in them is secret.
+func (d *docsDemo) seedDocsFiles(copyID string) {
+	d.Nomad.WriteAllocFile(copyID, "alloc/logs/web.stderr.0", "")
+	d.Nomad.WriteAllocFile(copyID, "alloc/data/last-deploy.txt", "deployed 5 hours ago\nversion 2\n")
+	d.Nomad.WriteAllocFile(copyID, "web/local/config.json", "{\n  \"site\": \"shop.example.com\",\n  \"currency\": \"EUR\",\n  \"cacheSeconds\": 60,\n  \"mailFrom\": \"orders@shop.example.com\"\n}\n")
+}
+
 // searchLogLines is what a quiet single-node OpenSearch prints: a flush or a refresh every few
 // minutes and one slow query.
 func (d *docsDemo) searchLogLines(seed string, span time.Duration) ([]string, time.Time) {

@@ -115,6 +115,25 @@ const SCREENS = {
       await page.locator('.xterm-rows', { hasText: 'web is up' }).waitFor();
     },
   },
+  'app-files': {
+    path: `/apps/${WEB}`, ready: 'form.cv-runform', h: 560,
+    steps: async (page) => {
+      await Promise.all([page.waitForURL(/\/files$/), page.locator('form.cv-runform a:has-text("Files")').first().click()]);
+      await Promise.all([page.waitForURL(/path=alloc$/), page.locator('a.cv-filename', { hasText: 'alloc/' }).click()]);
+      await Promise.all([page.waitForURL(/path=alloc%2Flogs$/), page.locator('a.cv-filename', { hasText: 'logs/' }).click()]);
+      await page.locator('a.cv-filename', { hasText: 'web.stdout.0' }).waitFor();
+    },
+  },
+  'app-files-view': {
+    path: `/apps/${WEB}`, ready: 'form.cv-runform', clip: ['.cv-filecrumbs', 'main .cv-panel'],
+    steps: async (page) => {
+      await Promise.all([page.waitForURL(/\/files$/), page.locator('form.cv-runform a:has-text("Files")').first().click()]);
+      await Promise.all([page.waitForURL(/path=web$/), page.locator('a.cv-filename', { hasText: 'web/' }).click()]);
+      await Promise.all([page.waitForURL(/path=web%2Flocal$/), page.locator('a.cv-filename', { hasText: 'local/' }).click()]);
+      await Promise.all([page.waitForURL(/config\.json$/), page.locator('a.cv-filename', { hasText: 'config.json' }).click()]);
+      await page.locator('pre.cv-output', { hasText: 'shop.example.com' }).waitFor();
+    },
+  },
   'app-logs': { path: `/apps/${WEB}/logs?range=1h`, ready: 'main', h: 900 },
   'app-requests': { path: `/apps/${WEB}/requests?range=1h`, ready: 'main', h: 1000 },
   'promote-preview': { path: `/apps/${WEB_STAGING}/promote?to=production`, ready: 'main' },

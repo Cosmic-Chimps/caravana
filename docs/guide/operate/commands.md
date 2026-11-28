@@ -105,6 +105,11 @@ Next to **Terminal**, each copy has a **Files** link: a page, "Files in web", th
 for that copy, to read a file or download it. It is for finding a config file, a crash dump or an export
 without opening a terminal. It reads only: you cannot edit or upload a file here.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../images/app-files-dark.png">
+  <img alt="The Files page of a copy of the web app, open at the folder alloc/logs. The path above the list reads copy, alloc, logs. The list has four files, each with its size and time: .web.stdout.fifo, a pipe that is not opened, then names.stdout.0, web.stderr.0 (empty) and web.stdout.0 (4.2 KB), which have a Download button." src="../../images/app-files-light.png" width="760">
+</picture>
+
 - **What is there.** The folders of the copy's directory: `alloc`, which the copy's tasks share (`data`, `logs`
   and `tmp`: what an app writes to `/alloc/data`, and its output logs), and one folder for each task with its
   `local` and `tmp` files. In `local` you find the files a service defines (Caravana puts them in
@@ -123,6 +128,11 @@ without opening a terminal. It reads only: you cannot edit or upload a file here
   stored or put in a notice.
 - **It needs no script.** Every folder and file is a plain link. Over the API the same two reads are
   `listCopyFiles` and `downloadCopyFile`.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../images/app-files-view-dark.png">
+  <img alt="A text file opened on its own page: config.json in the folder web/local of the copy, 117 bytes, with a Download button, and its content, a small JSON object with the site name, currency and cache time, shown below." src="../../images/app-files-view-light.png" width="640">
+</picture>
 
 ## Recent actions
 
