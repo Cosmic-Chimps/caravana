@@ -90,7 +90,7 @@ func TestTemplateReads(t *testing.T) {
 			Unavailable string   `json:"unavailable"`
 		} `json:"templates"`
 	}](t, raw)
-	if len(list.Templates) != 6 || list.Catalog["source"] != "embedded" || list.Catalog["checking"] != true ||
+	if c, _ := templates.Embedded(); len(list.Templates) != len(c.Templates) || list.Catalog["source"] != "embedded" || list.Catalog["checking"] != true ||
 		list.Catalog["checkedAt"] != nil || list.Catalog["fetchedAt"] != nil {
 		t.Errorf("list = %s", raw)
 	}
@@ -99,7 +99,7 @@ func TestTemplateReads(t *testing.T) {
 	for query, want := range map[string]string{
 		"?q=status":             "uptime-kuma",
 		"?tag=database":         "adminer,postgres",
-		"?q=FEDIVERSE":          "hollo",
+		"?q=FEDIVERSE":          "hollo,peertube",
 		"?q=status&tag=nothing": "",
 		"?q=zzz":                "",
 	} {

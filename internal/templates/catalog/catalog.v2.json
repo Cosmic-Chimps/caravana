@@ -1,6 +1,6 @@
 {
   "format": 2,
-  "version": "2026.11.12",
+  "version": "2026.11.28",
   "templates": [
     {
       "name": "adminer",
@@ -13,7 +13,7 @@
       ],
       "upstream": "https://www.adminer.org/",
       "appName": "adminer",
-      "notes": "Adminer is at https://{{domain}}, behind Team only: its user name is team, and its password is shown once after Create. At its own login, give the address of a database this server can reach (a database inside another Caravana app is not reachable by name).",
+      "notes": "Adminer is at https://{{domain}}, behind Team only: its user name is team, and its password is shown once after Create. At its own login, give the address of a database this server can reach. A database app of the same project and environment answers by name: \u003capp\u003e-\u003cservice\u003e, or just \u003capp\u003e when it is that app's only service with ports, and its installed notice shows the exact address (the PostgreSQL template installed as postgres is postgres-postgres, port 5432). That needs a Caravana whose installed notice lists addresses: on an older one a database inside another Caravana app is not reachable by name.",
       "inputs": [
         {
           "name": "domain",
@@ -42,15 +42,15 @@
     {
       "name": "codemagic-patch",
       "title": "Codemagic Patch",
-      "version": "0.9.0-1",
-      "description": "Over-the-air updates for React Native and Capacitor apps, on your own server and R2 buckets.",
+      "version": "0.9.0-3",
+      "description": "Over-the-air updates for React Native and Capacitor apps, signing in with GitHub, Bitbucket Cloud or GitLab, on R2 or Google Cloud buckets.",
       "tags": [
         "mobile",
         "updates"
       ],
       "upstream": "https://patch.codemagic.io/docs/",
       "appName": "codemagic-patch",
-      "notes": "Before you install: Codemagic publishes no server image, so build one from the release tag into a private registry (Caravana's deploy/examples/codemagic-patch/RUNBOOK.md has a workflow for it) and add the registry's login in Settings, Registries. Make two R2 buckets (public one with the files domain {{files_domain}} as its custom domain, and a private one), an R2 API token for both, and a GitHub OAuth app whose homepage is https://{{domain}}. Then sign in at https://{{domain}} with the admin email. Both addresses are written into your apps' builds, so choose them once. Postgres is backed up every day at 03:00 UTC, keeping 14.",
+      "notes": "Before you install: Codemagic publishes no server image, so build one from the release tag into a private registry (Caravana's deploy/examples/codemagic-patch/RUNBOOK.md has a workflow for it) and add the registry's login in Settings, Registries. Make two buckets, one public and one private, and a key with read and write on both. On Google Cloud: the downloads URL is https://storage.googleapis.com/\u003cpublic bucket\u003e, give allUsers the role Storage Legacy Object Reader on it (read by name, no listing), and use a service account's HMAC key. On R2: give the public bucket a custom domain and use it as the downloads URL. Choose how people sign in and make an OAuth app at that provider. GitHub: an OAuth App whose homepage is https://{{domain}}. Bitbucket: Workspace settings, OAuth consumers, Add consumer, callback URL https://{{domain}}/auth/callback, This is a private consumer checked, permissions Account: Read and Email. GitLab: an application with the redirect URI https://{{domain}}/auth/callback and the scopes the dashboard asks for. Then sign in at https://{{domain}} with the admin email, which must be your confirmed primary email at the provider. Both addresses are written into your apps' builds, so choose them once. Postgres is backed up every day at 03:00 UTC, keeping 14.",
       "lab": false,
       "inputs": [
         {
@@ -65,47 +65,104 @@
           "name": "domain",
           "label": "Server domain",
           "type": "domain",
-          "help": "The API and dashboard. Its DNS must point at this server.",
+          "help": "The API and dashboard. DNS must point at this server. The sign-in callback is https://\u003cdomain\u003e/auth/callback.",
           "example": "patch.example.com"
         },
         {
-          "name": "files_domain",
-          "label": "Downloads domain",
-          "type": "domain",
-          "help": "The custom domain of the public R2 bucket, where apps download updates.",
-          "example": "patch-files.example.com"
+          "name": "signin",
+          "label": "Sign-in with",
+          "type": "choice",
+          "help": "How people sign in to the dashboard. Each provider asks for its own OAuth app below.",
+          "default": "github",
+          "choices": [
+            {
+              "value": "github",
+              "label": "GitHub"
+            },
+            {
+              "value": "bitbucket",
+              "label": "Bitbucket Cloud"
+            },
+            {
+              "value": "gitlab",
+              "label": "GitLab"
+            }
+          ]
         },
         {
-          "name": "bucket",
-          "label": "Public bucket",
-          "type": "text",
-          "help": "The R2 bucket behind the downloads domain.",
-          "default": "patch-public",
-          "pattern": "[a-z0-9][a-z0-9-]{2,62}"
-        },
-        {
-          "name": "internal_bucket",
-          "label": "Private bucket",
-          "type": "text",
-          "help": "The R2 bucket for the server's own files. It must never be public.",
-          "default": "patch-internal",
-          "pattern": "[a-z0-9][a-z0-9-]{2,62}"
-        },
-        {
-          "name": "r2_account_id",
-          "label": "R2 account ID",
-          "type": "text",
-          "help": "The 32 characters in your R2 S3 address: https://\u003cID\u003e.r2.cloudflarestorage.com",
-          "pattern": "[a-f0-9]{32}",
-          "example": "0123456789abcdef0123456789abcdef"
-        },
-        {
-          "name": "oauth_client_id",
+          "name": "gh_client_id",
           "label": "GitHub OAuth client ID",
           "type": "text",
           "help": "From the GitHub OAuth app the dashboard signs in with.",
           "pattern": "[A-Za-z0-9._-]{8,64}",
-          "example": "Iv1.0123456789abcdef"
+          "example": "Iv1.0123456789abcdef",
+          "when": {
+            "signin": "github"
+          }
+        },
+        {
+          "name": "gh_client_secret",
+          "label": "GitHub OAuth client secret",
+          "type": "secret",
+          "help": "From the same GitHub OAuth app.",
+          "example": "example-oauth-client-secret",
+          "when": {
+            "signin": "github"
+          }
+        },
+        {
+          "name": "bb_client_id",
+          "label": "Bitbucket consumer key",
+          "type": "text",
+          "help": "The Key of the Bitbucket OAuth consumer. Its callback URL is https://\u003cdomain\u003e/auth/callback.",
+          "pattern": "[A-Za-z0-9]{8,64}",
+          "example": "AbCdEfGh0123456789",
+          "when": {
+            "signin": "bitbucket"
+          }
+        },
+        {
+          "name": "bb_client_secret",
+          "label": "Bitbucket consumer secret",
+          "type": "secret",
+          "help": "The Secret of the same OAuth consumer.",
+          "example": "example-consumer-secret",
+          "when": {
+            "signin": "bitbucket"
+          }
+        },
+        {
+          "name": "gl_client_id",
+          "label": "GitLab application ID",
+          "type": "text",
+          "help": "From the GitLab application. Its redirect URI is https://\u003cdomain\u003e/auth/callback.",
+          "pattern": "[A-Za-z0-9._-]{8,128}",
+          "example": "0123456789abcdef0123456789abcdef",
+          "when": {
+            "signin": "gitlab"
+          }
+        },
+        {
+          "name": "gl_client_secret",
+          "label": "GitLab application secret",
+          "type": "secret",
+          "help": "The Secret of the same GitLab application.",
+          "example": "example-application-secret",
+          "when": {
+            "signin": "gitlab"
+          }
+        },
+        {
+          "name": "gl_base_url",
+          "label": "GitLab address",
+          "type": "text",
+          "help": "Only for a GitLab you host yourself. Empty means https://gitlab.com.",
+          "pattern": "https://[A-Za-z0-9.-]+(:[0-9]{1,5})?",
+          "example": "https://gitlab.example.com",
+          "required": false,
+          "when": {
+            "signin": "gitlab"
+          }
         },
         {
           "name": "admin_email",
@@ -115,24 +172,57 @@
           "example": "you@example.com"
         },
         {
-          "name": "oauth_client_secret",
-          "label": "GitHub OAuth client secret",
-          "type": "secret",
-          "help": "From the same OAuth app.",
-          "example": "example-oauth-client-secret"
+          "name": "public_url",
+          "label": "Downloads URL",
+          "type": "text",
+          "help": "Where apps download updates: the public bucket's address. https://storage.googleapis.com/\u003cbucket\u003e on Google Cloud, or the R2 bucket's custom domain.",
+          "pattern": "https://[A-Za-z0-9.-]+(/[A-Za-z0-9._-]+)*",
+          "example": "https://patch-files.example.com"
+        },
+        {
+          "name": "bucket",
+          "label": "Public bucket",
+          "type": "text",
+          "help": "The public bucket: anyone may read its files.",
+          "default": "patch-public",
+          "pattern": "[a-z0-9][a-z0-9-]{2,62}"
+        },
+        {
+          "name": "internal_bucket",
+          "label": "Private bucket",
+          "type": "text",
+          "help": "The bucket for the server's own files. It must never be public.",
+          "default": "patch-internal",
+          "pattern": "[a-z0-9][a-z0-9-]{2,62}"
+        },
+        {
+          "name": "s3_endpoint",
+          "label": "S3 endpoint",
+          "type": "text",
+          "help": "The buckets' S3 API: https://storage.googleapis.com on Google Cloud, https://\u003caccount ID\u003e.r2.cloudflarestorage.com on R2.",
+          "pattern": "https://[A-Za-z0-9.-]+(:[0-9]{1,5})?",
+          "example": "https://storage.googleapis.com"
+        },
+        {
+          "name": "s3_region",
+          "label": "S3 region",
+          "type": "text",
+          "help": "auto on R2; the buckets' location on Google Cloud, such as us-central1.",
+          "default": "auto",
+          "pattern": "[a-z0-9-]{2,32}"
         },
         {
           "name": "s3_access_key_id",
-          "label": "R2 access key ID",
+          "label": "S3 access key ID",
           "type": "secret",
-          "help": "From the R2 API token (Object Read \u0026 Write on both buckets).",
+          "help": "With read and write on both buckets: an R2 API token, or a Google Cloud HMAC key of a service account.",
           "example": "example-access-key-id"
         },
         {
           "name": "s3_secret_access_key",
-          "label": "R2 secret access key",
+          "label": "S3 secret access key",
           "type": "secret",
-          "help": "From the same R2 API token.",
+          "help": "From the same token or HMAC key.",
           "example": "example-secret-access-key"
         }
       ],
@@ -153,6 +243,7 @@
           "alphabet": "hex"
         }
       ],
+      "compose": "# Codemagic Patch (https://patch.codemagic.io/docs/): over-the-air updates for React Native and\n# Capacitor apps. It is the upstream self-host stack without Caddy and Silo: Traefik serves the\n# API and dashboard, and apps download updates from two S3-compatible buckets (Cloudflare R2 or\n# Google Cloud Storage: one public, one private for the server's own files). Two services: the\n# Patch server, and Postgres on a volume. Sign-in is through GitHub, Bitbucket Cloud or GitLab: only the chosen one's lines are kept. Upstream publishes no\n# server image: build yours and give its address (the notes say how). No secret is in this file.\nservices:\n  server:\n    image: \"{{image}}\"\n    expose: [\"3000\"]\n    mem_reservation: 512m\n    mem_limit: 1024m\n    environment:\n      MODE: all # API and release worker in one process\n      HOST: 0.0.0.0\n      PORT: \"3000\"\n      RUN_MIGRATIONS: \"true\"\n      LOGGER: \"true\"\n      SERVER_URL: \"https://{{domain}}\"\n      PUBLIC_BASE_URL: \"{{public_url}}\"\n      STORAGE_ADAPTER: s3\n      S3_BUCKET: \"{{bucket}}\"\n      S3_INTERNAL_BUCKET: \"{{internal_bucket}}\"\n      S3_REGION: \"{{s3_region}}\"\n      S3_ENDPOINT: \"{{s3_endpoint}}\"\n      S3_FORCE_PATH_STYLE: \"true\"\n      DELIVERY_ADAPTER: base-url\n      GITHUB_OAUTH_CLIENT_ID: \"{{gh_client_id}}\" # when signin=github\n      BITBUCKET_OAUTH_CLIENT_ID: \"{{bb_client_id}}\" # when signin=bitbucket\n      BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS: \"https://{{domain}}/auth/callback\" # when signin=bitbucket\n      GITLAB_OAUTH_CLIENT_ID: \"{{gl_client_id}}\" # when signin=gitlab\n      GITLAB_OAUTH_BASE_URL: \"{{gl_base_url}}\" # when gl_base_url\n      INITIAL_ADMIN_EMAILS: \"{{admin_email}}\"\n      REGISTRATION_MODE: invite_only\n      SERVER_TELEMETRY: \"false\"\n      SERVER_UPDATE_CHECK: \"true\"\n\n  postgres:\n    image: postgres:16\n    expose: [\"5432\"]\n    mem_limit: 512m\n    environment:\n      POSTGRES_USER: patch\n      POSTGRES_DB: patch\n    volumes:\n      - db:/var/lib/postgresql/data\n\nvolumes:\n  db: {}\n",
       "services": {
         "postgres": {
           "secrets": [
@@ -191,7 +282,24 @@
             },
             {
               "name": "GITHUB_OAUTH_CLIENT_SECRET",
-              "value": "{{oauth_client_secret}}"
+              "value": "{{gh_client_secret}}",
+              "when": {
+                "signin": "github"
+              }
+            },
+            {
+              "name": "BITBUCKET_OAUTH_CLIENT_SECRET",
+              "value": "{{bb_client_secret}}",
+              "when": {
+                "signin": "bitbucket"
+              }
+            },
+            {
+              "name": "GITLAB_OAUTH_CLIENT_SECRET",
+              "value": "{{gl_client_secret}}",
+              "when": {
+                "signin": "gitlab"
+              }
             },
             {
               "name": "S3_ACCESS_KEY_ID",
@@ -203,8 +311,151 @@
             }
           ]
         }
+      }
+    },
+    {
+      "name": "continuwuity",
+      "title": "Continuwuity",
+      "version": "26.9.4-1",
+      "description": "A Matrix homeserver in one container, with its own database: your own chat server that federates with every other Matrix server.",
+      "tags": [
+        "chat",
+        "matrix",
+        "federation"
+      ],
+      "upstream": "https://continuwuity.org",
+      "appName": "matrix",
+      "notes": "Your Matrix IDs end in :{{server_name}}, for good: that name can't change later. The server answers at https://{{domain}}. If {{server_name}} isn't {{domain}}, the site at https://{{server_name}} must serve two files so other servers and apps find this one: /.well-known/matrix/server with {\"m.server\": \"{{domain}}:443\"}, and /.well-known/matrix/client with {\"m.homeserver\": {\"base_url\": \"https://{{domain}}\"}}, both as application/json, the client one also with Access-Control-Allow-Origin: *. First account: on its first start the server writes a one-time registration token to its log; open the app's Logs, find the line that says \"using the registration token\", then register in a Matrix client (Element, Cinny) against https://{{domain}} with that token. Nobody else can sign up: more accounts are made from the admin room. Check federation at https://federationtester.matrix.org with {{server_name}}. Everything it keeps is on one volume, which Caravana backs up every day at 03:00 UTC (the server stops for a few seconds). Voice and video calls aren't set up: they need a TURN server.",
+      "inputs": [
+        {
+          "name": "domain",
+          "label": "Domain",
+          "type": "domain",
+          "help": "Where the server answers. Its DNS must point at this server.",
+          "example": "matrix.example.com"
+        },
+        {
+          "name": "server_name",
+          "label": "Server name",
+          "type": "text",
+          "help": "The part after the colon in your Matrix IDs (@you:example.com). Usually your bare domain. It can never change.",
+          "pattern": "[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+",
+          "example": "example.com"
+        }
+      ],
+      "services": {
+        "continuwuity": {
+          "domains": [
+            {
+              "host": "{{domain}}",
+              "port": 8008
+            }
+          ],
+          "health": {
+            "path": "/_matrix/client/versions"
+          },
+          "backup": {
+            "engine": "volume"
+          }
+        }
       },
-      "compose": "# Codemagic Patch (https://patch.codemagic.io/docs/): over-the-air updates for React Native and\n# Capacitor apps. It is the upstream self-host stack without Caddy and Silo: Traefik serves the\n# API and dashboard, and apps download updates from two Cloudflare R2 buckets (one public, behind\n# its own domain, and one private for the server's own files). Two services: the Patch server, and\n# Postgres on a volume. Upstream publishes no server image: build yours and give its address (the\n# notes say how). No secret is in this file.\nservices:\n  server:\n    image: \"{{image}}\"\n    expose: [\"3000\"]\n    mem_reservation: 512m\n    mem_limit: 1024m\n    environment:\n      MODE: all # API and release worker in one process\n      HOST: 0.0.0.0\n      PORT: \"3000\"\n      RUN_MIGRATIONS: \"true\"\n      LOGGER: \"true\"\n      SERVER_URL: \"https://{{domain}}\"\n      PUBLIC_BASE_URL: \"https://{{files_domain}}\"\n      STORAGE_ADAPTER: s3\n      S3_BUCKET: \"{{bucket}}\"\n      S3_INTERNAL_BUCKET: \"{{internal_bucket}}\"\n      S3_REGION: auto\n      S3_ENDPOINT: \"https://{{r2_account_id}}.r2.cloudflarestorage.com\"\n      S3_FORCE_PATH_STYLE: \"true\"\n      DELIVERY_ADAPTER: base-url\n      GITHUB_OAUTH_CLIENT_ID: \"{{oauth_client_id}}\"\n      INITIAL_ADMIN_EMAILS: \"{{admin_email}}\"\n      REGISTRATION_MODE: invite_only\n      SERVER_TELEMETRY: \"false\"\n      SERVER_UPDATE_CHECK: \"true\"\n\n  postgres:\n    image: postgres:16\n    expose: [\"5432\"]\n    mem_limit: 512m\n    environment:\n      POSTGRES_USER: patch\n      POSTGRES_DB: patch\n    volumes:\n      - db:/var/lib/postgresql/data\n\nvolumes:\n  db: {}\n"
+      "compose": "# Continuwuity (https://continuwuity.org): a Matrix homeserver in one container, with an embedded\n# RocksDB database, so no Postgres. Everything it keeps is in /var/lib/continuwuity, on the volume.\n# The image's own command starts the server. Federation and clients both reach it over HTTPS on 443\n# through Caravana's Traefik (Matrix's .well-known delegation, see the notes), so port 8448 isn't needed.\n# Traefik passes Matrix's encoded paths (%2F, %23) as they are: allowed by default since Traefik v3.6.7.\nservices:\n  continuwuity:\n    image: ghcr.io/continuwuity/continuwuity:v26.9.4\n    expose: [\"8008\"]\n    # Joining large public rooms makes memory and CPU spike for a while.\n    mem_reservation: 512m\n    mem_limit: 2048m\n    environment:\n      # Permanent: it is the part after the colon in every user ID (@you:server_name). Changing it\n      # later means a new, empty server.\n      CONTINUWUITY_SERVER_NAME: \"{{server_name}}\"\n      CONTINUWUITY_DATABASE_PATH: /var/lib/continuwuity\n      CONTINUWUITY_ADDRESS: 0.0.0.0\n      CONTINUWUITY_PORT: \"8008\"\n      # Where it fetches other servers' signing keys when it can't reach them directly.\n      CONTINUWUITY_TRUSTED_SERVERS: '[\"matrix.org\"]'\n      # Sign-ups stay closed: the first account uses the one-time token the server prints at its first\n      # start, and later accounts are made from the admin room.\n      CONTINUWUITY_ALLOW_REGISTRATION: \"false\"\n    volumes:\n      - continuwuity-data:/var/lib/continuwuity\n\nvolumes:\n  continuwuity-data: {}\n"
+    },
+    {
+      "name": "frunchy",
+      "title": "Frunchy",
+      "version": "0.10.0-1",
+      "description": "Your anime identity in numbers: Frunchy turns your Crunchyroll watch history into statistics you can share.",
+      "tags": [
+        "anime",
+        "statistics"
+      ],
+      "upstream": "https://github.com/jjchiw/frunchy",
+      "appName": "frunchy",
+      "notes": "Frunchy signs people in through Umbral, so install Umbral first (its own template), claim it, and in Umbral's admin create a web application with the redirect URI https://{{domain}}/signin-umbral: its client ID and secret are what you typed here. First account: on its first start Frunchy writes a one-time setup invite to its log; open the app's Logs, find the line \"Invite\", then sign in at https://{{domain}}/signin with Umbral and paste it. That account is an operator; to make it the root operator (who can open sign-ups), set Frunchy__RootOperator to its username on the Variables page. Sign-up is by invite until then. For studios, genres and seasons, add Frunchy__Mal__ClientId (a client ID from myanimelist.net/apiconfig) on the Variables page. Then install the Frunchy browser extension and connect it with the sync key from your account page. Postgres is backed up every day at 03:00 UTC, keeping 14. The data-protection key Caravana made is kept as a secret: losing it only signs everyone out.",
+      "inputs": [
+        {
+          "name": "domain",
+          "label": "Domain",
+          "type": "domain",
+          "help": "Its DNS must point at this server. Your profile pages live here.",
+          "example": "frunchy.example.com"
+        },
+        {
+          "name": "umbral_domain",
+          "label": "Umbral's domain",
+          "type": "domain",
+          "help": "The Umbral that signs people in (install it from its template first).",
+          "example": "auth.example.com"
+        },
+        {
+          "name": "umbral_client_id",
+          "label": "Umbral client ID",
+          "type": "text",
+          "help": "From the web application you created in Umbral's admin.",
+          "pattern": "[A-Za-z0-9._-]{8,128}",
+          "example": "yRQLCRnrR8-VhNHn"
+        },
+        {
+          "name": "umbral_client_secret",
+          "label": "Umbral client secret",
+          "type": "secret",
+          "help": "Shown once when you created the application in Umbral.",
+          "example": "example-umbral-client-secret"
+        }
+      ],
+      "generated": [
+        {
+          "name": "db_password",
+          "length": 32,
+          "alphabet": "alnum"
+        },
+        {
+          "name": "data_protection_key",
+          "length": 43,
+          "alphabet": "hex"
+        }
+      ],
+      "services": {
+        "frunchy": {
+          "domains": [
+            {
+              "host": "{{domain}}",
+              "port": 8080
+            }
+          ],
+          "health": {
+            "path": "/healthz"
+          },
+          "secrets": [
+            {
+              "name": "ConnectionStrings__Database",
+              "value": "Host=postgres;Database=frunchydb;Username=frunchy;Password={{db_password}}"
+            },
+            {
+              "name": "Frunchy__DataProtection__EncryptionKey",
+              "value": "{{data_protection_key}}="
+            },
+            {
+              "name": "Frunchy__Auth__Providers__Umbral__ClientSecret",
+              "value": "{{umbral_client_secret}}"
+            }
+          ]
+        },
+        "postgres": {
+          "secrets": [
+            {
+              "name": "POSTGRES_PASSWORD",
+              "value": "{{db_password}}"
+            }
+          ],
+          "backup": {
+            "engine": "postgres",
+            "keep": 14
+          }
+        }
+      },
+      "compose": "# Frunchy (https://github.com/jjchiw/frunchy): your anime watch history in numbers, from a browser\n# extension's sync of your Crunchyroll history. Two services: Frunchy, and Postgres 18 on a volume. Every\n# secret (the database password, the data-protection key, the sign-in client's secret) is in the services'\n# secrets (see template.json); no secret is in this file. Without federation (Megafono): a plain web app.\n# 10.99.0.1 is Traefik's address on a Caravana host: Frunchy believes X-Forwarded-* from it only.\nservices:\n  frunchy:\n    image: ghcr.io/jjchiw/frunchy:0.10.0\n    expose: [\"8080\"]\n    mem_reservation: 256m\n    mem_limit: 768m\n    environment:\n      Frunchy__TrustedProxies: 10.99.0.1\n      # Sign-in through Umbral, the only provider this template sets up (Frunchy keeps no passwords).\n      Frunchy__Auth__Providers__Umbral__Enabled: \"true\"\n      Frunchy__Auth__Providers__Umbral__Authority: \"https://{{umbral_domain}}\"\n      Frunchy__Auth__Providers__Umbral__ClientId: \"{{umbral_client_id}}\"\n      # MyAnimeList enrichment (studios, genres, seasons) is off until Frunchy__Mal__ClientId is set\n      # on the app's Variables page (the template's notes say so).\n    # No depends_on: services start together, and Frunchy waits up to 60 s for Postgres by itself\n    # (Frunchy:Database:StartupWaitSeconds); Nomad restarts it if Postgres takes longer.\n\n  postgres:\n    image: postgres:18-alpine\n    expose: [\"5432\"]\n    mem_reservation: 256m\n    mem_limit: 512m\n    environment:\n      POSTGRES_DB: frunchydb\n      POSTGRES_USER: frunchy\n    volumes:\n      - frunchy-pg:/var/lib/postgresql # Postgres 18's layout: the data is in a versioned folder under here\n\nvolumes:\n  frunchy-pg: {}\n"
     },
     {
       "name": "hollo",
@@ -277,6 +528,150 @@
       "compose": "# Hollo (https://docs.hollo.social): a single-user fediverse server. Two services: Hollo, with its\n# media on a volume (DRIVE_DISK=fs), and Postgres on a volume. The database password is shared by\n# both through the services' secrets (see template.json); no secret is in this file.\nservices:\n  hollo:\n    image: ghcr.io/fedify-dev/hollo:0.9.25\n    expose: [\"3000\"]\n    mem_limit: 768m\n    environment:\n      BEHIND_PROXY: \"true\" # Traefik terminates HTTPS in front of it\n      LOG_LEVEL: info\n      DRIVE_DISK: fs\n      FS_STORAGE_PATH: /var/lib/hollo\n      STORAGE_URL_BASE: \"https://{{domain}}/assets\"\n    volumes:\n      - media:/var/lib/hollo\n\n  postgres:\n    image: postgres:17\n    expose: [\"5432\"]\n    mem_limit: 512m\n    environment:\n      POSTGRES_USER: hollo\n      POSTGRES_DB: hollo\n    volumes:\n      - db:/var/lib/postgresql/data\n\nvolumes:\n  media: {}\n  db: {}\n"
     },
     {
+      "name": "peertube",
+      "title": "PeerTube",
+      "version": "8.3.2-1",
+      "description": "Video hosting on your own domain, federated with the fediverse, with the videos in an S3-compatible bucket (R2).",
+      "tags": [
+        "video",
+        "fediverse",
+        "federation"
+      ],
+      "upstream": "https://joinpeertube.org",
+      "appName": "peertube",
+      "notes": "https://{{domain}} is permanent: every video and account address is tied to it. Buckets: {{bucket}} must be public at {{files_url}} (on R2, a custom domain or r2.dev) with a CORS rule that allows GET and HEAD from https://{{domain}}, or the player can't load videos; {{private_bucket}} must never be public. First sign-in: at its first start PeerTube makes the account root and writes its password once to its log. Open the app's Logs, search for \"User password\", sign in at https://{{domain}}/login as root, and change the password in My account, Settings. Sign-ups are closed and no email is set up: to send email, add PEERTUBE_SMTP_HOSTNAME, PEERTUBE_SMTP_PORT and PEERTUBE_SMTP_USERNAME to the peertube service's environment (Configure, Compose) and PEERTUBE_SMTP_PASSWORD as its secret, then open sign-ups in Administration if you want them. Transcoding uses up to 3 GB of memory; on a small server, move it to a remote runner on another machine (Administration, Remote runners). Backups: Postgres and PeerTube's volumes (thumbnails, avatars, plugins, settings) every day at 03:00 UTC, keeping 14; PeerTube stops for a few seconds during its backup. The videos are in the bucket, which Caravana doesn't back up. Redis holds only the job queue. Live streaming isn't set up: it needs the RTMP port, which a later version of this template adds.",
+      "inputs": [
+        {
+          "name": "domain",
+          "label": "Domain",
+          "type": "domain",
+          "help": "Where PeerTube answers. Its DNS must point at this server. It can never change.",
+          "example": "videos.example.com"
+        },
+        {
+          "name": "admin_email",
+          "label": "Admin email",
+          "type": "email",
+          "help": "The email of the root account.",
+          "example": "you@example.com"
+        },
+        {
+          "name": "s3_endpoint",
+          "label": "S3 endpoint",
+          "type": "text",
+          "help": "Your bucket provider's S3 address. On R2: https://\u003caccount ID\u003e.r2.cloudflarestorage.com",
+          "pattern": "https?://[a-z0-9]([a-z0-9.-]{0,200}[a-z0-9])?(:[0-9]{1,5})?",
+          "example": "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com"
+        },
+        {
+          "name": "s3_region",
+          "label": "S3 region",
+          "type": "text",
+          "help": "auto on R2.",
+          "default": "auto",
+          "pattern": "[a-z0-9-]{1,32}"
+        },
+        {
+          "name": "bucket",
+          "label": "Videos bucket",
+          "type": "text",
+          "help": "The public bucket for the videos, playlists and captions.",
+          "default": "peertube",
+          "pattern": "[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]"
+        },
+        {
+          "name": "files_url",
+          "label": "Videos bucket's public URL",
+          "type": "text",
+          "help": "Where browsers read that bucket: its R2 custom domain or r2.dev address.",
+          "pattern": "https://[a-z0-9]([a-z0-9.-]{0,200}[a-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9._~-]+)*",
+          "example": "https://videos-files.example.com"
+        },
+        {
+          "name": "private_bucket",
+          "label": "Private bucket",
+          "type": "text",
+          "help": "For users' exports and kept original files. It must never be public.",
+          "default": "peertube-private",
+          "pattern": "[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]"
+        },
+        {
+          "name": "s3_access_key_id",
+          "label": "S3 access key ID",
+          "type": "secret",
+          "help": "From an R2 API token with Object Read \u0026 Write on both buckets.",
+          "example": "example-access-key-id"
+        },
+        {
+          "name": "s3_secret_access_key",
+          "label": "S3 secret access key",
+          "type": "secret",
+          "help": "From the same API token.",
+          "example": "example-secret-access-key"
+        }
+      ],
+      "generated": [
+        {
+          "name": "db_password",
+          "length": 32,
+          "alphabet": "alnum"
+        },
+        {
+          "name": "peertube_secret",
+          "length": 64,
+          "alphabet": "hex"
+        }
+      ],
+      "services": {
+        "peertube": {
+          "domains": [
+            {
+              "host": "{{domain}}",
+              "port": 9000
+            }
+          ],
+          "health": {
+            "path": "/api/v1/ping"
+          },
+          "secrets": [
+            {
+              "name": "PEERTUBE_SECRET",
+              "value": "{{peertube_secret}}"
+            },
+            {
+              "name": "PEERTUBE_DB_PASSWORD",
+              "value": "{{db_password}}"
+            },
+            {
+              "name": "PEERTUBE_OBJECT_STORAGE_CREDENTIALS_ACCESS_KEY_ID",
+              "value": "{{s3_access_key_id}}"
+            },
+            {
+              "name": "PEERTUBE_OBJECT_STORAGE_CREDENTIALS_SECRET_ACCESS_KEY",
+              "value": "{{s3_secret_access_key}}"
+            }
+          ],
+          "backup": {
+            "engine": "volume",
+            "keep": 14
+          }
+        },
+        "postgres": {
+          "secrets": [
+            {
+              "name": "POSTGRES_PASSWORD",
+              "value": "{{db_password}}"
+            }
+          ],
+          "backup": {
+            "engine": "postgres",
+            "keep": 14
+          }
+        }
+      },
+      "compose": "# PeerTube (https://joinpeertube.org): video hosting that federates with the fediverse. Three services:\n# PeerTube, Postgres and Redis. Videos go to S3-compatible object storage (Cloudflare R2, or any other),\n# so PeerTube's data volume keeps only thumbnails, avatars, captions' sources, plugins, logs and\n# transcoding's temporary files. PeerTube's own Compose file also has nginx, certbot and postfix: here\n# Caravana's Traefik serves HTTPS, and email is added after install (see the notes). Live streaming\n# (RTMP on port 1935) isn't set up. No secret is in this file: they are the services' secrets (template.json).\nservices:\n  peertube:\n    image: chocobozzz/peertube:v8.3.2-trixie\n    expose: [\"9000\"]\n    # PeerTube itself needs about 500 MB; transcoding (ffmpeg) takes much more while it runs.\n    mem_reservation: 768m\n    mem_limit: 3072m\n    environment:\n      # Permanent: every video's and account's address (and federation) is tied to it.\n      PEERTUBE_WEBSERVER_HOSTNAME: \"{{domain}}\"\n      PEERTUBE_WEBSERVER_PORT: \"443\"\n      PEERTUBE_WEBSERVER_HTTPS: \"true\"\n      # Traefik reaches the copy from the private network: trust its X-Forwarded-For.\n      PEERTUBE_TRUST_PROXY: '[\"loopback\", \"linklocal\", \"uniquelocal\"]'\n      PEERTUBE_DB_HOSTNAME: postgres\n      PEERTUBE_DB_PORT: \"5432\"\n      PEERTUBE_DB_NAME: peertube\n      PEERTUBE_DB_USERNAME: peertube\n      PEERTUBE_DB_SSL: \"false\"\n      PEERTUBE_REDIS_HOSTNAME: redis\n      PEERTUBE_REDIS_PORT: \"6379\"\n      # The root account's email.\n      PEERTUBE_ADMIN_EMAIL: \"{{admin_email}}\"\n      PEERTUBE_SMTP_FROM: \"noreply@{{domain}}\"\n      # Closed until email is set up (sign-ups need it to verify addresses).\n      PEERTUBE_SIGNUP_ENABLED: \"false\"\n      # Object storage. Path-style requests work with R2, MinIO and most others; the public URL replaces\n      # the endpoint and bucket in every video address. The image sets no ACL (R2 has none): the public\n      # bucket is public as a whole, and private videos are served through PeerTube.\n      PEERTUBE_OBJECT_STORAGE_ENABLED: \"true\"\n      PEERTUBE_OBJECT_STORAGE_ENDPOINT: \"{{s3_endpoint}}\"\n      PEERTUBE_OBJECT_STORAGE_REGION: \"{{s3_region}}\"\n      PEERTUBE_OBJECT_STORAGE_FORCE_PATH_STYLE: \"true\"\n      PEERTUBE_OBJECT_STORAGE_STREAMING_PLAYLISTS_BUCKET_NAME: \"{{bucket}}\"\n      PEERTUBE_OBJECT_STORAGE_STREAMING_PLAYLISTS_PREFIX: streaming-playlists/\n      PEERTUBE_OBJECT_STORAGE_STREAMING_PLAYLISTS_BASE_URL: \"{{files_url}}\"\n      PEERTUBE_OBJECT_STORAGE_WEB_VIDEOS_BUCKET_NAME: \"{{bucket}}\"\n      PEERTUBE_OBJECT_STORAGE_WEB_VIDEOS_PREFIX: web-videos/\n      PEERTUBE_OBJECT_STORAGE_WEB_VIDEOS_BASE_URL: \"{{files_url}}\"\n      PEERTUBE_OBJECT_STORAGE_CAPTIONS_BUCKET_NAME: \"{{bucket}}\"\n      PEERTUBE_OBJECT_STORAGE_CAPTIONS_PREFIX: captions/\n      PEERTUBE_OBJECT_STORAGE_CAPTIONS_BASE_URL: \"{{files_url}}\"\n      # Never public: users' exports, and the original files when the admin chooses to keep them.\n      PEERTUBE_OBJECT_STORAGE_USER_EXPORTS_BUCKET_NAME: \"{{private_bucket}}\"\n      PEERTUBE_OBJECT_STORAGE_USER_EXPORTS_PREFIX: user-exports/\n      PEERTUBE_OBJECT_STORAGE_ORIGINAL_VIDEO_FILES_BUCKET_NAME: \"{{private_bucket}}\"\n      PEERTUBE_OBJECT_STORAGE_ORIGINAL_VIDEO_FILES_PREFIX: original-video-files/\n    volumes:\n      - peertube-data:/data\n      # Holds local-production.json: what the admin changes in Administration, Configuration.\n      - peertube-config:/config\n\n  postgres:\n    # The major PeerTube's own Compose file names. Moving to a later major needs a dump and restore.\n    image: postgres:17-alpine\n    expose: [\"5432\"]\n    mem_limit: 1024m\n    environment:\n      POSTGRES_USER: peertube\n      POSTGRES_DB: peertube\n    volumes:\n      - db:/var/lib/postgresql/data\n\n  redis:\n    # Job queue (transcoding, federation) and caches. Its snapshot on the volume keeps queued jobs across\n    # a restart; it isn't backed up.\n    image: redis:8-alpine\n    expose: [\"6379\"]\n    mem_reservation: 128m\n    mem_limit: 512m\n    volumes:\n      - redis-data:/data\n\nvolumes:\n  peertube-data: {}\n  peertube-config: {}\n  db: {}\n  redis-data: {}\n"
+    },
+    {
       "name": "postgres",
       "title": "PostgreSQL",
       "version": "17-1",
@@ -287,7 +682,7 @@
       ],
       "upstream": "https://www.postgresql.org/",
       "appName": "postgres",
-      "notes": "Adminer is at https://{{domain}}, behind Team only: its user name is team, and its password is shown once after Create. To log into the database from Adminer choose System PostgreSQL, Server postgres, Username app, Database app, and the password you typed. Other apps can't reach this database by name: services find each other only inside one app. To use it from your own services, add them to this app's Compose file (Configure, Compose). Backups run every day at 03:00 UTC.",
+      "notes": "Adminer is at https://{{domain}}, behind Team only: its user name is team, and its password is shown once after Create. To log into the database from Adminer choose System PostgreSQL, Server postgres, Username app, Database app, and the password you typed. Other apps of this project and environment reach the database at \u003capp name\u003e-postgres:5432, so postgres-postgres:5432 if you keep the app name postgres (Adminer has a port too, so the bare app name isn't claimed), with Username app and Database app; the installed notice shows the exact address. That needs a Caravana whose installed notice lists addresses: on an older one other apps can't reach it by name, so add your own services to this app's Compose file (Configure, Compose), where they reach it at postgres:5432. Backups run every day at 03:00 UTC.",
       "inputs": [
         {
           "name": "domain",
@@ -334,7 +729,7 @@
     {
       "name": "umbral",
       "title": "Umbral",
-      "version": "0.10.0-1",
+      "version": "0.13.0-1",
       "description": "An OpenID Connect provider that signs people in with social accounts or passkeys, no passwords.",
       "tags": [
         "auth",
@@ -368,7 +763,7 @@
           }
         }
       },
-      "compose": "# Umbral (https://github.com/Cosmic-Chimps/umbral): a self-hosted OpenID Connect provider that\n# signs people in without passwords. One container with an embedded SQLite database. Everything it\n# keeps (the database, signing keys, the Data Protection key ring) is in /data, on the volume.\n# 10.99.0.1 is Traefik's address on a Caravana host: Umbral believes X-Forwarded-* from it only.\nservices:\n  umbral:\n    image: ghcr.io/cosmic-chimps/umbral:0.10.0\n    expose: [\"8080\"]\n    environment:\n      UMBRAL__PUBLIC_ORIGIN: \"https://{{domain}}\"\n      UMBRAL__TRUSTED_PROXIES: 10.99.0.1\n    volumes:\n      - umbral-data:/data\n\nvolumes:\n  umbral-data: {}\n"
+      "compose": "# Umbral (https://github.com/Cosmic-Chimps/umbral): a self-hosted OpenID Connect provider that\n# signs people in without passwords. One container with an embedded SQLite database. Everything it\n# keeps (the database, signing keys, the Data Protection key ring) is in /data, on the volume.\n# 10.99.0.1 is Traefik's address on a Caravana host: Umbral believes X-Forwarded-* from it only.\nservices:\n  umbral:\n    image: ghcr.io/cosmic-chimps/umbral:0.13.0\n    expose: [\"8080\"]\n    environment:\n      UMBRAL__PUBLIC_ORIGIN: \"https://{{domain}}\"\n      UMBRAL__TRUSTED_PROXIES: 10.99.0.1\n    volumes:\n      - umbral-data:/data\n\nvolumes:\n  umbral-data: {}\n"
     },
     {
       "name": "uptime-kuma",
@@ -408,6 +803,339 @@
         }
       },
       "compose": "# Uptime Kuma (https://github.com/louislam/uptime-kuma): a self-hosted status monitor and status\n# page. One service; everything it keeps (its SQLite database, settings, monitor history) is in\n# /app/data, on the volume. UPTIME_KUMA_DB_TYPE=sqlite skips the first-run database question.\nservices:\n  uptime-kuma:\n    image: louislam/uptime-kuma:2.5.11\n    expose: [\"3001\"]\n    mem_limit: 768m\n    environment:\n      UPTIME_KUMA_DB_TYPE: sqlite\n    volumes:\n      - data:/app/data\n\nvolumes:\n  data: {}\n"
+    },
+    {
+      "name": "wazuh",
+      "title": "Wazuh",
+      "version": "4.14.11-1",
+      "description": "A security platform: agents on your machines send events, Wazuh finds threats and shows them on a dashboard.",
+      "tags": [
+        "security",
+        "monitoring"
+      ],
+      "upstream": "https://github.com/wazuh/wazuh-docker",
+      "appName": "wazuh",
+      "notes": "Open https://{{domain}} and sign in as admin with the password you typed. Wazuh needs about 4 GB of memory for its three services. Agents connect to the manager on ports 1514 (events) and 1515 (enrollment): they are published on this server's address, so open them in your cloud provider's firewall, and point each agent at this server's IP or a DNS name for it (not the dashboard's domain, which goes through the HTTPS proxy). The indexer is OpenSearch: every Caravana server already has vm.max_map_count at 262144 or more, which it needs. Backups run every day at 03:00 UTC: the indexer takes an OpenSearch snapshot of its indices while it runs, and the manager's volumes are archived, which stops the manager for a moment (agents reconnect on their own). A snapshot needs free disk about the size of the indices while it is uploaded. The certificates are made at install and are valid for ten years; the certificate authority's key isn't kept, so they can't be reissued without installing the app again.",
+      "requires": "0.23.3",
+      "lab": false,
+      "inputs": [
+        {
+          "name": "domain",
+          "label": "Dashboard domain",
+          "type": "domain",
+          "help": "Its DNS must point at this server.",
+          "example": "wazuh.example.com"
+        },
+        {
+          "name": "admin_password",
+          "label": "Admin password",
+          "type": "secret",
+          "help": "The password of the dashboard's admin user (also the manager's indexer login). Keep a note of it: Caravana never shows it again.",
+          "example": "a-long-passphrase-of-your-own"
+        }
+      ],
+      "generated": [
+        {
+          "name": "dashboard_password",
+          "length": 32,
+          "alphabet": "alnum"
+        },
+        {
+          "name": "api_password",
+          "length": 28,
+          "alphabet": "alnum"
+        }
+      ],
+      "certificates": {
+        "ca": {
+          "subject": [
+            {
+              "type": "CN",
+              "value": "Wazuh root CA"
+            },
+            {
+              "type": "OU",
+              "value": "Wazuh"
+            },
+            {
+              "type": "O",
+              "value": "Wazuh"
+            },
+            {
+              "type": "L",
+              "value": "California"
+            },
+            {
+              "type": "C",
+              "value": "US"
+            }
+          ]
+        },
+        "leaves": [
+          {
+            "name": "indexer",
+            "subject": [
+              {
+                "type": "CN",
+                "value": "indexer"
+              },
+              {
+                "type": "OU",
+                "value": "Wazuh"
+              },
+              {
+                "type": "O",
+                "value": "Wazuh"
+              },
+              {
+                "type": "L",
+                "value": "California"
+              },
+              {
+                "type": "C",
+                "value": "US"
+              }
+            ],
+            "dnsNames": [
+              "indexer"
+            ]
+          },
+          {
+            "name": "admin",
+            "subject": [
+              {
+                "type": "CN",
+                "value": "admin"
+              },
+              {
+                "type": "OU",
+                "value": "Wazuh"
+              },
+              {
+                "type": "O",
+                "value": "Wazuh"
+              },
+              {
+                "type": "L",
+                "value": "California"
+              },
+              {
+                "type": "C",
+                "value": "US"
+              }
+            ]
+          },
+          {
+            "name": "manager",
+            "subject": [
+              {
+                "type": "CN",
+                "value": "manager"
+              },
+              {
+                "type": "OU",
+                "value": "Wazuh"
+              },
+              {
+                "type": "O",
+                "value": "Wazuh"
+              },
+              {
+                "type": "L",
+                "value": "California"
+              },
+              {
+                "type": "C",
+                "value": "US"
+              }
+            ],
+            "dnsNames": [
+              "manager"
+            ]
+          }
+        ]
+      },
+      "services": {
+        "dashboard": {
+          "domains": [
+            {
+              "host": "{{domain}}",
+              "port": 5601
+            }
+          ],
+          "health": {
+            "path": "/app/login"
+          },
+          "secrets": [
+            {
+              "name": "INDEXER_PASSWORD",
+              "value": "{{admin_password}}"
+            },
+            {
+              "name": "DASHBOARD_PASSWORD",
+              "value": "{{dashboard_password}}"
+            },
+            {
+              "name": "API_PASSWORD",
+              "value": "{{api_password}}.Wz1"
+            },
+            {
+              "name": "CA_CERT",
+              "value": "{{ca_cert}}"
+            },
+            {
+              "name": "WAZUH_YML",
+              "value": "hosts:\n  - default:\n      url: \"https://manager\"\n      port: 55000\n      username: wazuh-wui\n      password: \"{{api_password}}.Wz1\"\n      run_as: true\n"
+            }
+          ],
+          "files": [
+            {
+              "path": "/usr/share/wazuh-dashboard/certs/root-ca.pem",
+              "secret": "CA_CERT",
+              "mode": "0444"
+            },
+            {
+              "path": "/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml",
+              "secret": "WAZUH_YML",
+              "mode": "0400",
+              "uid": 1000,
+              "gid": 1000
+            }
+          ]
+        },
+        "indexer": {
+          "secrets": [
+            {
+              "name": "CA_CERT",
+              "value": "{{ca_cert}}"
+            },
+            {
+              "name": "INDEXER_CERT",
+              "value": "{{indexer_cert}}"
+            },
+            {
+              "name": "INDEXER_KEY",
+              "value": "{{indexer_key}}"
+            },
+            {
+              "name": "ADMIN_CERT",
+              "value": "{{admin_cert}}"
+            },
+            {
+              "name": "ADMIN_KEY",
+              "value": "{{admin_key}}"
+            },
+            {
+              "name": "OPENSEARCH_INITIAL_ADMIN_PASSWORD",
+              "value": "{{admin_password}}"
+            },
+            {
+              "name": "INTERNAL_USERS",
+              "value": "---\n# The indexer's internal users: only the two Wazuh needs, with passwords made at install.\n# Wazuh's demo users (kibanaro, logstash, readall, snapshotrestore) are left out on purpose.\n_meta:\n  type: \"internalusers\"\n  config_version: 2\n\nadmin:\n  hash: \"{{admin_password|bcrypt}}\"\n  reserved: true\n  backend_roles:\n  - \"admin\"\n  description: \"Admin user\"\n\nkibanaserver:\n  hash: \"{{dashboard_password|bcrypt}}\"\n  reserved: true\n  description: \"The dashboard's user\"\n"
+            }
+          ],
+          "backup": {
+            "engine": "opensearch",
+            "repository": "/var/lib/wazuh-indexer-snapshots",
+            "keep": 7
+          },
+          "files": [
+            {
+              "path": "/usr/share/wazuh-indexer/config/certs/root-ca.pem",
+              "secret": "CA_CERT",
+              "mode": "0444"
+            },
+            {
+              "path": "/usr/share/wazuh-indexer/config/certs/wazuh.indexer.pem",
+              "secret": "INDEXER_CERT",
+              "mode": "0444"
+            },
+            {
+              "path": "/usr/share/wazuh-indexer/config/certs/wazuh.indexer.key",
+              "secret": "INDEXER_KEY",
+              "mode": "0400",
+              "uid": 1000,
+              "gid": 1000
+            },
+            {
+              "path": "/usr/share/wazuh-indexer/config/certs/admin.pem",
+              "secret": "ADMIN_CERT",
+              "mode": "0444"
+            },
+            {
+              "path": "/usr/share/wazuh-indexer/config/certs/admin-key.pem",
+              "secret": "ADMIN_KEY",
+              "mode": "0400",
+              "uid": 1000,
+              "gid": 1000
+            },
+            {
+              "path": "/usr/share/wazuh-indexer/config/opensearch-security/internal_users.yml",
+              "secret": "INTERNAL_USERS",
+              "mode": "0400",
+              "uid": 1000,
+              "gid": 1000
+            }
+          ]
+        },
+        "manager": {
+          "health": {
+            "port": 55000
+          },
+          "secrets": [
+            {
+              "name": "INDEXER_PASSWORD",
+              "value": "{{admin_password}}"
+            },
+            {
+              "name": "API_PASSWORD",
+              "value": "{{api_password}}.Wz1"
+            },
+            {
+              "name": "CA_CERT",
+              "value": "{{ca_cert}}"
+            },
+            {
+              "name": "MANAGER_CERT",
+              "value": "{{manager_cert}}"
+            },
+            {
+              "name": "MANAGER_KEY",
+              "value": "{{manager_key}}"
+            }
+          ],
+          "backup": {
+            "engine": "volume",
+            "keep": 7
+          },
+          "files": [
+            {
+              "path": "/etc/ssl/root-ca.pem",
+              "secret": "CA_CERT",
+              "mode": "0444"
+            },
+            {
+              "path": "/etc/ssl/filebeat.pem",
+              "secret": "MANAGER_CERT",
+              "mode": "0444"
+            },
+            {
+              "path": "/etc/ssl/filebeat.key",
+              "secret": "MANAGER_KEY",
+              "mode": "0400"
+            }
+          ],
+          "publish": [
+            {
+              "port": 1514
+            },
+            {
+              "port": 1515
+            }
+          ]
+        }
+      },
+      "compose": "# Wazuh (https://github.com/wazuh/wazuh-docker, single-node 4.14.11): a security platform. Three\n# services: the indexer (OpenSearch, where alerts are kept), the manager (agents connect to it on\n# 1514 and 1515) and the dashboard. The certificates and every password are made at install; the\n# private keys and the files that hold passwords are secret files (in the overlay), never here.\n# Service names are DNS labels, so wazuh.indexer is \"indexer\" in every config below.\nservices:\n  indexer:\n    image: wazuh/wazuh-indexer:4.14.11\n    expose: [\"9200\"]\n    mem_reservation: 1536m\n    mem_limit: 2g\n    environment:\n      OPENSEARCH_JAVA_OPTS: \"-Xms1g -Xmx1g\"\n    ulimits:\n      memlock:\n        soft: -1\n        hard: -1\n      nofile:\n        soft: 65536\n        hard: 65536\n    volumes:\n      - indexer-data:/var/lib/wazuh-indexer\n      - indexer-snapshots:/var/lib/wazuh-indexer-snapshots\n    configs:\n      - source: indexer\n        target: /usr/share/wazuh-indexer/config/opensearch.yml\n\n  manager:\n    image: wazuh/wazuh-manager:4.14.11\n    expose: [\"1514\", \"1515\", \"55000\"]\n    mem_reservation: 1024m\n    mem_limit: 1536m\n    environment:\n      INDEXER_URL: https://indexer:9200\n      INDEXER_USERNAME: admin\n      FILEBEAT_SSL_VERIFICATION_MODE: full\n      SSL_CERTIFICATE_AUTHORITIES: /etc/ssl/root-ca.pem\n      SSL_CERTIFICATE: /etc/ssl/filebeat.pem\n      SSL_KEY: /etc/ssl/filebeat.key\n      API_USERNAME: wazuh-wui\n    ulimits:\n      memlock:\n        soft: -1\n        hard: -1\n      nofile:\n        soft: 655360\n        hard: 655360\n    volumes:\n      - manager-api-configuration:/var/ossec/api/configuration\n      - manager-etc:/var/ossec/etc\n      - manager-logs:/var/ossec/logs\n      - manager-queue:/var/ossec/queue\n      - manager-var-multigroups:/var/ossec/var/multigroups\n      - manager-integrations:/var/ossec/integrations\n      - manager-active-response:/var/ossec/active-response/bin\n      - manager-agentless:/var/ossec/agentless\n      - manager-wodles:/var/ossec/wodles\n      - manager-filebeat-etc:/etc/filebeat\n      - manager-filebeat-var:/var/lib/filebeat\n    configs:\n      - source: manager\n        target: /wazuh-config-mount/etc/ossec.conf\n\n  dashboard:\n    image: wazuh/wazuh-dashboard:4.14.11\n    expose: [\"5601\"]\n    mem_reservation: 768m\n    mem_limit: 1g\n    environment:\n      INDEXER_USERNAME: admin\n      WAZUH_API_URL: https://manager\n      DASHBOARD_USERNAME: kibanaserver\n      API_USERNAME: wazuh-wui\n    volumes:\n      - dashboard-config:/usr/share/wazuh-dashboard/data/wazuh/config\n      - dashboard-custom:/usr/share/wazuh-dashboard/plugins/wazuh/public/assets/custom\n    configs:\n      - source: dashboard\n        target: /usr/share/wazuh-dashboard/config/opensearch_dashboards.yml\n\nconfigs:\n  indexer:\n    content: |\n      network.host: \"0.0.0.0\"\n      node.name: \"indexer\"\n      cluster.name: \"wazuh-cluster\"\n      path.data: /var/lib/wazuh-indexer\n      path.logs: /var/log/wazuh-indexer\n      path.repo: /var/lib/wazuh-indexer-snapshots\n      discovery.type: single-node\n      compatibility.override_main_response_version: true\n      plugins.security.ssl.http.pemcert_filepath: /usr/share/wazuh-indexer/config/certs/wazuh.indexer.pem\n      plugins.security.ssl.http.pemkey_filepath: /usr/share/wazuh-indexer/config/certs/wazuh.indexer.key\n      plugins.security.ssl.http.pemtrustedcas_filepath: /usr/share/wazuh-indexer/config/certs/root-ca.pem\n      plugins.security.ssl.transport.pemcert_filepath: /usr/share/wazuh-indexer/config/certs/wazuh.indexer.pem\n      plugins.security.ssl.transport.pemkey_filepath: /usr/share/wazuh-indexer/config/certs/wazuh.indexer.key\n      plugins.security.ssl.transport.pemtrustedcas_filepath: /usr/share/wazuh-indexer/config/certs/root-ca.pem\n      plugins.security.ssl.http.enabled: true\n      plugins.security.ssl.transport.enforce_hostname_verification: false\n      plugins.security.ssl.transport.resolve_hostname: false\n      plugins.security.ssl.http.enabled_ciphers:\n        - \"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\"\n        - \"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\"\n        - \"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\"\n        - \"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\"\n      plugins.security.ssl.http.enabled_protocols:\n        - \"TLSv1.2\"\n      plugins.security.authcz.admin_dn:\n      - \"CN=admin,OU=Wazuh,O=Wazuh,L=California,C=US\"\n      plugins.security.check_snapshot_restore_write_privileges: true\n      plugins.security.enable_snapshot_restore_privilege: true\n      plugins.security.nodes_dn:\n      - \"CN=indexer,OU=Wazuh,O=Wazuh,L=California,C=US\"\n      plugins.security.restapi.roles_enabled:\n      - \"all_access\"\n      - \"security_rest_api_access\"\n      plugins.security.system_indices.enabled: true\n      plugins.security.system_indices.indices: [\".opendistro-alerting-config\", \".opendistro-alerting-alert*\", \".opendistro-anomaly-results*\", \".opendistro-anomaly-detector*\", \".opendistro-anomaly-checkpoints\", \".opendistro-anomaly-detection-state\", \".opendistro-reports-*\", \".opendistro-notifications-*\", \".opendistro-notebooks\", \".opensearch-observability\", \".opendistro-asynchronous-search-response*\", \".replication-metadata-store\"]\n      plugins.security.allow_default_init_securityindex: true\n      cluster.routing.allocation.disk.threshold_enabled: false\n  manager:\n    content: |\n      \u003cossec_config\u003e\n        \u003cglobal\u003e\n          \u003cjsonout_output\u003eyes\u003c/jsonout_output\u003e\n          \u003calerts_log\u003eyes\u003c/alerts_log\u003e\n          \u003clogall\u003eno\u003c/logall\u003e\n          \u003clogall_json\u003eno\u003c/logall_json\u003e\n          \u003cemail_notification\u003eno\u003c/email_notification\u003e\n          \u003csmtp_server\u003esmtp.example.wazuh.com\u003c/smtp_server\u003e\n          \u003cemail_from\u003ewazuh@example.wazuh.com\u003c/email_from\u003e\n          \u003cemail_to\u003erecipient@example.wazuh.com\u003c/email_to\u003e\n          \u003cemail_maxperhour\u003e12\u003c/email_maxperhour\u003e\n          \u003cemail_log_source\u003ealerts.log\u003c/email_log_source\u003e\n          \u003cagents_disconnection_time\u003e10m\u003c/agents_disconnection_time\u003e\n          \u003cagents_disconnection_alert_time\u003e0\u003c/agents_disconnection_alert_time\u003e\n        \u003c/global\u003e\n\n        \u003calerts\u003e\n          \u003clog_alert_level\u003e3\u003c/log_alert_level\u003e\n          \u003cemail_alert_level\u003e12\u003c/email_alert_level\u003e\n        \u003c/alerts\u003e\n\n        \u003c!-- Choose between \"plain\", \"json\", or \"plain,json\" for the format of internal logs --\u003e\n        \u003clogging\u003e\n          \u003clog_format\u003eplain\u003c/log_format\u003e\n        \u003c/logging\u003e\n\n        \u003cremote\u003e\n          \u003cconnection\u003esecure\u003c/connection\u003e\n          \u003cport\u003e1514\u003c/port\u003e\n          \u003cprotocol\u003etcp\u003c/protocol\u003e\n          \u003cqueue_size\u003e131072\u003c/queue_size\u003e\n        \u003c/remote\u003e\n\n        \u003c!-- Policy monitoring --\u003e\n        \u003crootcheck\u003e\n          \u003cdisabled\u003eno\u003c/disabled\u003e\n          \u003ccheck_files\u003eyes\u003c/check_files\u003e\n          \u003ccheck_trojans\u003eyes\u003c/check_trojans\u003e\n          \u003ccheck_dev\u003eyes\u003c/check_dev\u003e\n          \u003ccheck_sys\u003eyes\u003c/check_sys\u003e\n          \u003ccheck_pids\u003eyes\u003c/check_pids\u003e\n          \u003ccheck_ports\u003eyes\u003c/check_ports\u003e\n          \u003ccheck_if\u003eyes\u003c/check_if\u003e\n\n          \u003c!-- Frequency that rootcheck is executed - every 12 hours --\u003e\n          \u003cfrequency\u003e43200\u003c/frequency\u003e\n\n          \u003crootkit_files\u003eetc/rootcheck/rootkit_files.txt\u003c/rootkit_files\u003e\n          \u003crootkit_trojans\u003eetc/rootcheck/rootkit_trojans.txt\u003c/rootkit_trojans\u003e\n\n          \u003cskip_nfs\u003eyes\u003c/skip_nfs\u003e\n        \u003c/rootcheck\u003e\n\n        \u003cwodle name=\"cis-cat\"\u003e\n          \u003cdisabled\u003eyes\u003c/disabled\u003e\n          \u003ctimeout\u003e1800\u003c/timeout\u003e\n          \u003cinterval\u003e1d\u003c/interval\u003e\n          \u003cscan-on-start\u003eyes\u003c/scan-on-start\u003e\n\n          \u003cjava_path\u003ewodles/java\u003c/java_path\u003e\n          \u003cciscat_path\u003ewodles/ciscat\u003c/ciscat_path\u003e\n        \u003c/wodle\u003e\n\n        \u003c!-- Osquery integration --\u003e\n        \u003cwodle name=\"osquery\"\u003e\n          \u003cdisabled\u003eyes\u003c/disabled\u003e\n          \u003crun_daemon\u003eyes\u003c/run_daemon\u003e\n          \u003clog_path\u003e/var/log/osquery/osqueryd.results.log\u003c/log_path\u003e\n          \u003cconfig_path\u003e/etc/osquery/osquery.conf\u003c/config_path\u003e\n          \u003cadd_labels\u003eyes\u003c/add_labels\u003e\n        \u003c/wodle\u003e\n\n        \u003c!-- System inventory --\u003e\n        \u003cwodle name=\"syscollector\"\u003e\n          \u003cdisabled\u003eno\u003c/disabled\u003e\n          \u003cinterval\u003e1h\u003c/interval\u003e\n          \u003cscan_on_start\u003eyes\u003c/scan_on_start\u003e\n          \u003chardware\u003eyes\u003c/hardware\u003e\n          \u003cos\u003eyes\u003c/os\u003e\n          \u003cnetwork\u003eyes\u003c/network\u003e\n          \u003cpackages\u003eyes\u003c/packages\u003e\n          \u003cports all=\"yes\"\u003eyes\u003c/ports\u003e\n          \u003cprocesses\u003eyes\u003c/processes\u003e\n\n          \u003c!-- Database synchronization settings --\u003e\n          \u003csynchronization\u003e\n            \u003cmax_eps\u003e10\u003c/max_eps\u003e\n          \u003c/synchronization\u003e\n        \u003c/wodle\u003e\n\n        \u003csca\u003e\n          \u003cenabled\u003eyes\u003c/enabled\u003e\n          \u003cscan_on_start\u003eyes\u003c/scan_on_start\u003e\n          \u003cinterval\u003e12h\u003c/interval\u003e\n          \u003cskip_nfs\u003eyes\u003c/skip_nfs\u003e\n        \u003c/sca\u003e\n\n        \u003cvulnerability-detection\u003e\n          \u003cenabled\u003eyes\u003c/enabled\u003e\n          \u003cindex-status\u003eyes\u003c/index-status\u003e\n          \u003cfeed-update-interval\u003e60m\u003c/feed-update-interval\u003e\n        \u003c/vulnerability-detection\u003e\n\n        \u003cindexer\u003e\n          \u003cenabled\u003eyes\u003c/enabled\u003e\n          \u003chosts\u003e\n            \u003chost\u003ehttps://indexer:9200\u003c/host\u003e\n          \u003c/hosts\u003e\n          \u003cssl\u003e\n            \u003ccertificate_authorities\u003e\n              \u003cca\u003e/etc/ssl/root-ca.pem\u003c/ca\u003e\n            \u003c/certificate_authorities\u003e\n            \u003ccertificate\u003e/etc/ssl/filebeat.pem\u003c/certificate\u003e\n            \u003ckey\u003e/etc/ssl/filebeat.key\u003c/key\u003e\n          \u003c/ssl\u003e\n        \u003c/indexer\u003e\n\n        \u003c!-- File integrity monitoring --\u003e\n        \u003csyscheck\u003e\n          \u003cdisabled\u003eno\u003c/disabled\u003e\n\n          \u003c!-- Frequency that syscheck is executed default every 12 hours --\u003e\n          \u003cfrequency\u003e43200\u003c/frequency\u003e\n\n          \u003cscan_on_start\u003eyes\u003c/scan_on_start\u003e\n\n          \u003c!-- Generate alert when new file detected --\u003e\n          \u003calert_new_files\u003eyes\u003c/alert_new_files\u003e\n\n          \u003c!-- Don't ignore files that change more than 'frequency' times --\u003e\n          \u003cauto_ignore frequency=\"10\" timeframe=\"3600\"\u003eno\u003c/auto_ignore\u003e\n\n          \u003c!-- Directories to check  (perform all possible verifications) --\u003e\n          \u003cdirectories\u003e/etc,/usr/bin,/usr/sbin\u003c/directories\u003e\n          \u003cdirectories\u003e/bin,/sbin,/boot\u003c/directories\u003e\n\n          \u003c!-- Files/directories to ignore --\u003e\n          \u003cignore\u003e/etc/mtab\u003c/ignore\u003e\n          \u003cignore\u003e/etc/hosts.deny\u003c/ignore\u003e\n          \u003cignore\u003e/etc/mail/statistics\u003c/ignore\u003e\n          \u003cignore\u003e/etc/random-seed\u003c/ignore\u003e\n          \u003cignore\u003e/etc/random.seed\u003c/ignore\u003e\n          \u003cignore\u003e/etc/adjtime\u003c/ignore\u003e\n          \u003cignore\u003e/etc/httpd/logs\u003c/ignore\u003e\n          \u003cignore\u003e/etc/utmpx\u003c/ignore\u003e\n          \u003cignore\u003e/etc/wtmpx\u003c/ignore\u003e\n          \u003cignore\u003e/etc/cups/certs\u003c/ignore\u003e\n          \u003cignore\u003e/etc/dumpdates\u003c/ignore\u003e\n          \u003cignore\u003e/etc/svc/volatile\u003c/ignore\u003e\n\n          \u003c!-- File types to ignore --\u003e\n          \u003cignore type=\"sregex\"\u003e.log$|.swp$\u003c/ignore\u003e\n\n          \u003c!-- Check the file, but never compute the diff --\u003e\n          \u003cnodiff\u003e/etc/ssl/private.key\u003c/nodiff\u003e\n\n          \u003cskip_nfs\u003eyes\u003c/skip_nfs\u003e\n          \u003cskip_dev\u003eyes\u003c/skip_dev\u003e\n          \u003cskip_proc\u003eyes\u003c/skip_proc\u003e\n          \u003cskip_sys\u003eyes\u003c/skip_sys\u003e\n\n          \u003c!-- Nice value for Syscheck process --\u003e\n          \u003cprocess_priority\u003e10\u003c/process_priority\u003e\n\n          \u003c!-- Maximum output throughput --\u003e\n          \u003cmax_eps\u003e100\u003c/max_eps\u003e\n\n          \u003c!-- Database synchronization settings --\u003e\n          \u003csynchronization\u003e\n            \u003cenabled\u003eyes\u003c/enabled\u003e\n            \u003cinterval\u003e5m\u003c/interval\u003e\n            \u003cmax_interval\u003e1h\u003c/max_interval\u003e\n            \u003cmax_eps\u003e10\u003c/max_eps\u003e\n          \u003c/synchronization\u003e\n        \u003c/syscheck\u003e\n\n        \u003c!-- Active response --\u003e\n        \u003cglobal\u003e\n          \u003cwhite_list\u003e127.0.0.1\u003c/white_list\u003e\n          \u003cwhite_list\u003e^localhost.localdomain$\u003c/white_list\u003e\n        \u003c/global\u003e\n\n        \u003ccommand\u003e\n          \u003cname\u003edisable-account\u003c/name\u003e\n          \u003cexecutable\u003edisable-account\u003c/executable\u003e\n          \u003ctimeout_allowed\u003eyes\u003c/timeout_allowed\u003e\n        \u003c/command\u003e\n\n        \u003ccommand\u003e\n          \u003cname\u003erestart-wazuh\u003c/name\u003e\n          \u003cexecutable\u003erestart-wazuh\u003c/executable\u003e\n        \u003c/command\u003e\n\n        \u003ccommand\u003e\n          \u003cname\u003efirewall-drop\u003c/name\u003e\n          \u003cexecutable\u003efirewall-drop\u003c/executable\u003e\n          \u003ctimeout_allowed\u003eyes\u003c/timeout_allowed\u003e\n        \u003c/command\u003e\n\n        \u003ccommand\u003e\n          \u003cname\u003ehost-deny\u003c/name\u003e\n          \u003cexecutable\u003ehost-deny\u003c/executable\u003e\n          \u003ctimeout_allowed\u003eyes\u003c/timeout_allowed\u003e\n        \u003c/command\u003e\n\n        \u003ccommand\u003e\n          \u003cname\u003eroute-null\u003c/name\u003e\n          \u003cexecutable\u003eroute-null\u003c/executable\u003e\n          \u003ctimeout_allowed\u003eyes\u003c/timeout_allowed\u003e\n        \u003c/command\u003e\n\n        \u003ccommand\u003e\n          \u003cname\u003ewin_route-null\u003c/name\u003e\n          \u003cexecutable\u003eroute-null.exe\u003c/executable\u003e\n          \u003ctimeout_allowed\u003eyes\u003c/timeout_allowed\u003e\n        \u003c/command\u003e\n\n        \u003ccommand\u003e\n          \u003cname\u003enetsh\u003c/name\u003e\n          \u003cexecutable\u003enetsh.exe\u003c/executable\u003e\n          \u003ctimeout_allowed\u003eyes\u003c/timeout_allowed\u003e\n        \u003c/command\u003e\n\n        \u003c!--\n        \u003cactive-response\u003e\n          active-response options here\n        \u003c/active-response\u003e\n        --\u003e\n\n        \u003c!-- Log analysis --\u003e\n        \u003clocalfile\u003e\n          \u003clog_format\u003ecommand\u003c/log_format\u003e\n          \u003ccommand\u003edf -P\u003c/command\u003e\n          \u003cfrequency\u003e360\u003c/frequency\u003e\n        \u003c/localfile\u003e\n\n        \u003clocalfile\u003e\n          \u003clog_format\u003efull_command\u003c/log_format\u003e\n          \u003ccommand\u003enetstat -tulpn | sed 's/\\([[:alnum:]]\\+\\)\\ \\+[[:digit:]]\\+\\ \\+[[:digit:]]\\+\\ \\+\\(.*\\):\\([[:digit:]]*\\)\\ \\+\\([0-9\\.\\:\\*]\\+\\).\\+\\ \\([[:digit:]]*\\/[[:alnum:]\\-]*\\).*/\\1 \\2 == \\3 == \\4 \\5/' | sort -k 4 -g | sed 's/ == \\(.*\\) ==/:\\1/' | sed 1,2d\u003c/command\u003e\n          \u003calias\u003enetstat listening ports\u003c/alias\u003e\n          \u003cfrequency\u003e360\u003c/frequency\u003e\n        \u003c/localfile\u003e\n\n        \u003clocalfile\u003e\n          \u003clog_format\u003efull_command\u003c/log_format\u003e\n          \u003ccommand\u003elast -n 20\u003c/command\u003e\n          \u003cfrequency\u003e360\u003c/frequency\u003e\n        \u003c/localfile\u003e\n\n        \u003cruleset\u003e\n          \u003c!-- Default ruleset --\u003e\n          \u003cdecoder_dir\u003eruleset/decoders\u003c/decoder_dir\u003e\n          \u003crule_dir\u003eruleset/rules\u003c/rule_dir\u003e\n          \u003crule_exclude\u003e0215-policy_rules.xml\u003c/rule_exclude\u003e\n          \u003clist\u003eetc/lists/audit-keys\u003c/list\u003e\n          \u003clist\u003eetc/lists/amazon/aws-eventnames\u003c/list\u003e\n          \u003clist\u003eetc/lists/security-eventchannel\u003c/list\u003e\n          \u003clist\u003eetc/lists/malicious-ioc/malicious-ip\u003c/list\u003e\n          \u003clist\u003eetc/lists/malicious-ioc/malicious-domains\u003c/list\u003e\n          \u003clist\u003eetc/lists/malicious-ioc/malware-hashes\u003c/list\u003e\n\n          \u003c!-- User-defined ruleset --\u003e\n          \u003cdecoder_dir\u003eetc/decoders\u003c/decoder_dir\u003e\n          \u003crule_dir\u003eetc/rules\u003c/rule_dir\u003e\n        \u003c/ruleset\u003e\n\n        \u003crule_test\u003e\n          \u003cenabled\u003eyes\u003c/enabled\u003e\n          \u003cthreads\u003e1\u003c/threads\u003e\n          \u003cmax_sessions\u003e64\u003c/max_sessions\u003e\n          \u003csession_timeout\u003e15m\u003c/session_timeout\u003e\n        \u003c/rule_test\u003e\n\n        \u003c!-- Configuration for wazuh-authd --\u003e\n        \u003cauth\u003e\n          \u003cdisabled\u003eno\u003c/disabled\u003e\n          \u003cport\u003e1515\u003c/port\u003e\n          \u003cuse_source_ip\u003eno\u003c/use_source_ip\u003e\n          \u003cpurge\u003eyes\u003c/purge\u003e\n          \u003cuse_password\u003eno\u003c/use_password\u003e\n          \u003cciphers\u003eHIGH:!ADH:!EXP:!MD5:!RC4:!3DES:!CAMELLIA:@STRENGTH\u003c/ciphers\u003e\n          \u003c!-- \u003cssl_agent_ca\u003e\u003c/ssl_agent_ca\u003e --\u003e\n          \u003cssl_verify_host\u003eno\u003c/ssl_verify_host\u003e\n          \u003cssl_manager_cert\u003eetc/sslmanager.cert\u003c/ssl_manager_cert\u003e\n          \u003cssl_manager_key\u003eetc/sslmanager.key\u003c/ssl_manager_key\u003e\n          \u003cssl_auto_negotiate\u003eno\u003c/ssl_auto_negotiate\u003e\n        \u003c/auth\u003e\n\n        \u003ccluster\u003e\n          \u003cname\u003ewazuh\u003c/name\u003e\n          \u003cnode_name\u003enode01\u003c/node_name\u003e\n          \u003cnode_type\u003emaster\u003c/node_type\u003e\n          \u003ckey\u003eaa093264ef885029653eea20dfcf51ae\u003c/key\u003e\n          \u003cport\u003e1516\u003c/port\u003e\n          \u003cbind_addr\u003e0.0.0.0\u003c/bind_addr\u003e\n          \u003cnodes\u003e\n              \u003cnode\u003emanager\u003c/node\u003e\n          \u003c/nodes\u003e\n          \u003chidden\u003eno\u003c/hidden\u003e\n          \u003cdisabled\u003eyes\u003c/disabled\u003e\n        \u003c/cluster\u003e\n\n      \u003c/ossec_config\u003e\n\n      \u003cossec_config\u003e\n        \u003clocalfile\u003e\n          \u003clog_format\u003esyslog\u003c/log_format\u003e\n          \u003clocation\u003e/var/ossec/logs/active-responses.log\u003c/location\u003e\n        \u003c/localfile\u003e\n\n      \u003c/ossec_config\u003e\n  dashboard:\n    content: |\n      server.host: 0.0.0.0\n      server.port: 5601\n      opensearch.hosts: https://indexer:9200\n      opensearch.ssl.verificationMode: certificate\n      opensearch.requestHeadersWhitelist: [\"securitytenant\",\"Authorization\"]\n      opensearch_security.multitenancy.enabled: false\n      opensearch_security.readonly_mode.roles: [\"kibana_read_only\"]\n      # Traefik terminates HTTPS for the dashboard's domain, so the dashboard itself speaks HTTP.\n      server.ssl.enabled: false\n      opensearch.ssl.certificateAuthorities: [\"/usr/share/wazuh-dashboard/certs/root-ca.pem\"]\n      uiSettings.overrides.defaultRoute: /app/wz-home\n      opensearch_security.cookie.ttl: 900000\n      opensearch_security.session.ttl: 900000\n      opensearch_security.session.keepalive: true\n\nvolumes:\n  indexer-data: {}\n  indexer-snapshots: {}\n  manager-api-configuration: {}\n  manager-etc: {}\n  manager-logs: {}\n  manager-queue: {}\n  manager-var-multigroups: {}\n  manager-integrations: {}\n  manager-active-response: {}\n  manager-agentless: {}\n  manager-wodles: {}\n  manager-filebeat-etc: {}\n  manager-filebeat-var: {}\n  dashboard-config: {}\n  dashboard-custom: {}\n"
     }
   ]
 }

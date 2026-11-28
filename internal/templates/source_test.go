@@ -285,6 +285,11 @@ func TestEmbeddedCatalog(t *testing.T) {
 			for _, g := range tpl.Generated {
 				values[g.Name] = "s3cret-sentinel-035-embedded"
 			}
+			if tpl.Certificates != nil {
+				for name, v := range tpl.Certificates.standIns() {
+					values[name] = v
+				}
+			}
 			req, err := tpl.Render(values)
 			if err != nil {
 				t.Fatal(err)

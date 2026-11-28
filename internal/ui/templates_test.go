@@ -86,8 +86,8 @@ func TestTemplateGrid(t *testing.T) {
 			t.Errorf("the grid lacks %q:\n%s", want, body)
 		}
 	}
-	if n := strings.Count(body, `class="cv-panel cv-tplcard"`); n != 6 {
-		t.Errorf("%d cards, want the six built in", n)
+	if c, _ := templates.Embedded(); strings.Count(body, `class="cv-panel cv-tplcard"`) != len(c.Templates) {
+		t.Errorf("%d cards, want the %d built in", strings.Count(body, `class="cv-panel cv-tplcard"`), len(c.Templates))
 	}
 	// No logo yet: each card is a monogram tile in its hue, never an image.
 	if strings.Contains(body, `<img class="cv-tpltile`) || !strings.Contains(body, `class="cv-tpltile cv-hue-`) {

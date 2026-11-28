@@ -29,7 +29,7 @@ template's title and version. Because the app is made from a Compose file, **Con
 
 ## What is in the catalog
 
-The console comes with a catalog of six templates. Template versions are the upstream app's version, then a dash and
+The console comes with a catalog of ten templates. Template versions are the upstream app's version, then a dash and
 the number of the template's own revision.
 
 | Template | What it is | What it makes |
@@ -39,7 +39,11 @@ the number of the template's own revision.
 | **PostgreSQL** | A PostgreSQL 17 database on a volume, backed up daily, with Adminer to look into it. | Postgres and Adminer. |
 | **Adminer** | A web page to browse and edit a database, behind a user name and password. | One service behind Team only. |
 | **Umbral** | An OpenID Connect provider that signs people in with social accounts or passkeys, no passwords. | One service with a volume, backed up daily. |
-| **Codemagic Patch** | Over-the-air updates for React Native and Capacitor apps, on your own server and R2 buckets. | A server and Postgres, Postgres backed up daily. It asks you for an image: Codemagic publishes none, so you build and push one first (the template's notes say how). |
+| **Codemagic Patch** | Over-the-air updates for React Native and Capacitor apps, signing in with GitHub, Bitbucket Cloud or GitLab, on R2 or Google Cloud buckets. | A server and Postgres, Postgres backed up daily. It asks you for an image: Codemagic publishes none, so you build and push one first (the template's notes say how). |
+| **Continuwuity** | A Matrix homeserver in one container, with its own database: your own chat server that federates with every other Matrix server. | One service with a volume, backed up daily. |
+| **Frunchy** | Your anime identity in numbers: Frunchy turns your Crunchyroll watch history into statistics you can share. | Frunchy and Postgres, Postgres backed up daily. |
+| **PeerTube** | Video hosting on your own domain, federated with the fediverse, with the videos in an S3-compatible bucket (R2). | PeerTube, Postgres and Redis; PeerTube's volume and Postgres backed up daily. |
+| **Wazuh** | A security platform: agents on your machines send events, Wazuh finds threats and shows them on a dashboard. | An indexer, a manager and a dashboard, about 4 GB of memory; the indexer and the manager backed up daily. |
 
 A template that makes a database, such as **PostgreSQL**, can be used by your other apps of the same environment. After
 **Create**, the notice on the **Deployments** tab says where each of its services answers, for example
@@ -92,7 +96,7 @@ backups on later.
 
 ## Keeping the catalog up to date
 
-At the bottom of the grid the page says which catalog is in use: *Catalog 2026.11.12, built in*, or *Catalog …,
+At the bottom of the grid the page says which catalog is in use: *Catalog 2026.11.28, built in*, or *Catalog …,
 fetched Nov 12 09:30 UTC*. Caravana checks for a newer one about a minute after it starts and then once a day. It asks
 the release page of the [templates repository](https://github.com/Cosmic-Chimps/caravana-templates/releases) for a checksum file first, downloads the catalog only if its checksum changed,
 verifies it, and runs every template through the same checks the built-in ones pass. The request carries Caravana's

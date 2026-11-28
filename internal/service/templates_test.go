@@ -116,8 +116,8 @@ func TestListTemplates(t *testing.T) {
 	if all.Catalog.Source != CatalogEmbedded || all.Catalog.Version != all.Catalog.EmbeddedVersion || !all.Catalog.Checking {
 		t.Errorf("catalog = %+v", all.Catalog)
 	}
-	if len(all.Templates) != 6 {
-		t.Fatalf("%d templates, want the six built in", len(all.Templates))
+	if builtIn := builtInTemplates(); len(all.Templates) != builtIn {
+		t.Fatalf("%d templates, want the %d built in", len(all.Templates), builtIn)
 	}
 	for _, tpl := range all.Templates {
 		if !tpl.Available || tpl.Unavailable != "" {
@@ -135,9 +135,9 @@ func TestListTemplates(t *testing.T) {
 	for _, tt := range []struct{ q, tag, want string }{
 		{"status", "", "uptime-kuma"},
 		{"STATUS", "", "uptime-kuma"},
-		{"", "monitoring", "uptime-kuma"},
+		{"", "monitoring", "uptime-kuma,wazuh"},
 		{"", "database", "adminer,postgres"},
-		{"fediverse", "", "hollo"},
+		{"fediverse", "", "hollo,peertube"},
 		{"postgres", "", "postgres"},
 		{"", "nope", ""},
 		{"zzzz", "", ""},
@@ -766,7 +766,7 @@ func TestTemplateCatalogCheck(t *testing.T) {
 				t.Errorf("catalog = %+v, want embedded with %q", view, tt.failed)
 			}
 			list, _ := l.svc.ListTemplates(ctx, "", "")
-			if len(list.Templates) != 6 {
+			if len(list.Templates) != builtInTemplates() {
 				t.Errorf("%d templates are offered", len(list.Templates))
 			}
 		})
@@ -826,7 +826,7 @@ func TestTemplateCatalogCheck(t *testing.T) {
 			t.Errorf("catalog = %+v", view)
 		}
 		// The built-in catalog is still offered, and a fetched one that was already kept stays.
-		if list, _ := l.svc.ListTemplates(ctx, "", ""); len(list.Templates) != 6 {
+		if list, _ := l.svc.ListTemplates(ctx, "", ""); len(list.Templates) != builtInTemplates() {
 			t.Errorf("%d templates", len(list.Templates))
 		}
 	})
@@ -967,4 +967,11 @@ func TestInstallTemplateWithoutBackups(t *testing.T) {
 			t.Error("the catalog's template lost its backup")
 		}
 	})
+}
+
+// builtInTemplates is the number of templates in the catalog built into the
+// binary, so the tests follow the catalog when it is bundled again.
+func builtInTemplates() int {
+	c, _ := templates.Embedded()
+	return len(c.Templates)
 }
