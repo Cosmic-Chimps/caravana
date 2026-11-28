@@ -187,4 +187,4 @@ cleanly. Raise it for a slow shutdown, up to 30. Compose's `stop_grace_period` s
 - [Placement and moving work between servers](../../placement-and-drain.md)
 - [Published ports](../../published-ports.md)
 - [Limits, sysctls and files](../../opensearch-apps.md)
-- [Stop, start, restart, Run a command, Terminal](../operate/commands.md)
+- [Stop, start, restart, Run a command, Terminal, Files](../operate/commands.md)

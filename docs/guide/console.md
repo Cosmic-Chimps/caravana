@@ -81,7 +81,7 @@ Click an app to open it. Its header shows its name, status, addresses and a summ
 
 | Tab | What it shows |
 | --- | --- |
-| **Running** | The copies with their status, version, restarts, CPU and memory. Below them, **Run a command**, a **Terminal** link for each copy and **Recent actions**. [Stop, start, restart, run a command](operate/commands.md) |
+| **Running** | The copies with their status, version, restarts, CPU and memory. Below them, **Run a command**, a **Terminal** and a **Files** link for each copy, and **Recent actions**. [Stop, start, restart, run a command, Terminal, Files](operate/commands.md) |
 | **Deployments** | The deploy form and the history of every deploy, with its stages, and **Redeploy this version**, **Export jobspec** and a download of the Compose file. [How a deploy works and rollback](deploy/rollback.md) |
 | **Configure** | The app's settings, in six sections: **Overview**, **Source**, **Services**, **Variables & secrets**, **Domains** and **Integrations**. See below. |
 | **Logs** | The Logs page, filtered to this app. |

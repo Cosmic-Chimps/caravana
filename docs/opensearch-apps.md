@@ -131,6 +131,8 @@ environment.*
 
 A file is part of the app, so changing it is a deploy: the new content, or the secret's new value, reaches the app
 with the next copies. Configure shows each file read-only under **Files**: its path, `mode 0400`, and its size or `from secret TLS_KEY`.
+To see what a running copy got, its [Files page](guide/operate/commands.md#files) shows a content file under
+`<service>/local/caravana-files/<n>` (its number in the list); a secret file is never shown there.
 Set files through the API or Compose. A [promotion](guide/operate/projects.md) takes the source's files (not the
 secret values: those belong to each environment), and **Copy to** keeps them.
 

@@ -95,6 +95,9 @@ estimated time ends in `~`; deploy rows appear as `# deploy …` lines, and a `#
 the read stopped before the beginning. A download is limited to 8 MiB from each stream (the stdout and stderr of each copy) and 64 MiB in all, and only
 one runs at a time ("A download is already running; try again in a moment.").
 
+The raw files Nomad keeps for a copy's output are also on that copy's [Files page](commands.md#files), under
+`alloc/logs`, and each can be downloaded as it is (with the maintain role).
+
 ## Limits: how far back it can go
 
 Caravana reads Nomad's output files live, so the page can show only what Nomad still has:

@@ -28,7 +28,10 @@ func TestCleanFilePath(t *testing.T) {
 		{name: "a trailing slash", in: "alloc/data/", want: "alloc/data"},
 		{name: "a task's local", in: "web/local/caravana-files/0", want: "web/local/caravana-files/0"},
 		{name: "a task folder", in: "web", want: "web"},
-		{name: "alloc's own secrets name is fine", in: "alloc/secrets", want: "alloc/secrets"},
+		{name: "secrets under alloc too (a service may be named alloc)", in: "alloc/secrets", wantErr: ErrPathNotAllowed},
+		{name: "a file in secrets under alloc", in: "alloc/secrets/x", wantErr: ErrPathNotAllowed},
+		{name: "private under alloc", in: "alloc/Private/x", wantErr: ErrPathNotAllowed},
+		{name: "secrets deeper down is a plain name", in: "alloc/data/secrets/x", want: "alloc/data/secrets/x"},
 		{name: "a NUL byte", in: "alloc/da\x00ta", badPath: true},
 		{name: "a backslash", in: `alloc\data`, badPath: true},
 		{name: "an empty part", in: "alloc//data", badPath: true},
@@ -432,6 +435,7 @@ func TestFileKind(t *testing.T) {
 		{FileInfo{Mode: "prw-------"}, KindOther},
 		{FileInfo{Mode: "Srwxrwxrwx"}, KindOther},
 		{FileInfo{Mode: "Dcrw-rw-rw-"}, KindOther},
+		{FileInfo{}, KindOther}, // an unknown mode is never read
 	} {
 		if got := tt.info.Kind(); got != tt.want {
 			t.Errorf("Kind of mode %q = %q; want %q", tt.info.Mode, got, tt.want)

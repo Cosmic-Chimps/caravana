@@ -101,26 +101,36 @@ It opens a page, "Terminal in web", for the service and copy.
 
 ## Files
 
-Next to **Terminal**, each copy has a **Files** link: a page, "Files in web", that lists the folders Nomad keeps
+Next to **Terminal**, each running copy has a **Files** link (a copy Nomad is stopping has none, as for Terminal): a page, "Files in web", that lists the folders Nomad keeps
 for that copy, to read a file or download it. It is for finding a config file, a crash dump or an export
 without opening a terminal. It reads only: you cannot edit or upload a file here.
 
 - **What is there.** The folders of the copy's directory: `alloc`, which the copy's tasks share (`data`, `logs`
   and `tmp`: what an app writes to `/alloc/data`, and its output logs), and one folder for each task with its
-  `local` and `tmp` files. In `local` you find the files a service defines (Caravana puts them in
-  `caravana-files`). **The container's own files and its volumes are not here**: for those, open a Terminal.
+  `local` and `tmp` files. In `local/caravana-files` you find the service's content files, named by their place in
+  the service's list (`0`, `1`, …), not by the path the app sees them at. A file that holds a secret is in the
+  task's `secrets` folder and is never shown. **The container's own files and its volumes are not here**: for those,
+  open a Terminal.
 - **Browsing.** Each folder is a link, with the path above the list. Folders come first, then files with their
-  size and when they changed. A file opens on its own page, with **Download** beside it.
+  size and when they changed, each with **Download**. A file's name opens its own page, with **Download** there too.
 - **Reading a file.** A text file up to 512 KB is shown on the page. A larger file says "It is larger than 512
   KB: download it to read it." and a file that is not text says "It isn't text: download it." **Download**
   gives the file as it is.
 - **Secrets are never shown.** A task's `secrets` and `private` folders are not listed and cannot be opened or
   downloaded, whichever way the path is written. Links are listed but never followed, so a link an app made
-  cannot lead into them either, and pipes (such as the ones Nomad's log collector keeps in `alloc/logs`) are
-  never opened.
+  cannot lead into them either, and pipes, sockets and devices (such as the pipes Nomad's log collector keeps in
+  `alloc/logs`) are never opened. Such rows say "link, not followed" or "pipe or socket, not opened" and have no
+  **Download**.
 - **What is recorded.** Viewing or downloading a file is an entry in the [audit log](../../audit-log.md), `read a
-  file`, with the copy and the path and never the content. Listing a folder is not. The content is not logged,
-  stored or put in a notice.
+  file`, with the copy, the path and whether it was a view or a download, never the content. Listing a folder is
+  not, and neither is opening the page of a file too large to show (nothing is read). A file up to 512 KB that isn't
+  text is read to find that out, so its page is recorded as a view. The content is not logged, stored or put in a
+  notice.
+- **When it can't.** The page says why, with the copy's root to start again from: a stopped app (409, "The app is
+  stopped: start it first."), a copy that ended or is disconnected (409, "That copy isn't running."), nothing at the
+  path (404, "There is nothing at that path."), and a bad path, a secrets folder, a link or a pipe (422, "That path
+  can't be shown."). Over the API these are `app_stopped`, `copy_not_running`, `file_not_found` and
+  `invalid_field` on `path`.
 - **It needs no script.** Every folder and file is a plain link. Over the API the same two reads are
   `listCopyFiles` and `downloadCopyFile`.
 

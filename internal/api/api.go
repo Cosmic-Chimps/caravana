@@ -319,7 +319,7 @@ func (s *server) handler(routes []route) http.Handler {
 		// Every write route opens an audit scope around the whole request, public ones included
 		// (feature 057): authenticate tells it who, the handlers' service calls note what changed,
 		// and it writes the entry once the status is known.
-		if rt.method != http.MethodGet {
+		if rt.method != http.MethodGet || auditedReads[rt.method+" "+rt.path] {
 			handle = s.audited(rt, handle)
 		}
 		mux.Handle(rt.method+" "+rt.path, handle)

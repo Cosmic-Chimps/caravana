@@ -2605,9 +2605,13 @@ running copy. No spec folder, no migration, no module, no policy change (`read-f
   `WriteAllocFile`/`WriteAllocLink`, following links and refusing secrets as the lab's Nomad does.
 - `service/copyfiles.go`: the checks of Run a command (the app's running copy, not stopped), `ListCopyFiles`, `StatCopyPath`,
   `CopyFileText` (512 KiB, UTF-8 without NUL), `OpenCopyFile` + `WriteTo`; a view and a download are the audit action `read a file`
-  (copy, path, `as`), a listing isn't. API `listCopyFiles` and `downloadCopyFile` (`internal/httpx.Download`: headers with the first
+  (copy, path, `as`), a listing isn't; the API's download and the console's two file routes are GETs that open an audit
+  scope without a fallback (`auditedReads` in `api/audit.go` and `ui/audit.go`), so the entry has its door and address. API `listCopyFiles` and `downloadCopyFile` (`internal/httpx.Download`: headers with the first
   byte, attachment, `nosniff`, `no-store`), code `file_not_found`, path refusals 422 on `path`; maintain role, deploy tokens denied.
-- Console: `/apps/{id}/copies/{copyId}/files?path=` and `/files/download`, a Files link beside Terminal, no script. Gate step
+- Console: `/apps/{id}/copies/{copyId}/files?path=` and `/files/download`, a Files link beside Terminal, no script; a refusal that
+  knows the app and copy is drawn in the page with the copy's root (422/404/409/502), and the files and terminal pages name the app by
+  its place label (`appTitle`). `CleanFilePath` refuses `secrets`/`private` as the second part under any first part (a service may be
+  named `alloc`). Gate step
   `copy-files` (`gate_files_test.go`: listings, downloads, the app's links into `secrets` listed as links and refused, the audit,
   no sentinel anywhere).
 

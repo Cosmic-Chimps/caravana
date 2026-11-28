@@ -40,6 +40,7 @@ type shellChoice struct {
 // terminalView is what the terminal page draws.
 type terminalView struct {
 	AppID   string
+	Heading sentence // the app by its place label
 	Service string
 	CopyID  string
 	Short   string
@@ -96,7 +97,7 @@ func (s *server) showTerminal(w http.ResponseWriter, r *http.Request, session st
 		return
 	}
 
-	v := terminalView{AppID: id, Service: copies[i].Service, CopyID: copyID, Short: shortID(copyID),
+	v := terminalView{AppID: id, Heading: s.appTitle(r.Context(), id, rec.Place), Service: copies[i].Service, CopyID: copyID, Short: shortID(copyID),
 		Back: "/apps/" + url.PathEscape(id), Socket: "/v1/apps/" + url.PathEscape(id) + "/copies/" + url.PathEscape(copyID) + "/terminal"}
 	picked := r.URL.Query().Get("shell")
 	if picked != "bash" && picked != "sh" {
@@ -108,7 +109,7 @@ func (s *server) showTerminal(w http.ResponseWriter, r *http.Request, session st
 	}
 
 	head, err := s.shellPage(r, "Terminal "+v.Short, navProjects, s.appCrumbs(r.Context(), id,
-		crumb{Label: id, Href: v.Back}, crumb{Label: "Terminal"})...)
+		crumb{Label: appName(id, rec.Place), Href: v.Back}, crumb{Label: "Terminal"})...)
 	if err != nil {
 		s.serverError(w, r, "read admin", err)
 		return

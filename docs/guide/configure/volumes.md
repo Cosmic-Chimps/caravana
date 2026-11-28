@@ -98,6 +98,9 @@ under it names each volume's folder on the server, how big it was and when that 
 existed has no size yet. The same list, with each volume's mounts, host path, server, size and last backup, is
 `GET /v1/apps/{id}/volumes`.
 
+A volume's files are not on a copy's [Files page](../operate/commands.md#files), which shows only the folders Nomad
+keeps for the copy: open a Terminal to look inside a volume.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../images/app-backups-dark.png">
   <img alt="The Backups tab of an app: a service row with its schedule, last backup and size, and, when opened, the folder of its volume on the server." src="../../images/app-backups-light.png" width="760">

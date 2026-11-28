@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/hashicorp/nomad/api"
+
+	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/audit"
 )
 
 const filesSentinelUI = "s3cret-sentinel-2g4z"
@@ -186,6 +189,13 @@ func TestCopyFilesRefusals(t *testing.T) {
 			if resp.StatusCode != tt.status || !strings.Contains(text(body), tt.want) {
 				t.Errorf("%d: %s, want %d with %q", resp.StatusCode, text(body), tt.status, tt.want)
 			}
+			// A refusal that knows the app and the copy is drawn in the files page, with the copy's root to
+			// start again from; an unknown app or a copy that isn't the app's is the plain page.
+			inPage := strings.Contains(tt.path, actCopy1)
+			root := `href="/apps/whoami/copies/` + actCopy1 + `/files"`
+			if got := strings.Contains(body, root) && strings.Contains(text(body), "Files in whoami"); got != inPage {
+				t.Errorf("drawn in the files page = %v, want %v:\n%s", got, inPage, body)
+			}
 		})
 	}
 
@@ -272,5 +282,61 @@ func TestCopyFilesLinks(t *testing.T) {
 				t.Errorf("GET %s showed the secret", u)
 			}
 		}
+	}
+}
+
+// TestCopyFilesAuditDoor: a file shown or downloaded in the console is noted with the console's door,
+// the client's address and the route; a listing leaves nothing.
+func TestCopyFilesAuditDoor(t *testing.T) {
+	e := filesEnv(t)
+	e.get(t, filesURL(actCopy1, "web/local"))
+	e.get(t, filesURL(actCopy1, "web/local/caravana-files/0"))
+	e.get(t, "/apps/whoami/copies/"+actCopy1+"/files/download?path=web/local/dump.bin")
+	var got []string
+	for _, ev := range e.auditEntries(t) {
+		if ev.Action != audit.ActionReadFile {
+			continue
+		}
+		as := ""
+		for _, c := range ev.Changes {
+			if c.Path == "as" {
+				as = c.To
+			}
+		}
+		got = append(got, as)
+		if ev.Door != audit.DoorConsole || ev.Address == "" || !strings.HasPrefix(ev.Operation, "GET /apps/{id}/copies/{copyId}/files") {
+			t.Errorf("entry = door %q, address %q, operation %q", ev.Door, ev.Address, ev.Operation)
+		}
+	}
+	if strings.Join(got, ",") != "view,download" && strings.Join(got, ",") != "download,view" {
+		t.Errorf("read entries = %v, want one view and one download", got)
+	}
+}
+
+// TestAppTitleNamesThePlace: the files and terminal pages name an app by its
+// place label: its name alone while Default › production is the only place, and
+// with its project and environment once there are more.
+func TestAppTitleNamesThePlace(t *testing.T) {
+	e := filesEnv(t)
+	ctx := t.Context()
+	words := func(sn sentence) string {
+		var b strings.Builder
+		for _, w := range sn {
+			b.WriteString(w.Text)
+		}
+		return b.String()
+	}
+	if got := words(e.Server.appTitle(ctx, "whoami", app.Place{Project: "default", Environment: "production", Name: "whoami"})); got != "whoami" {
+		t.Errorf("a home app = %q, want whoami", got)
+	}
+	if _, err := e.Svc.CreateProject(ctx, "shop", "Shop"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Svc.CreateEnvironment(ctx, "shop", "staging"); err != nil {
+		t.Fatal(err)
+	}
+	got := words(e.Server.appTitle(ctx, "shop--staging--web", app.Place{Project: "shop", Environment: "staging", Name: "web"}))
+	if got != "Shop › staging › web" {
+		t.Errorf("an app in shop › staging = %q", got)
 	}
 }
