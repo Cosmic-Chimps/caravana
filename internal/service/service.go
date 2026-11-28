@@ -216,6 +216,9 @@ type Service struct {
 	previewGap    time.Duration // between two passes of the reaper
 	previewExpiry atomic.Int64  // when positive, how long every preview may sit idle, in nanoseconds (the lab's shortcut)
 
+	// Caravana's own backup (feature 063), see selfbackup.go.
+	selfBackup selfBackupState
+
 	// The audit log (feature 057), see audit.go and auditlog.go: when the prune pass first runs after
 	// Start, and how often after that.
 	auditFirstGap, auditGap time.Duration
@@ -322,6 +325,8 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		certDrop:    newCertDropState(),
 
 		consoleAddr: newConsoleAddressState(),
+
+		selfBackup: newSelfBackupState(),
 
 		auditFirstGap: defaultAuditFirstGap,
 		auditGap:      defaultAuditGap,
@@ -459,6 +464,10 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	// A move of work off a server that was going goes on from the copies still there.
 	if err := s.resumeMoves(ctx); err != nil {
+		return err
+	}
+	// A backup of Caravana itself that the last process left running has nobody to finish it.
+	if err := s.failInterruptedSelfBackups(ctx); err != nil {
 		return err
 	}
 	// A scan or an install the last process left has nobody to finish it.
@@ -613,6 +622,13 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runCertificateDropPass(ctx, dropGap)
+	}()
+	// The daily backup of Caravana itself (feature 063).
+	selfGap := s.selfBackup.gap // read here: tests set the field after Start
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runSelfBackupPass(ctx, selfGap)
 	}()
 	return nil
 }

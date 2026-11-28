@@ -4,19 +4,19 @@ Decisions are in `plan.md` (D1–D16). Commit at the end of each phase, on the b
 
 ## Phase A: making a backup
 
-- [ ] A1 `internal/s3`: path-style Signature V4 client (`Put`, `Get`, `GetRange`, `List`, `Delete`), errors without URL/keys/bodies;
+- [x] A1 `internal/s3`: path-style Signature V4 client (`Put`, `Get`, `GetRange`, `List`, `Delete`), errors without URL/keys/bodies;
   tests: AWS's published SigV4 example as a known answer, an `httptest` fake S3 (`s3test`, in-memory, checks the signature) used by
   every package's tests.
-- [ ] A2 `internal/selfbackup` (pure; a test forbids `net/http`, `service`, `store`, Nomad): `Keep(path)` table, recovery key
+- [x] A2 `internal/selfbackup` (pure; a test forbids `net/http`, `service`, `store`, Nomad): `Keep(path)` table, recovery key
   (`NewKey(rand)`, `ParseKey` with checksum, `Fingerprint`), `Write(w, pub, version, schema, files…)` / `ReadHeader` / `Read(r, key)`,
   the STREAM cipher (truncation, reorder, changed header and wrong key all fail; a 0-byte and a multi-chunk body round-trip).
-- [ ] A3 Migration `0049_self_backup.sql` (D15), store methods for settings, runs, restores and items; `Store.CopyTo(ctx, path)`
+- [x] A3 Migration `0049_self_backup.sql` (D15), store methods for settings, runs, restores and items; `Store.CopyTo(ctx, path)`
   (`VACUUM INTO`, `quick_check`), `Store.SchemaVersion()`.
-- [ ] A4 `deploy.ExportVariables(ctx, keep func(string) bool)` and `deploy.ImportVariables(ctx, vars)`; `deploytest` lists by prefix.
-- [ ] A5 `service/selfbackup.go`: run (D5), daily pass (D6), retention, settings, `CreateRecoveryKey` (owner, D3), start-up settling,
+- [x] A4 `deploy.ExportVariables(ctx, keep func(string) bool)` and `deploy.ImportVariables(ctx, vars)`; `deploytest` lists by prefix.
+- [x] A5 `service/selfbackup.go`: run (D5), daily pass (D6), retention, settings, `CreateRecoveryKey` (owner, D3), start-up settling,
   audit notes; `service/attention_selfbackup.go` (D7) with `ProblemParts` words; `app.TriggerRestore`.
-- [ ] A6 API 0.70.0 (D13): routes, access rules (owner/admin), openapi, parity and roles walks, sentinel test.
-- [ ] A7 `go build/vet/test -race`, staticcheck, gofmt, cross-compile.
+- [x] A6 API 0.70.0 (D13): routes, access rules (owner/admin), openapi, parity and roles walks, sentinel test.
+- [x] A7 `go build/vet/test -race`, staticcheck, gofmt, cross-compile.
 
 ## Phase B: console
 

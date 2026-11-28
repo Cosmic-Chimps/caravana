@@ -61,6 +61,12 @@ const (
 	// AttentionCertificateExpiring: an uploaded certificate (feature 034) ends inside the warning window
 	// or has ended. One item per certificate; nothing renews it. A warning, failed once it has ended.
 	AttentionCertificateExpiring AttentionKind = "certificate_expiring"
+	// The items of Caravana's own backup (feature 063): there is a backup destination and no recovery key (a
+	// warning); the newest backup of Caravana failed; the daily backup is on and none succeeded in 48 hours
+	// (a warning). They are about the installation: no app.
+	AttentionSelfBackupNoKey  AttentionKind = "self_backup_no_key"
+	AttentionSelfBackupFailed AttentionKind = "self_backup_failed"
+	AttentionSelfBackupOld    AttentionKind = "self_backup_old"
 )
 
 // skippingAt is how many skipped slots in a row make a schedule an item: each
@@ -171,7 +177,10 @@ type AttentionItem struct {
 	// Level says warning or failed (once it has ended).
 	Certificate string
 	Names       []string
-	When        time.Time
+	// SelfBackupHours is, for self_backup_old, the hours since the last good backup of Caravana
+	// (0: none ever, since the key was made).
+	SelfBackupHours int
+	When            time.Time
 	// Detail is the raw fact: Nomad's description, the deploy or backup error,
 	// or, for the schedule kinds, a sentence in Caravana's words. Never a
 	// run's output.
@@ -290,6 +299,11 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 		return Attention{}, fmt.Errorf("attention: %w", err)
 	}
 	out.Items = append(out.Items, certItems...)
+	selfItems, err := s.selfBackupItems(ctx)
+	if err != nil {
+		return Attention{}, fmt.Errorf("attention: %w", err)
+	}
+	out.Items = append(out.Items, selfItems...)
 	if out.Items, err = s.withoutUploadedExpiring(ctx, out.Items, domains); err != nil {
 		return Attention{}, fmt.Errorf("attention: %w", err)
 	}

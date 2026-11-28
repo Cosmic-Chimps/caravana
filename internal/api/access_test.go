@@ -49,7 +49,7 @@ var walkClasses = map[string][]string{
 		"GET /v1/schedules/{scheduleId}/runs", "GET /v1/schedules/{scheduleId}/runs/{runId}",
 		"POST /v1/schedules/{scheduleId}/runs/{runId}/stop", "GET /v1/schedules/{scheduleId}/runs/{runId}/output",
 	},
-	"owner": {"PUT /v1/audit/settings"},
+	"owner": {"PUT /v1/audit/settings", "PUT /v1/self-backups/settings", "POST /v1/self-backups/recovery-key"},
 	"admin": {
 		"GET /v1/audit", "GET /v1/audit/export", "GET /v1/audit/settings",
 		"GET /v1/people", "POST /v1/people", "GET /v1/people/{personId}", "PUT /v1/people/{personId}", "DELETE /v1/people/{personId}",
@@ -79,6 +79,7 @@ var walkClasses = map[string][]string{
 		"GET /v1/certificates/uploaded", "POST /v1/certificates/uploaded", "GET /v1/certificates/uploaded/{id}",
 		"DELETE /v1/certificates/uploaded/{id}",
 		"POST /v1/certificates/drops", "GET /v1/certificates/drops", "GET /v1/certificates/drops/{id}",
+		"GET /v1/self-backups", "POST /v1/self-backups/runs", "GET /v1/self-backups/runs", "GET /v1/self-backups/runs/{id}",
 		"GET /v1/builds/settings", "PUT /v1/builds/settings",
 	},
 	"app:view": {

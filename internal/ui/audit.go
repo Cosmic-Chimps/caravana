@@ -344,6 +344,8 @@ func (l auditLinks) hrefs(e audit.Event) (resource, record string) {
 		}
 	case audit.RecordCertificateDrop:
 		record = "/settings/certificates" // the drops are listed there
+	case audit.RecordSelfBackup, audit.RecordSelfRestore:
+		record = "/ops/self-backup" // the runs and the restore are listed there
 	}
 	return resource, record
 }

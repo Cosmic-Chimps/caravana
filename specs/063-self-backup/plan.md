@@ -171,4 +171,32 @@ add the zone), automatic data restores, a second destination for Caravana's own 
 
 ## Deviations
 
-(filled in while building)
+### Phase A
+
+- **`self_backups.schema_version`**, not `schema` (D15): the column is named for what it holds and keeps clear of SQL's own word. The API
+  and the header still say `schema`.
+- **Routes.** D13 names the operations, not every path. They are `GET /v1/self-backups`, `PUT /v1/self-backups/settings`, `POST
+  /v1/self-backups/recovery-key`, `POST|GET /v1/self-backups/runs` and `GET /v1/self-backups/runs/{id}`. `getSelfBackups` also carries
+  `lastSucceeded` and `running` beside `last` (the newest run in any state), which the page needs for "Last backup" and the run panel. Codes:
+  `self_backup_running`, `self_backup_unavailable` (its message says which of the two reasons), `self_backup_not_found` (field `id`),
+  `recovery_key_exists`. The recovery-key body is optional (`{"replace": true}`).
+- **The destination's own secret key is in the backup.** `selfbackup.Keep` keeps `caravana/*` minus `caravana/cluster/*`, and the destination's
+  key is at `caravana/backup-destinations/<name>`. That is wanted: a restored Caravana needs it to reach the backups of its apps. It is
+  encrypted like every other variable, and the sentinel tests search for it.
+- **`deploy` imports `selfbackup`** for the `Variable{Path, Items}` type, so there is one type from Nomad to the file. `ImportVariables` also
+  refuses, before writing anything, a path `selfbackup.Keep` doesn't keep and a variable with no items: a backup that names Traefik's or the
+  cluster's variables is not one of ours.
+- **`store.CopyTo` holds the store's one connection** while `VACUUM INTO` runs (the store has one connection by design), so the console waits for a
+  copy of a large database. A copy of a few MB takes milliseconds; a gigabyte would be seconds. Not worth a second connection yet.
+- **The free-space rule is in `CopyTo`** (a `*store.SpaceError` with the sentence), where D5 step 2 puts it; it measures the folder the copy goes to.
+- **A failed scheduled run is not tried again the same day** (D6 says so; the needs-you item says it failed). A Caravana that was down at the
+  hour backs up when it starts, any time that day (there is no "too late" limit as the schedules have: a backup of the middle of the day is
+  as good as one of the night).
+- **Phase C must clean the restored copy.** The database in a backup was copied while its own run was `running`, so a restored store has a
+  `self_backups` row that Start would settle as failed ("Caravana restarted during the backup") and then raise `self_backup_failed` about.
+  `caravana admin restore` deletes `self_backups` rows of status `running` from the restored database, with the deployments it fails.
+- **Feed and live notices.** The three needs-you kinds are in `store.OpenedProblemKinds` (the Activity feed has no row of its own for a run of
+  Caravana's backup), `service.ChangeSelfBackup` ("selfbackup") is an admin-only notice, and `app.TriggerRestore` has its words ("after a
+  restore") in the console, the feed, the Logs page's deploy rows and the notification text. `openapi.yaml` 0.70.0 adds `restore` to
+  `Deployment.trigger`.
+- **`self_backup_no_key`'s time** (the item's `at`) is when the default destination was last saved: the moment the owner could have made a key.

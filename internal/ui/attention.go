@@ -190,6 +190,12 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 			row.Mark = "failed"
 		}
 		row.Action, row.Href = "Open certificates", "/settings/certificates"
+	case service.AttentionSelfBackupNoKey, service.AttentionSelfBackupOld:
+		// Caravana's own backup (feature 063): a warning, with the page that makes the key and shows the runs.
+		row.Mark = "warning"
+		row.Action, row.Href = "Open Caravana backup", "/ops/self-backup"
+	case service.AttentionSelfBackupFailed:
+		row.Action, row.Href = "Open Caravana backup", "/ops/self-backup"
 	case service.AttentionCaravanaUpdateFailed:
 		// A rolled back, refused or lost update is a warning; one that failed is a failure.
 		row.Mark = "warning"

@@ -17,6 +17,9 @@ const (
 	// autoscaler made it (feature 043: a scale step). Like TriggerSchedule it
 	// is not a way to start a deployment.
 	TriggerAutoscale Trigger = "autoscale"
+	// TriggerRestore is what a deployment records when Caravana redeployed the app after it was
+	// restored from its own backup (feature 063).
+	TriggerRestore Trigger = "restore"
 )
 
 // Deployment is one go-live event for an App. Image tags are resolved to
@@ -29,7 +32,7 @@ type Deployment struct {
 	// ID is unique per deploy. It goes into the job's meta, which makes every
 	// deploy a new job version even when nothing else changed.
 	ID string `json:"id"`
-	// Trigger is TriggerManual, TriggerWebhook or TriggerConsole.
+	// Trigger is TriggerManual, TriggerWebhook, TriggerConsole or TriggerRestore.
 	Trigger Trigger `json:"trigger"`
 	// Digests maps each service name to its resolved image, in the form
 	// "repo@sha256:<64 hex>". Exactly one entry per service.

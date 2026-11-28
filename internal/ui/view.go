@@ -169,6 +169,8 @@ func triggerWords(t app.Trigger) string {
 		return "on a schedule"
 	case app.TriggerAutoscale:
 		return "on its own"
+	case app.TriggerRestore:
+		return "after a restore"
 	}
 	return "by " + string(t)
 }

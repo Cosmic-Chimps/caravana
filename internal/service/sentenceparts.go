@@ -168,6 +168,8 @@ func ProblemParts(it AttentionItem, display func(string) string) []TextPart {
 		return imageVulnerableParts(it, where)
 	case AttentionCertificateExpiring:
 		return certificateExpiringParts(it)
+	case AttentionSelfBackupNoKey, AttentionSelfBackupFailed, AttentionSelfBackupOld:
+		return selfBackupParts(it)
 	case AttentionDomainDNSElsewhere:
 		if it.AddressSeen == "" {
 			return parts(who, ": ", mono(it.Domain), " points at another host.")
@@ -202,6 +204,7 @@ var AttentionKinds = []AttentionKind{
 	AttentionServerDown, AttentionServerCertExpiring,
 	AttentionCopiesUnplaced, AttentionServerMoveIncomplete, AttentionScaleAtMax,
 	AttentionImageVulnerable, AttentionCertificateExpiring,
+	AttentionSelfBackupNoKey, AttentionSelfBackupFailed, AttentionSelfBackupOld,
 }
 
 // slashed is "/web" for a service name, "" for none.

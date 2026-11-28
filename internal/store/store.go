@@ -44,7 +44,8 @@ const (
 type Store struct {
 	db      *sql.DB
 	lock    *os.File
-	applied int // migrations applied by Open
+	dir     string // the data directory
+	applied int    // migrations applied by Open
 
 	// nowFn is the store's clock. Tests of this package replace it before the
 	// store is shared; tests of other packages use SetClock, which a mutex
@@ -91,7 +92,7 @@ func Open(ctx context.Context, dataDir string) (*Store, error) {
 		return nil, fmt.Errorf("lock data directory %q: %w", dataDir, err)
 	}
 
-	s := &Store{lock: lock, nowFn: time.Now}
+	s := &Store{lock: lock, dir: dataDir, nowFn: time.Now}
 	s.db, err = openDB(filepath.Join(dataDir, dbFile))
 	if err == nil {
 		err = s.db.PingContext(ctx)
@@ -122,7 +123,7 @@ func OpenShared(ctx context.Context, dataDir string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{db: db, nowFn: time.Now}
+	s := &Store{db: db, dir: dataDir, nowFn: time.Now}
 	if err := s.checkSchema(ctx); err != nil {
 		s.Close()
 		return nil, err

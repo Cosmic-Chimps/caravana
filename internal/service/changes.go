@@ -24,6 +24,7 @@ const (
 	ChangeScans          ChangeKind = "scans"          // the image scanner, a queue or a scan's result moved; never a finding
 	ChangeUpdates        ChangeKind = "updates"        // what is waiting changed: the OS's files, a release or package check, the check setting; never a name or a count
 	ChangeConsoleAddress ChangeKind = "consoleaddress" // the console's address change moved (a check, a switch, an outcome); never more than that
+	ChangeSelfBackup     ChangeKind = "selfbackup"     // a backup of Caravana itself started or ended, or its settings or key changed; never more than that
 )
 
 // Change is a notice that something changed. It says what, never the new
