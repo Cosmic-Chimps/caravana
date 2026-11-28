@@ -183,7 +183,9 @@ func requestsFor(key string) []walkRequest {
 	only := func(admin bool) []walkRequest {
 		return []walkRequest{{label: "plain", path: fill(path, nil), admin: true, member: !admin}}
 	}
-	if key == "POST /settings/audit" {
+	// The owner's alone: the audit log's retention (057) and, for Caravana's own backup (063), its settings and
+	// the recovery key.
+	if key == "POST /settings/audit" || key == "POST /ops/self-backup/settings" || key == "GET /ops/self-backup/key" || key == "POST /ops/self-backup/key" {
 		return []walkRequest{{label: "plain", path: fill(path, nil), admin: true, ownerOnly: true}}
 	}
 	switch {

@@ -200,7 +200,7 @@ func TestOperatorSidebar(t *testing.T) {
 		return body
 	}
 	want := func(active string) []string {
-		items := []string{"Overview=/ops", "Servers=/ops/servers", "Updates=/ops/updates", "Console address=/ops/console-address", "Security=/ops/security", "Settings=/settings"}
+		items := []string{"Overview=/ops", "Servers=/ops/servers", "Updates=/ops/updates", "Console address=/ops/console-address", "Caravana backup=/ops/self-backup", "Security=/ops/security", "Settings=/settings"}
 		for i, it := range items {
 			if strings.HasPrefix(it, active+"=") {
 				items[i] += "*"

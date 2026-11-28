@@ -1,0 +1,118 @@
+{{/* Operator › Caravana backup (/ops/self-backup, feature 063): whether Caravana's own daily backup works, its
+     settings, the recovery key and the past backups. Complete without script: Back up now, the settings and the
+     key are plain posts. The state and the past backups are one live region (#sb-state and, by id, #sb-runs),
+     read again from /parts/ops/self-backup on the selfbackup and attention notices, and every 3 s while a backup
+     runs: the poller is a hidden element inside the region, drawn only while one runs (an hx-trigger can't hold a
+     template condition: the console's policy forbids filters), and the part answers 286 once nothing runs; without
+     script a <noscript> refresh reloads the page while one runs. The settings and the key section sit outside the region, so a refresh never
+     replaces what is being typed. The recovery key is never on this page: it is shown once, on the page the post
+     that makes it answers (opsselfbackupkey.html). Takes a selfBackupPage. */}}
+
+{{define "page-class"}} cv-page-upd{{end}}
+
+{{/* sb-state: the region's inside: the pill, one or two lines, the way out, a warning, the last backup's facts and
+     the button. Takes an sbState. */}}
+{{define "sb-state"}}
+<div class="cv-def">
+  {{if .Running}}<span hidden hx-get="{{.PartHref}}" hx-trigger="every 3s" hx-target="#sb-state" hx-swap="innerHTML"></span>{{end}}
+  <p>{{template "status-pill" .Status}}</p>
+  {{range .Lines}}<p class="text-base text-fg-1" role="status">{{.Lead}}{{with .When}} {{template "clock" .}}{{end}}{{template "sentence" .Tail}}</p>
+  {{end}}
+  {{with .Way}}<p class="text-sm"><a href="{{.Href}}">{{.Text}}</a></p>{{end}}
+  {{with .Warning}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{.}}</span></div>{{end}}
+  {{if .Facts}}
+  <dl class="cv-def-rows">
+    {{range .Facts}}<div class="cv-def-row"><dt class="cv-label">{{.Label}}</dt><dd>{{with .When}}{{template "clock" .}}{{else}}{{with .Mono}}<span class="cv-inline-mono">{{.}}</span>{{else}}{{.Text}}{{end}}{{end}}</dd></div>
+    {{end}}
+  </dl>
+  {{end}}
+  {{if .CanBackUp}}
+  <div class="cv-actions">
+    <form method="post" action="/ops/self-backup/runs"><button type="submit" class="cv-btn cv-btn-primary">Back up now</button></form>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{/* sb-runs: the past backups, newest first. Takes an sbState. */}}
+{{define "sb-runs"}}{{range .Runs}}
+<div class="cv-uppastrow cv-sbrow">
+  <span class="cv-uppastmark"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+  <span class="cv-uppastdate">{{template "clock" .When}}</span>
+  <span class="cv-uppasttext">{{template "sentence" .Text}}</span>
+  <span class="cv-uppastdetail">{{template "sentence" .Detail}}</span>
+</div>
+{{else}}
+<p class="cv-upnone">Nothing yet.</p>
+{{end}}{{end}}
+
+{{/* sb-part: what /parts/ops/self-backup answers: the state region, and by id the past backups. Takes an sbState. */}}
+{{define "sb-part"}}{{template "sb-state" .}}
+<div hx-swap-oob="innerHTML:#sb-runs">{{template "sb-runs" .}}</div>
+{{end}}
+
+{{define "content"}}
+<header class="cv-pagehead">
+  <h1 class="cv-headline">Caravana backup</h1>
+  <p class="cv-lede">Every day Caravana backs up its own database and settings to your backup destination, encrypted with a recovery key that only you hold. <a href="{{.GuideHref}}" rel="noopener">How to restore it on a new server</a>.</p>
+</header>
+{{with .Refusal}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+<div class="cv-upbody">
+  <section class="cv-upsec" aria-labelledby="sb-state-title">
+    <div class="cv-mnsec"><h2 class="cv-label" id="sb-state-title">Backup</h2><span class="cv-mnsec-link">times in UTC</span></div>
+    <div id="sb-state" class="cv-panel" aria-live="polite" hx-get="{{.State.PartHref}}" hx-trigger="sse:selfbackup, sse:attention, sse:sync" hx-swap="innerHTML">{{template "sb-state" .State}}</div>
+  </section>
+
+  <section class="cv-upsec" id="settings" aria-labelledby="sb-settings-title">
+    <div class="cv-mnsec"><h2 class="cv-label" id="sb-settings-title">Settings</h2></div>
+    {{if .IsOwner}}
+    <form method="post" action="/ops/self-backup/settings" class="cv-panel cv-sform">
+      {{if .Saved}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>Saved.</span></div>{{end}}
+      <div class="cv-setrow">
+        <div class="cv-setrow-text"><span class="cv-setrow-label">Daily backup</span>
+          <p class="cv-setrow-hint">Needs a recovery key and a backup destination. Back up now works whether this is on or off.</p></div>
+        <div class="cv-setrow-ctl"><label class="cv-check"><input type="checkbox" name="enabled" value="1"{{if .Settings.Enabled}} checked{{end}}><span>Back up every day</span></label></div>
+      </div>
+      <div class="cv-setrow">
+        <div class="cv-setrow-text"><label class="cv-setrow-label" for="sb-hour">Time</label>
+          <p class="cv-setrow-hint">The hour the daily backup starts.</p></div>
+        <div class="cv-setrow-ctl"><select class="cv-field cv-select" id="sb-hour" name="hour">{{range .Settings.Hours}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
+      </div>
+      <div class="cv-setrow">
+        <div class="cv-setrow-text"><label class="cv-setrow-label" for="sb-keep">Keep</label>
+          <p class="cv-setrow-hint">How many backups stay in the bucket, from 1 to 90. Older ones are deleted.</p></div>
+        <div class="cv-setrow-ctl"><input class="cv-field" id="sb-keep" type="number" name="keep" min="1" max="90" value="{{.Settings.Keep}}" inputmode="numeric"></div>
+      </div>
+      <div class="cv-setrow"><div class="cv-setrow-text"></div><div class="cv-setrow-ctl cv-actions"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save</button></div></div>
+    </form>
+    {{else}}
+    <div class="cv-panel cv-def">
+      <p class="text-base text-fg-1">{{.Settings.Summary}}</p>
+      <p class="text-sm text-fg-2">Only an owner changes these.</p>
+    </div>
+    {{end}}
+  </section>
+
+  <section class="cv-upsec" id="recovery-key" aria-labelledby="sb-key-title">
+    <div class="cv-mnsec"><h2 class="cv-label" id="sb-key-title">Recovery key</h2></div>
+    <div class="cv-panel cv-def">
+      {{if .Key.Fingerprint}}
+      <p class="text-base text-fg-1">Backups are encrypted to the key with fingerprint <span class="cv-inline-mono">{{.Key.Fingerprint}}</span>{{with .Key.Made}}, made {{template "clock" .}}{{end}}. Caravana doesn't keep the key: only you do.</p>
+      {{else}}
+      <p class="text-base text-fg-1">There is no recovery key yet. It is made once and shown once. Keep it off this server: without it, Caravana's backups can't be read.</p>
+      {{end}}
+      {{if .IsOwner}}
+      <div class="cv-actions">
+        {{if .Key.Fingerprint}}<a href="/ops/self-backup/key" class="cv-btn cv-btn-secondary cv-btn-sm">Make a new key…</a>
+        {{else}}<form method="post" action="/ops/self-backup/key"><button type="submit" class="cv-btn cv-btn-primary">Make a recovery key</button></form>{{end}}
+      </div>
+      {{else}}<p class="text-sm text-fg-2">Only an owner makes the key.</p>{{end}}
+    </div>
+  </section>
+
+  <section class="cv-upsec" aria-labelledby="sb-past-title">
+    <div class="cv-mnsec"><h2 class="cv-label" id="sb-past-title">Past backups</h2><span class="cv-mnsec-link">times in UTC</span></div>
+    <div class="cv-panel cv-uppast" id="sb-runs">{{template "sb-runs" .State}}</div>
+  </section>
+</div>
+{{end}}

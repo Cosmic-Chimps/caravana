@@ -188,6 +188,12 @@ func (s *server) routeTable() []route {
 		{"POST", "/ops/console-address/changes", s.protected(s.requireSession(s.startConsoleChange))},
 		{"POST", "/ops/console-address/changes/{id}/switch", s.protected(s.requireSession(s.switchConsoleChange))},
 		{"POST", "/ops/console-address/changes/{id}/cancel", s.protected(s.requireSession(s.cancelConsoleChange))},
+		{"GET", "/ops/self-backup", s.requireSession(s.showSelfBackup)},
+		{"GET", "/parts/ops/self-backup", s.requirePart(s.partSelfBackup)},
+		{"POST", "/ops/self-backup/runs", s.protected(s.requireSession(s.startSelfBackupNow))},
+		{"POST", "/ops/self-backup/settings", s.protected(s.requireSession(s.saveSelfBackupSettings))},
+		{"GET", "/ops/self-backup/key", s.requireSession(s.showRecoveryKeyConfirm)},
+		{"POST", "/ops/self-backup/key", s.protected(s.requireSession(s.makeRecoveryKey))},
 		{"GET", "/ops/security", s.requireSession(s.showOpsSecurity)},
 		{"GET", "/parts/ops/security", s.requirePart(s.partOpsSecurity)},
 		{"POST", "/ops/security/install", s.protected(s.requireSession(s.installScanner))},
@@ -454,7 +460,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "previews", "promote", "stop", "terminal", "files", "schedules", "domains", "logs", "requests", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "opsconsoleaddress", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete", "invite"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "previews", "promote", "stop", "terminal", "files", "schedules", "domains", "logs", "requests", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "opsconsoleaddress", "opsselfbackup", "opsselfbackupkey", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete", "invite"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which

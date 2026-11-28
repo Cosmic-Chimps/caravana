@@ -1,0 +1,47 @@
+{{/* The recovery key's page (feature 063): before a key, what making one means and the button; after the post that
+     made it, the key itself, once. This is the only page that ever holds the key: it is the answer to a post
+     (never a redirect, so the key is in no address), it is sent no-store, and a reload asks the owner to post
+     again. Takes a selfBackupKeyPage. */}}
+
+{{define "content"}}
+<section class="cv-main">
+  {{if .Made}}
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">Your recovery key</h1>
+    <p class="cv-lede">Copy it now and keep it somewhere that isn't this server, such as a password manager.</p>
+  </header>
+  <div class="cv-panel cv-once" role="status">
+    <p class="cv-once-text">This key opens Caravana's backups. Without it they can't be read, by you or by anyone. It isn't shown again.</p>
+    <div class="cv-once-row">
+      <code class="cv-once-value" id="new-recovery-key">{{.Key}}</code>
+      <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="new-recovery-key" hidden>Copy key</button>
+    </div>
+    <p class="text-sm text-fg-2">Fingerprint <span class="cv-inline-mono">{{.Print}}</span>. Each backup names the fingerprint of the key it needs.</p>
+  </div>
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    <p class="text-base text-fg-1">Keep it with the backup destination's address, bucket, prefix and keys, and this console's domain. That is everything a new server needs to bring Caravana back.</p>
+    <p class="text-sm text-fg-2">A backup is being made with the new key now. Making another key later is the only way to get a key you can see again.</p>
+  </div>
+  <div class="cv-actions"><a href="{{.BackHref}}" class="cv-btn cv-btn-primary">I have saved it</a></div>
+  {{else}}
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">{{if .Replace}}Make a new recovery key?{{else}}Make a recovery key{{end}}</h1>
+  </header>
+  {{with .Refusal}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    {{if .Replace}}
+    <p class="text-base text-fg-1">Backups made from now on are encrypted to the new key.</p>
+    <p class="text-base text-fg-1">The backups made before still need the old key. Keep it, or they can't be restored.</p>
+    {{else}}
+    <p class="text-base text-fg-1">The key is shown once, on the next page. Caravana keeps only its public half, so only you can read the backups.</p>
+    {{end}}
+    <p class="text-sm text-fg-2">A backup is made right away with the new key.</p>
+  </div>
+  <form method="post" action="/ops/self-backup/key" class="cv-actions">
+    {{if .Replace}}<input type="hidden" name="replace" value="1">{{end}}
+    <button type="submit" class="cv-btn cv-btn-primary">{{if .Replace}}Make a new key{{else}}Make a recovery key{{end}}</button>
+    <a href="{{.BackHref}}" class="cv-btn cv-btn-secondary">Cancel</a>
+  </form>
+  {{end}}
+</section>
+{{end}}

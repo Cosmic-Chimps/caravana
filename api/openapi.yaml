@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.69.1
+  version: 0.70.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -7548,6 +7548,237 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /v1/self-backups:
+    get:
+      operationId: getSelfBackups
+      summary: Read the state of Caravana's own backup.
+      description: |
+        Caravana backs itself up once a day to the default backup destination (feature 063): its
+        database and the Nomad Variables it owns, in one file encrypted to a recovery key the owner
+        keeps. This answers the settings, the recovery key's fingerprint (the key itself is never
+        stored or readable), the destination's name, whether a backup can be made now (`unavailable`:
+        `no_destination` or `no_key`), the run in progress, the newest run and the newest that
+        succeeded. Owners and admins. Answered with `Cache-Control: no-store`.
+      tags: [self-backup]
+      responses:
+        "200":
+          description: The state.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfBackups"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/SelfBackupForbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/self-backups/settings:
+    put:
+      operationId: putSelfBackupSettings
+      summary: Change when and how many backups of Caravana are made.
+      description: |
+        Every property is optional and a missing one stays as it is: `enabled` (on by default), `hour`
+        (UTC, 0 to 23, 3 by default) and `keep` (how many backups to keep, 1 to 90, 14 by default). The
+        daily backup runs once a day at `hour` while it is on, a recovery key exists and a default
+        backup destination exists. Answers the state as it is now (`getSelfBackups`). Owners only; the
+        change is an entry of the audit log.
+      tags: [self-backup]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                enabled: {type: boolean}
+                hour: {type: integer, minimum: 0, maximum: 23}
+                keep: {type: integer, minimum: 1, maximum: 90}
+      responses:
+        "200":
+          description: The state, with the new settings.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfBackups"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/SelfBackupForbidden"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/SelfBackupInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/self-backups/recovery-key:
+    post:
+      operationId: createRecoveryKey
+      summary: Make the recovery key that Caravana's backups are encrypted to.
+      description: |
+        The key is shown once, in this answer, and nothing stores it: Caravana keeps only its public half
+        (and the fingerprint, which names the key everywhere). **Whoever holds the key can read the
+        backups, and without it they can't be restored.** Keep it outside the server, with the backup
+        destination's endpoint, bucket, prefix and keys and the console's domain.
+
+        The body is optional. With a key already made, `replace: true` is needed (else 409
+        `recovery_key_exists`): the new key encrypts every backup from now on, and the old one is still
+        needed for the backups made before it (each says its key's fingerprint). A backup is made at once
+        with the key when a default backup destination exists. Owners only. The answer is
+        `Cache-Control: no-store`, and the audit log notes that a key was made, with its fingerprint and
+        never the key.
+      tags: [self-backup]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                replace: {type: boolean, default: false}
+      responses:
+        "201":
+          description: The key, once.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [recoveryKey, fingerprint]
+                properties:
+                  recoveryKey:
+                    type: string
+                    pattern: "^cvrk_[a-z2-7]{58}$"
+                    description: "`cvrk_` and 58 lowercase base32 characters: the private key and a check, so a typo is refused as one."
+                  fingerprint:
+                    type: string
+                    pattern: "^[0-9a-f]{16}$"
+                    description: The first 16 hex digits of the SHA-256 of the public key.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/SelfBackupForbidden"
+        "409":
+          $ref: "#/components/responses/SelfBackupRefused"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/self-backups/runs:
+    post:
+      operationId: startSelfBackup
+      summary: Back up Caravana now.
+      description: |
+        Starts a backup and answers 202 with the run, `running`, and its `Location`; read it again
+        (`getSelfBackupRun`) until it is `succeeded` or `failed`. Refused with 409
+        `self_backup_unavailable` (there is no default backup destination, or no recovery key yet: the
+        message says which) and `self_backup_running` while another backup runs. Owners and admins.
+      tags: [self-backup]
+      responses:
+        "202":
+          description: The run, `running`.
+          headers:
+            Location:
+              schema: {type: string}
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfBackupRun"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/SelfBackupForbidden"
+        "409":
+          $ref: "#/components/responses/SelfBackupRefused"
+        "500":
+          $ref: "#/components/responses/Internal"
+    get:
+      operationId: listSelfBackupRuns
+      summary: List the backups of Caravana.
+      description: "The newest 30, newest first. Answers are `Cache-Control: no-store`."
+      tags: [self-backup]
+      responses:
+        "200":
+          description: The runs.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [runs]
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SelfBackupRun"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/SelfBackupForbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/self-backups/runs/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A run's ID, 32 lowercase hex digits.
+        schema: {type: string}
+    get:
+      operationId: getSelfBackupRun
+      summary: Read one backup of Caravana.
+      tags: [self-backup]
+      responses:
+        "200":
+          description: The run.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfBackupRun"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/SelfBackupForbidden"
+        "404":
+          description: "`self_backup_not_found`: no run has this ID."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/me:
     get:
       operationId: getMe
@@ -9980,7 +10211,9 @@ components:
             updates are waiting; a warning) or `caravana_update_failed` (an update of Caravana was
             rolled back, failed, was refused or got lost), `server_down` (a server's node is
             down; `title` is "Server down: <name>") or `server_certificate_expiring` (a server's Nomad
-            certificate is near its end; "Server certificate ending: <name>"). Those five have no app: `title` is
+            certificate is near its end; "Server certificate ending: <name>"), `self_backup_no_key`, `self_backup_failed` or
+            `self_backup_old` (Caravana's own backup, feature 063; "Caravana's backup has no recovery key", "... failed", "... is out
+            of date"). Those five have no app: `title` is
             "Reboot needed", "Security updates waiting" or "caravana update failed" and `text` is the
             sentence ("This server needs a reboot: kernel 6.8.0-149 is installed, but 6.8.0-147 is
             still running."). A
@@ -14492,6 +14725,83 @@ components:
           oneOf:
             - {type: string, format: date-time}
             - type: "null"
+    SelfBackupRun:
+      type: object
+      additionalProperties: false
+      description: |
+        One backup of Caravana itself. `running`, then `succeeded` (`object` is the file in the
+        destination's bucket, `<prefix>/_caravana/<unix seconds>/caravana-<unix seconds>.cvbackup`) or
+        `failed` (`error` says why, in Caravana's words). `trigger`: `schedule` (the daily clock),
+        `owner` (`startSelfBackup`) or `key` (the backup made at once when a recovery key was made). A
+        `warning` on a run that succeeded says an old backup couldn't be deleted. A run holds names and
+        sizes, never a key, a variable or a byte of the backup.
+      required: [id, status, trigger, actor, startedAt, endedAt, destination, object, bytes, keyFingerprint, version, schema, warning, error]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{32}$"}
+        status: {type: string, enum: [running, succeeded, failed]}
+        trigger: {type: string, enum: [schedule, owner, key]}
+        actor: {type: string, description: "The person's email, empty for the daily clock."}
+        startedAt: {type: string, format: date-time}
+        endedAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
+        destination: {type: string, description: "The name of the backup destination it went to."}
+        object: {type: string, description: "The file's key in the bucket; empty until it succeeded."}
+        bytes: {type: integer, minimum: 0}
+        keyFingerprint: {type: string, description: "The recovery key it is encrypted to."}
+        version: {type: string, description: "The Caravana that made it; empty for a development build."}
+        schema: {type: integer, minimum: 0, description: "The newest migration of the database in it."}
+        warning: {type: string}
+        error: {type: string}
+    SelfBackupSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, hour, keep]
+      properties:
+        enabled: {type: boolean}
+        hour: {type: integer, minimum: 0, maximum: 23, description: The UTC hour of the daily backup.}
+        keep: {type: integer, minimum: 1, maximum: 90}
+    SelfBackups:
+      type: object
+      additionalProperties: false
+      description: |
+        The state of Caravana's own backup. `key` is null until a recovery key was made; `destination` is
+        null while there is no default backup destination; `unavailable` says why a backup can't be made
+        now (`no_destination`, else `no_key`) and is null when one can. `last` is the newest run in any
+        state and `lastSucceeded` the newest that succeeded.
+      required: [settings, key, destination, unavailable, running, last, lastSucceeded]
+      properties:
+        settings: {$ref: "#/components/schemas/SelfBackupSettings"}
+        key:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [fingerprint, createdAt]
+              properties:
+                fingerprint: {type: string, pattern: "^[0-9a-f]{16}$"}
+                createdAt: {type: string, format: date-time}
+            - type: "null"
+        destination:
+          oneOf:
+            - {type: string}
+            - type: "null"
+        unavailable:
+          oneOf:
+            - {type: string, enum: [no_destination, no_key]}
+            - type: "null"
+        running:
+          oneOf:
+            - {$ref: "#/components/schemas/SelfBackupRun"}
+            - type: "null"
+        last:
+          oneOf:
+            - {$ref: "#/components/schemas/SelfBackupRun"}
+            - type: "null"
+        lastSucceeded:
+          oneOf:
+            - {$ref: "#/components/schemas/SelfBackupRun"}
+            - type: "null"
     NodeClean:
       type: object
       additionalProperties: false
@@ -14704,7 +15014,8 @@ components:
           enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, backup_copy_failed, restore_failed, no_backup_destination,
             schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring, disk_nearly_full,
             os_reboot_required, os_security_updates, caravana_update_failed, server_down, server_certificate_expiring,
-            copies_unplaced, server_move_incomplete, scale_at_max, image_vulnerable, certificate_expiring]
+            copies_unplaced, server_move_incomplete, scale_at_max, image_vulnerable, certificate_expiring,
+            self_backup_no_key, self_backup_failed, self_backup_old]
           description: |
             What needs a person. `schedule_failed`: a schedule's latest run that ended, not
             counting skipped slots and runs stopped on purpose, failed (an exit code other than 0,
@@ -14769,8 +15080,12 @@ components:
             presents an uploaded certificate has no `domain_cert_expiring`. It is about the
             installation, so it has no `appId`; `detail` is the sentence ("The uploaded certificate for
             *.example.test expires in 5 days (Dec 2). Upload its replacement in Settings ›
-            Certificates."), and it goes when the certificate is replaced or removed. Clients should
-            accept kinds they don't know.
+            Certificates."), and it goes when the certificate is replaced or removed. The three
+            `self_backup_*` kinds (feature 063) are about Caravana's own backup and have no `appId`:
+            `self_backup_no_key`, a warning, when a backup destination exists and no recovery key was made;
+            `self_backup_failed`, failed, when the newest backup that ended failed (`detail` says why); and
+            `self_backup_old`, a warning, when the daily backup is on and none succeeded in 48 hours. Each
+            goes when a backup succeeds or the key is made. Clients should accept kinds they don't know.
         destination:
           type: string
           description: |
@@ -14779,7 +15094,7 @@ components:
             copy was going to).
         appId:
           type: string
-          description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required`, `os_security_updates`, `caravana_update_failed`, `server_down`, `server_certificate_expiring` and `certificate_expiring`, which are about the installation, the host or a server.
+          description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required`, `os_security_updates`, `caravana_update_failed`, `server_down`, `server_certificate_expiring`, `certificate_expiring` and the `self_backup_*` kinds, which are about the installation, the host or a server.
         project:
           type: string
           description: The project of `appId`'s app. Absent when `appId` is.
@@ -14848,7 +15163,7 @@ components:
         level:
           type: string
           enum: [warning, failed]
-          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %. For `caravana_update_failed`, `failed` for a run that failed and `warning` for the other states. For `server_down`, `failed`; for `server_certificate_expiring` and `server_move_incomplete`, `warning`. For `image_vulnerable`, `failed` when an advisory is critical, else `warning`. For `certificate_expiring`, `failed` once the certificate has ended, else `warning`.
+          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %. For `caravana_update_failed`, `failed` for a run that failed and `warning` for the other states. For `server_down`, `failed`; for `server_certificate_expiring` and `server_move_incomplete`, `warning`. For `image_vulnerable`, `failed` when an advisory is critical, else `warning`. For `certificate_expiring`, `failed` once the certificate has ended, else `warning`. For `self_backup_failed`, `failed`; for the other `self_backup_*` kinds, `warning`.
         scheduleId:
           type: string
           description: The schedule's ID (`getSchedule`), for the schedule kinds.
@@ -15255,7 +15570,10 @@ components:
         appName: {$ref: "#/components/schemas/PlaceAppName"}
         trigger:
           type: string
-          enum: [manual, webhook, console]
+          enum: [manual, webhook, console, restore]
+          description: |
+            What started it. `restore` is the redeploy Caravana makes of each app after it was
+            restored from its own backup (feature 063).
         status:
           type: string
           enum: [pending, running, healthy, failed, reverted, superseded]
@@ -16512,6 +16830,30 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    SelfBackupForbidden:
+      description: |
+        `not_allowed` (Caravana's backup is for owners and admins; the settings and the recovery key are
+        for owners), `token_scope` (a deploy token) or, for a write made with a session cookie,
+        `cross_origin`. Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    SelfBackupInvalid:
+      description: "`invalid_field`, `field` naming it: `hour` (not 0 to 23) or `keep` (not 1 to 90). Nothing was changed."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    SelfBackupRefused:
+      description: |
+        `self_backup_unavailable`: there is no default backup destination to put the backup in, or no
+        recovery key to encrypt it to (the message says which). `self_backup_running`: another backup
+        is running. `recovery_key_exists`: a key was made and `replace` wasn't asked for.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     CertificateNotFound:
       description: "`certificate_not_found`: no uploaded certificate has this ID."
       content:
@@ -16654,6 +16996,8 @@ tags:
     description: The servers of the cluster, how one joins, and the calls their agents make.
   - name: audit
     description: The audit log, who did what and when, and how long it is kept.
+  - name: self-backup
+    description: Caravana's own daily backup, encrypted to a recovery key the owner keeps, and its runs.
   - name: people
     description: The people who use Caravana, their organization role and their roles per project and environment, and who the caller is.
   - name: tokens

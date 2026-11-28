@@ -52,7 +52,8 @@ var OpenedProblemKinds = []string{
 	"server_down", "server_certificate_expiring",
 	"scale_at_max",
 	"image_vulnerable",
-	"backup_copy_failed", // a copy of a backup isn't a row of the feed (feature 052)
+	"backup_copy_failed",                                          // a copy of a backup isn't a row of the feed (feature 052)
+	"self_backup_no_key", "self_backup_failed", "self_backup_old", // Caravana's own backup has no row of its own in it (feature 063)
 }
 
 // ImageFindingsKey is the key of the feed's events about an app's image findings: one when the

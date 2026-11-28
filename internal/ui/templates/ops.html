@@ -79,6 +79,7 @@
   {{with .Line}}<p class="cv-mnhostline"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
   {{if .Meters}}<div class="cv-node-meters">{{range .Meters}}{{template "mon-meter" .}}{{end}}</div>{{end}}
   {{with .Reclaimable}}<p class="cv-node-reclaim"><a href="{{$.ReclaimHref}}">Reclaimable {{.}}</a></p>{{end}}
+  {{with .Backup}}<p class="cv-node-reclaim"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span> <a href="{{.Href}}">Caravana backup: {{with .When}}{{template "clock" .}}{{else}}{{.Lead}}{{end}}</a></p>{{end}}
   {{if .Chips}}
   <div class="cv-node-chips">
     {{range .Chips}}<a href="{{.Href}}" id="{{.ID}}" class="cv-copychip cv-opschip{{with .State}} cv-copychip-{{.}}{{end}}{{if eq .Mark "failed"}} cv-copychip-failed{{end}}" title="{{.Title}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="cv-copychip-name">{{.Name}}</span> <span class="cv-copychip-id">{{.Short}}</span><span class="sr-only"> ({{.Role}})</span></a>
@@ -169,7 +170,7 @@
     <div hx-get="/parts/attention" hx-trigger="sse:attention, sse:sync" hx-swap="innerHTML">{{template "attention-region" .Needs}}</div>
   </section>
   <div class="cv-opsmain">
-    <section class="cv-opsblock" id="ops-server" aria-labelledby="ops-server-title" hx-get="/parts/ops/server" hx-trigger="sse:metrics, sse:host, sse:copies, sse:deployments, sse:apps, sse:actions, sse:attention, sse:sync" hx-swap="innerHTML">{{template "ops-server-region" .Server}}</section>
+    <section class="cv-opsblock" id="ops-server" aria-labelledby="ops-server-title" hx-get="/parts/ops/server" hx-trigger="sse:metrics, sse:host, sse:copies, sse:deployments, sse:apps, sse:actions, sse:attention, sse:selfbackup, sse:sync" hx-swap="innerHTML">{{template "ops-server-region" .Server}}</section>
     <section class="cv-opsblock" id="ops-apps" aria-labelledby="ops-apps-title" hx-get="/parts/ops/apps" hx-trigger="sse:metrics, sse:apps, sse:deployments, sse:copies, sse:actions, sse:attention, sse:sync" hx-swap="innerHTML">{{template "ops-apps-region" .Apps}}</section>
   </div>
   <section class="cv-opsblock cv-opsactivity" aria-labelledby="ops-activity-title">

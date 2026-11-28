@@ -41,6 +41,7 @@
     <span class="cv-label cv-nav-title">Platform</span>
     <a href="/ops/updates" class="cv-nav-item"{{if eq .Active "ops-updates"}} aria-current="page"{{end}}>{{icon "download"}}<span>Updates</span><span class="cv-nav-mark" id="nav-updates-mark">{{template "nav-updates-mark" .UpdatesMark}}</span></a>
     <a href="/ops/console-address" class="cv-nav-item"{{if eq .Active "ops-console-address"}} aria-current="page"{{end}}>{{icon "globe"}}<span>Console address</span></a>
+    <a href="/ops/self-backup" class="cv-nav-item"{{if eq .Active "ops-self-backup"}} aria-current="page"{{end}}>{{icon "archive"}}<span>Caravana backup</span></a>
     <a href="/ops/security" class="cv-nav-item"{{if eq .Active "ops-security"}} aria-current="page"{{end}}>{{icon "shield"}}<span>Security</span></a>
   </div>
   {{else}}

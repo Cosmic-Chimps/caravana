@@ -384,6 +384,15 @@ var consoleParity = map[string]parity{
 	"POST /ops/console-address/changes":             {ops: []string{"startConsoleAddressChange"}},
 	"POST /ops/console-address/changes/{id}/switch": {ops: []string{"switchConsoleAddress"}},
 	"POST /ops/console-address/changes/{id}/cancel": {ops: []string{"cancelConsoleAddressChange"}},
+	// Caravana's own backup (feature 063): the page and its region read the state and the runs (and getUpdates for the
+	// sidebar's mark); Back up now, the settings and the key are the API's startSelfBackup, putSelfBackupSettings and
+	// createRecoveryKey. The confirmation before a new key reads nothing and changes nothing.
+	"GET /ops/self-backup":           {ops: []string{"getSelfBackups", "listSelfBackupRuns", "getUpdates"}},
+	"GET /parts/ops/self-backup":     {ops: []string{"getSelfBackups", "listSelfBackupRuns"}},
+	"POST /ops/self-backup/runs":     {ops: []string{"startSelfBackup"}},
+	"POST /ops/self-backup/settings": {ops: []string{"putSelfBackupSettings"}},
+	"GET /ops/self-backup/key":       {why: "asks the owner to confirm before a new recovery key: it reads and changes nothing"},
+	"POST /ops/self-backup/key":      {ops: []string{"createRecoveryKey"}},
 	// The Operator Updates page (feature 027 page 3): what is waiting (getUpdates) and the needs-you items about
 	// the OS (listAttention). The part is the same regions drawn again on the updates notice. The two forms start a
 	// check in the background (checkUpdates, what=release or packages) and save the one setting caravana owns

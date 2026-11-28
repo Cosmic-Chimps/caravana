@@ -82,6 +82,9 @@ func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
 	if it.Kind == service.AttentionCaravanaUpdateFailed {
 		out.Level = string(it.Level) // failed for a run that failed, else warning
 	}
+	if it.Kind == service.AttentionSelfBackupNoKey || it.Kind == service.AttentionSelfBackupFailed || it.Kind == service.AttentionSelfBackupOld {
+		out.Level = string(it.Level) // failed for a failed backup, else warning; detail is the sentence
+	}
 	if it.Kind == service.AttentionCertificateExpiring {
 		out.Certificate, out.Names, out.Level = it.Certificate, it.Names, string(it.Level) // failed once it has ended, else warning
 	}

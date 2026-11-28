@@ -229,6 +229,12 @@ func (s *server) routes() []route {
 		{http.MethodDelete, "/v1/apps/{id}/webhook", s.deleteWebhookToken, false, false},
 		{http.MethodGet, "/v1/audit", s.listAuditEvents, false, false},
 		{http.MethodGet, "/v1/audit/export", s.exportAuditEvents, false, false},
+		{http.MethodGet, "/v1/self-backups", s.getSelfBackups, false, false},
+		{http.MethodPut, "/v1/self-backups/settings", s.putSelfBackupSettings, false, false},
+		{http.MethodPost, "/v1/self-backups/recovery-key", s.createRecoveryKey, false, false},
+		{http.MethodPost, "/v1/self-backups/runs", s.startSelfBackup, false, false},
+		{http.MethodGet, "/v1/self-backups/runs", s.listSelfBackupRuns, false, false},
+		{http.MethodGet, "/v1/self-backups/runs/{id}", s.getSelfBackupRun, false, false},
 		{http.MethodGet, "/v1/audit/settings", s.getAuditSettings, false, false},
 		{http.MethodPut, "/v1/audit/settings", s.putAuditSettings, false, false},
 		{http.MethodGet, "/v1/me", s.getMe, false, false},
@@ -450,6 +456,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := certificatesError(err); e != nil {
+		return e
+	}
+	if e := selfBackupError(err); e != nil {
 		return e
 	}
 	if e := dnsError(err); e != nil {

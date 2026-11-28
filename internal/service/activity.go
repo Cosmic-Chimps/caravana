@@ -235,6 +235,8 @@ func triggerLead(trigger string) string {
 		return "on a schedule"
 	case app.TriggerAutoscale:
 		return "on its own"
+	case app.TriggerRestore:
+		return "after a restore"
 	}
 	return "by " + trigger
 }

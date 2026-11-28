@@ -194,6 +194,8 @@ const (
 	RecordVolumeDeletion       RecordKind = "volume_deletion"
 	RecordConsoleAddressChange RecordKind = "console_address_change"
 	RecordCertificateDrop      RecordKind = "certificate_drop"
+	RecordSelfBackup           RecordKind = "self_backup"
+	RecordSelfRestore          RecordKind = "self_restore"
 )
 
 // Record links an entry to the record it is about.

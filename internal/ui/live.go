@@ -94,7 +94,7 @@ func (s *server) visibleTo(who service.Principal, c service.Change, metricsForAl
 		return s.allowedView(who, c.AppID)
 	}
 	switch c.What {
-	case service.ChangeServers, service.ChangeHost, service.ChangeUpdates, service.ChangeScans, service.ChangeConsoleAddress:
+	case service.ChangeServers, service.ChangeHost, service.ChangeUpdates, service.ChangeScans, service.ChangeConsoleAddress, service.ChangeSelfBackup:
 		return false
 	case service.ChangeMetrics:
 		return metricsForAll

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,6 +30,15 @@ func setDestination(t *testing.T, e *env) {
 		AccessKeyID: "AK", SecretAccessKey: new("SK-" + marker)})
 	if err != nil {
 		t.Fatalf("SetBackupDestination: %v", err)
+	}
+	// Caravana's own backup (feature 063) is set up and off, so its needs-you items stay out of the tests
+	// of everything else that needs a destination.
+	ctx := context.Background()
+	if err := e.store.SetSelfBackupKey(ctx, bytes.Repeat([]byte{9}, 32), "0123456789abcdef", e.svc.clock.Now()); err != nil {
+		t.Fatalf("SetSelfBackupKey: %v", err)
+	}
+	if err := e.store.SetSelfBackupSchedule(ctx, false, 3, 14); err != nil {
+		t.Fatalf("SetSelfBackupSchedule: %v", err)
 	}
 }
 

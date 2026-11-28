@@ -439,6 +439,12 @@ var accessRules = map[string]accessRule{
 	"POST /v1/certificates/drops":                    admin(),
 	"GET /v1/certificates/drops":                     admin(),
 	"GET /v1/certificates/drops/{id}":                admin(),
+	"GET /v1/self-backups":                           admin(),
+	"PUT /v1/self-backups/settings":                  owner(),
+	"POST /v1/self-backups/recovery-key":             owner(),
+	"POST /v1/self-backups/runs":                     admin(),
+	"GET /v1/self-backups/runs":                      admin(),
+	"GET /v1/self-backups/runs/{id}":                 admin(),
 	"GET /v1/builds/settings":                        admin(),
 	"PUT /v1/builds/settings":                        admin(),
 }

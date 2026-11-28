@@ -206,11 +206,17 @@ func (s *server) liveApps(w http.ResponseWriter, r *http.Request) {
 		s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeMetrics}, MetricsForAll: true})
 		return
 	}
+	if r.URL.Query().Get("watch") == "selfbackup" {
+		// Operator › Caravana backup (feature 063): a backup started or ended, the settings or the key changed.
+		s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeSelfBackup, service.ChangeAttention},
+			Allow: func(p service.Principal) error { return p.Allow(service.NeedAdmin(), service.Target{}, s.now()) }})
+		return
+	}
 	if r.URL.Query().Get("watch") == "ops" {
 		// The Operator Overview (feature 027): everything its regions draw, and the host's own events.
 		s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeMetrics, service.ChangeApps, service.ChangeActivity,
 			service.ChangeActions, service.ChangeSchedules, service.ChangeAttention, service.ChangeHost, service.ChangeDeployments,
-			service.ChangeCopies, service.ChangeUpdates, service.ChangeScans},
+			service.ChangeCopies, service.ChangeUpdates, service.ChangeScans, service.ChangeSelfBackup},
 			Allow: func(p service.Principal) error { return p.Allow(service.NeedAdmin(), service.Target{}, s.now()) }})
 		return
 	}

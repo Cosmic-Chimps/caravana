@@ -146,6 +146,9 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 		ev.Package, ev.PackageVersion, ev.FixedIn = it.Package, it.PackageVersion, it.FixedIn
 		ev.Advisory, ev.Severity, ev.Image = it.Advisory, it.Severity, it.Image
+	case AttentionSelfBackupNoKey, AttentionSelfBackupFailed, AttentionSelfBackupOld:
+		ev.Title = selfBackupTitle(it.Kind)
+		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 	case AttentionCertificateExpiring:
 		ev.Title = certificateTitle(it)
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
@@ -263,6 +266,8 @@ func startedBy(t app.Trigger) string {
 		return ", started by the API"
 	case app.TriggerWebhook:
 		return ", started by its webhook"
+	case app.TriggerRestore:
+		return ", started after a restore"
 	}
 	return ""
 }
@@ -290,6 +295,8 @@ func problemPath(kind AttentionKind, appID, subject string) string {
 		return deploymentPath(appID, "")
 	case AttentionCertificateExpiring:
 		return "/settings/certificates"
+	case AttentionSelfBackupNoKey, AttentionSelfBackupFailed, AttentionSelfBackupOld:
+		return "/ops/self-backup"
 	case AttentionDomainDNSElsewhere, AttentionDomainCertExpiring:
 		return "/domains?open=" + url.QueryEscape(subject) + "#domain-" + subject
 	}

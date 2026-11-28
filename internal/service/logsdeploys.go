@@ -192,6 +192,8 @@ func deployWhoWords(rec store.DeploymentRecord) string {
 		return "through the API"
 	case app.TriggerConsole:
 		return "from the console"
+	case app.TriggerRestore:
+		return "after a restore"
 	}
 	return "by " + string(rec.Deployment.Trigger)
 }
