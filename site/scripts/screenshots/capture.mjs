@@ -69,7 +69,7 @@ const SCREENS = {
   },
   'new-app-image': { path: '/apps/new', ready: 'form', h: 1010 },
   'new-app-compose': { path: '/apps/new?from=compose', ready: 'form', h: 920 },
-  'new-app-templates': { path: '/apps/new?from=template', ready: 'main' },
+  'new-app-templates': { path: '/apps/new?from=template', ready: 'main', h: 1200 },
   'new-app-github': { path: '/apps/new?from=github', ready: 'form', h: 1030 },
   'new-app-git': { path: '/apps/new?from=git', ready: 'form', h: 1100 },
   'app-running': { path: `/apps/${WEB}`, ready: 'main', h: 960 },

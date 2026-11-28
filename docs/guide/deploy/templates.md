@@ -8,7 +8,7 @@ other app.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../images/new-app-templates-dark.png">
-  <img alt="The New app page on the From a template tab: a search box, tag filters and a grid of template cards with a title, a version and a one-line description." src="../../images/new-app-templates-light.png" width="760">
+  <img alt="The New app page on the From a template tab: a search box, tag filters, a grid of ten template cards from Adminer to Wazuh, each with a title, a version and a description, and under it the line Catalog 2026.11.28, built in, with Check now and Stop checking for new templates." src="../../images/new-app-templates-light.png" width="760">
 </picture>
 
 ## Install one
