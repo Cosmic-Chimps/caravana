@@ -20,6 +20,9 @@ page).
 | In the API's answers and the logs | Yes, as part of the definition | No: the stored app, the answers, the logs and the Nomad job hold the name only |
 | Reaches the container as | An environment variable | An environment variable |
 
+To point one app at another, such as a `DATABASE_URL` for a database app of the same environment, use the other
+app's name; see [Connect apps to each other](connect-apps.md).
+
 Use a secret for anything that grants access when read: passwords, API keys, tokens, private keys. Use a
 plain variable for ordinary settings such as `NODE_ENV=production`. The **Add or change** form has a box,
 **Keep as a secret (the value is never shown again)**, which is ticked by default. Untick it only for a value

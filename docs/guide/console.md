@@ -90,7 +90,7 @@ Click an app to open it. Its header shows its name, status, addresses and a summ
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../images/app-running-dark.png">
-  <img alt="The Running tab of an app with its copies table." src="../images/app-running-light.png" width="760">
+  <img alt="The Running tab of the web app: a line saying other apps in Shop › production reach it at web-web:8080 and web:8080, above its table of two copies." src="../images/app-running-light.png" width="760">
 </picture>
 
 Configure has a side menu with six sections, each its own page with its own form, and each save is its own deploy:
@@ -106,7 +106,7 @@ Configure has a side menu with six sections, each its own page with its own form
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../images/app-configure-dark.png">
-  <img alt="The Overview section of Configure for the web app: a side menu with six sections and read-only panels for source, variables and secrets, services, domains, backups, schedules and integrations." src="../images/app-configure-light.png" width="760">
+  <img alt="The Overview section of Configure for the web app: a side menu with six sections and read-only panels for source, variables and secrets, services (with the names other apps reach it at), domains, backups, schedules and integrations." src="../images/app-configure-light.png" width="760">
 </picture>
 
 ## Settings

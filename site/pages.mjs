@@ -29,6 +29,7 @@ export const pages = [
 
   // Configure an app
   ['configure/variables', 'docs/guide/configure/variables.md'],
+  ['configure/connect-apps', 'docs/guide/configure/connect-apps.md'],
   ['configure/secret-providers', 'docs/secret-providers.md'],
   ['configure/domains', 'docs/guide/configure/domains.md'],
   ['configure/dns-providers', 'docs/dns-providers.md'],

@@ -35,6 +35,7 @@ export const sidebar = [
     label: 'Configure an app',
     items: [
       { label: 'Variables and secrets', slug: 'configure/variables' },
+      { label: 'Connect apps to each other', slug: 'configure/connect-apps' },
       { label: 'Secret providers', slug: 'configure/secret-providers' },
       { label: 'Domains and HTTPS', slug: 'configure/domains' },
       { label: 'DNS providers', slug: 'configure/dns-providers' },

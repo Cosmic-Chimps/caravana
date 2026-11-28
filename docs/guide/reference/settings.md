@@ -109,7 +109,7 @@ built-in one.
 
 | Variable | Flag | What it is |
 | --- | --- | --- |
-| `CARAVANA_NAMES_IMAGE` | `-names-image` | The sidecar that lets the services of an app reach each other by name. |
+| `CARAVANA_NAMES_IMAGE` | `-names-image` | The sidecar that lets services reach each other by name, inside an app and between the apps of an environment. |
 | `CARAVANA_BACKUP_IMAGE` | `-backup-image` | The image that uploads and downloads backups (rclone). |
 | `CARAVANA_SQLITE_IMAGE` | `-sqlite-image` | The sidecar that makes and checks copies of a SQLite database. |
 | `CARAVANA_SCANNER_IMAGE` | `-scanner-image` | The vulnerability scanner of the optional image scanner. |

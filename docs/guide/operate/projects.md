@@ -2,7 +2,9 @@
 
 A **project** groups the apps of one product. Each project has **environments**, such as `staging` and
 `production`, and each environment has its own copy of the apps. This is how you run the same product in more
-than one place on one installation, and how you move a tested version from one place to the next.
+than one place on one installation, and how you move a tested version from one place to the next. The apps of one
+environment reach each other by name, and apps of another environment do not resolve them: see
+[Connect apps to each other](../configure/connect-apps.md).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../images/projects-dark.png">

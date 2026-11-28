@@ -73,6 +73,7 @@ const SCREENS = {
   'new-app-github': { path: '/apps/new?from=github', ready: 'form', h: 1030 },
   'new-app-git': { path: '/apps/new?from=git', ready: 'form', h: 1100 },
   'app-running': { path: `/apps/${WEB}`, ready: 'main', h: 960 },
+  'app-configure-address': { path: `/apps/${DB}/configure`, ready: 'main', clip: ['section[aria-labelledby="services-title"]'] },
   'app-deployments': { path: `/apps/${WEB}/deployments`, ready: 'main', h: 1180 },
   'app-deployments-security': { path: `/apps/${WEB}/deployments`, ready: '#security', h: 1180, clip: ['#security'] },
   'app-configure': { path: `/apps/${WEB}/configure`, ready: 'main', h: 1200 },

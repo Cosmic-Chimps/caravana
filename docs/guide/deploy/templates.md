@@ -41,6 +41,11 @@ the number of the template's own revision.
 | **Umbral** | An OpenID Connect provider that signs people in with social accounts or passkeys, no passwords. | One service with a volume, backed up daily. |
 | **Codemagic Patch** | Over-the-air updates for React Native and Capacitor apps, on your own server and R2 buckets. | A server and Postgres, Postgres backed up daily. It asks you for an image: Codemagic publishes none, so you build and push one first (the template's notes say how). |
 
+A template that makes a database, such as **PostgreSQL**, can be used by your other apps of the same environment. After
+**Create**, the notice on the **Deployments** tab says where each of its services answers, for example
+`postgres-postgres:5432`. The template has two services with a port, so there is no bare `postgres` name for other
+apps. See [Connect apps to each other](../configure/connect-apps.md).
+
 This is the catalog built into this version of Caravana. A newer catalog can be fetched, as described below, so the grid
 on your installation may have more.
 

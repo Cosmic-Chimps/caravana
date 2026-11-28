@@ -122,7 +122,8 @@ journalctl -u caravana
 Apps on one host are not isolated from each other: any app's container can reach another app's port
 directly. Apps of one project and environment reach each other by name: a service with ports answers to
 `<app>-<service>`, and to `<app>` when it is the app's only service with ports. Configure's Overview
-says which names a service answers to.
+says which names a service answers to. See [Connect apps to each other](configure/connect-apps.md); names are a
+convenience, not a barrier.
 
 An app that trusts `X-Forwarded-*` headers should trust them only from `10.99.0.1`, the address
 Traefik's requests come from, and never from the bridge gateway.

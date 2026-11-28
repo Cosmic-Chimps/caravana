@@ -84,6 +84,7 @@ Then pick what you need:
   [from CI](deploy/ci.md), [from a .NET Aspire AppHost](deploy/aspire.md), and
   [how a deploy works and how to roll back](deploy/rollback.md).
 - **Configure an app:** [variables and secrets](configure/variables.md),
+  [connect apps to each other](configure/connect-apps.md),
   [domains and HTTPS](configure/domains.md), [volumes](configure/volumes.md),
   [copies, memory and health checks](configure/resources.md).
 - **Day to day:** [projects and environments](operate/projects.md), [logs](operate/logs.md),

@@ -231,7 +231,7 @@ func seedDocsApps(t *testing.T, d *docsDemo) {
 	d.apiIDs = d.runningCopies(apiApp.ID, "api", 3, 2, 20*time.Hour, 64, 142, 0, 2)
 
 	db := app.App{ID: shopID("production", "db"), Name: "db", Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{{
-		Name: "db", Image: "postgres:16.4",
+		Name: "db", Image: "postgres:16.4", Ports: []app.Port{{Name: "postgres", ContainerPort: 5432}},
 		Volumes:   []app.Volume{{Name: "pgdata", Path: "/var/lib/postgresql/data"}},
 		Env:       []app.EnvVar{{Name: "POSTGRES_USER", Value: "shop"}, {Name: "POSTGRES_DB", Value: "shop"}},
 		Secrets:   []app.Secret{{Name: "POSTGRES_PASSWORD"}},

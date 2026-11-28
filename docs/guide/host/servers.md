@@ -17,7 +17,7 @@ Every server runs Docker, Nomad and a small agent (`caravana-node`) that keeps i
 
 - It gets a place on a private, encrypted network (WireGuard) between all the servers. Each server has a number from 1 to 63, and its addresses on that network come from the number. Nothing is typed in.
 - It gets a certificate, signed by a certificate authority Caravana keeps, so the servers' Nomad traffic is encrypted and each server proves who it is. The server keeps its own private key; it never leaves the machine. Certificates last 90 days and are renewed by the agent.
-- Nomad on it starts taking copies. Services with several copies are spread over the servers. Services of one app reach each other by name across servers.
+- Nomad on it starts taking copies. Services with several copies are spread over the servers. Services reach each other by name across servers, inside one app and between the apps of one environment (see [Connect apps to each other](../configure/connect-apps.md)).
 
 ### What still runs only on the first server
 

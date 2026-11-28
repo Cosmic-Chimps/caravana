@@ -152,7 +152,9 @@ value in place.
 
 Every service of an app reaches the others by its service name, whatever networks the file declares, and also across
 servers once you have added more. If the file has `db` and `web`, `web` connects to `db:5432`. Caravana does this by
-keeping each copy's hosts file up to date with the addresses of the app's other services.
+keeping each copy's hosts file up to date with the addresses of the app's other services. Other apps of the same
+project and environment reach a service with a port as `<app>-<service>` (for example `blog-db:5432`): see
+[Connect apps to each other](../configure/connect-apps.md).
 
 ### Volumes
 
