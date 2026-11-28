@@ -43,7 +43,7 @@ the number of the template's own revision.
 | **Continuwuity** | A Matrix homeserver in one container, with its own database: your own chat server that federates with every other Matrix server. | One service with a volume, backed up daily. |
 | **Frunchy** | Your anime identity in numbers: Frunchy turns your Crunchyroll watch history into statistics you can share. | Frunchy and Postgres, Postgres backed up daily. |
 | **PeerTube** | Video hosting on your own domain, federated with the fediverse, with the videos in an S3-compatible bucket (R2). | PeerTube, Postgres and Redis; PeerTube's volume and Postgres backed up daily. |
-| **Wazuh** | A security platform: agents on your machines send events, Wazuh finds threats and shows them on a dashboard. | An indexer, a manager and a dashboard, about 4 GB of memory; the indexer and the manager backed up daily. |
+| **Wazuh** | A security platform: agents on your machines send events, Wazuh finds threats and shows them on a dashboard. | An indexer, a manager and a dashboard, reserving about 3.3 GB of memory and using up to 4.5 GB; the indexer and the manager backed up daily. |
 
 A template that makes a database, such as **PostgreSQL**, can be used by your other apps of the same environment. After
 **Create**, the notice on the **Deployments** tab says where each of its services answers, for example
