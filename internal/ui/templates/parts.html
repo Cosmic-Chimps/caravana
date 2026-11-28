@@ -19,19 +19,12 @@
 {{/* sentence: prose with its names and versions set in mono. Takes a sentence (a list of parts, see view.go). */}}
 {{define "sentence"}}{{range .}}{{if .Mono}}<span class="cv-inline-mono {{if .Muted}}text-fg-3{{else}}text-fg-1{{end}}{{if .Nowrap}} cv-nowrap{{end}}">{{.Text}}</span>{{else if .Muted}}<span class="text-fg-3{{if .Nowrap}} cv-nowrap{{end}}">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
 
-{{/* addr-lines: where a service answers by name (task 2xg2): the names other apps of the place reach it at,
-     its own name for the app's other services, and a name two apps claim, which answers to neither.
-     Takes []addrRow. */}}
-{{define "addr-lines"}}
-{{range .}}{{$row := .}}
-<div class="cv-addr">
-  {{if .Names}}<p class="cv-note">{{if .Many}}<span class="cv-addr-svc">{{.Service}}</span> {{end}}Other apps in {{.Place}} reach it at {{range $i, $n := .Names}}{{if $i}}, {{end}}<code class="cv-inline-mono cv-addr-name">{{$n}}</code>{{end}}.</p>
-  {{else if .NoReach}}<p class="cv-note">{{if .Many}}<span class="cv-addr-svc">{{.Service}}</span> {{end}}No other app can reach it by name until one of the apps below is renamed.</p>{{end}}
-  {{with .Own}}<p class="cv-note">{{if $row.Many}}<span class="cv-addr-svc">{{$row.Service}}</span> {{end}}Its own services reach it at <code class="cv-inline-mono cv-addr-name">{{.}}</code>.</p>{{end}}
-  {{range .Conflicts}}<p class="cv-note"><code class="cv-inline-mono">{{.Name}}</code> answers to nothing: app <a href="{{.AppHref}}">{{.App}}</a> claims it too.</p>{{end}}
-</div>
-{{end}}
-{{end}}
+{{/* addr-lines: where a service answers by name (task 2xg2), one block per service: the names other apps of
+     the place reach it at, its own name for the app's other services, and the names it shares with another
+     app, which reach neither. The service is named on a line of its own only when the app has several.
+     Spans, so the block can sit inside a notice's text. Takes []addrRow; addr-row takes one. */}}
+{{define "addr-lines"}}{{range .}}{{template "addr-row" .}}{{end}}{{end}}
+{{define "addr-row"}}<span class="cv-addr">{{if .Many}}<span class="cv-addr-svc">{{.Service}}</span>{{end}}{{range .Lines}} <span class="cv-note cv-addr-line">{{range .}}{{if .Href}}<a href="{{.Href}}">{{.Text}}</a>{{else if .Copy}}<code class="cv-inline-mono cv-addr-name">{{.Text}}</code>{{else if .Mono}}<code class="cv-inline-mono">{{.Text}}</code>{{else}}{{.Text}}{{end}}{{end}}</span>{{end}}</span>{{end}}
 
 {{/* field-error: the message under an input, announced when it is the form's first. Takes a formField. */}}
 {{define "field-error"}}{{with .Error}}<span id="{{$.ID}}-error"{{if $.Alert}} role="alert"{{end}} class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}{{end}}

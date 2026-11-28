@@ -39,15 +39,18 @@ names itself, with the same sidecar, now for the whole project › environment.
   first marks each claimed name with its registration, or with `""` when a second claims it; the second writes each name whose
   mark is its own registration, unless it is one of the app's own bare names. Canaries are left out. `Translate` stays pure:
   what other apps exist is read live, so a new, moved or deleted app shows up without redeploying the others.
-- **D6 Cost.** The sidecar reserves 16 MB and 20 MHz per group, as before (busybox `sleep`, under 1 MB resident). Single-service
-  apps now pay it too: 20 one-service apps reserve 320 MB more. Each sidecar's template watches the namespace's list and the
-  registrations of its place (blocking queries Nomad serves from memory). A per-node resolver would save the reservation but is a
-  new moving part on every node (a DNS server, its port, `resolv.conf` of every copy); the sidecar stays unless the lab or a host
-  shows a problem.
+- **D6 Cost.** The sidecar reserves 16 MB and 20 MHz per group, as before (busybox `sleep`, under 1 MB resident). Nomad's minimum,
+  10 MB, is too little: the container's init was OOM-killed at start (lab, 2026-11-28: "container init was OOM-killed (memory limit
+  too low?)"), so the reservation stays where 009 left it, with no `memory_max` (it would warn on every deploy of a host without
+  memory oversubscription). Single-service apps now pay it too: 20 one-service apps reserve 320 MB more. Each sidecar's template
+  watches the namespace's list and one registration per name of its place, O(apps × services in the place) blocking queries Nomad
+  serves from memory. A per-node resolver would save the reservation and the queries but is a new moving part on every node (a DNS
+  server, its port, `resolv.conf` of every copy); the sidecar stays unless a place grows to dozens of apps or a host shows a problem.
 - **D7 API.** `getApp` and `getEnvironmentApp` answer `addresses` on the `AppRecord`: per service with ports, its container
   ports, the names other apps of the place reach it at, its own name for a multi-service app, and the conflicts (each name with
   the other app and service that claim it). The console's view counts the stored apps of the place that are defined and not
-  stopped (a stopped app is deregistered). No new route; deploy tokens see it as they see `getApp`.
+  stopped (a stopped app is deregistered). No new route; deploy tokens see it as they see `getApp`, which tells a token the ID of
+  another app of its place only when the two claim one name (a name every copy of the place resolves anyway; code review kept it).
 - **D8 Console.** Configure › Overview and the Running tab say, per service with ports, "Other apps in <project> › <environment>
   reach it at `postgres:5432`" (each name, with the first port) and, for a multi-service app, "Its own services reach it at
   `postgres:5432`"; a conflict says the name answers to nothing because the other app claims it too, on both apps. A template's

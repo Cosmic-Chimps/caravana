@@ -391,10 +391,17 @@ func TestInstallFromTemplatePage(t *testing.T) {
 		for _, want := range []string{"Installed from the Uptime Kuma template.",
 			"Open https://status.example.com and create the admin account",
 			"Backups are off for uptime-kuma",
-			"Other apps in this environment reach it at status-uptime-kuma:", "status:"} {
+			"Other apps in this environment reach it at status:3001 or status-uptime-kuma:3001."} {
 			if !strings.Contains(page, want) {
 				t.Errorf("the Deployments tab lacks %q:\n%s", want, page)
 			}
+		}
+		// The notice is wrapped so the mark and the text share a line, and the address lines sit in its text, under the title.
+		if !strings.Contains(body, `<div class="cv-main"><div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>Installed from the Uptime Kuma template.<span class="cv-notice-addr"><span class="cv-addr">`) {
+			t.Errorf("the installed notice isn't wrapped or lacks its address lines:\n%s", body)
+		}
+		if strings.Contains(body, "cv-main cv-notice") {
+			t.Error("a notice still shares its element with cv-main")
 		}
 		// Configure says where the app came from.
 		_, conf := e.get(t, "/apps/status/configure")
