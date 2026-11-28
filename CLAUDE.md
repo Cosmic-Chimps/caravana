@@ -2591,6 +2591,26 @@ no new module, no policy change (a job's template lists its namespace's registra
   `postgres-postgres` with `pg_isready`, again after the copy moves, staging resolving neither, a rival claiming `postgres-postgres`)
   passed in the lab on 2026-11-28 (89 s), with `compose-app`, `service-dns` and `schedules`. Apps get it at their next deploy.
 
+Files in a copy (CodeAlta task `2g4z`, worktree branch `alta/zippy-canon-r3qb`): browse and download the files Nomad keeps for a
+running copy. No spec folder, no migration, no module, no policy change (`read-fs` since 016). API 0.69.0.
+- Lab facts (2026-11-28): Nomad's allocation directory is `alloc/` (`data`, `logs`, `tmp`) and one folder per task (`local`, `tmp`,
+  `secrets`, `private`); with docker the container's own root and its volumes aren't in it. `ls`/`stat` of a task's `secrets` or
+  `private` answer 500 "Reading secret file prohibited", `readat` the same text in a 200. **Nomad follows a relative symlink and checks
+  `secrets` only against the path as written**: an app's `local/peek -> ../secrets/x` was served; an absolute link or one that climbs
+  out is "path escapes the alloc directory".
+- `internal/deploy/files.go`: `CleanFilePath` (no `.`/`..`/empty parts, NUL, backslash; a task's `secrets`/`private` is
+  `ErrPathNotAllowed`), `ListFiles`, `StatFile`, `ReadFile` (1 MiB `readat` chunks, each length checked, never quoting a body).
+  `entryAt` walks a path by listing each folder from the root and follows no link (`ErrPathIsLink`); only a regular file is read
+  (`FileInfo.Kind`: `file`, `folder`, `link`, `other`; logmon's pipes are `ErrSpecialFile`). `deploytest` serves a general tree with
+  `WriteAllocFile`/`WriteAllocLink`, following links and refusing secrets as the lab's Nomad does.
+- `service/copyfiles.go`: the checks of Run a command (the app's running copy, not stopped), `ListCopyFiles`, `StatCopyPath`,
+  `CopyFileText` (512 KiB, UTF-8 without NUL), `OpenCopyFile` + `WriteTo`; a view and a download are the audit action `read a file`
+  (copy, path, `as`), a listing isn't. API `listCopyFiles` and `downloadCopyFile` (`internal/httpx.Download`: headers with the first
+  byte, attachment, `nosniff`, `no-store`), code `file_not_found`, path refusals 422 on `path`; maintain role, deploy tokens denied.
+- Console: `/apps/{id}/copies/{copyId}/files?path=` and `/files/download`, a Files link beside Terminal, no script. Gate step
+  `copy-files` (`gate_files_test.go`: listings, downloads, the app's links into `secrets` listed as links and refused, the audit,
+  no sentinel anywhere).
+
 The documentation site (branch `docs-site`, 2026-11-26): the user guide is the Markdown under `docs/` (new
 pages in `docs/guide/`, the per-feature docs in `docs/*.md`), published to GitHub Pages
 (`https://cosmic-chimps.github.io/caravana/`) by `.github/workflows/pages.yml` from the Astro Starlight

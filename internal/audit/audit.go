@@ -68,6 +68,7 @@ const (
 	ActionRestarted        Action = "restarted"
 	ActionRanCommand       Action = "ran a command"
 	ActionOpenedTerminal   Action = "opened a terminal"
+	ActionReadFile         Action = "read a file"
 	ActionBackedUp         Action = "backed up"
 	ActionRestored         Action = "restored"
 	ActionPinned           Action = "pinned"
@@ -97,7 +98,7 @@ func Actions() []Action {
 	return []Action{
 		ActionCreated, ActionUpdated, ActionDeleted, ActionDeployed, ActionRedeployed, ActionRolledBack,
 		ActionPromoted, ActionCopied, ActionStopped, ActionStarted, ActionRestarted, ActionRanCommand,
-		ActionOpenedTerminal, ActionBackedUp, ActionRestored, ActionPinned, ActionUnpinned, ActionTested,
+		ActionOpenedTerminal, ActionReadFile, ActionBackedUp, ActionRestored, ActionPinned, ActionUnpinned, ActionTested,
 		ActionRotated, ActionRevoked, ActionInvited, ActionRemoved, ActionAcceptedInvite, ActionSignedIn,
 		ActionSignedOut, ActionSignInFailed, ActionRequested, ActionCancelled, ActionChecked,
 		ActionInstalled, ActionUninstalled, ActionRefreshedSecrets, ActionChanged,

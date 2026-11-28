@@ -1,7 +1,7 @@
-# Stop, start, restart, Run a command, Terminal
+# Stop, start, restart, Run a command, Terminal, Files
 
 This page covers what you can do to a running app without deploying it: stop it, start it again, restart its
-copies, run one command in a copy, or open a shell in a copy. Everything here is on the app's own page.
+copies, run one command in a copy, open a shell in a copy, or browse its files. Everything here is on the app's own page.
 
 ## The header buttons
 
@@ -99,6 +99,31 @@ It opens a page, "Terminal in web", for the service and copy.
 - **Nothing is kept.** What you type and what is printed is never logged or stored. Caravana records only that a
   session happened, which shell, how long it lasted and how it ended.
 
+## Files
+
+Next to **Terminal**, each copy has a **Files** link: a page, "Files in web", that lists the folders Nomad keeps
+for that copy, to read a file or download it. It is for finding a config file, a crash dump or an export
+without opening a terminal. It reads only: you cannot edit or upload a file here.
+
+- **What is there.** The folders of the copy's directory: `alloc`, which the copy's tasks share (`data`, `logs`
+  and `tmp`: what an app writes to `/alloc/data`, and its output logs), and one folder for each task with its
+  `local` and `tmp` files. In `local` you find the files a service defines (Caravana puts them in
+  `caravana-files`). **The container's own files and its volumes are not here**: for those, open a Terminal.
+- **Browsing.** Each folder is a link, with the path above the list. Folders come first, then files with their
+  size and when they changed. A file opens on its own page, with **Download** beside it.
+- **Reading a file.** A text file up to 512 KB is shown on the page. A larger file says "It is larger than 512
+  KB: download it to read it." and a file that is not text says "It isn't text: download it." **Download**
+  gives the file as it is.
+- **Secrets are never shown.** A task's `secrets` and `private` folders are not listed and cannot be opened or
+  downloaded, whichever way the path is written. Links are listed but never followed, so a link an app made
+  cannot lead into them either, and pipes (such as the ones Nomad's log collector keeps in `alloc/logs`) are
+  never opened.
+- **What is recorded.** Viewing or downloading a file is an entry in the [audit log](../../audit-log.md), `read a
+  file`, with the copy and the path and never the content. Listing a folder is not. The content is not logged,
+  stored or put in a notice.
+- **It needs no script.** Every folder and file is a plain link. Over the API the same two reads are
+  `listCopyFiles` and `downloadCopyFile`.
+
 ## Recent actions
 
 Below the copies, **Recent actions** lists the last actions on the app: restarts, stops, starts, commands,
@@ -112,8 +137,8 @@ its exit code. Do not rely on the history to know what was run; it only says tha
 
 ## Who may do what
 
-Restart and Start need the **deploy** role on the app. Stop, Run a command and the Terminal need **maintain**,
-because they act inside a running app. A deploy token, which CI uses, can do none of
+Restart and Start need the **deploy** role on the app. Stop, Run a command, the Terminal and Files need **maintain**,
+because they act inside a running app and a copy's files can hold any secret. A deploy token, which CI uses, can do none of
 them. See [People and roles](../../people.md).
 
 ## Next

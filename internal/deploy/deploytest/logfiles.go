@@ -3,6 +3,7 @@ package deploytest
 import (
 	"fmt"
 	"net/http"
+	pathpkg "path"
 	"slices"
 	"strconv"
 	"strings"
@@ -120,19 +121,125 @@ func logPath(task, stream string, index int) string {
 	return fmt.Sprintf("%s/%s.%s.%d", logDir, task, stream, index)
 }
 
-// findLogFile returns the file at path of the copy, or nil. n.mu must be held.
-func (n *Nomad) findLogFile(copyID, task, path string) *logFile {
+// fakeFileMod is the modification time of the files WriteAllocFile makes.
+var fakeFileMod = time.Date(2026, 11, 28, 9, 30, 0, 0, time.UTC)
+
+// fsFile is one file of the copy's directory.
+type fsFile struct {
+	data []byte
+	mod  time.Time
+}
+
+// fsFiles is every file the copy has, by path: the rotated log files (named
+// after the copy's group, as its one task is) and the files WriteAllocFile put.
+// n.mu must be held.
+func (n *Nomad) fsFiles(copyID, task string) map[string]fsFile {
+	out := map[string]fsFile{}
 	for k, files := range n.logFS {
 		if k.copyID != copyID {
 			continue
 		}
 		for i, f := range files {
-			if logPath(task, k.stream, i) == path {
-				return f
-			}
+			out[logPath(task, k.stream, i)] = fsFile{data: f.data, mod: f.mod}
 		}
 	}
-	return nil
+	for p, text := range n.files[copyID] {
+		out[pathpkg.Clean(p)] = fsFile{data: []byte(text), mod: fakeFileMod}
+	}
+	return out
+}
+
+// fsDirs is every directory the copy has: the ones Nomad makes (the root, alloc
+// with data, logs and tmp, and a folder per task with local, tmp, secrets and
+// private; the copy's own task and the names sidecar) and every parent of a
+// file.
+func fsDirs(task string, files map[string]fsFile) map[string]bool {
+	dirs := map[string]bool{"": true, "alloc": true, "alloc/data": true, "alloc/logs": true, "alloc/tmp": true}
+	for _, t := range []string{task, "names"} {
+		dirs[t] = true
+		for _, d := range []string{"local", "tmp", "secrets", "private"} {
+			dirs[t+"/"+d] = true
+		}
+	}
+	for p := range files {
+		for d, _ := splitPath(p); d != ""; d, _ = splitPath(d) {
+			dirs[d] = true
+		}
+	}
+	return dirs
+}
+
+// escapesMessage is what Nomad's client says of a path a link takes out of
+// the allocation directory.
+const escapesMessage = "path escapes the alloc directory"
+
+// resolveLinks follows the copy's links in p the way Nomad's client does (lab,
+// 2026-11-28): a relative target is followed, an absolute one or one that
+// climbs out escapes (ok false). n.mu must be held.
+func (n *Nomad) resolveLinks(copyID, p string) (string, bool) {
+	links := n.links[copyID]
+	for range 16 {
+		segs := strings.Split(p, "/")
+		moved := false
+		for i := range segs {
+			prefix := strings.Join(segs[:i+1], "/")
+			target, ok := links[prefix]
+			if !ok {
+				continue
+			}
+			if strings.HasPrefix(target, "/") {
+				return "", false
+			}
+			parent, _ := splitPath(prefix)
+			joined := pathpkg.Join(parent, target)
+			if joined == ".." || strings.HasPrefix(joined, "../") {
+				return "", false
+			}
+			if joined == "." {
+				joined = ""
+			}
+			rest := strings.Join(segs[i+1:], "/")
+			p = strings.Trim(joined+"/"+rest, "/")
+			moved = true
+			break
+		}
+		if !moved {
+			return p, true
+		}
+	}
+	return "", false
+}
+
+// splitPath splits a clean path into its folder and last part.
+func splitPath(p string) (dir, name string) {
+	i := strings.LastIndex(p, "/")
+	if i < 0 {
+		return "", p
+	}
+	return p[:i], p[i+1:]
+}
+
+// cleanFSPath resolves the path of a request the way Nomad's client does: as an
+// absolute path, so ".." can't climb out and "/" is the root. The result has no
+// leading slash.
+func cleanFSPath(raw string) string {
+	return strings.TrimPrefix(pathpkg.Clean("/"+raw), "/")
+}
+
+// prohibited says whether the path is inside a task's secrets or private
+// folder, which Nomad's client never lets be read.
+func prohibited(p string) bool {
+	segs := strings.Split(p, "/")
+	if segs[0] == "alloc" || len(segs) < 2 {
+		return false
+	}
+	return segs[1] == "secrets" || segs[1] == "private"
+}
+
+// prohibitedMessage is the text Nomad's client gives for such a path.
+func prohibitedMessage(p string) string {
+	segs := strings.Split(p, "/")
+	return "Reading secret file prohibited: /" + segs[0] + "/" + segs[1]
 }
 
 // fileInfo is what ls and stat answer for one file.
@@ -140,9 +247,16 @@ func fileInfo(name string, size int64, mod time.Time, mode string) *api.AllocFil
 	return &api.AllocFileInfo{Name: name, Size: size, FileMode: mode, ModTime: mod}
 }
 
-// serveLs answers GET /v1/client/fs/ls/{id}?path=: for alloc/logs the files,
-// the hidden FIFOs logmon keeps beside them and a sidecar's files, as a real
-// directory has. 404 for a copy or directory that isn't there.
+func dirInfo(name string) *api.AllocFileInfo {
+	return &api.AllocFileInfo{Name: name, IsDir: true, FileMode: "drwxr-xr-x", ModTime: fakeFileMod}
+}
+
+// serveLs answers GET /v1/client/fs/ls/{id}?path=: the entries of a directory,
+// from the files the copy has (WriteAllocFile and the log files) and the
+// folders Nomad makes. alloc/logs also has the hidden FIFOs logmon keeps and a
+// sidecar's files, as a real one does. Like the lab's Nomad: 404 for a copy or
+// directory that isn't there and 500 "Reading secret file prohibited" for a
+// task's secrets and private folders.
 func (n *Nomad) serveLs(w http.ResponseWriter, r *http.Request, id string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -150,35 +264,70 @@ func (n *Nomad) serveLs(w http.ResponseWriter, r *http.Request, id string) {
 		http.Error(w, "Permission denied", n.fsStatus)
 		return
 	}
-	path := strings.Trim(r.URL.Query().Get("path"), "/")
-	n.fileRequests = append(n.fileRequests, FileRequest{Op: "ls", Copy: id, Path: path})
+	raw := strings.Trim(r.URL.Query().Get("path"), "/")
+	n.fileRequests = append(n.fileRequests, FileRequest{Op: "ls", Copy: id, Path: raw})
 	stub := n.copyStub(id)
 	if stub == nil {
 		http.Error(w, fmt.Sprintf("Unknown allocation %q", id), http.StatusNotFound)
 		return
 	}
-	if path != logDir {
-		http.Error(w, "open "+path+": no such file or directory", http.StatusNotFound)
+	path := cleanFSPath(raw)
+	if prohibited(path) {
+		http.Error(w, prohibitedMessage(path), http.StatusInternalServerError)
+		return
+	}
+	path, ok := n.resolveLinks(id, path)
+	if !ok {
+		http.Error(w, escapesMessage, http.StatusInternalServerError)
 		return
 	}
 	task := stub.TaskGroup
-	out := []*api.AllocFileInfo{}
-	for k, files := range n.logFS {
-		if k.copyID != id {
-			continue
+	files := n.fsFiles(id, task)
+	dirs := fsDirs(task, files)
+	for l := range n.links[id] {
+		for d, _ := splitPath(l); d != ""; d, _ = splitPath(d) {
+			dirs[d] = true
 		}
-		out = append(out, fileInfo("."+task+"."+k.stream+".fifo", 0, time.Now(), "prw-------"))
-		out = append(out, fileInfo("names."+k.stream+".0", 0, time.Now(), "-rw-r--r--"))
-		for i, f := range files {
-			out = append(out, fileInfo(task+"."+k.stream+"."+strconv.Itoa(i), int64(len(f.data)), f.mod, "-rw-r--r--"))
+	}
+	if _, isFile := files[path]; isFile {
+		http.Error(w, "readdirent /"+path+": not a directory", http.StatusInternalServerError)
+		return
+	}
+	if !dirs[path] {
+		http.Error(w, "open "+path+": no such file or directory", http.StatusNotFound)
+		return
+	}
+	out := []*api.AllocFileInfo{}
+	for d := range dirs {
+		if dir, name := splitPath(d); d != "" && dir == path {
+			out = append(out, dirInfo(name))
+		}
+	}
+	for p, f := range files {
+		if dir, name := splitPath(p); dir == path {
+			out = append(out, fileInfo(name, int64(len(f.data)), f.mod, "-rw-r--r--"))
+		}
+	}
+	for l, target := range n.links[id] {
+		if dir, name := splitPath(l); dir == path {
+			out = append(out, fileInfo(name, int64(len(target)), fakeFileMod, "Lrwxrwxrwx"))
+		}
+	}
+	if path == logDir {
+		for k := range n.logFS {
+			if k.copyID != id {
+				continue
+			}
+			out = append(out, fileInfo("."+task+"."+k.stream+".fifo", 0, time.Now(), "prw-------"))
+			out = append(out, fileInfo("names."+k.stream+".0", 0, time.Now(), "-rw-r--r--"))
 		}
 	}
 	slices.SortFunc(out, func(a, b *api.AllocFileInfo) int { return strings.Compare(a.Name, b.Name) })
 	n.writeJSON(w, out)
 }
 
-// serveStat answers GET /v1/client/fs/stat/{id}?path=: one file's info, 404
-// when the copy or the file isn't there.
+// serveStat answers GET /v1/client/fs/stat/{id}?path=: one file's or folder's
+// info, 404 when the copy or the path isn't there.
 func (n *Nomad) serveStat(w http.ResponseWriter, r *http.Request, id string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -186,27 +335,42 @@ func (n *Nomad) serveStat(w http.ResponseWriter, r *http.Request, id string) {
 		http.Error(w, "Permission denied", n.fsStatus)
 		return
 	}
-	path := strings.TrimPrefix(r.URL.Query().Get("path"), "/")
-	n.fileRequests = append(n.fileRequests, FileRequest{Op: "stat", Copy: id, Path: path})
+	raw := strings.TrimPrefix(r.URL.Query().Get("path"), "/")
+	n.fileRequests = append(n.fileRequests, FileRequest{Op: "stat", Copy: id, Path: raw})
 	stub := n.copyStub(id)
 	if stub == nil {
 		http.Error(w, fmt.Sprintf("Unknown allocation %q", id), http.StatusNotFound)
 		return
 	}
-	f := n.findLogFile(id, stub.TaskGroup, path)
-	if f == nil {
-		http.Error(w, "stat /opt/nomad/data/alloc/"+id+"/"+path+": no such file or directory", http.StatusNotFound)
+	path := cleanFSPath(raw)
+	if prohibited(path) {
+		http.Error(w, prohibitedMessage(path), http.StatusInternalServerError)
 		return
 	}
-	name := path[strings.LastIndex(path, "/")+1:]
-	info := fileInfo(name, int64(len(f.data)), f.mod, "-rw-r--r--")
-	info.ContentType = "text/plain; charset=utf-8"
-	n.writeJSON(w, info)
+	_, name := splitPath(path)
+	path, ok := n.resolveLinks(id, path)
+	if !ok {
+		http.Error(w, escapesMessage, http.StatusInternalServerError)
+		return
+	}
+	files := n.fsFiles(id, stub.TaskGroup)
+	if f, ok := files[path]; ok {
+		info := fileInfo(name, int64(len(f.data)), f.mod, "-rw-r--r--")
+		info.ContentType = "text/plain; charset=utf-8"
+		n.writeJSON(w, info)
+		return
+	}
+	if fsDirs(stub.TaskGroup, files)[path] {
+		n.writeJSON(w, dirInfo(name))
+		return
+	}
+	http.Error(w, "stat /opt/nomad/data/alloc/"+id+"/"+path+": no such file or directory", http.StatusNotFound)
 }
 
 // serveReadAt answers GET /v1/client/fs/readat/{id}?path=&offset=&limit=: the
 // bytes from offset, at most limit of them. Errors are the message in the body
-// of a 200, as the lab's Nomad does it; a read at or past the end is empty.
+// of a 200, as the lab's Nomad does it (a missing file, a folder, a task's
+// secret file); a read at or past the end is empty.
 func (n *Nomad) serveReadAt(w http.ResponseWriter, r *http.Request, id string) {
 	q := r.URL.Query()
 	n.mu.Lock()
@@ -226,9 +390,24 @@ func (n *Nomad) serveReadAt(w http.ResponseWriter, r *http.Request, id string) {
 		fmt.Fprintf(w, "Unknown allocation %q", id)
 		return
 	}
-	f := n.findLogFile(id, stub.TaskGroup, req.Path)
-	if f == nil {
-		fmt.Fprintf(w, "stat /opt/nomad/data/alloc/%s/%s: no such file or directory", id, req.Path)
+	path := cleanFSPath(req.Path)
+	if prohibited(path) {
+		fmt.Fprint(w, prohibitedMessage(path))
+		return
+	}
+	path, ok := n.resolveLinks(id, path)
+	if !ok {
+		fmt.Fprint(w, escapesMessage)
+		return
+	}
+	files := n.fsFiles(id, stub.TaskGroup)
+	f, ok := files[path]
+	if !ok {
+		if fsDirs(stub.TaskGroup, files)[path] {
+			fmt.Fprintf(w, "file %q is a directory", "/"+path)
+			return
+		}
+		fmt.Fprintf(w, "stat /opt/nomad/data/alloc/%s/%s: no such file or directory", id, path)
 		return
 	}
 	size := int64(len(f.data))

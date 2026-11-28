@@ -21,7 +21,7 @@ There are two kinds of role.
 | --- | --- |
 | **view** | Read: apps, deployments, copies, logs, requests, metrics, backups, schedules and their run output, domains, exports, the build log, the image scan. A secret's name, never its value. |
 | **deploy** | Deploy a new image (or the stored app again), redeploy a version, restart and start an app, run a schedule now, back up now, refresh secrets, promote *into* it. |
-| **maintain** | Change how an app is set up: variables and secrets, domains, scaling, placement, backups and restores, schedules, Git access, the webhook and deploy tokens, Compose deploys. Stop and delete an app. Run a command and open a terminal. Make an app (or copy one in), and change the project's settings and its environments. |
+| **maintain** | Change how an app is set up: variables and secrets, domains, scaling, placement, backups and restores, schedules, Git access, the webhook and deploy tokens, Compose deploys. Stop and delete an app. Run a command, open a terminal and browse or download a copy's files. Make an app (or copy one in), and change the project's settings and its environments. |
 
 A few rules that follow:
 
@@ -53,7 +53,7 @@ read its output. Plainly:
   reads the app's secrets when it starts. Give deploy only to people and tokens you trust with those secrets.
 - **View rights include logs.** Logs show anything an app writes, secrets included if the app prints them. Caravana
   masks the secret values it knows in a schedule run's output, but it can't know what an app writes to its own log.
-- **Run a command and the terminal need maintain**, because a command can print any secret.
+- **Run a command, the terminal and a copy's files need maintain**, because a command can print any secret and a file can hold one.
 - **Caravana shows a secret's value to no role.** No page or answer carries one, only its name. That is a rule about
   what Caravana displays, not a promise about what a running app can do with it.
 - **A secret provider that a project may use is usable by everyone who can configure apps there.** Its "allowed places"

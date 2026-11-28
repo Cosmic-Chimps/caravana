@@ -37,6 +37,22 @@ func (n *Nomad) AllocFile(copyID, path string) (string, bool) {
 	return text, ok
 }
 
+// WriteAllocLink puts a symbolic link at path in the copy's allocation
+// directory, pointing at target, as an app could make one (ln -s ../secrets/x
+// /local/peek). The fake follows it the way the lab's Nomad does (2026-11-28):
+// ls lists the link itself (mode "Lrwxrwxrwx"), while stat, ls and readat of a
+// path through it follow a relative target, checking the secrets and private
+// folders only against the path as written, and refuse an absolute target or
+// one that climbs out ("path escapes the alloc directory").
+func (n *Nomad) WriteAllocLink(copyID, path, target string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.links[copyID] == nil {
+		n.links[copyID] = map[string]string{}
+	}
+	n.links[copyID][strings.Trim(path, "/")] = target
+}
+
 // RemoveAllocFile deletes the file, if there is one.
 func (n *Nomad) RemoveAllocFile(copyID, path string) {
 	n.mu.Lock()

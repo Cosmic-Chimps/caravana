@@ -427,6 +427,8 @@ var consoleAccess = map[string]accessRule{
 	"POST /apps/{id}/stop":                                     appAt(service.LevelMaintain),
 	"POST /apps/{id}/copies/{copyId}/run":                      appAt(service.LevelMaintain),
 	"GET /apps/{id}/copies/{copyId}/terminal":                  appAt(service.LevelMaintain),
+	"GET /apps/{id}/copies/{copyId}/files":                     appAt(service.LevelMaintain), // a copy's files can hold any secret
+	"GET /apps/{id}/copies/{copyId}/files/download":            appAt(service.LevelMaintain),
 	"POST /apps/{id}/backups/{backupId}/restore":               appAt(service.LevelMaintain),
 	"POST /apps/{id}/backups/{backupId}/pin":                   appAt(service.LevelMaintain),
 	"POST /apps/{id}/backups/{backupId}/unpin":                 appAt(service.LevelMaintain),

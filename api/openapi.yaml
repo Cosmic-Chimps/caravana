@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.68.0
+  version: 0.69.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -2205,6 +2205,158 @@ paths:
           $ref: "#/components/responses/BodyTooLarge"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/apps/{id}/copies/{copyId}/files:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - name: copyId
+        in: path
+        required: true
+        description: The copy's ID, as `listCopies` gives it.
+        schema: {type: string}
+      - name: path
+        in: query
+        required: false
+        description: |
+          A folder of the copy's allocation directory, written without a leading slash:
+          empty (the default) is the root, `alloc/data`, `web/local`. At most 4096 bytes, no NUL
+          byte or backslash, no empty part and no `.` or `..` part, and not inside a task's
+          `secrets` or `private` folder. Otherwise 422 `invalid_field` with `field` `path`; so is a
+          path that is a file.
+        schema: {type: string, maxLength: 4096, default: ""}
+    get:
+      operationId: listCopyFiles
+      summary: List a folder of a running copy's allocation directory.
+      description: |
+        Lists a folder of the directory Nomad keeps for the copy: `alloc` (shared by the copy's
+        tasks: `data`, `logs`, `tmp`) and one folder per task (`local`, `tmp`). With the docker
+        driver the container's own file system is **not** in it, only what the task shares with
+        Nomad; open a terminal for the rest. A task's `secrets` and `private` folders are never
+        listed or read, and are left out of its listing. Folders come first, then files, each by
+        name. Read only: nothing here edits or uploads a file.
+
+        Listing leaves no entry in the audit log; viewing or downloading a file does
+        (`downloadCopyFile`). It needs the `maintain` level in the app's place, like running a
+        command, since a copy's files can hold any secret. A deploy token is 403 `token_scope`.
+        The answer is `Cache-Control: no-store`.
+      tags: [apps]
+      responses:
+        "200":
+          description: The folder.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopyFolder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAllowed"
+        "404":
+          description: |
+            No such app, or the copy isn't one of the app's (`not_found`), or the folder isn't in
+            the copy's directory (`file_not_found`, `field` `path`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            `copy_not_running` (the copy has ended or isn't running) or `app_stopped` (the app is
+            stopped: start it first).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "`invalid_field`: `path` isn't valid, is in a secrets or private folder, or is a file."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/apps/{id}/copies/{copyId}/files/download:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - name: copyId
+        in: path
+        required: true
+        description: The copy's ID, as `listCopies` gives it.
+        schema: {type: string}
+      - name: path
+        in: query
+        required: true
+        description: |
+          The file, written as in `listCopyFiles`. A folder is 422 `invalid_field` with `field`
+          `path`.
+        schema: {type: string, minLength: 1, maxLength: 4096}
+    get:
+      operationId: downloadCopyFile
+      summary: Download a file from a running copy's allocation directory.
+      description: |
+        Streams the file's bytes as an attachment named like the file, read from Nomad in
+        chunks. Errors found before the first byte are JSON as usual. The content is shown to
+        the caller and nowhere else: it is never stored, logged or put in a notice. The audit log
+        gets an entry `read a file` with the copy and the path, never the content.
+
+        A task's `secrets` and `private` folders are never read. It needs the `maintain` level in
+        the app's place. A deploy token is 403 `token_scope`. The answer is
+        `Cache-Control: no-store`.
+      tags: [apps]
+      responses:
+        "200":
+          description: The file.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+            Content-Length:
+              schema: {type: integer}
+            Content-Disposition:
+              description: "`attachment; filename=<the file's name>`, quoted or encoded when it needs to be."
+              schema: {type: string}
+            X-Content-Type-Options:
+              schema: {type: string, const: nosniff}
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAllowed"
+        "404":
+          description: |
+            No such app, or the copy isn't one of the app's (`not_found`), or the file isn't in
+            the copy's directory (`file_not_found`, `field` `path`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            `copy_not_running` (the copy has ended or isn't running) or `app_stopped` (the app is
+            stopped: start it first).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "`invalid_field`: `path` isn't valid, is in a secrets or private folder, or is a folder."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/Internal"
         "502":
@@ -12453,6 +12605,37 @@ components:
         startedAt: {type: string, format: date-time}
         finishedAt: {type: string, format: date-time}
 
+    CopyFile:
+      type: object
+      additionalProperties: false
+      required: [name, path, kind, size, mode, modifiedAt]
+      description: One entry of a folder of a copy's allocation directory.
+      properties:
+        name: {type: string}
+        path:
+          type: string
+          description: The entry's path from the root of the directory, what the file calls take.
+        kind:
+          type: string
+          enum: [file, folder, link, other]
+          description: "A regular file (the only kind that is read), a folder, a symbolic link (listed, never followed: a link can't reach a task's secrets) or something else (a pipe, a socket or a device, never opened)."
+        size: {type: integer, format: int64, description: "Bytes. For a folder, whatever the file system says."}
+        mode: {type: string, description: "As Nomad gives it, such as `-rw-r--r--`."}
+        modifiedAt: {type: string, format: date-time}
+
+    CopyFolder:
+      type: object
+      additionalProperties: false
+      required: [path, service, entries]
+      description: A folder of a copy's allocation directory, folders first, then files, each by name.
+      properties:
+        path: {type: string, description: "The folder, cleaned; empty for the root."}
+        service: {type: string, description: "The service the copy is of."}
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/CopyFile"
+
     CommandResult:
       type: object
       additionalProperties: false
@@ -14107,7 +14290,7 @@ components:
     AuditAction:
       type: string
       enum: [created, updated, deleted, deployed, redeployed, "rolled back", promoted, copied, stopped, started,
-        restarted, "ran a command", "opened a terminal", "backed up", restored, pinned, unpinned, tested,
+        restarted, "ran a command", "opened a terminal", "read a file", "backed up", restored, pinned, unpinned, tested,
         rotated, revoked, invited, removed, "accepted an invite", "signed in", "signed out", "sign-in failed",
         requested, cancelled, checked, installed, uninstalled, "refreshed secrets", changed]
       description: What was done, a past-tense verb. `changed` is the fallback of a write nothing described.
@@ -15433,7 +15616,7 @@ components:
                 `dns_zone_not_found`, `preview_limit`, `previews_open`, `not_a_preview`, `preview_password`,
                 `git_access_missing`, `git_host_key_unknown`, `build_registry_missing`, `build_not_found`,
                 `git_access_not_found`, `destination_not_found`, `destination_is_default`,
-                `destination_in_use`, `backup_missing`.
+                `destination_in_use`, `backup_missing`, `file_not_found`.
               examples: [invalid_field]
             message:
               type: string

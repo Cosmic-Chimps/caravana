@@ -96,6 +96,7 @@ var walkClasses = map[string][]string{
 	},
 	"app:maintain": {
 		"POST /v1/apps/{id}/stop", "POST /v1/apps/{id}/copies/{copyId}/run", "GET /v1/apps/{id}/copies/{copyId}/terminal",
+		"GET /v1/apps/{id}/copies/{copyId}/files", "GET /v1/apps/{id}/copies/{copyId}/files/download",
 		"POST /v1/apps/{id}/backups/{backupId}/restore", "PUT /v1/apps/{id}/backups/{backupId}/pin",
 		"DELETE /v1/apps/{id}/backups/{backupId}/pin", "POST /v1/apps/{id}/webhook", "DELETE /v1/apps/{id}/webhook",
 		"POST /v1/apps/{id}/domains/{host}/team-password", "POST /v1/apps/{id}/services/{service}/git-access/deploy-key",

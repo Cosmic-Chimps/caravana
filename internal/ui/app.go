@@ -386,6 +386,7 @@ func runSectionOf(id string, copies copiesRegion, extra runningExtras) *runSecti
 			ID: "run-" + c.Short, CopyID: c.ID, Short: c.Short, Service: c.Service}
 		if !c.Stopping {
 			f.Terminal = terminalHref(id, c.ID)
+			f.Files = filesHref(id, c.ID, "")
 		}
 		if extra.Typed != nil && extra.Typed.CopyID == c.ID {
 			f.Value, f.Error = extra.Typed.Line, extra.Typed.Error

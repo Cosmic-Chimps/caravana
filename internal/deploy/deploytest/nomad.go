@@ -136,6 +136,7 @@ type Nomad struct {
 
 	// Copies' files and restarts (allocfs.go).
 	files         map[string]map[string]string // text by path, by copy ID
+	links         map[string]map[string]string // symbolic links' targets by path, by copy ID
 	fsStatus      int                          // non-zero: every file read answers it
 	restarts      []RestartRequest
 	restartStatus int // non-zero: every restart answers it
@@ -213,6 +214,7 @@ func New(t testing.TB) *Nomad {
 		volumes: map[string]*hostVolume{},
 
 		files:       map[string]map[string]string{},
+		links:       map[string]map[string]string{},
 		restartStop: 2 * time.Second,
 		checks:      map[string]api.AllocCheckStatuses{},
 	}

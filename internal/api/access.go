@@ -319,6 +319,8 @@ var accessRules = map[string]accessRule{
 	"POST /v1/apps/{id}/stop":                                     appAt(service.LevelMaintain),
 	"POST /v1/apps/{id}/copies/{copyId}/run":                      appAt(service.LevelMaintain), // a command can print any secret
 	"GET /v1/apps/{id}/copies/{copyId}/terminal":                  appAt(service.LevelMaintain),
+	"GET /v1/apps/{id}/copies/{copyId}/files":                     appAt(service.LevelMaintain), // a copy's files can hold any secret
+	"GET /v1/apps/{id}/copies/{copyId}/files/download":            appAt(service.LevelMaintain),
 	"POST /v1/apps/{id}/backups/{backupId}/restore":               appAt(service.LevelMaintain),
 	"PUT /v1/apps/{id}/backups/{backupId}/pin":                    appAt(service.LevelMaintain),
 	"DELETE /v1/apps/{id}/backups/{backupId}/pin":                 appAt(service.LevelMaintain),

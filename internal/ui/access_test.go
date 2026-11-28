@@ -154,6 +154,7 @@ func appNeed(key string, env string) int {
 		"POST /apps/{id}/services/{service}/build", "POST /apps/{id}/delete":
 		return configure
 	case "GET /apps/{id}/stop", "POST /apps/{id}/stop", "POST /apps/{id}/copies/{copyId}/run", "GET /apps/{id}/copies/{copyId}/terminal",
+		"GET /apps/{id}/copies/{copyId}/files", "GET /apps/{id}/copies/{copyId}/files/download",
 		"POST /apps/{id}/backups/{backupId}/restore", "POST /apps/{id}/backups/{backupId}/pin", "POST /apps/{id}/backups/{backupId}/unpin",
 		"POST /apps/{id}/webhook", "POST /apps/{id}/webhook/revoke", "POST /apps/{id}/deploy-token",
 		"POST /apps/{id}/services/{service}/git-access/deploy-key", "POST /apps/{id}/services/{service}/git-access/token",

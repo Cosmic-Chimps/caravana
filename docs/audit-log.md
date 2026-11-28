@@ -20,7 +20,7 @@ An entry has:
 | **Actor** | Who: a person (`ana@example.com`), a person through a token (`ana@example.com through token ci`), a deploy token (`deploy token ci (ana@example.com)`), the webhook of an app, Caravana, the host's command line, or someone whose sign-in failed. |
 | **Door** | `console`, `api`, `mcp`, `webhook`, `caravana` (what Caravana decides itself) or `host` (`caravana admin …` on the server). |
 | **Address** | The client's address, when there was a request. |
-| **Action** | A past-tense verb from a fixed list: `created`, `updated`, `deleted`, `deployed`, `redeployed`, `rolled back`, `promoted`, `copied`, `stopped`, `started`, `restarted`, `ran a command`, `opened a terminal`, `backed up`, `restored`, `pinned`, `unpinned`, `tested`, `rotated`, `revoked`, `invited`, `removed`, `accepted an invite`, `signed in`, `signed out`, `sign-in failed`, `requested`, `cancelled`, `checked`, `installed`, `uninstalled`, `refreshed secrets`, and `changed` (see *Recorded by the route* below). |
+| **Action** | A past-tense verb from a fixed list: `created`, `updated`, `deleted`, `deployed`, `redeployed`, `rolled back`, `promoted`, `copied`, `stopped`, `started`, `restarted`, `ran a command`, `opened a terminal`, `read a file`, `backed up`, `restored`, `pinned`, `unpinned`, `tested`, `rotated`, `revoked`, `invited`, `removed`, `accepted an invite`, `signed in`, `signed out`, `sign-in failed`, `requested`, `cancelled`, `checked`, `installed`, `uninstalled`, `refreshed secrets`, and `changed` (see *Recorded by the route* below). |
 | **Resource** | Its kind (`app`, `project`, `environment`, `schedule`, `backup`, `domain`, `token`, `webhook_token`, `registry`, `backup_destination`, `notification_channel`, `dns_zone`, `secret_provider`, `person`, `passkey`, `account`, `server`, `volume`, `addon`, `git_access`, `console_address`, `certificate` (an uploaded one), `settings`, `installation`), its name and ID, and its project › environment. |
 | **Changes** | Field by field, as `path`, then `added X`, `removed X` or `X → Y`. Lists of named things (services, domains, variables, ports, volumes) are compared by name: `services[web].domains[new.example.com]`. Values are cut at 200 characters. |
 | **Record** | A link to the deployment, app action, backup, restore or run the change started, kept as a kind and an ID, not a copy. The console links to it while it exists. |
@@ -84,8 +84,9 @@ nothing) leaves none.
 
 ## What isn't recorded
 
-- **Reads.** Opening a page, listing, exporting or following logs leaves no entry. (Opening a terminal is a change: it is
-  recorded, as `opened a terminal`.)
+- **Reads.** Opening a page, listing, exporting or following logs leaves no entry. (Opening a terminal is recorded, as
+  `opened a terminal`, and so is viewing or downloading a file from a copy, as `read a file`: its path, never its content.
+  Listing a folder of a copy is not.)
 - **The agents' routine calls.** A server's agent reports every 30 seconds and renews its certificate; neither is a change.
   A server joining or being removed is.
 - **Previews that only show.** The Compose, template and promotion previews change nothing.

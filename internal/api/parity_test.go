@@ -256,6 +256,9 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/copies/{copyId}/run": {ops: []string{"runCommand"}},
 	// The terminal page (feature 020.6) holds xterm.js, which connects to the websocket.
 	"GET /apps/{id}/copies/{copyId}/terminal": {ops: []string{"openTerminal"}},
+	// A copy's files (feature 2g4z): the page lists a folder or shows a file; the download is the same read as the API's.
+	"GET /apps/{id}/copies/{copyId}/files":          {ops: []string{"listCopyFiles"}},
+	"GET /apps/{id}/copies/{copyId}/files/download": {ops: []string{"downloadCopyFile"}},
 	// Projects and environments (feature 019).
 	"GET /projects":     {ops: []string{"listProjects"}},
 	"GET /projects/new": {why: "a blank form; creating the project is POST /projects"},

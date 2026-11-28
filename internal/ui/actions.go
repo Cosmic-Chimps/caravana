@@ -154,6 +154,8 @@ type runForm struct {
 	Error   sentence
 	// Terminal is the link to the copy's terminal page; "" for a copy Nomad is stopping.
 	Terminal string
+	// Files is the link to the copy's files page; "" for a copy Nomad is stopping.
+	Files string
 }
 
 // runResult is the answer to one command: what it printed and how it ended.

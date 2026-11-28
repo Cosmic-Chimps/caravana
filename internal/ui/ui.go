@@ -285,6 +285,8 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/restart", s.protected(s.requireSession(s.restartApp))},
 		{"POST", "/apps/{id}/copies/{copyId}/run", s.protected(s.requireSession(s.runCommand))},
 		{"GET", "/apps/{id}/copies/{copyId}/terminal", s.requireSession(s.showTerminal)},
+		{"GET", "/apps/{id}/copies/{copyId}/files", s.requireSession(s.showCopyFiles)},
+		{"GET", "/apps/{id}/copies/{copyId}/files/download", s.requireSession(s.downloadCopyFile)},
 		{"GET", "/schedules", s.requireSession(s.showSchedules)},
 		{"GET", "/schedules/new", s.requireSession(s.showNewSchedule)},
 		{"POST", "/schedules", s.protected(s.requireSession(s.createSchedule))},
@@ -450,7 +452,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "previews", "promote", "stop", "terminal", "schedules", "domains", "logs", "requests", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "opsconsoleaddress", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete", "invite"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "previews", "promote", "stop", "terminal", "files", "schedules", "domains", "logs", "requests", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "opsconsoleaddress", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete", "invite"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which

@@ -128,6 +128,8 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/apps/{id}/copies", s.listCopies, false, false},
 		{http.MethodGet, "/v1/apps/{id}/volumes", s.listVolumes, false, false},
 		{http.MethodPost, "/v1/apps/{id}/copies/{copyId}/run", s.runCommand, false, false},
+		{http.MethodGet, "/v1/apps/{id}/copies/{copyId}/files", s.listCopyFiles, false, false},
+		{http.MethodGet, "/v1/apps/{id}/copies/{copyId}/files/download", s.downloadCopyFile, false, false},
 		// A terminal is a stream like the logs: checking its session never renews it.
 		{http.MethodGet, "/v1/apps/{id}/copies/{copyId}/terminal", s.openTerminal, false, true},
 		{http.MethodPost, "/v1/apps/{id}/stop", s.stopApp, false, false},

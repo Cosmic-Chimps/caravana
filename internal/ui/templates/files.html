@@ -1,0 +1,51 @@
+{{/* The files page of a copy (feature 2g4z): the folders Nomad keeps for a copy, listed, and a file's text
+     or its download. Plain links, no script. Takes a filesPage. */}}
+
+{{define "content"}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">Files in <span class="cv-inline-mono">{{.AppID}}</span></h1>
+    <p class="cv-data-muted">Service <span class="cv-inline-mono text-fg-1">{{.Service}}</span>, copy <span class="cv-inline-mono text-fg-1" title="{{.CopyID}}">{{.Short}}</span>. <a href="{{.Back}}">Back to the Running tab</a></p>
+  </header>
+
+  <nav aria-label="Folder" class="cv-filecrumbs">
+    {{range $i, $c := .Crumbs}}{{if $i}}<span class="cv-filesep" aria-hidden="true">/</span>{{end}}{{if $c.Href}}<a href="{{$c.Href}}" class="cv-inline-mono">{{$c.Label}}</a>{{else}}<span class="cv-inline-mono text-fg-1"{{if $c.Current}} aria-current="page"{{end}}>{{$c.Label}}</span>{{end}}{{end}}
+  </nav>
+
+  {{if .Folder}}
+  <div class="cv-panel">
+    {{if .Rows}}
+    <ul class="cv-filerows">
+      {{range .Rows}}
+      <li class="cv-filerow">
+        {{if .Href}}<a href="{{.Href}}" class="cv-inline-mono cv-filename">{{.Name}}{{if .Dir}}/{{end}}</a>{{else}}<span class="cv-inline-mono cv-filename">{{.Name}}</span>{{end}}
+        <span class="cv-filefacts">{{if .Dir}}folder{{else if .Note}}{{.Note}}{{else}}{{.Size}}{{end}}{{if .HasClock}} · {{template "clock" .Clock}}{{end}}</span>
+        {{if .Download}}<a href="{{.Download}}" class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="Download {{.Name}}">Download</a>{{else}}<span></span>{{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="px-4 py-4 text-sm text-fg-3">This folder is empty.</p>
+    {{end}}
+  </div>
+  {{else if .File}}
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <span class="cv-inline-mono text-fg-1">{{.File.Name}}</span>
+      <span class="cv-filefacts">{{.File.Size}}{{if .File.HasClock}} · {{template "clock" .File.Clock}}{{end}}</span>
+      <a href="{{.File.Download}}" class="cv-btn cv-btn-secondary">Download</a>
+    </div>
+    {{if .File.Shown}}
+    {{if .File.Text}}<pre class="cv-output" tabindex="0">{{.File.Text}}</pre>{{else}}<p class="cv-data-muted">The file is empty.</p>{{end}}
+    {{else}}
+    <p class="text-sm text-fg-2">{{.File.Note}}</p>
+    {{end}}
+  </div>
+  {{end}}
+
+  <div class="flex flex-col gap-2 text-sm text-fg-3">
+    <p>These are the folders Nomad keeps for the copy: <span class="cv-inline-mono">alloc</span>, which the copy's tasks share (<span class="cv-inline-mono">data</span>, <span class="cv-inline-mono">logs</span>, <span class="cv-inline-mono">tmp</span>), and one folder for each task with its <span class="cv-inline-mono">local</span> and <span class="cv-inline-mono">tmp</span> files. The container's own files and its volumes aren't here: open a Terminal on the Running tab for those.</p>
+    <p>A task's <span class="cv-inline-mono">secrets</span> and <span class="cv-inline-mono">private</span> folders are never shown, and links aren't followed. What you view or download is recorded in the audit log, only its path and never its content.</p>
+  </div>
+</section>
+{{end}}

@@ -193,6 +193,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"monitoring", false, g.monitoringStep},
 		{"os-updates", false, g.osUpdatesStep},
 		{"terminal", false, g.terminalStep},
+		{"copy-files", false, g.copyFilesStep},
 		{"deploy-from-ci", false, g.deployFromCIStep},
 		{"previews", false, g.previewsStep},
 		{"people-roles", false, g.peopleRolesStep},
