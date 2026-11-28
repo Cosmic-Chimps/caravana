@@ -110,6 +110,56 @@ type opsNode struct {
 	// Reclaimable is "1.5 GB" the server could free (feature 045), linking to ReclaimHref, the server page's
 	// Space section; empty when nothing is known or nothing can be freed.
 	Reclaimable, ReclaimHref string
+	// Backup is the line "Caravana backup: <when>" or the problem, on the first server's panel (feature 063);
+	// nil on any other.
+	Backup *opsBackup
+}
+
+// opsBackup is the Overview's line about Caravana's own backup: a mark, its words (or, instead of words, the
+// time of the last good backup) and the page it links to.
+type opsBackup struct {
+	Mark string
+	Lead string
+	When *clockTime
+	Href string
+}
+
+// opsBackupOf is the line for the first server's panel: the time of the last backup when it is fine, else the
+// problem the needs-you list names (no recovery key, failed, out of date), else the plain state.
+func opsBackupOf(now time.Time, st service.SelfBackupStatus, items []service.AttentionItem) *opsBackup {
+	line := &opsBackup{Href: "/ops/self-backup"}
+	has := func(k service.AttentionKind) bool {
+		return slices.ContainsFunc(items, func(it service.AttentionItem) bool { return it.Kind == k })
+	}
+	good := func() {
+		if st.LastSucceeded != nil {
+			t := st.LastSucceeded.EndedAt
+			if t.IsZero() {
+				t = st.LastSucceeded.StartedAt
+			}
+			c := clockOf(now, t)
+			line.When = &c
+		}
+	}
+	switch {
+	case st.Unavailable == service.SelfBackupNoDestination:
+		line.Mark, line.Lead = "idle", "no backup destination"
+	case has(service.AttentionSelfBackupNoKey):
+		line.Mark, line.Lead = "warning", "no recovery key"
+	case has(service.AttentionSelfBackupFailed):
+		line.Mark, line.Lead = "failed", "failed"
+	case has(service.AttentionSelfBackupOld):
+		line.Mark, line.Lead = "warning", "none yet"
+		good() // the time of the last good one, when there was one
+	case st.Running != nil:
+		line.Mark, line.Lead = "rolling", "running"
+	case st.LastSucceeded != nil:
+		line.Mark = "healthy"
+		good()
+	default:
+		line.Mark, line.Lead = "idle", "none yet"
+	}
+	return line
 }
 
 // opsChip is one copy of the server panel: the app's name and the copy's short
@@ -288,11 +338,20 @@ func (s *server) loadOps(r *http.Request) (opsData, attentionRegion, error) {
 		Apps:   opsAppsOf(rows, sums, copies, copiesErr),
 		Server: opsServerRegion{NomadDown: down, Room: roomOf(host), Node: s.opsNode(host, rows, copies, down)},
 	}
+	// Caravana's own backup, on the first server's panel (feature 063). A read that fails leaves the line out:
+	// the page of its own says what is wrong.
+	var backup *opsBackup
+	if st, err := s.svc.SelfBackups(ctx); err != nil {
+		s.log.Warn("can't read Caravana's backup for the Operator overview", "error", err)
+	} else {
+		backup = opsBackupOf(now.UTC(), st, items)
+	}
+	d.Server.Node.Backup = backup
 	// With several servers the headline counts them and the section has a panel for each.
 	if list, err := s.svc.ListServers(ctx); err == nil && joinedServers(list) > 1 {
 		d.Head.Stats[0] = plural(joinedServers(list), "server")
 		if !down {
-			d.Server.Panels = s.opsPanels(ctx, now, list, rows)
+			d.Server.Panels = s.opsPanels(ctx, now, list, rows, backup)
 		}
 	}
 	switch n := needs.Count(); n {
@@ -735,7 +794,7 @@ func opsEventOf(e service.ActivityEntry) opsEvent {
 // opsPanels builds the server panels of a cluster of several servers, in the order ListServers gives (the
 // index order). Each has its own numbers and the copies that run on it. A server that has not joined is
 // not drawn: the Servers list says what it is waiting for.
-func (s *server) opsPanels(ctx context.Context, now time.Time, list service.ServersView, rows []opsAppRow) []opsNode {
+func (s *server) opsPanels(ctx context.Context, now time.Time, list service.ServersView, rows []opsAppRow, backup *opsBackup) []opsNode {
 	names := map[string]string{} // app ID to the name its chips carry
 	order := map[string]int{}
 	for i, row := range rows {
@@ -756,6 +815,9 @@ func (s *server) opsPanels(ctx context.Context, now time.Time, list service.Serv
 			s.log.Warn("can't read a server's copies for the Operator overview", "server", sv.Name, "error", copiesErr)
 		}
 		node := opsNodeOfServer(now, sv, host, copies, copiesErr, names, order)
+		if sv.First {
+			node.Backup = backup // Caravana's data is on the first server
+		}
 		if sv.State != "down" && sv.State != "disconnected" {
 			if sp, err := s.svc.ServerSpace(ctx, sv.Name); err != nil {
 				s.log.Warn("can't read a server's space for the Operator overview", "server", sv.Name, "error", err)

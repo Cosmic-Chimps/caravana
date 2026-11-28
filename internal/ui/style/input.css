@@ -2237,6 +2237,8 @@
   .cv-uppast { padding: 0; }
   .cv-uppastrow { display: grid; grid-template-columns: 14px 80px minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: center; min-height: 46px; padding: 8px 20px; border-top: 1px solid var(--color-line-1); }
   .cv-uppastrow:first-child { border-top: 0; }
+  /* Caravana backup's past backups (feature 063): the clock text is longer than an update's date, so its column is wider. */
+  .cv-sbrow { grid-template-columns: 14px 176px minmax(0, 1fr) minmax(0, 1fr); }
   .cv-uppastmark { display: grid; place-items: center; }
   .cv-uppastmark > .cv-mark { width: 8px; height: 8px; margin: 0; }
   .cv-uppastdate { font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); white-space: nowrap; }
@@ -2382,6 +2384,8 @@
   .cv-upnotes { margin-top: 6px; }
   .cv-uppastrow { grid-template-columns: 14px 64px minmax(0, 1fr); row-gap: 2px; }
   .cv-uppastdetail { grid-column: 3; }
+  .cv-sbrow { grid-template-columns: 14px minmax(0, 1fr); }
+  .cv-sbrow .cv-uppastdate, .cv-sbrow .cv-uppasttext, .cv-sbrow .cv-uppastdetail { grid-column: 2; }
 }
 
 /* Under 480px the command box gets the whole width: the step's number goes inline before its title

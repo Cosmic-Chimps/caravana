@@ -200,3 +200,27 @@ add the zone), automatic data restores, a second destination for Caravana's own 
   restore") in the console, the feed, the Logs page's deploy rows and the notification text. `openapi.yaml` 0.70.0 adds `restore` to
   `Deployment.trigger`.
 - **`self_backup_no_key`'s time** (the item's `at`) is when the default destination was last saved: the moment the owner could have made a key.
+
+### Phase B
+
+- **Routes.** D14 names the page, not its posts. They are `GET /ops/self-backup`, `GET /parts/ops/self-backup`, `POST /ops/self-backup/runs`
+  (Back up now, admin), `POST /ops/self-backup/settings` (owner), `GET /ops/self-backup/key` (owner: the confirmation before a key, or the
+  first key's explanation) and `POST /ops/self-backup/key` (owner: makes the key and answers 200 with it). The first key's button is a
+  plain post straight to `POST /ops/self-backup/key`; only "Make a new key…" goes through the confirmation. A post of the key without
+  `replace` while a key exists is 409 and shows no key.
+- **Live stream.** The page opens its own stream, `/live?watch=selfbackup` (kinds `selfbackup` and `attention`, admins only), instead of
+  adding the notice to the Operator stream; the Overview's stream (`watch=ops`) gained `selfbackup` too, for its one line. The state region
+  triggers on `sse:selfbackup, sse:attention, sse:sync`. The 3-second poll is a hidden element inside the region, drawn only while a backup
+  runs (the console's policy forbids template conditions in an `hx-trigger`), and the part answers 286 when nothing runs.
+- **One new style rule and one new icon.** The past backups reuse the Updates page's rows (`cv-uppastrow`); their date column is wider
+  (`.cv-sbrow`, 176px, one column on a narrow screen) because a clock's words are longer than an update's date. The sidebar entry uses the
+  Lucide `archive` icon. `static/app.css` is rebuilt (`tools/ui-css.sh check` passes).
+- **Overview line.** It is the existing `cv-node-reclaim` paragraph under the meters of the first server's panel (the only panel with one
+  server), with a mark: healthy with the time of the last backup, idle "no backup destination" or "none yet", warning "no recovery key" or
+  the time of the last good backup when none succeeded in 48 hours, failed "failed", rolling "running". It takes its problems from the
+  needs-you items, so the console says one thing in both places. A panel that says only "Waiting for the first reading" has no line.
+- **Restore guide link.** `selfBackupGuideHref` is `https://cosmic-chimps.github.io/caravana/host/self-backup/`: Phase C adds the page with
+  that slug (`site/pages.mjs`) from `docs/self-backup.md`. Until then the link is dead; nothing else links to it.
+- **Parity.** `GET /ops/self-backup/key` has no API twin (it only asks for confirmation), so its parity entry is a reason; the post's twin is
+  `createRecoveryKey`. No route needed `consoleOnly`.
+

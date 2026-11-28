@@ -20,8 +20,8 @@ Decisions are in `plan.md` (D1–D16). Commit at the end of each phase, on the b
 
 ## Phase B: console
 
-- [ ] B1 Operator › Caravana backup page, nav entry, parts route, Back up now, settings form, key section and the key page (D14).
-- [ ] B2 Overview's first-server line; access table entries; `tools/ui-css.sh check`; ui tests and the sentinel test.
+- [x] B1 Operator › Caravana backup page, nav entry, parts route, Back up now, settings form, key section and the key page (D14).
+- [x] B2 Overview's first-server line; access table entries; `tools/ui-css.sh check`; ui tests and the sentinel test.
 
 ## Phase C: restore
 

@@ -87,6 +87,8 @@ const (
 	navOpsSecurity = "ops-security"
 	// Console address (feature 051): the domain the console answers on, /ops/console-address.
 	navOpsConsoleAddress = "ops-console-address"
+	// Caravana backup (feature 063): Caravana's own backup, /ops/self-backup.
+	navOpsSelfBackup = "ops-self-backup"
 )
 
 // shellPage starts the data of a console page: the title, and the shell
@@ -130,7 +132,7 @@ func activeIn(mode, active string) string {
 		return active
 	}
 	switch active {
-	case navSettings, navOpsOverview, navOpsServer, navOpsUpdates, navOpsSecurity, navOpsConsoleAddress:
+	case navSettings, navOpsOverview, navOpsServer, navOpsUpdates, navOpsSecurity, navOpsConsoleAddress, navOpsSelfBackup:
 		return active
 	}
 	return navOpsOverview

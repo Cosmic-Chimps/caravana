@@ -507,6 +507,7 @@ func TestNoticeVisibility(t *testing.T) {
 		{service.Change{What: service.ChangeUpdates}, false, true, false},
 		{service.Change{What: service.ChangeScans}, false, true, false},
 		{service.Change{What: service.ChangeConsoleAddress}, false, true, false},
+		{service.Change{What: service.ChangeSelfBackup}, false, true, false},
 		{service.Change{What: service.ChangeMetrics}, false, true, true},
 	} {
 		if got := s.visibleTo(member, tc.c, false); got != tc.member {
