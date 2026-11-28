@@ -236,6 +236,11 @@ type Volume struct {
 // task can't be confused with a service's own.
 const ReservedServiceName = "caravana-volumes"
 
+// AllocFolderName is the folder Nomad shares between the tasks of a copy,
+// beside one folder per task named after it. Nomad refuses a task of that
+// name, and a service's task is named after the service.
+const AllocFolderName = "alloc"
+
 // The tasks Caravana adds beside a service with a sqlite backup (feature 029):
 // SQLiteTaskName makes and checks the copies of the database, UploadTaskName
 // uploads and downloads them. A service can't take either name.

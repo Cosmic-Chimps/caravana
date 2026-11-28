@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.69.0
+  version: 0.69.1
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -8525,6 +8525,10 @@ components:
         name:
           type: string
           pattern: "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+          description: >-
+            Unique in the app. `alloc` is refused (400 `invalid_field` on `services[i].name`):
+            Nomad keeps the folder a copy's tasks share under that name, and a service's task is
+            named after the service.
         image:
           type: string
           description: |

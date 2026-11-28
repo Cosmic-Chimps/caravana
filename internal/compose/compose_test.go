@@ -132,6 +132,7 @@ func TestRefused(t *testing.T) {
 		{"empty", "", nil, "compose", "required"},
 		{"too large", big, nil, "compose", "at most"},
 		{"service name not a DNS label", "services:\n  Web_1:\n    image: x\n", nil, "services.Web_1.name", ""},
+		{"service named alloc", "services:\n  alloc:\n    image: x\n", nil, "services.alloc.name", "reserved"},
 		{"volume in two services", "services:\n  a:\n    image: x\n    volumes: [\"data:/d\"]\n  b:\n    image: x\n    volumes: [\"data:/d\"]\nvolumes:\n  data: {}\n", nil, "services.b.volumes[0].name", "one service"},
 		{"volume with two copies", "services:\n  db:\n    image: x\n    deploy: {replicas: 2}\n    volumes: [\"data:/d\"]\nvolumes:\n  data: {}\n", nil, "services.db.replicas", "one copy"},
 		{"overlay for an unknown service", "services:\n  web:\n    image: x\n", map[string]Overlay{"api": {}}, "services.api", "no service"},
