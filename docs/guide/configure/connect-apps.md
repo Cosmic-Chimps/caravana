@@ -21,8 +21,8 @@ dashes, at most 63 characters, so a name is always a valid host name.
 
 | App in `shop › production` | Services with a port | Other apps reach it at |
 | --- | --- | --- |
-| `web` | `web` on 8080 | `web-web`, `web` |
-| `db` | `db` on 5432 | `db-db`, `db` |
+| `web` | `web` on 8080 | `web`, `web-web` |
+| `db` | `db` on 5432 | `db`, `db-db` |
 | `blog` (a Compose file) | `web` on 8080, `cache` on 6379 | `blog-web`, `blog-cache` |
 
 `blog` has no bare `blog` name because two of its services have ports: `blog` could mean either. Its own services
@@ -37,11 +37,11 @@ A name carries no port: you write the port yourself, as the container listens on
    service has the port `5432` (the **Container port** field of **New app › Image**, or `expose: ["5432"]` in a
    Compose file). Leaving **Health check path** empty makes a TCP check, which suits a database.
 2. Open the `db` app and choose **Configure**. On **Overview**, the **Services** panel says where it answers:
-   **Other apps in Shop › production reach it at** `db-db:5432`, `db:5432`.
+   "Other apps in Shop › production reach it at `db:5432` or `db-db:5432`."
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../images/app-configure-address-dark.png">
-  <img alt="The Services panel of the db app's Configure Overview: the service db with its image, copies, memory and TCP check, and the line &quot;Other apps in Shop › production reach it at db-db:5432, db:5432&quot;." src="../../images/app-configure-address-light.png" width="620">
+  <img alt="The Services panel of the db app's Configure Overview: the service db with its image, copies, memory and TCP check, and the line &quot;Other apps in Shop › production reach it at db:5432 or db-db:5432.&quot;." src="../../images/app-configure-address-light.png" width="620">
 </picture>
 
 3. Open the `api` app, **Configure › Variables & secrets**, and set a secret `DATABASE_URL` to
@@ -53,16 +53,15 @@ server, `api` needs nothing: see "The names follow the copy" below.
 
 ## Where to read an app's address
 
-- **Configure › Overview**, in the **Services** panel.
-- The **Running** tab, above the table of copies. It is drawn only while the app has copies.
-- The **Deployments** tab you land on after installing a template, under **Installed from the … template**.
+- **Configure › Overview**, in the **Services** panel, in each service's row.
+- The **Running** tab, below the table of copies. It is drawn only while the app has copies.
+- The **Deployments** tab you land on after installing a template, under the title of the *Installed from the … template* notice.
 - The API: `getApp` (`GET /v1/apps/{id}`) answers `addresses`, one entry per service with a port, with its `ports`,
   the `names` other apps use, its `ownName` and any `conflicts`. The MCP tool `get_app` returns the same answer.
 
-When a service has more than one name, or the app has more than one service, the line is repeated for each service,
-and an app with several services adds **Its own services reach it at** `web:8080`. The console shows the first port
-of the service next to each name. With a single project and environment, **Other apps in** says **this
-environment** instead of `Shop › production`.
+The names are listed shortest first, each with the first port of the service. An app with several services names
+the service on each block and adds "The other services of this app reach it at `web:8080`." With a single project
+and environment, the sentence says "this environment" instead of `Shop › production`.
 
 Installed from the PostgreSQL template, the app is called `postgres` and has two services with a port, Postgres
 and Adminer. Other apps reach the database at `postgres-postgres:5432`, not at `postgres`.
@@ -72,11 +71,13 @@ and Adminer. Other apps reach the database at `postgres-postgres:5432`, not at `
 - **Another environment.** `staging` apps do not resolve `production` names, and the other way round. A preview
   (`pr-<n>`) is an environment too: it reaches the apps deployed into it. See
   [Projects and environments](../operate/projects.md).
-- **A name two apps claim.** It answers to neither. Both apps' pages say so and name the other:
-  "`db-admin` answers to nothing: app `db-admin` claims it too." (This is the page of an app `db` with a service
-  `admin`, and another app called `db-admin`: both claim `db-admin`.) If every name of a service collides, the page says
-  "No other app can reach it by name until one of the apps below is renamed." An app's own service names always win
-  inside that app. The claim ends when one of the apps or services goes away or is named differently.
+- **A name two apps claim.** It reaches neither. Both apps' pages say so and name the other:
+  "`db-admin` reaches neither app: it is also the name of the app db-admin." (This is the page of an app `db` with a
+  service `admin`, beside another app called `db-admin`: both claim `db-admin`. With three or more claimants it says
+  "reaches none of them".) When no name of a service is left, the page says "Other apps in Shop › production can't
+  reach it by name: `hollo-web` is also the name of the app hollo-web. Rename one of the two apps to free it." An app's
+  own service names always win inside that app. The claim ends when one of the apps or services goes away or is named
+  differently.
 - **A service with several copies.** Its name leads to every running copy: the hosts file has one line per copy.
   Which one a connection reaches is up to the client's resolver. During a deploy, canaries are left out until they
   are promoted, so the name keeps pointing at the version that was live.

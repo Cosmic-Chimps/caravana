@@ -70,7 +70,7 @@ Click the **Running** tab. The **Copies** table lists each copy with its **Statu
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../images/app-running-dark.png">
-  <img alt="The Running tab of an app: its address next to the name, a line with the names other apps reach it at, and a table with copies." src="../images/app-running-light.png" width="760">
+  <img alt="The Running tab of an app: its address next to the name, a table with copies, and under it a line with the names other apps reach it at." src="../images/app-running-light.png" width="760">
 </picture>
 
 The app's address is next to its name at the top of the page. Open it: whoami prints the request it
