@@ -81,7 +81,7 @@ There is no way to give a command input, and no terminal. For those, use the Ter
 ## Terminal
 
 Next to **Run**, each copy has a **Terminal** button: an interactive shell in that copy, in your browser.
-It opens a page, "Terminal in web", for the service and copy.
+It opens a page, "Terminal in Shop › production › web", for the service and copy.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../images/app-terminal-dark.png">
@@ -101,7 +101,7 @@ It opens a page, "Terminal in web", for the service and copy.
 
 ## Files
 
-Next to **Terminal**, each running copy has a **Files** link (a copy Nomad is stopping has none, as for Terminal): a page, "Files in web", that lists the folders Nomad keeps
+Next to **Terminal**, each running copy has a **Files** link (a copy Nomad is stopping has none, as for Terminal): a page, "Files in Shop › production › web", that lists the folders Nomad keeps
 for that copy, to read a file or download it. It is for finding a config file, a crash dump or an export
 without opening a terminal. It reads only: you cannot edit or upload a file here.
 
