@@ -18,8 +18,9 @@ names itself, with the same sidecar, now for the whole project › environment.
 ## Decisions
 
 - **D1 Names.** Inside an app each service with ports keeps its bare name (009, Compose-like). Across the place each service with
-  ports claims `<app>-<service>`, and an app with one service that has ports also claims `<app>`, so a template's Postgres
-  installed as `postgres` is reached at `postgres` (or `postgres-postgres`). `<app>` is the name part of the ID; an ID from before
+  ports claims `<app>-<service>`, and an app with one service that has ports also claims `<app>`: a Postgres app named `postgres`
+  with that one service is reached at `postgres` (or `postgres-postgres`). The PostgreSQL template's app also has Adminer, whose
+  `expose` is a port, so it is reached at `postgres-postgres` only. `<app>` is the name part of the ID; an ID from before
   019 that `PlaceOf` refuses is its own name, in Default › production. A service without ports claims nothing.
 - **D2 Collisions.** A name two services of the place claim resolves to neither, for every app, so a new app can't quietly take a
   name another uses. In an app's own copies its bare names win over another app's claim. An app's own claims never collide with

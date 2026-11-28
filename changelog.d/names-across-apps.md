@@ -1,7 +1,8 @@
 ### Added
 - **Apps of one project and environment reach each other by name.** Every service with ports answers
   to `<app>-<service>` for the other apps of its environment, and to `<app>` when it is the app's only
-  service with ports, so a Postgres installed as `postgres` is reached at `postgres:5432`. A name two
+  service with ports: the PostgreSQL template installed as `postgres` is reached at
+  `postgres-postgres:5432`, and a lone Postgres service in an app named `postgres` at `postgres:5432`. A name two
   services claim answers to neither, and says so. Configure's Overview, the Running tab, the template's
   installed notice and `getApp`'s `addresses` say where each service answers.
 
