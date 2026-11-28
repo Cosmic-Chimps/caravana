@@ -82,8 +82,6 @@ type overviewView struct {
 	Backups  []overviewBackup
 	// NoBackups says no service has a backup policy.
 	NoBackups bool
-	// Addresses say where each service with ports answers by name (task 2xg2).
-	Addresses []addrRow
 	// The panels' buttons lead to these.
 	SourceHref, ServicesHref, IntegrationsHref, BackupsHref string
 }
@@ -100,6 +98,8 @@ type overviewSource struct {
 // overviewService is one row of the Services panel, in the four columns of the grid.
 type overviewService struct {
 	Name, Image, Copies, Size, Check, Volumes string
+	// Addr says where the service answers by name; nil for a service without ports.
+	Addr *addrRow
 }
 
 // overviewBackup is one backed-up service of the Backups panel.
@@ -192,7 +192,15 @@ func (s *server) overviewOf(r *http.Request, sum service.AppSummary, templateFac
 	for _, svc := range a.Services {
 		v.Services = append(v.Services, overviewServiceOf(svc))
 	}
-	v.Addresses = s.addrRowsOf(r.Context(), sum.AppRecord)
+	// The row of a service names it already, so its sentences carry no name of their own.
+	for _, row := range s.addrRowsOf(r.Context(), sum.AppRecord) {
+		row.Many = false
+		for i := range v.Services {
+			if v.Services[i].Name == row.Service {
+				v.Services[i].Addr = &row
+			}
+		}
+	}
 	for _, svc := range a.Services {
 		b := svc.Backup
 		if b == nil {
