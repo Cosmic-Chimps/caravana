@@ -170,13 +170,20 @@ func TestCopyFilesAreAudited(t *testing.T) {
 	_, _, raw := call(t, http.MethodGet, e.URL+"/v1/audit?action=read%20a%20file", "", "")
 	got := decodeAs[struct {
 		Events []struct {
-			Action   string `json:"action"`
-			Resource struct{ ID string }
-			Changes  []struct{ Path, To string }
+			Action    string `json:"action"`
+			Door      string `json:"door"`
+			Address   string `json:"address"`
+			Operation string `json:"operation"`
+			Resource  struct{ ID string }
+			Changes   []struct{ Path, To string }
 		} `json:"events"`
 	}](t, raw)
 	if len(got.Events) != 1 || got.Events[0].Action != "read a file" || got.Events[0].Resource.ID != "whoami" {
 		t.Fatalf("audit = %s", raw)
+	}
+	// The download runs in an audit scope: the API's door, the caller's address and the operation.
+	if ev := got.Events[0]; ev.Door != "api" || ev.Address == "" || ev.Operation != "GET /v1/apps/{id}/copies/{copyId}/files/download" {
+		t.Errorf("door, address, operation = %q, %q, %q", ev.Door, ev.Address, ev.Operation)
 	}
 	to := map[string]string{}
 	for _, c := range got.Events[0].Changes {

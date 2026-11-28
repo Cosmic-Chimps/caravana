@@ -85,7 +85,7 @@ func (f FileInfo) Kind() string {
 		return KindFolder
 	case strings.HasPrefix(f.Mode, "L"):
 		return KindLink
-	case f.Mode == "" || strings.HasPrefix(f.Mode, "-"):
+	case strings.HasPrefix(f.Mode, "-"):
 		return KindFile
 	}
 	return KindOther
@@ -96,7 +96,7 @@ func (f FileInfo) Kind() string {
 // A path with a NUL byte or a backslash, an empty segment, a "." or ".."
 // segment, or more than 4096 bytes is a *FilePathError. A path inside a task's
 // secrets or private folder (second segment, compared without regard to case,
-// of a first segment other than alloc) is ErrPathNotAllowed.
+// under any first segment) is ErrPathNotAllowed.
 func CleanFilePath(p string) (string, error) {
 	p = strings.Trim(p, "/")
 	switch {
@@ -118,12 +118,19 @@ func CleanFilePath(p string) (string, error) {
 			return "", &FilePathError{Reason: "must not contain . or .. parts"}
 		}
 	}
-	if segs[0] != "alloc" && len(segs) >= 2 {
-		if second := strings.ToLower(segs[1]); second == "secrets" || second == "private" {
-			return "", ErrPathNotAllowed
-		}
+	// Whatever the first part is: a service may be named alloc, and the shared
+	// alloc folder has no secrets or private folder to lose.
+	if len(segs) >= 2 && hiddenName(segs[1]) {
+		return "", ErrPathNotAllowed
 	}
 	return p, nil
+}
+
+// hiddenName says whether a folder one level down is one never shown: a
+// task's secrets or private folder, compared without regard to case.
+func hiddenName(name string) bool {
+	n := strings.ToLower(name)
+	return n == "secrets" || n == "private"
 }
 
 // fsPath is a clean path as Nomad's file calls take it.
@@ -163,19 +170,14 @@ func (d *Deployer) ListFiles(ctx context.Context, copyID, path string) ([]FileIn
 	if err != nil {
 		return nil, d.fileError(ctx, action, copyID, err)
 	}
-	inTask := false
-	if segs := strings.Split(path, "/"); path != "" && segs[0] != "alloc" && len(segs) == 1 {
-		inTask = true
-	}
+	oneDown := path != "" && !strings.Contains(path, "/") // a task's folder, or alloc
 	files := make([]FileInfo, 0, len(infos))
 	for _, fi := range infos {
 		if fi == nil || fi.Name == "" {
 			continue
 		}
-		if inTask {
-			if n := strings.ToLower(fi.Name); n == "secrets" || n == "private" {
-				continue
-			}
+		if oneDown && hiddenName(fi.Name) {
+			continue
 		}
 		files = append(files, fileInfoOf(path, fi))
 	}

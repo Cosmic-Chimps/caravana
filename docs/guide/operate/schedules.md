@@ -15,7 +15,7 @@ Every schedule has a **Run in** choice.
 
 **A new copy** starts a separate copy of the service for each run, from the image of the live version, with the service's variables and secrets. The copy takes no traffic. When the command ends, the copy stops. Use it for batch work that doesn't need the service's data on disk: a report, a sync, a clean-up that talks to a database over the network.
 
-**The running copy** runs the command inside the copy that is serving now, the way **Run a command** does (see [Stop, start, restart, Run a command, Terminal](commands.md)). Use it when the command needs the service's volumes, for example a clean-up of files in `/data`. A service that mounts a volume can only use this choice: the form says "Every service of this app mounts a volume, so a schedule there can run only in the running copy."
+**The running copy** runs the command inside the copy that is serving now, the way **Run a command** does (see [Stop, start, restart, Run a command, Terminal, Files](commands.md)). Use it when the command needs the service's volumes, for example a clean-up of files in `/data`. A service that mounts a volume can only use this choice: the form says "Every service of this app mounts a volume, so a schedule there can run only in the running copy."
 
 With the running copy, **In every copy** runs the command in each healthy copy of the service, one after the other, instead of only in the oldest one.
 
@@ -109,6 +109,6 @@ See [Monitoring and the needs-you list](monitoring.md) for the list.
 
 ## See also
 
-- [Stop, start, restart, Run a command, Terminal](commands.md)
+- [Stop, start, restart, Run a command, Terminal, Files](commands.md)
 - [Backups and restore](backups.md)
 - [Notifications](notifications.md)

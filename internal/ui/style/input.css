@@ -2330,7 +2330,10 @@
 }
 
 @media (max-width: 639.98px) {
-  .cv-spacerow, .cv-spaceorphan, .cv-filerow { grid-template-columns: minmax(0, 1fr); }
+  .cv-spacerow, .cv-spaceorphan { grid-template-columns: minmax(0, 1fr); }
+  /* A file row keeps to two lines: the name across, then its facts and the small Download. */
+  .cv-filerow { grid-template-columns: minmax(0, 1fr) auto; }
+  .cv-filerow > .cv-filename { grid-column: 1 / -1; }
 }
 
 /* The server page: under 1200px of room the aside drops under the main column; under 640px the three
@@ -2621,9 +2624,11 @@
   .cv-spacemounted { font-size: 13px; color: var(--color-fg-3); }
   /* The files page of a copy: the path above the list and one row per entry. */
   .cv-filecrumbs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; font-size: 14px; }
+  .cv-filecrumbs a { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); text-underline-offset: 3px; }
   .cv-filesep { color: var(--color-fg-4); font-family: var(--font-mono); }
   .cv-filerows { display: flex; flex-direction: column; margin: 0; padding: 0 16px; list-style: none; }
-  .cv-filerow { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(8rem, auto) auto; gap: 4px 16px; align-items: center; padding: 8px 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
+  .cv-filerow { display: grid; grid-template-columns: minmax(10rem, 1fr) auto 6rem; gap: 4px 16px; align-items: center; min-height: 45px; padding: 8px 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
+  .cv-filerow > .cv-btn { justify-self: end; }
   .cv-filerow + .cv-filerow { border-top: 1px solid var(--color-line-1); }
   .cv-filename { overflow-wrap: anywhere; }
   .cv-filefacts { color: var(--color-fg-3); font-size: 13px; }

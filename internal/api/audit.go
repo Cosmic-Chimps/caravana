@@ -202,6 +202,13 @@ var auditExempt = map[string]string{
 	"POST /v1/apps/{id}/promote/preview": "shows what a promotion would do and changes nothing",
 }
 
+// auditedReads are the GET routes that open an audit scope like a write: they hand out a file's content,
+// which the service notes ("read a file"), and the entry needs the door and the client's address. Their
+// scope writes no fallback: a read that noted nothing (a refusal) leaves no entry.
+var auditedReads = map[string]bool{
+	"GET /v1/apps/{id}/copies/{copyId}/files/download": true,
+}
+
 const webhookPath = "/v1/webhooks/{id}"
 
 // audited wraps a write route's handler in an audit scope: the door (the API, MCP by its User-Agent,
@@ -221,6 +228,9 @@ func (s *server) audited(rt route, next http.HandlerFunc) http.HandlerFunc {
 			door = audit.DoorMCP
 		}
 		ctx, sc := s.svc.BeginAudit(r.Context(), door, s.proxies.ClientAddress(r), operation)
+		if rt.method == http.MethodGet {
+			sc.NoFallback()
+		}
 		if rt.path == webhookPath {
 			sc.SetFallback(fallbackResource(service.Target{AppID: r.PathValue("id")}))
 		}

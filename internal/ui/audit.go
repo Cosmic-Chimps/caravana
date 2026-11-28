@@ -27,6 +27,13 @@ import (
 // become one entry per post. The console has no fallback entry: a post nothing noted (a search, a
 // preview, a refused or unchanged save) leaves none.
 
+// auditedReads are the GET routes that run in an audit scope like a post: a copy's file shown on its page
+// or downloaded is noted ("read a file"), and the entry needs the console's door and the address.
+var auditedReads = map[string]bool{
+	"GET /apps/{id}/copies/{copyId}/files":          true,
+	"GET /apps/{id}/copies/{copyId}/files/download": true,
+}
+
 // auditScope wraps a POST route's handler in an audit scope: the console door, the client's
 // address and the operation. The scope has no fallback; the service's notes are the whole of the
 // console's coverage. Finish runs once the handler returns, with the status it wrote.

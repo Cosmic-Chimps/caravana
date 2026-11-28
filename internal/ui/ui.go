@@ -405,8 +405,10 @@ func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	for _, rt := range s.routeTable() {
 		h := rt.handler
-		if rt.method == http.MethodPost {
+		if rt.method == http.MethodPost || auditedReads[rt.method+" "+rt.path] {
 			// Every form post runs in an audit scope (feature 057): the service's notes become one entry.
+			// So do the reads that hand out a file's content, so their entry has the console's door and
+			// the client's address.
 			h = s.auditScope(rt, h)
 		}
 		mux.HandleFunc(rt.method+" "+rt.path, h)

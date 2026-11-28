@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -72,7 +73,9 @@ type fileOpen struct {
 // filesView is what the files page draws.
 type filesView struct {
 	AppID   string
-	Service string
+	Name    string   // the app's name, for the browser's title and the breadcrumb
+	Heading sentence // the app by its place label
+	Service string   // "" when a refusal came before the copy was found
 	CopyID  string
 	Short   string
 	Back    string // the Running tab
@@ -80,6 +83,14 @@ type filesView struct {
 	Folder  bool
 	Rows    []fileRow
 	File    *fileOpen
+	// Refusal is drawn in place of the panel, in the page, as Run a command's are.
+	Refusal *filesRefused
+}
+
+// filesRefused is why the page can't show what was asked: a heading sentence
+// and what to do.
+type filesRefused struct {
+	Head, Text string
 }
 
 // filesPage is the whole files page.
@@ -94,25 +105,22 @@ type filesPage struct {
 func (s *server) showCopyFiles(w http.ResponseWriter, r *http.Request, session string) {
 	id, copyID, path := r.PathValue("id"), r.PathValue("copyId"), r.URL.Query().Get("path")
 	w.Header().Set("Cache-Control", "no-store")
-	if _, err := s.svc.GetApp(r.Context(), id); errors.Is(err, store.ErrNotFound) {
-		s.appNotFound(w, r, id)
-		return
-	} else if err != nil {
-		s.serverError(w, r, "read app", err)
+	v, ok := s.filesHead(w, r, id, copyID)
+	if !ok {
 		return
 	}
 	st, err := s.svc.StatCopyPath(r.Context(), id, copyID, path)
 	if err != nil {
-		s.filesRefusal(w, r, id, err)
+		s.filesRefusal(w, r, v, err)
 		return
 	}
-	v := filesView{AppID: id, Service: st.Service, CopyID: copyID, Short: shortID(copyID), Back: "/apps/" + url.PathEscape(id)}
+	v.Service = st.Service
 	now := s.now()
 	clean := ""
 	if st.Info.Dir {
 		folder, err := s.svc.ListCopyFiles(r.Context(), id, copyID, path)
 		if err != nil {
-			s.filesRefusal(w, r, id, err)
+			s.filesRefusal(w, r, v, err)
 			return
 		}
 		clean, v.Folder = folder.Path, true
@@ -138,7 +146,7 @@ func (s *server) showCopyFiles(w http.ResponseWriter, r *http.Request, session s
 	} else {
 		view, err := s.svc.CopyFileText(r.Context(), id, copyID, path)
 		if err != nil {
-			s.filesRefusal(w, r, id, err)
+			s.filesRefusal(w, r, v, err)
 			return
 		}
 		clean = view.Info.Path
@@ -156,15 +164,54 @@ func (s *server) showCopyFiles(w http.ResponseWriter, r *http.Request, session s
 		v.File = o
 	}
 	v.Crumbs = fileCrumbs(id, copyID, v.Short, clean)
+	s.renderFiles(w, r, http.StatusOK, v)
+}
 
-	title := "Files in " + id
-	head, err := s.shellPage(r, title, navProjects, s.appCrumbs(r.Context(), id,
-		crumb{Label: id, Href: v.Back}, crumb{Label: "Files"})...)
+// filesHead reads the app and starts the page's view: the app by its place
+// label, the copy, the way back. An unknown app is the plain not-found page
+// (ok false, already answered).
+func (s *server) filesHead(w http.ResponseWriter, r *http.Request, id, copyID string) (filesView, bool) {
+	rec, err := s.svc.GetApp(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.appNotFound(w, r, id)
+		return filesView{}, false
+	}
+	if err != nil {
+		s.serverError(w, r, "read app", err)
+		return filesView{}, false
+	}
+	v := filesView{AppID: id, Name: appName(id, rec.Place), CopyID: copyID, Short: shortID(copyID), Back: "/apps/" + url.PathEscape(id),
+		Heading: s.appTitle(r.Context(), id, rec.Place)}
+	return v, true
+}
+
+// appName is the app's name, its ID for an app stored without one.
+func appName(id string, place app.Place) string {
+	if place.Name != "" {
+		return place.Name
+	}
+	return id
+}
+
+// appTitle is an app named by its place label: its name, with its project and
+// environment when there is more than one place.
+func (s *server) appTitle(ctx context.Context, id string, place app.Place) sentence {
+	pl, err := s.loadPlaces(ctx)
+	if err != nil {
+		return sentence{mono(id)}
+	}
+	return placeLabel(id, place, pl)
+}
+
+// renderFiles draws the files page with status.
+func (s *server) renderFiles(w http.ResponseWriter, r *http.Request, status int, v filesView) {
+	head, err := s.shellPage(r, "Files in "+v.Name, navProjects, s.appCrumbs(r.Context(), v.AppID,
+		crumb{Label: v.Name, Href: v.Back}, crumb{Label: "Files"})...)
 	if err != nil {
 		s.serverError(w, r, "read admin", err)
 		return
 	}
-	s.render(w, http.StatusOK, "files", filesPage{pageData: head, filesView: v})
+	s.render(w, status, "files", filesPage{pageData: head, filesView: v})
 }
 
 // fileCrumbs makes the path above a list: the root, named after the copy, and
@@ -191,9 +238,13 @@ func fileCrumbs(appID, copyID, short, path string) []fileCrumb {
 func (s *server) downloadCopyFile(w http.ResponseWriter, r *http.Request, session string) {
 	id, copyID := r.PathValue("id"), r.PathValue("copyId")
 	w.Header().Set("Cache-Control", "no-store")
+	v, ok := s.filesHead(w, r, id, copyID)
+	if !ok {
+		return
+	}
 	f, err := s.svc.OpenCopyFile(r.Context(), id, copyID, r.URL.Query().Get("path"))
 	if err != nil {
-		s.filesRefusal(w, r, id, err)
+		s.filesRefusal(w, r, v, err)
 		return
 	}
 	err = httpx.Download(w, f.Info.Name, f.Info.Size, func(out io.Writer) error {
@@ -201,39 +252,49 @@ func (s *server) downloadCopyFile(w http.ResponseWriter, r *http.Request, sessio
 		return err
 	})
 	if err != nil {
-		s.filesRefusal(w, r, id, err)
+		v.Service = f.Service
+		s.filesRefusal(w, r, v, err)
 	}
 }
 
-// filesRefusal draws why the files can't be shown, as a plain page with the
-// status the API gives. Nothing about the content is in it.
-func (s *server) filesRefusal(w http.ResponseWriter, r *http.Request, appID string, err error) {
-	const title = "Files"
+// filesRefusal draws why the files can't be shown. A refusal that knows the
+// app and the copy (a refused path, nothing at it, a copy not running, a stopped
+// app, Nomad down) is drawn inside the files page, with the copy's root to start
+// again from and the status the API gives; it is never a redirect. A copy that
+// isn't the app's is the plain page. Nothing about a file's content is in it.
+func (s *server) filesRefusal(w http.ResponseWriter, r *http.Request, v filesView, err error) {
 	var fe *app.FieldError
+	status, refused := 0, filesRefused{}
 	switch {
 	case errors.Is(err, service.ErrNotAllowed):
 		s.refuse(w, r, err)
+		return
 	case errors.As(err, &fe):
-		s.message(w, r, http.StatusUnprocessableEntity, title, "That path can't be shown.", "The "+fe.Field+" "+fe.Message+".")
+		status, refused = http.StatusUnprocessableEntity, filesRefused{"That path can't be shown.", "The " + fe.Field + " " + fe.Message + "."}
 	case errors.Is(err, service.ErrFileNotFound):
-		s.message(w, r, http.StatusNotFound, title, "There is nothing at that path.",
-			"The copy's folders change while it runs, so a link may be out of date. Open the files of the copy again from the Running tab.")
+		status, refused = http.StatusNotFound, filesRefused{"There is nothing at that path.",
+			"The copy's folders change while it runs, so a link may be out of date. Start again from the copy's root."}
 	case errors.Is(err, service.ErrAppStopped):
-		s.message(w, r, http.StatusConflict, title, "The app is stopped.", appStoppedText)
+		status, refused = http.StatusConflict, filesRefused{"The app is stopped.", appStoppedText}
 	case errors.Is(err, service.ErrCopyNotRunning):
-		s.message(w, r, http.StatusConflict, title, "That copy isn't running.",
-			"Files can be read only from a copy that is running. The Running tab lists the copies the app has now.")
+		status, refused = http.StatusConflict, filesRefused{"That copy isn't running.",
+			"Files can be read only from a copy that is running. The Running tab lists the copies the app has now."}
 	case errors.Is(err, store.ErrNotFound):
-		s.message(w, r, http.StatusNotFound, title, "That copy isn't part of the app.",
+		s.message(w, r, http.StatusNotFound, "Files", "That copy isn't part of the app.",
 			"The Running tab lists the copies the app has now.")
+		return
 	case errors.Is(err, deploy.ErrNomadUnavailable), errors.Is(err, deploy.ErrNomadRejected):
-		s.log.Warn("can't read the files of a copy", "app", appID, "error", err)
+		s.log.Warn("can't read the files of a copy", "app", v.AppID, "error", err)
 		text := "The files come from Nomad, and it didn't answer. Try again in a moment."
 		if strings.Contains(err.Error(), "read-fs") {
 			text = "Nomad refused to read the copy's files: Caravana's policy needs the read-fs capability. Run the installer again to update it."
 		}
-		s.message(w, r, http.StatusBadGateway, title, "Nomad can't be reached.", text)
+		status, refused = http.StatusBadGateway, filesRefused{"Nomad can't be reached.", text}
 	default:
 		s.serverError(w, r, "read the files of a copy", err)
+		return
 	}
+	v.Crumbs = []fileCrumb{{Label: "copy " + v.Short, Href: filesHref(v.AppID, v.CopyID, "")}}
+	v.Folder, v.Rows, v.File, v.Refusal = false, nil, nil, &refused
+	s.renderFiles(w, r, status, v)
 }

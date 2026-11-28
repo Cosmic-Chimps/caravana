@@ -13,7 +13,7 @@
 {{define "content"}}
 <section class="cv-main" data-terminal data-socket="{{.Socket}}">
   <header class="cv-pagehead">
-    <h1 class="cv-headline">Terminal in <span class="cv-inline-mono">{{.AppID}}</span></h1>
+    <h1 class="cv-headline">Terminal in {{template "sentence" .Heading}}</h1>
     <p class="cv-data-muted">Service <span class="cv-inline-mono text-fg-1">{{.Service}}</span>, copy <span class="cv-inline-mono text-fg-1" title="{{.CopyID}}">{{.Short}}</span>. <a href="{{.Back}}">Back to the Running tab</a></p>
   </header>
 
