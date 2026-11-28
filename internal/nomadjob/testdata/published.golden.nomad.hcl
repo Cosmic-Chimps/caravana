@@ -63,7 +63,8 @@ job "calls" {
       port = "http"
       provider = "nomad"
       address_mode = "alloc"
-      canary_tags = ["caravana.canary=true"]
+      tags = ["caravana-place=default/production", "caravana-name=calls-turn"]
+      canary_tags = ["caravana-place=default/production", "caravana-name=calls-turn", "caravana.canary=true"]
     }
     task "turn" {
       driver = "docker"
@@ -93,7 +94,7 @@ job "calls" {
         memory = 16
       }
       template {
-        data = "{{ range nomadService \"calls-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"calls-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}"
+        data = "{{ range nomadService \"calls-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"calls-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ $k := printf \"n:%s\" $n }}{{ if scratch.Key $k }}{{ scratch.Set $k \"\" }}{{ else }}{{ scratch.Set $k $svc }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ if and (eq (scratch.Get (printf \"n:%s\" $n)) $svc) (ne $n \"turn\") (ne $n \"web\") }}{{ range nomadService $svc }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} {{ $n }}\n{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}"
         destination = "local/names"
         change_mode = "script"
         change_script {
@@ -141,7 +142,8 @@ job "calls" {
       port = "http"
       provider = "nomad"
       address_mode = "alloc"
-      canary_tags = ["caravana.canary=true"]
+      tags = ["caravana-place=default/production", "caravana-name=calls-web"]
+      canary_tags = ["caravana-place=default/production", "caravana-name=calls-web", "caravana.canary=true"]
     }
     task "web" {
       driver = "docker"
@@ -171,7 +173,7 @@ job "calls" {
         memory = 16
       }
       template {
-        data = "{{ range nomadService \"calls-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"calls-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}"
+        data = "{{ range nomadService \"calls-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"calls-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ $k := printf \"n:%s\" $n }}{{ if scratch.Key $k }}{{ scratch.Set $k \"\" }}{{ else }}{{ scratch.Set $k $svc }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ if and (eq (scratch.Get (printf \"n:%s\" $n)) $svc) (ne $n \"turn\") (ne $n \"web\") }}{{ range nomadService $svc }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} {{ $n }}\n{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}"
         destination = "local/names"
         change_mode = "script"
         change_script {

@@ -795,7 +795,7 @@ func (s *server) installedWithPasswords(w http.ResponseWriter, r *http.Request, 
 	}
 	n := s.installedNotice(r.Context(), sum.AppRecord, installedValues(t, answers))
 	if n == nil { // the template wasn't recorded on the app; the passwords are still shown
-		n = &installedNotice{Title: sentence{plain("Installed from the " + t.Title + " template.")}}
+		n = &installedNotice{Title: sentence{plain("Installed from the " + t.Title + " template.")}, Addresses: s.addrRowsOf(r.Context(), sum.AppRecord)}
 	}
 	for i, host := range slices.Sorted(maps.Keys(passwords)) {
 		n.Passwords = append(n.Passwords, teamPasswordPanel{Host: host, Password: passwords[host],
@@ -898,6 +898,8 @@ type installedNotice struct {
 	// Passwords are the Team-only passwords the install made, drawn only in the answer to the
 	// install itself (installedWithPasswords).
 	Passwords []teamPasswordPanel
+	// Addresses say where the installed services answer by name, so the next app knows what to call.
+	Addresses []addrRow
 }
 
 // installedNoticeOf reads ?created=template for an app that does come from a template. The answers
@@ -913,7 +915,8 @@ func (s *server) installedNotice(ctx context.Context, rec store.AppRecord, query
 	if query.Get("created") != "template" || !rec.Template.Set() {
 		return nil
 	}
-	n := &installedNotice{Title: sentence{plain("Installed from the "), mono(rec.Template.Name), plain(" template.")}}
+	n := &installedNotice{Title: sentence{plain("Installed from the "), mono(rec.Template.Name), plain(" template.")},
+		Addresses: s.addrRowsOf(ctx, rec)}
 	info, err := s.svc.Template(ctx, rec.Template.Name)
 	if err != nil {
 		return n

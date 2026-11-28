@@ -36,6 +36,43 @@ type appRecordJSON struct {
 	// Template is the template the app was installed from (feature 035); absent
 	// when it wasn't.
 	Template *templateRefJSON `json:"template,omitempty"`
+	// Addresses say where each service with ports answers by name (task
+	// 2xg2). Only getApp and getEnvironmentApp fill it: it reads the other
+	// apps of the place, which the writers of a record don't need.
+	Addresses []serviceAddressJSON `json:"addresses,omitempty"`
+}
+
+// serviceAddressJSON is one service's names (schema ServiceAddress).
+type serviceAddressJSON struct {
+	Service   string             `json:"service"`
+	Ports     []int              `json:"ports"`
+	Names     []string           `json:"names"` // [] when every claim collides
+	OwnName   string             `json:"ownName,omitempty"`
+	Conflicts []nameConflictJSON `json:"conflicts,omitempty"`
+}
+
+type nameConflictJSON struct {
+	Name    string `json:"name"`
+	App     string `json:"app"`
+	Service string `json:"service"`
+}
+
+func toServiceAddressesJSON(addrs []app.Address) []serviceAddressJSON {
+	var out []serviceAddressJSON
+	for _, a := range addrs {
+		j := serviceAddressJSON{Service: a.Service, Ports: a.Ports, Names: a.Names, OwnName: a.Own}
+		if j.Ports == nil {
+			j.Ports = []int{}
+		}
+		if j.Names == nil {
+			j.Names = []string{}
+		}
+		for _, c := range a.Conflicts {
+			j.Conflicts = append(j.Conflicts, nameConflictJSON{Name: c.Name, App: c.App, Service: c.Service})
+		}
+		out = append(out, j)
+	}
+	return out
 }
 
 // getApp answers GET /v1/apps/{id}: the app as it was last sent, with its
@@ -45,7 +82,21 @@ func (s *server) getApp(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeAppRecord(w, rec)
+	return s.writeAppRecordWithAddresses(w, r, rec)
+}
+
+// writeAppRecordWithAddresses answers 200 with a stored app, its revision as
+// the ETag and where its services answer by name: getApp's answer and the
+// environment read's.
+func (s *server) writeAppRecordWithAddresses(w http.ResponseWriter, r *http.Request, rec store.AppRecord) error {
+	addrs, err := s.svc.AppAddresses(r.Context(), rec)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("ETag", `"`+rec.Revision+`"`)
+	j := toAppRecordJSON(rec)
+	j.Addresses = toServiceAddressesJSON(addrs)
+	writeJSON(w, http.StatusOK, j)
 	return nil
 }
 
@@ -54,12 +105,6 @@ func toAppRecordJSON(rec store.AppRecord) appRecordJSON {
 		ComposeKept: rec.Compose != nil, Defined: rec.App.Defined(),
 		Project: rec.Place.Project, Environment: rec.Place.Environment, AppName: rec.Place.Name,
 		StoppedAt: rec.StoppedAt, Template: templateRefOf(rec.Template)}
-}
-
-// writeAppRecord answers 200 with a stored app and its revision as the ETag.
-func writeAppRecord(w http.ResponseWriter, rec store.AppRecord) {
-	w.Header().Set("ETag", `"`+rec.Revision+`"`)
-	writeJSON(w, http.StatusOK, toAppRecordJSON(rec))
 }
 
 // writeCreatedApp answers 201 for an app saved without deploying it: the

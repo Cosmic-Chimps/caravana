@@ -207,7 +207,7 @@ func Check(a app.App, s Settings) error {
 			return err
 		}
 	}
-	return checkNames(a)
+	return nil
 }
 
 // Validate checks the settings with the same rules Translate applies, and
@@ -364,11 +364,9 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 	if reg := registration(a, svc, s); reg != nil {
 		tg.Services = []*api.Service{reg}
 	}
-	if sharesNames(a) {
-		if len(svc.Ports) > 0 {
-			tg.Services = append(tg.Services, internalRegistration(a.ID, svc))
-		}
-		tg.Tasks = append(tg.Tasks, namesTask(a, s))
+	// Every service with ports is found by name (names.go).
+	if len(svc.Ports) > 0 {
+		tg.Services = append(tg.Services, internalRegistration(a, svc))
 	}
 	if len(svc.Volumes) > 0 {
 		tg.Tasks = append(tg.Tasks, volumeTask(a.ID, svc, s))
@@ -379,6 +377,9 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 	if hasOpenSearchBackup(svc) {
 		tg.Tasks = append(tg.Tasks, uploadTask(svc, s))
 	}
+	// Every group resolves names, last of its tasks: a worker without ports
+	// still reaches its database.
+	tg.Tasks = append(tg.Tasks, namesTask(a, svc.Name, s))
 	return tg
 }
 

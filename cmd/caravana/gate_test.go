@@ -164,6 +164,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"secrets-render", false, g.secretsRender},
 		{"compose-app", false, g.composeAppStep},
 		{"service-dns", false, g.serviceDNSStep},
+		{"names-across-apps", false, g.namesAcrossApps},
 		{"opensearch", false, g.openSearchStep},
 		{"opensearch-snapshot", false, g.openSearchSnapshotStep},
 		{"backup-restore", false, g.backupRestoreStep},

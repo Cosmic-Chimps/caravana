@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.67.0
+  version: 0.68.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -11957,6 +11957,65 @@ components:
           $ref: "#/components/schemas/AppStoppedAt"
         template:
           $ref: "#/components/schemas/TemplateRef"
+        addresses:
+          type: array
+          description: |
+            Where each service with ports answers by name, in the app's order. Only `getApp` and
+            `getEnvironmentApp` say it. Absent for an app with no services. An address counts the
+            stored apps of the same project and environment that are defined and not stopped.
+          items:
+            $ref: "#/components/schemas/ServiceAddress"
+
+    ServiceAddress:
+      type: object
+      additionalProperties: false
+      required: [service, ports, names]
+      description: |
+        The names a service answers to. Apps of one project and environment reach each other's
+        services by name: `<app>-<service>`, and `<app>` too when the service is the app's only one
+        with ports. A name that two services of the place claim answers to neither of them.
+      properties:
+        service:
+          type: string
+          description: The service's name.
+          examples: ["postgres"]
+        ports:
+          type: array
+          description: The service's container ports; the first is the one a name points at in the console.
+          items: {type: integer}
+          examples: [[5432]]
+        names:
+          type: array
+          description: |
+            What other apps of the place reach the service at. Empty when every name it claims
+            is also claimed by another service (see `conflicts`).
+          items: {type: string}
+          examples: [["postgres-postgres", "postgres"]]
+        ownName:
+          type: string
+          description: |
+            The name the app's other services reach it at: the service's own name. Only in an app
+            with more than one service.
+          examples: ["web"]
+        conflicts:
+          type: array
+          description: |
+            Names the service claims that another service of the place claims too. Such a name
+            answers to neither.
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, app, service]
+            properties:
+              name:
+                type: string
+                description: The name both claim.
+              app:
+                type: string
+                description: The other app's ID.
+              service:
+                type: string
+                description: The other app's service that claims it.
 
     AppStoppedAt:
       type: string

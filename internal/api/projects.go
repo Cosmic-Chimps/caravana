@@ -291,6 +291,5 @@ func (s *server) getEnvironmentApp(w http.ResponseWriter, r *http.Request) error
 		// (an ID like "x--y--z" in Default) is not in it.
 		return fmt.Errorf("app %q is not in %s/%s: %w", place.ID(), place.Project, place.Environment, store.ErrNotFound)
 	}
-	writeAppRecord(w, rec)
-	return nil
+	return s.writeAppRecordWithAddresses(w, r, rec)
 }

@@ -539,6 +539,8 @@ type copiesRegion struct {
 	Gone            sentence
 	// Scaling is one line per scaled service, above the table: "web 2 copies · scales 1–3" (feature 043).
 	Scaling []scaleLine
+	// Addresses are the names each service with ports answers to (task 2xg2), above the table.
+	Addresses []addrRow
 }
 
 // scaleLine is the Running tab's line for a service that scales on its own.
@@ -615,6 +617,7 @@ func (s *server) loadCopies(r *http.Request, appID string) (copiesRegion, error)
 		return copiesRegion{}, recErr
 	}
 	if recErr == nil {
+		region.Addresses = s.addrRowsOf(ctx, rec)
 		counts, err := s.svc.ServiceCounts(ctx, appID)
 		if err != nil {
 			return copiesRegion{}, err

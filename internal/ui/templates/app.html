@@ -61,6 +61,7 @@
 {{else}}
 {{with .Created}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{with .Installed}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .Title}}</span></div>
+{{with .Addresses}}<div class="cv-main">{{template "addr-lines" .}}</div>{{end}}
 {{range .Passwords}}<div class="cv-main">{{template "domain-once" .}}</div>{{end}}
 {{with .Notes}}<div class="cv-main"><div class="cv-panel p-4"><p class="cv-tplnotes">{{.}}</p></div></div>{{end}}{{end}}
 {{with .Notice}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
@@ -898,6 +899,7 @@
 {{else if .Rows}}
 {{range .Scaling}}<p class="cv-copies-scale"><span class="cv-data text-fg-1">{{.Service}}</span> <span class="cv-data-muted">{{.Words}}</span></p>
 {{end}}
+{{with .Addresses}}<div class="cv-copies-addr">{{template "addr-lines" .}}</div>{{end}}
 <div class="cv-copies" role="table" aria-label="Copies">
   <div class="cv-copies-head cv-label" role="row">
     <span role="columnheader" class="cv-k-id">Copy</span>
@@ -1148,6 +1150,7 @@
       <li class="cv-ovsvc"><span class="cv-ovsvc-name">{{.Name}}</span> <span class="cv-ovsvc-image">{{.Image}}</span> <span>{{.Copies}} · {{.Size}}</span> <span>{{.Check}}{{with .Volumes}} · {{.}}{{end}}</span></li>
       {{end}}
     </ul>
+    {{with .Addresses}}{{template "addr-lines" .}}{{end}}
     <div class="cv-btnrow"><a href="{{.ServicesHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{if $.NoConfigure}}See copies, size and checks{{else}}Change copies, size and checks{{end}}</a></div>
   </section>
   <section class="cv-panel cv-cfg-panel" aria-labelledby="domains-title">

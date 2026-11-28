@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -498,10 +499,10 @@ func TestTranslateMatchesLabJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Translate: %v", err)
 	}
-	// DeepEqual follows pointers, so it compares values, not addresses.
-	if !reflect.DeepEqual(want.Job, res.Job) {
-		t.Errorf("translated job differs from deploy/dev/whoami.json\nwant:\n%s\ngot:\n%s",
-			marshalJob(t, want.Job), marshalJob(t, res.Job))
+	// Compared as JSON, which is what Nomad gets: a decoded task config holds
+	// []any where Translate writes []string (the names sidecar's args).
+	if w, g := marshalJob(t, want.Job), marshalJob(t, res.Job); !bytes.Equal(w, g) {
+		t.Errorf("translated job differs from deploy/dev/whoami.json\nwant:\n%s\ngot:\n%s", w, g)
 	}
 }
 
@@ -673,16 +674,21 @@ func TestSecretsStayOutOfTheJob(t *testing.T) {
 	}
 }
 
-// TestServicesByName checks who gets the names sidecar and the internal
-// registrations (research R3).
+// TestServicesByName checks the names sidecar and the internal registrations
+// (research R3, task 2xg2): every group resolves names, every service with
+// ports is registered with its place and the names it claims.
 func TestServicesByName(t *testing.T) {
 	single := apptest.Whoami()
 	res, err := Translate(single.App, single.Deployment, labSettings(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tg := res.Job.TaskGroups[0]; len(tg.Tasks) != 1 || len(tg.Services) != 1 {
-		t.Errorf("a single-service app got %d tasks and %d registrations, want 1 and 1", len(tg.Tasks), len(tg.Services))
+	tg := res.Job.TaskGroups[0]
+	if len(tg.Tasks) != 2 || tg.Tasks[1].Name != "names" || len(tg.Services) != 2 {
+		t.Fatalf("a single-service app got %d tasks and %d registrations, want 2 (the service, names) and 2", len(tg.Tasks), len(tg.Services))
+	}
+	if got, want := tg.Services[1].Tags, []string{"caravana-place=default/production", "caravana-name=whoami-web", "caravana-name=whoami"}; !slices.Equal(got, want) {
+		t.Errorf("whoami's internal tags = %v, want %v", got, want)
 	}
 
 	var vols apptest.Case
@@ -697,45 +703,103 @@ func TestServicesByName(t *testing.T) {
 	}
 	for _, tg := range res.Job.TaskGroups {
 		// The db service has a volume, which adds the caravana-volumes task
-		// after names (TestVolumeTask checks it).
+		// before names (TestVolumeTask checks it).
 		wantTasks := 2
 		if *tg.Name == "db" {
 			wantTasks = 3
 		}
-		if len(tg.Tasks) != wantTasks || tg.Tasks[0].Name != *tg.Name || tg.Tasks[1].Name != "names" {
-			t.Fatalf("group %s tasks = %d, want its own task first, then names", *tg.Name, len(tg.Tasks))
+		last := tg.Tasks[len(tg.Tasks)-1]
+		if len(tg.Tasks) != wantTasks || tg.Tasks[0].Name != *tg.Name || last.Name != "names" {
+			t.Fatalf("group %s tasks = %d, want its own task first and names last", *tg.Name, len(tg.Tasks))
 		}
-		names := tg.Tasks[1]
-		if names.Lifecycle == nil || names.Lifecycle.Hook != "prestart" || !names.Lifecycle.Sidecar {
+		if last.Lifecycle == nil || last.Lifecycle.Hook != "prestart" || !last.Lifecycle.Sidecar {
 			t.Errorf("group %s: names isn't a prestart sidecar", *tg.Name)
 		}
-		if names.Config["image"] != DefaultNamesImage {
-			t.Errorf("group %s: names image = %v", *tg.Name, names.Config["image"])
+		if last.Config["image"] != DefaultNamesImage {
+			t.Errorf("group %s: names image = %v", *tg.Name, last.Config["image"])
 		}
-		tmpl := *names.Templates[0].EmbeddedTmpl
-		for _, want := range []string{`nomadService "shop-web-internal"`, `nomadService "shop-db-internal"`, `contains "caravana.canary=true"`, " db\n", " web\n"} {
+		tmpl := *last.Templates[0].EmbeddedTmpl
+		for _, want := range []string{`nomadService "shop-web-internal"`, `nomadService "shop-db-internal"`, `contains "caravana.canary=true"`, " db\n", " web\n",
+			`contains "caravana-place=default/production"`, `(ne $n "web") (ne $n "db")`} {
 			if !strings.Contains(tmpl, want) {
 				t.Errorf("group %s: the names template lacks %q", *tg.Name, want)
 			}
 		}
 		internal := tg.Services[1]
-		if internal.AddressMode != "alloc" || internal.Provider != "nomad" || len(internal.Checks) != 0 || len(internal.CanaryTags) == 0 {
+		if internal.AddressMode != "alloc" || internal.Provider != "nomad" || len(internal.Checks) != 0 {
 			t.Errorf("group %s: internal registration = %+v", *tg.Name, internal)
+		}
+		if !slices.Contains(internal.Tags, "caravana-name=shop-"+*tg.Name) || slices.Contains(internal.Tags, "caravana-name=shop") {
+			t.Errorf("group %s: internal tags = %v, want shop-%s and not shop (two services have ports)", *tg.Name, internal.Tags, *tg.Name)
+		}
+		if want := append(slices.Clone(internal.Tags), "caravana.canary=true"); !slices.Equal(internal.CanaryTags, want) {
+			t.Errorf("group %s: canary tags = %v, want %v", *tg.Name, internal.CanaryTags, want)
 		}
 	}
 
-	t.Run("a name too long for the internal registration", func(t *testing.T) {
-		a := vols.App
-		a.Services = append([]app.Service(nil), a.Services...)
-		a.Services[1].Name = strings.Repeat("d", 50)
-		d := vols.Deployment
-		d.Digests = map[string]string{"web": d.Digests["web"], a.Services[1].Name: d.Digests["db"]}
-		_, err := Translate(a, d, labSettings(), nil)
-		var fe *app.FieldError
-		if !errors.As(err, &fe) || fe.Field != "services[1].name" {
-			t.Errorf("Translate = %v, want a field error on services[1].name", err)
+	t.Run("a place other than Default's production", func(t *testing.T) {
+		a := single.App
+		a.ID = "shop--staging--whoami"
+		res, err := Translate(a, single.Deployment, labSettings(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tg := res.Job.TaskGroups[0]
+		if got, want := tg.Services[1].Tags, []string{"caravana-place=shop/staging", "caravana-name=whoami-web", "caravana-name=whoami"}; !slices.Equal(got, want) {
+			t.Errorf("tags = %v, want %v", got, want)
+		}
+		if tmpl := *tg.Tasks[1].Templates[0].EmbeddedTmpl; !strings.Contains(tmpl, `contains "caravana-place=shop/staging"`) || strings.Contains(tmpl, "production") {
+			t.Errorf("the template reads another place: %s", tmpl)
 		}
 	})
+
+	t.Run("a service called names", func(t *testing.T) {
+		a := single.App
+		a.Services = append([]app.Service(nil), a.Services...)
+		a.Services[0].Name = "names"
+		d := single.Deployment
+		d.Digests = map[string]string{"names": d.Digests["web"]}
+		res, err := Translate(a, d, labSettings(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tasks := res.Job.TaskGroups[0].Tasks
+		if tasks[0].Name != "names" || tasks[1].Name != "caravana-names" {
+			t.Errorf("tasks = %s, %s; want names, caravana-names", tasks[0].Name, tasks[1].Name)
+		}
+	})
+
+	t.Run("a worker without ports", func(t *testing.T) {
+		var worker apptest.Case
+		for _, c := range apptest.Cases() {
+			if c.Name == "worker" {
+				worker = c
+			}
+		}
+		res, err := Translate(worker.App, worker.Deployment, labSettings(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tg := range res.Job.TaskGroups {
+			if tg.Tasks[len(tg.Tasks)-1].Name != "names" {
+				t.Errorf("group %s has no names sidecar: a worker reaches its database by name too", *tg.Name)
+			}
+		}
+	})
+}
+
+// TestInternalName: a registration name that fits is "<app>-<service>-internal"
+// as before; a longer one is cut and ends with a hash, so it stays unique and
+// Nomad takes it.
+func TestInternalName(t *testing.T) {
+	if got := internalName("shop", "web"); got != "shop-web-internal" {
+		t.Errorf("internalName = %q", got)
+	}
+	long := strings.Repeat("a", 50)
+	one, two := internalName(long, "web-one"), internalName(long, "web-two")
+	if len(one) != maxServiceNameLen || !strings.HasSuffix(one, "-internal") || one == two {
+		t.Errorf("long names = %q, %q", one, two)
+	}
 }
 
 // TestVolumeGroupsReplaceTheirCopy checks a group with a volume: no canary,

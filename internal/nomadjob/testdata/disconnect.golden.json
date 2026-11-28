@@ -108,7 +108,7 @@
               {
                 "SourcePath": null,
                 "DestPath": "local/names",
-                "EmbeddedTmpl": "{{ range nomadService \"shop-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"shop-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"shop-db-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} db\n{{ end }}{{ end }}{{ range nomadService \"shop-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"shop-legacy-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} legacy\n{{ end }}{{ end }}",
+                "EmbeddedTmpl": "{{ range nomadService \"shop-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"shop-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"shop-db-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} db\n{{ end }}{{ end }}{{ range nomadService \"shop-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"shop-legacy-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} legacy\n{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ $k := printf \"n:%s\" $n }}{{ if scratch.Key $k }}{{ scratch.Set $k \"\" }}{{ else }}{{ scratch.Set $k $svc }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ if and (eq (scratch.Get (printf \"n:%s\" $n)) $svc) (ne $n \"web\") (ne $n \"api\") (ne $n \"db\") (ne $n \"turn\") (ne $n \"legacy\") }}{{ range nomadService $svc }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} {{ $n }}\n{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}",
                 "ChangeMode": "script",
                 "ChangeScript": {
                   "Command": "/bin/sh",
@@ -261,8 +261,13 @@
           },
           {
             "Name": "shop-web-internal",
-            "Tags": null,
+            "Tags": [
+              "caravana-place=default/production",
+              "caravana-name=shop-web"
+            ],
             "CanaryTags": [
+              "caravana-place=default/production",
+              "caravana-name=shop-web",
               "caravana.canary=true"
             ],
             "EnableTagOverride": false,
@@ -386,7 +391,7 @@
               {
                 "SourcePath": null,
                 "DestPath": "local/names",
-                "EmbeddedTmpl": "{{ range nomadService \"shop-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"shop-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"shop-db-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} db\n{{ end }}{{ end }}{{ range nomadService \"shop-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"shop-legacy-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} legacy\n{{ end }}{{ end }}",
+                "EmbeddedTmpl": "{{ range nomadService \"shop-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"shop-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"shop-db-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} db\n{{ end }}{{ end }}{{ range nomadService \"shop-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"shop-legacy-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} legacy\n{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ $k := printf \"n:%s\" $n }}{{ if scratch.Key $k }}{{ scratch.Set $k \"\" }}{{ else }}{{ scratch.Set $k $svc }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ if and (eq (scratch.Get (printf \"n:%s\" $n)) $svc) (ne $n \"web\") (ne $n \"api\") (ne $n \"db\") (ne $n \"turn\") (ne $n \"legacy\") }}{{ range nomadService $svc }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} {{ $n }}\n{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}",
                 "ChangeMode": "script",
                 "ChangeScript": {
                   "Command": "/bin/sh",
@@ -539,8 +544,13 @@
           },
           {
             "Name": "shop-api-internal",
-            "Tags": null,
+            "Tags": [
+              "caravana-place=default/production",
+              "caravana-name=shop-api"
+            ],
             "CanaryTags": [
+              "caravana-place=default/production",
+              "caravana-name=shop-api",
               "caravana.canary=true"
             ],
             "EnableTagOverride": false,
@@ -618,88 +628,6 @@
                 "SELinuxLabel": null
               }
             ],
-            "Leader": false,
-            "ShutdownDelay": 0,
-            "KillSignal": "",
-            "Kind": "",
-            "ScalingPolicies": null,
-            "Secrets": null,
-            "Identity": null,
-            "Identities": null,
-            "Actions": null,
-            "Schedule": null
-          },
-          {
-            "Name": "names",
-            "Driver": "docker",
-            "User": "",
-            "Lifecycle": {
-              "Hook": "prestart",
-              "Sidecar": true
-            },
-            "Config": {
-              "args": [
-                "-c",
-                "[ -f /local/base ] || cp /etc/hosts /local/base\ncat /local/base /local/names \u003e /etc/hosts\ntrap 'exit 0' TERM INT\nwhile :; do sleep 3600 \u0026 wait $!; done\n"
-              ],
-              "command": "/bin/sh",
-              "image": "busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
-            },
-            "Constraints": null,
-            "Affinities": null,
-            "Env": null,
-            "Services": null,
-            "Resources": {
-              "CPU": 20,
-              "Cores": null,
-              "MemoryMB": 16,
-              "MemoryMaxMB": null,
-              "DiskMB": null,
-              "Networks": null,
-              "Devices": null,
-              "NUMA": null,
-              "SecretsMB": null,
-              "IOPS": null
-            },
-            "RestartPolicy": null,
-            "Meta": null,
-            "KillTimeout": 1000000000,
-            "LogConfig": null,
-            "Artifacts": null,
-            "Vault": null,
-            "Consul": null,
-            "Templates": [
-              {
-                "SourcePath": null,
-                "DestPath": "local/names",
-                "EmbeddedTmpl": "{{ range nomadService \"shop-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"shop-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"shop-db-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} db\n{{ end }}{{ end }}{{ range nomadService \"shop-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"shop-legacy-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} legacy\n{{ end }}{{ end }}",
-                "ChangeMode": "script",
-                "ChangeScript": {
-                  "Command": "/bin/sh",
-                  "Args": [
-                    "-c",
-                    "cat /local/base /local/names \u003e /etc/hosts"
-                  ],
-                  "Timeout": 5000000000,
-                  "FailOnError": false,
-                  "RunOnFirstRender": null
-                },
-                "ChangeSignal": null,
-                "Once": null,
-                "Splay": null,
-                "Perms": null,
-                "Uid": null,
-                "Gid": null,
-                "LeftDelim": null,
-                "RightDelim": null,
-                "Envvars": null,
-                "VaultGrace": null,
-                "Wait": null,
-                "ErrMissingKey": null
-              }
-            ],
-            "DispatchPayload": null,
-            "VolumeMounts": null,
             "Leader": false,
             "ShutdownDelay": 0,
             "KillSignal": "",
@@ -802,6 +730,88 @@
                 "SELinuxLabel": null
               }
             ],
+            "Leader": false,
+            "ShutdownDelay": 0,
+            "KillSignal": "",
+            "Kind": "",
+            "ScalingPolicies": null,
+            "Secrets": null,
+            "Identity": null,
+            "Identities": null,
+            "Actions": null,
+            "Schedule": null
+          },
+          {
+            "Name": "names",
+            "Driver": "docker",
+            "User": "",
+            "Lifecycle": {
+              "Hook": "prestart",
+              "Sidecar": true
+            },
+            "Config": {
+              "args": [
+                "-c",
+                "[ -f /local/base ] || cp /etc/hosts /local/base\ncat /local/base /local/names \u003e /etc/hosts\ntrap 'exit 0' TERM INT\nwhile :; do sleep 3600 \u0026 wait $!; done\n"
+              ],
+              "command": "/bin/sh",
+              "image": "busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
+            },
+            "Constraints": null,
+            "Affinities": null,
+            "Env": null,
+            "Services": null,
+            "Resources": {
+              "CPU": 20,
+              "Cores": null,
+              "MemoryMB": 16,
+              "MemoryMaxMB": null,
+              "DiskMB": null,
+              "Networks": null,
+              "Devices": null,
+              "NUMA": null,
+              "SecretsMB": null,
+              "IOPS": null
+            },
+            "RestartPolicy": null,
+            "Meta": null,
+            "KillTimeout": 1000000000,
+            "LogConfig": null,
+            "Artifacts": null,
+            "Vault": null,
+            "Consul": null,
+            "Templates": [
+              {
+                "SourcePath": null,
+                "DestPath": "local/names",
+                "EmbeddedTmpl": "{{ range nomadService \"shop-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"shop-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"shop-db-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} db\n{{ end }}{{ end }}{{ range nomadService \"shop-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"shop-legacy-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} legacy\n{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ $k := printf \"n:%s\" $n }}{{ if scratch.Key $k }}{{ scratch.Set $k \"\" }}{{ else }}{{ scratch.Set $k $svc }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ if and (eq (scratch.Get (printf \"n:%s\" $n)) $svc) (ne $n \"web\") (ne $n \"api\") (ne $n \"db\") (ne $n \"turn\") (ne $n \"legacy\") }}{{ range nomadService $svc }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} {{ $n }}\n{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}",
+                "ChangeMode": "script",
+                "ChangeScript": {
+                  "Command": "/bin/sh",
+                  "Args": [
+                    "-c",
+                    "cat /local/base /local/names \u003e /etc/hosts"
+                  ],
+                  "Timeout": 5000000000,
+                  "FailOnError": false,
+                  "RunOnFirstRender": null
+                },
+                "ChangeSignal": null,
+                "Once": null,
+                "Splay": null,
+                "Perms": null,
+                "Uid": null,
+                "Gid": null,
+                "LeftDelim": null,
+                "RightDelim": null,
+                "Envvars": null,
+                "VaultGrace": null,
+                "Wait": null,
+                "ErrMissingKey": null
+              }
+            ],
+            "DispatchPayload": null,
+            "VolumeMounts": null,
             "Leader": false,
             "ShutdownDelay": 0,
             "KillSignal": "",
@@ -927,8 +937,13 @@
           },
           {
             "Name": "shop-db-internal",
-            "Tags": null,
+            "Tags": [
+              "caravana-place=default/production",
+              "caravana-name=shop-db"
+            ],
             "CanaryTags": [
+              "caravana-place=default/production",
+              "caravana-name=shop-db",
               "caravana.canary=true"
             ],
             "EnableTagOverride": false,
@@ -1052,7 +1067,7 @@
               {
                 "SourcePath": null,
                 "DestPath": "local/names",
-                "EmbeddedTmpl": "{{ range nomadService \"shop-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"shop-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"shop-db-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} db\n{{ end }}{{ end }}{{ range nomadService \"shop-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"shop-legacy-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} legacy\n{{ end }}{{ end }}",
+                "EmbeddedTmpl": "{{ range nomadService \"shop-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"shop-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"shop-db-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} db\n{{ end }}{{ end }}{{ range nomadService \"shop-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"shop-legacy-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} legacy\n{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ $k := printf \"n:%s\" $n }}{{ if scratch.Key $k }}{{ scratch.Set $k \"\" }}{{ else }}{{ scratch.Set $k $svc }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ if and (eq (scratch.Get (printf \"n:%s\" $n)) $svc) (ne $n \"web\") (ne $n \"api\") (ne $n \"db\") (ne $n \"turn\") (ne $n \"legacy\") }}{{ range nomadService $svc }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} {{ $n }}\n{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}",
                 "ChangeMode": "script",
                 "ChangeScript": {
                   "Command": "/bin/sh",
@@ -1201,8 +1216,13 @@
           },
           {
             "Name": "shop-turn-internal",
-            "Tags": null,
+            "Tags": [
+              "caravana-place=default/production",
+              "caravana-name=shop-turn"
+            ],
             "CanaryTags": [
+              "caravana-place=default/production",
+              "caravana-name=shop-turn",
               "caravana.canary=true"
             ],
             "EnableTagOverride": false,
@@ -1326,7 +1346,7 @@
               {
                 "SourcePath": null,
                 "DestPath": "local/names",
-                "EmbeddedTmpl": "{{ range nomadService \"shop-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"shop-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"shop-db-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} db\n{{ end }}{{ end }}{{ range nomadService \"shop-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"shop-legacy-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} legacy\n{{ end }}{{ end }}",
+                "EmbeddedTmpl": "{{ range nomadService \"shop-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"shop-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"shop-db-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} db\n{{ end }}{{ end }}{{ range nomadService \"shop-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"shop-legacy-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} legacy\n{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ $k := printf \"n:%s\" $n }}{{ if scratch.Key $k }}{{ scratch.Set $k \"\" }}{{ else }}{{ scratch.Set $k $svc }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ if and (eq (scratch.Get (printf \"n:%s\" $n)) $svc) (ne $n \"web\") (ne $n \"api\") (ne $n \"db\") (ne $n \"turn\") (ne $n \"legacy\") }}{{ range nomadService $svc }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} {{ $n }}\n{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}",
                 "ChangeMode": "script",
                 "ChangeScript": {
                   "Command": "/bin/sh",
@@ -1507,7 +1527,7 @@
               {
                 "SourcePath": null,
                 "DestPath": "local/names",
-                "EmbeddedTmpl": "{{ range nomadService \"shop-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"shop-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"shop-db-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} db\n{{ end }}{{ end }}{{ range nomadService \"shop-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"shop-legacy-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} legacy\n{{ end }}{{ end }}",
+                "EmbeddedTmpl": "{{ range nomadService \"shop-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"shop-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"shop-db-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} db\n{{ end }}{{ end }}{{ range nomadService \"shop-turn-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} turn\n{{ end }}{{ end }}{{ range nomadService \"shop-legacy-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} legacy\n{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ $k := printf \"n:%s\" $n }}{{ if scratch.Key $k }}{{ scratch.Set $k \"\" }}{{ else }}{{ scratch.Set $k $svc }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ if and (eq (scratch.Get (printf \"n:%s\" $n)) $svc) (ne $n \"web\") (ne $n \"api\") (ne $n \"db\") (ne $n \"turn\") (ne $n \"legacy\") }}{{ range nomadService $svc }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} {{ $n }}\n{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}",
                 "ChangeMode": "script",
                 "ChangeScript": {
                   "Command": "/bin/sh",
@@ -1652,8 +1672,13 @@
           },
           {
             "Name": "shop-legacy-internal",
-            "Tags": null,
+            "Tags": [
+              "caravana-place=default/production",
+              "caravana-name=shop-legacy"
+            ],
             "CanaryTags": [
+              "caravana-place=default/production",
+              "caravana-name=shop-legacy",
               "caravana.canary=true"
             ],
             "EnableTagOverride": false,

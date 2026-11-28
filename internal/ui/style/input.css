@@ -2633,6 +2633,13 @@
   .cv-plform .cv-fld { margin-bottom: 14px; }
   .cv-plavoid { display: flex; flex-direction: column; gap: 6px; }
   /* Scaling's form opens under its button; its two selects and number inputs follow the placement form's rhythm. */
+  /* Names across apps: where a service answers by name. A name is one click to select. */
+  .cv-addr { display: flex; flex-direction: column; gap: 4px; }
+  .cv-addr + .cv-addr { margin-top: 8px; }
+  .cv-addr-svc { font: 500 13px/1.4 var(--font-mono); color: var(--color-fg-1); }
+  .cv-addr-name { color: var(--color-fg-1); user-select: all; }
+  .cv-addr a { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); text-underline-offset: 3px; }
+  .cv-copies-addr { padding: 10px 16px 0; }
   .cv-copies-scale { margin: 0; padding: 10px 16px 0; display: flex; flex-wrap: wrap; gap: 4px 10px; }
   .cv-scaledetails > summary { display: inline-flex; margin-top: 10px; cursor: pointer; list-style: none; }
   .cv-scaledetails > summary::-webkit-details-marker { display: none; }

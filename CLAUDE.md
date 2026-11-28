@@ -2571,6 +2571,26 @@ Migration 0048, API 0.67.0, no new module, no policy change, constitution unchan
 - Not in 061: an S3 repository, incremental snapshots, the cluster's global state or dot indices, data streams, a multi-node cluster's per-node
   folders (every node needs the same shared `path.repo`), an Elasticsearch image check by script beyond the hand check on 8.17.
 
+Names across apps (`specs/062-names-across-apps`, CodeAlta task `2xg2`, worktree branch `alta/peaceful-castor-bcvs`): the apps of
+one project › environment reach each other by name. `plan.md` D1–D9 are the decisions, R1–R2 the lab facts. API 0.68.0, no migration,
+no new module, no policy change (a job's template lists its namespace's registrations with its default workload identity).
+- Rule (`internal/app/hostnames.go`, pure): inside an app a service with ports keeps its bare name (009); across the place it claims
+  `<app>-<service>`, and an app with one service that has ports also claims `<app>` (`ClaimedNames`, `HostAppName`, `HostPlace`). A name
+  two services of the place claim resolves to neither; an app's own bare names win in its own copies. `app.Addresses(a, others)` says
+  per service its ports, the names others reach it at, its own name (multi-service apps) and the conflicts.
+- Job (`internal/nomadjob/names.go`): every service with ports has its internal registration `<id>-<service>-internal` with the tags
+  `caravana-place=<project>/<environment>` and `caravana-name=<name>` per claim (canary tags are the same plus the canary tag); a name
+  over 63 characters is cut and ends with 8 hex of its SHA-256. Every group of every app (workers too) and every schedule run gets the
+  names sidecar, last of its tasks (`caravana-names` in the group of a service called `names`). Its template writes the own bare names,
+  then reads `nomadServices` twice with `scratch` (mark each claimed name, `""` when claimed twice; write the names whose mark is their
+  registration, except own bare names), so other apps appear and leave live and `Translate` stays pure. 16 MB and 20 MHz per group.
+- API and console: `getApp` and `getEnvironmentApp` answer `addresses` (`ServiceAddress`: `service`, `ports`, `names`, `ownName`,
+  `conflicts`), from `Service.AppAddresses` (the place's defined apps that aren't stopped). Configure › Overview, the Running tab and a
+  template's installed notice draw "Other apps in <place> reach it at `postgres:5432`" (`internal/ui/addresses.go`, `addr-lines`).
+- Gate step `names-across-apps` (`gate_names_test.go`: Postgres alone, a worker without ports reaching `postgres` and
+  `postgres-postgres` with `pg_isready`, again after the copy moves, staging resolving neither, a rival claiming `postgres-postgres`)
+  passed in the lab on 2026-11-28 (89 s), with `compose-app`, `service-dns` and `schedules`. Apps get it at their next deploy.
+
 The documentation site (branch `docs-site`, 2026-11-26): the user guide is the Markdown under `docs/` (new
 pages in `docs/guide/`, the per-feature docs in `docs/*.md`), published to GitHub Pages
 (`https://cosmic-chimps.github.io/caravana/`) by `.github/workflows/pages.yml` from the Astro Starlight

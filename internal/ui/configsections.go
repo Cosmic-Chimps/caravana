@@ -82,6 +82,8 @@ type overviewView struct {
 	Backups  []overviewBackup
 	// NoBackups says no service has a backup policy.
 	NoBackups bool
+	// Addresses say where each service with ports answers by name (task 2xg2).
+	Addresses []addrRow
 	// The panels' buttons lead to these.
 	SourceHref, ServicesHref, IntegrationsHref, BackupsHref string
 }
@@ -190,6 +192,7 @@ func (s *server) overviewOf(r *http.Request, sum service.AppSummary, templateFac
 	for _, svc := range a.Services {
 		v.Services = append(v.Services, overviewServiceOf(svc))
 	}
+	v.Addresses = s.addrRowsOf(r.Context(), sum.AppRecord)
 	for _, svc := range a.Services {
 		b := svc.Backup
 		if b == nil {

@@ -54,7 +54,8 @@ job "mix" {
       port = "http"
       provider = "nomad"
       address_mode = "alloc"
-      canary_tags = ["caravana.canary=true"]
+      tags = ["caravana-place=default/production", "caravana-name=mix-web"]
+      canary_tags = ["caravana-place=default/production", "caravana-name=mix-web", "caravana.canary=true"]
     }
     task "web" {
       driver = "docker"
@@ -95,7 +96,7 @@ job "mix" {
         memory = 16
       }
       template {
-        data = "{{ range nomadService \"mix-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"mix-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"mix-cache-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} cache\n{{ end }}{{ end }}"
+        data = "{{ range nomadService \"mix-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"mix-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"mix-cache-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} cache\n{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ $k := printf \"n:%s\" $n }}{{ if scratch.Key $k }}{{ scratch.Set $k \"\" }}{{ else }}{{ scratch.Set $k $svc }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ if and (eq (scratch.Get (printf \"n:%s\" $n)) $svc) (ne $n \"web\") (ne $n \"api\") (ne $n \"cache\") }}{{ range nomadService $svc }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} {{ $n }}\n{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}"
         destination = "local/names"
         change_mode = "script"
         change_script {
@@ -141,7 +142,8 @@ job "mix" {
       port = "http"
       provider = "nomad"
       address_mode = "alloc"
-      canary_tags = ["caravana.canary=true"]
+      tags = ["caravana-place=default/production", "caravana-name=mix-api"]
+      canary_tags = ["caravana-place=default/production", "caravana-name=mix-api", "caravana.canary=true"]
     }
     task "api" {
       driver = "docker"
@@ -182,7 +184,7 @@ job "mix" {
         memory = 16
       }
       template {
-        data = "{{ range nomadService \"mix-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"mix-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"mix-cache-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} cache\n{{ end }}{{ end }}"
+        data = "{{ range nomadService \"mix-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"mix-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"mix-cache-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} cache\n{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ $k := printf \"n:%s\" $n }}{{ if scratch.Key $k }}{{ scratch.Set $k \"\" }}{{ else }}{{ scratch.Set $k $svc }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ if and (eq (scratch.Get (printf \"n:%s\" $n)) $svc) (ne $n \"web\") (ne $n \"api\") (ne $n \"cache\") }}{{ range nomadService $svc }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} {{ $n }}\n{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}"
         destination = "local/names"
         change_mode = "script"
         change_script {
@@ -227,7 +229,8 @@ job "mix" {
       port = "redis"
       provider = "nomad"
       address_mode = "alloc"
-      canary_tags = ["caravana.canary=true"]
+      tags = ["caravana-place=default/production", "caravana-name=mix-cache"]
+      canary_tags = ["caravana-place=default/production", "caravana-name=mix-cache", "caravana.canary=true"]
     }
     task "cache" {
       driver = "docker"
@@ -257,7 +260,7 @@ job "mix" {
         memory = 16
       }
       template {
-        data = "{{ range nomadService \"mix-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"mix-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"mix-cache-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} cache\n{{ end }}{{ end }}"
+        data = "{{ range nomadService \"mix-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"mix-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"mix-cache-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} cache\n{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ $k := printf \"n:%s\" $n }}{{ if scratch.Key $k }}{{ scratch.Set $k \"\" }}{{ else }}{{ scratch.Set $k $svc }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ if and (eq (scratch.Get (printf \"n:%s\" $n)) $svc) (ne $n \"web\") (ne $n \"api\") (ne $n \"cache\") }}{{ range nomadService $svc }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} {{ $n }}\n{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}"
         destination = "local/names"
         change_mode = "script"
         change_script {

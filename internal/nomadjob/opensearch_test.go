@@ -51,7 +51,7 @@ func TestOpenSearchTasks(t *testing.T) {
 	for _, task := range tg.Tasks {
 		names = append(names, task.Name)
 	}
-	if want := []string{"indexer", VolumeTaskName, app.UploadTaskName}; !slices.Equal(names, want) {
+	if want := []string{"indexer", VolumeTaskName, app.UploadTaskName, namesTaskName}; !slices.Equal(names, want) {
 		t.Fatalf("tasks = %v, want %v", names, want)
 	}
 	up := tg.Tasks[2]

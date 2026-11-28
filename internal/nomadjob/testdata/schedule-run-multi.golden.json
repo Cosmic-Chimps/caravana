@@ -135,7 +135,7 @@
             {
               "SourcePath": null,
               "DestPath": "local/names",
-              "EmbeddedTmpl": "{{ range nomadService \"rates-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"rates-cache-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} cache\n{{ end }}{{ end }}",
+              "EmbeddedTmpl": "{{ range nomadService \"rates-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"rates-cache-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} cache\n{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ $k := printf \"n:%s\" $n }}{{ if scratch.Key $k }}{{ scratch.Set $k \"\" }}{{ else }}{{ scratch.Set $k $svc }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ range nomadServices }}{{ if .Tags | contains \"caravana-place=default/production\" }}{{ $svc := .Name }}{{ range .Tags }}{{ if regexMatch \"^caravana-name=\" . }}{{ $n := regexReplaceAll \"^caravana-name=\" \"\" . }}{{ if and (eq (scratch.Get (printf \"n:%s\" $n)) $svc) (ne $n \"api\") (ne $n \"cache\") }}{{ range nomadService $svc }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} {{ $n }}\n{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end }}",
               "ChangeMode": "script",
               "ChangeScript": {
                 "Command": "/bin/sh",

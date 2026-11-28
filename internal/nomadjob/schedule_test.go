@@ -109,7 +109,7 @@ func TestScheduleRunJobShape(t *testing.T) {
 	}
 
 	tg := j.TaskGroups[0]
-	if *tg.Name != "web" || len(tg.Tasks) != 1 {
+	if *tg.Name != "web" || len(tg.Tasks) != 2 || tg.Tasks[1].Name != namesTaskName {
 		t.Fatalf("group %s with %d tasks", *tg.Name, len(tg.Tasks))
 	}
 	// No traffic by construction: no registration, no port, no volume.
@@ -209,8 +209,8 @@ func TestScheduleRunJobMemory(t *testing.T) {
 	}
 }
 
-// TestScheduleRunJobNames: an app that shares names gets the sidecar, after
-// the service's task; a one-service app doesn't.
+// TestScheduleRunJobNames: a run resolves names like the service's copies,
+// with the sidecar after the service's task, in any app.
 func TestScheduleRunJobNames(t *testing.T) {
 	multi := scheduleMultiApp()
 	j := ScheduleRunJob(multi, "r", multi.Services[0], pinnedRates, []string{"x"}, 256, labSettings(), nil)
@@ -227,8 +227,8 @@ func TestScheduleRunJobNames(t *testing.T) {
 
 	one := scheduleApp()
 	j = ScheduleRunJob(one, "r", one.Services[0], pinnedWorker, []string{"x"}, 256, labSettings(), nil)
-	if n := len(j.TaskGroups[0].Tasks); n != 1 {
-		t.Errorf("a one-service app's run has %d tasks", n)
+	if tasks := j.TaskGroups[0].Tasks; len(tasks) != 2 || tasks[1].Name != namesTaskName {
+		t.Errorf("a one-service app's run has %d tasks, want the service and names", len(tasks))
 	}
 }
 

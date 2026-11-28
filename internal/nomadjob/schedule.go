@@ -99,11 +99,7 @@ func ScheduleRunJob(a app.App, runID string, svc app.Service, image string, comm
 		LogConfig:   &api.LogConfig{MaxFiles: new(scheduleLogFiles), MaxFileSizeMB: new(scheduleLogFileMB)},
 	}
 
-	tasks := []*api.Task{t}
-	if sharesNames(a) {
-		tasks = append(tasks, namesTask(a, s))
-	}
-	g := batchGroup(svc.Name, tasks...)
+	g := batchGroup(svc.Name, t, namesTask(a, svc.Name, s))
 	// A run resolves names like the service's copies do.
 	g.Networks[0].DNS = dnsConfig(svc)
 	// A run can't start on a server the service avoids, or lacks a label it

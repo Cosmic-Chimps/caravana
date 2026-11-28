@@ -390,7 +390,8 @@ func TestInstallFromTemplatePage(t *testing.T) {
 		page := text(body)
 		for _, want := range []string{"Installed from the Uptime Kuma template.",
 			"Open https://status.example.com and create the admin account",
-			"Backups are off for uptime-kuma"} {
+			"Backups are off for uptime-kuma",
+			"Other apps in this environment reach it at status-uptime-kuma:", "status:"} {
 			if !strings.Contains(page, want) {
 				t.Errorf("the Deployments tab lacks %q:\n%s", want, page)
 			}
