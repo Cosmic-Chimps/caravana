@@ -402,6 +402,9 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 	if svc.Name == ReservedServiceName {
 		return NewFieldError(field+".name", "%q is reserved: Caravana runs a task of that name beside every service with a volume", svc.Name)
 	}
+	if svc.Name == AllocFolderName {
+		return NewFieldError(field+".name", "%q is reserved: Nomad keeps the folder the tasks of a copy share under that name; choose another name", svc.Name)
+	}
 	if svc.Name == SQLiteTaskName || svc.Name == UploadTaskName {
 		return NewFieldError(field+".name", "%q is reserved: Caravana runs a task of that name beside every service with a sqlite backup", svc.Name)
 	}

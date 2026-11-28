@@ -959,6 +959,18 @@ func TestValidate(t *testing.T) {
 			d.Digests[ReservedServiceName] = testDigest
 		}, "services[1].name"},
 
+		// Nomad shares the folder "alloc" between a copy's tasks and refuses a task of that name.
+		{"service named alloc", func(a *App, d *Deployment) {
+			a.Services[1].Name = AllocFolderName
+			delete(d.Digests, "worker")
+			d.Digests[AllocFolderName] = testDigest
+		}, "services[1].name"},
+		{"service named secrets", func(a *App, d *Deployment) {
+			a.Services[1].Name = "secrets"
+			delete(d.Digests, "worker")
+			d.Digests["secrets"] = testDigest
+		}, ""},
+
 		// Ports.
 		{"port name empty", func(a *App, d *Deployment) { a.Services[0].Ports[0].Name = "" }, "services[0].ports[0].name"},
 		{"port name uppercase", func(a *App, d *Deployment) { a.Services[0].Ports[0].Name = "HTTP" }, "services[0].ports[0].name"},
